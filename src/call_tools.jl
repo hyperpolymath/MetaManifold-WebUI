@@ -1,10 +1,39 @@
-module Cutadapt
+module Tools
 
-export cutadapt
+# © 2026 Joshua Benjamin Jewell. All rights reserved.
+#
+# This module is licensed under the GNU Affero General Public License version 3 (AGPLv3).
+
+export cutadapt, vsearch, fastqc_all, fastqc_one
 
     using YAML
     using Logging
 
+    ## Tools loading from config
+    """
+        load_tools(config_path) -> Dict{String,String}
+
+    Read config/tools.yml and return a Dict of tool name => resolved path.
+    If the file does not exist, returns an empty Dict so tools fall back to PATH.
+    Paths with `@` are SSH remote paths (user@host:/path), the calling module is
+    responsible for routing those calls via SSH.
+    """
+    function load_tools(config_path = joinpath(@__DIR__, "..", "config", "tools.yml"))
+        isfile(config_path) || return Dict{String,String}()
+        data = YAML.load_file(config_path)
+        tools = Dict{String,String}()
+        for (name, info) in data
+            path = info isa Dict ? get(info, "path", nothing) : nothing
+            path !== nothing && (tools[name] = string(path))
+        end
+        tools
+    end
+
+    tool_bin(key) = get(_tools, key, key)
+
+    const _tools = load_tools()
+
+    ## cutadapt
     # Prevent duplication of primers. Must be instantiated outside get_primers() loop. Global scope may be an issue.
     used_forward = String[]
     used_reverse = String[]
@@ -148,7 +177,7 @@ export cutadapt
         fastq_in_dir,
         cutadapt_dir;
         optional_args = "-m 200 --discard-untrimmed",
-        cutadapt_bin  = "cutadapt"
+        cutadapt_bin  = tool_bin("cutadapt")
     )
         return run_cutadapt(
             get_primer_args(primer_pairs, primers_path),
@@ -157,5 +186,72 @@ export cutadapt
             cutadapt_dir,
             cutadapt_bin
         )
+    end
+
+    ## FastQC
+    """
+        function fastqc_all(fastq_in_dir; optional_args = "-t 20 --extract --delete", fastqc_bin = "fastqc")
+
+    Requires `fastqc` installed. Runs `fastqc` command with any optional parameters on a whole set.
+
+    ## Arguments
+    - `fastq_in_dir`: Specify path of fastq files to qc.
+
+    ## Keyword Arguments
+    - `optional_args` (optional, default: "-t 20 --extract --delete"): Specify additional arguments passed to `fastqc` command.
+    - `fastqc_bin` (optional, default: "fastqc"): Path to the fastqc binary. Defaults to PATH lookup. Set via `config/tools.yml` and `load_tools()` in main.jl.
+
+    """
+    function fastqc_all(fastq_in_dir, fastqc_dir; optional_args = "-t 20 --extract --delete", fastqc_bin = tool_bin("fastqc"))
+        mkpath(fastqc_dir)
+
+        cmd = "$fastqc_bin $fastq_in_dir/*.fastq* -o $fastqc_dir $optional_args"
+        run(`bash -lc $cmd`)
+
+    end
+
+    """
+        function fastqc_one(fastq_in_file; optional_args = "-t 20 --extract --delete", fastqc_bin = "fastqc")
+
+    Requires `fastqc` installed. Runs `fastqc` command with any optional parameters on a whole set.
+
+    ## Arguments
+    - `fastq_in_file`: Specify path of fastq file to qc.
+
+    ## Keyword Arguments
+    - `optional_args` (optional, default: "-t 20 --extract --delete"): Specify additional arguments passed to `fastqc` command.
+    - `fastqc_bin` (optional, default: "fastqc"): Path to the fastqc binary. Defaults to PATH lookup. Set via `config/tools.yml` and `load_tools()` in main.jl.
+
+    """
+    function fastqc_one(fastq_in_file, fastqc_dir; optional_args = "-t 20 --extract --delete", fastqc_bin = tool_bin("fastqc"))
+        mkpath(fastqc_dir)
+
+        cmd = "$fastqc_bin $fastq_in_file -o $fastqc_dir $optional_args"
+        run(`bash -lc $cmd`)
+
+    end
+
+    ## VSEARCH
+     """
+        vsearch(fasta_in_dir, reference_database; optional_args = "--id 0.75 --query_cov 0.8", vsearch_bin = "vsearch")
+    
+    Requires `vsearch` installed. Runs `vsearch` command with any optional parameters to perform taxonomy assignment by local alignment against specified database.
+
+    ## Arguments
+    - `fasta_in_dir`: Specify path of fasta files output by DADA2 pipeline.
+    - `reference_database` (default: "./databases"): Specify path of reference database.
+
+    ## Keyword Arguments
+    - `optional_args` (optional, default: "--id 0.75 --query_cov 0.8"): Specify additional arguments passed to `vsearch` command.
+    - `vsearch_bin` (optional, default: "vsearch"): Path to the vsearch binary. Defaults to PATH lookup. Set via `config/tools.yml` and `load_tools()` in main.jl.
+
+    """
+    function vsearch(fasta_in_dir, reference_database, vsearch_dir; optional_args = "--id 0.75 --query_cov 0.8", vsearch_bin = tool_bin("vsearch"))
+        mkpath(vsearch_dir)
+        outfile = joinpath(vsearch_dir, "taxonomy.tsv")
+
+        cmd = "$vsearch_bin --usearch_global $fasta_in_dir --db $reference_database --blast6out $outfile $optional_args"
+        run(`bash -lc $cmd`)
+
     end
 end

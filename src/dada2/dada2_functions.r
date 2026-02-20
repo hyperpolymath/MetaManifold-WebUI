@@ -156,7 +156,7 @@ fetch_taxonomy_db <- function(uri, local_dir) {
 }
 
 # Assigns taxonomy to ASVs using a naive Bayesian classifier.
-# outputBootstraps is always TRUE so bootstrap confidence values (0–100 per
+# outputBootstraps is always TRUE so bootstrap confidence values (0-100 per
 # rank) are available for downstream filtering regardless of minBoot.
 # minBoot sets the threshold at which assignments are returned; 0 returns all
 # assignments.
@@ -202,7 +202,7 @@ write_fasta <- function(seq_table, tables_dir, prefix) {
   index
 }
 
-# Writes taxonomy assignments to CSV. Bootstrap confidence values (0–100 per
+# Writes taxonomy assignments to CSV. Bootstrap confidence values (0-100 per
 # taxonomic rank) are handled based on bootstrap_mode:
 #   none     - taxonomy columns only
 #   combined - taxonomy and bootstrap columns in one file (suffix: _boot)
