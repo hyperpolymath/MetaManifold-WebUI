@@ -150,11 +150,20 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      # Explicit strict-typecheck gate (strict foundation; see
+      # docs/types/strict-mode-status.md). Runs before the (heavier) build so
+      # type regressions fail fast instead of surfacing inside vite's bundling.
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: bun run typecheck
+
       - name: Build frontend
         working-directory: frontend
-        run: |
-          bun install --frozen-lockfile
-          bun run build
+        run: bun run build
 
       - name: Download PR2 databases
         run: julia --project=. config/ci/download_databases.jl

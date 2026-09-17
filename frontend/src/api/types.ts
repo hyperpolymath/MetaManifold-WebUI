@@ -116,6 +116,7 @@ export interface TablePage {
   per_page:               number
   columns:                string[]
   sample_count_columns:   string[]
+  // TODO(types/prompt-4): replace with domain type from src/types/
   rows:                   Record<string, unknown>[]
 }
 
@@ -288,6 +289,7 @@ export interface CompositionSummaryRequest {
   subgroup?:    string | null
 }
 
+// TODO(types/prompt-4): replace with domain types from src/types/
 export interface ChartCosmetics {
   layout?: Record<string, unknown> | undefined
   traces?: Record<string, Record<string, unknown>> | undefined
