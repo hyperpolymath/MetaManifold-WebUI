@@ -1,0 +1,27 @@
+# Test battery manifest — frontend/tests/
+# Pattern: corpus-unit manifests in hyperpolymath/proven-tests-and-benches
+# ([identity]/[subject_shape]/[shared_dependencies] sections mirrored;
+# taxonomy/proof fields not applicable to a Bun+TypeScript harness and are
+# deliberately absent rather than fabricated).
+
+[identity]
+battery = "metamanifold-webui-frontend"
+category = "scaffold-smoke"
+purpose = "prove the test infrastructure works: module imports, one function call or export-shape assertion per major area. NOT domain-complete coverage (Prompt 5+)."
+standard = "infra scaffold per docs/testing/infrastructure.md"
+
+[subject_shape]
+input = "bun:test specs under tests/unit and tests/integration; shared hand-authored fixtures under tests/fixtures/ (corpus idiom: fixtures are committed on-disk, never generated at run time)"
+build = "no build step; bun test runs TypeScript directly"
+commands = "bun run test (all) | bun run test:unit | bun run test:integration | bun run test:e2e (opt-in playwright lane, not in check)"
+
+[shared_dependencies]
+# Triangulation ledger: what the batteries share, which bounds claimed independence.
+toolchain = "bun 1.3.10 (pinned via .bun-version at repo root; CI installs from config pins)"
+runtime = "node-less bun runtime; no DOM (component tests are import/export-shape scaffolds by design)"
+fixtures = "fixtures/run-table-payload.json is ALSO consumed by bench/index.ts workload W1 — a deliberate shared input, recorded here"
+
+[scope_limits]
+rendering = "no component rendering without a DOM; DOM harness or playwright-browser CI provisioning is a Prompt 5+ decision"
+coverage_gate = "none — coverage is reported (lcov artifact), never asserted"
+last_fired = "2026-09-17"
