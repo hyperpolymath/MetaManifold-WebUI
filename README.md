@@ -68,7 +68,7 @@ Counts may be normalised before analysis (none, rarefaction to a fixed or auto-r
 - **R** >= 4.0 (required for the DADA2 stage and NMDS/PERMANOVA analysis)
   - Ubuntu/Debian: `sudo apt install r-base`
   - macOS: `brew install r` or [CRAN package](https://cran.r-project.org/bin/macosx/)
-- **bun** or **Node.js** for building the frontend (bun preferred); `bun install` in `frontend/` pulls all JS dependencies, including `react-chart-editor` and `react-plotly.js`. The chart editor is fed `plotly.js-dist-min` rather than full `plotly.js` to keep the bundle size manageable.
+- **Bun** >= 1.3.10 for building the frontend (pinned in `.bun-version`; CI reads the same version from `config/defaults/tool_versions.yml`). `bun install` in `frontend/` pulls all JS dependencies, including `react-chart-editor` and `react-plotly.js`. The chart editor is fed `plotly.js-dist-min` rather than full `plotly.js` to keep the bundle size manageable.
 
 ## Installation
 
