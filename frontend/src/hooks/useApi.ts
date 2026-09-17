@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useEffect, useCallback } from 'react'
 import type { FetchState, FetchResult } from '../types/state'
 

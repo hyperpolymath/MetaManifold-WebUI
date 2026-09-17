@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 module Databases
 
 # Ensures all databases declared in the config are available locally,
@@ -177,4 +178,4 @@ export ensure_databases, resolve_db, make_db_meta
         return cached
     end
 
-end
+end\n\n

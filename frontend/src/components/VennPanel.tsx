@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // frontend/src/components/VennPanel.tsx
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).

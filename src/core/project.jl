@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 module ProjectSetup
 
 # © 2026 Joshua Benjamin Jewell. All rights reserved.

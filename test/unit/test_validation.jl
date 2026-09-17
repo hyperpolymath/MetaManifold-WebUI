@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "Validation" begin
 
     @testset "_validate_primers - valid" begin

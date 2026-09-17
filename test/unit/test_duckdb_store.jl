@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "DuckDBStore" begin
 
     @testset "load_results_db loads CSVs into DuckDB" begin

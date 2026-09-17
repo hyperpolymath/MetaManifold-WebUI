@@ -1,3 +1,6 @@
+<!--
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
 # Types architecture — MetaManifold-WebUI frontend
 
 Status: baseline established (2026-09-17, prompt 4). All dates Europe/London.

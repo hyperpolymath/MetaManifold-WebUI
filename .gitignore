@@ -254,11 +254,13 @@ vignettes/*.pdf
 ## migration/audit records, which are part of the maintained repository state.
 docs/*
 !docs/release-notes/
-!docs/migration/
 !docs/audit/
+!docs/compliance/
+!docs/migration/
+!docs/testing/
 !docs/type-system/
 !docs/types/
-!docs/testing/
+!docs/reproducibility.md
 
 # Test + benchmark run artifacts (not the committed fixtures/baselines)
 frontend/tests/results/
@@ -331,6 +333,11 @@ projects/
 pipelinesteps.txt
 archive/
 .*
+# RSR/estate canon dotfiles (see docs/compliance/rsr-alignment.md)
+!.editorconfig
+!.gitattributes
+!.gitmessage
+!.githooks/
 
 ### Exceptions
 !.github

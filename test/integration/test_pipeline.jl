@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Integration test: full pipeline run on the DADA2 MiSeq SOP dataset.
 #
 # Two runs committed under data/MiSeq_SOP/:

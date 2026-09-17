@@ -1,3 +1,6 @@
+<!--
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
 # Test coverage — MetaManifold-WebUI frontend
 
 Status: Prompt-5 baseline (2026-09-17, Europe/London). Informational metrics

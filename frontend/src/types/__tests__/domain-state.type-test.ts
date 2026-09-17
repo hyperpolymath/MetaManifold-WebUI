@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // src/types/__tests__/domain-state.type-test.ts
 // Type-level tests for the domain and state layers (see api-boundary
 // .type-test.ts for the Equal/Expect harness rationale).

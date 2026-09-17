@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Unit tests for the HTTP server's route helper functions.
 #
 # server.jl includes the route files into `module Server`, defining their

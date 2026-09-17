@@ -1,3 +1,6 @@
+<!--
+SPDX-License-Identifier: AGPL-3.0-only
+-->
 # MetaManifold
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
@@ -509,6 +512,27 @@ bash start.sh
 
 Open `http://localhost:8080`. The backend serves the frontend automatically.
 
+## Engineering gates
+
+The fork maintains an engineering estate around the application. From a
+clean checkout (`frontend/`):
+
+| Gate | Command | Authority |
+|---|---|---|
+| Strict typecheck | `bun run typecheck` | 0 errors, gated |
+| Unit + integration tests | `bun test` | gated (no DOM lane) |
+| Benchmarks | `bun run bench/` | informational, no gate |
+| Everything above | `bun run check` | combined pre-push gate |
+| Licence headers | `scripts/check-spdx.sh` | gated |
+| Formatting | `scripts/check-format.sh` | gated |
+| Lint (tsc semantics + shell) | `scripts/check-lint.sh` | gated |
+
+CI runs the same gates (see `.github/workflows/ci.yml`: repo-hygiene job,
+then the pinned Julia/frontend matrix). Contributor setup, commit and
+branch conventions: `CONTRIBUTING.md`. Frontend reproducibility:
+`docs/reproducibility.md`. Type estate map: `docs/types/architecture.md`.
+Test inventory and metrics: `docs/testing/coverage.md`.
+
 ## Input data
 
 Place paired-end FASTQ files under `data/{project_name}/` following Illumina naming:
@@ -640,3 +664,7 @@ Copyright © 2026 Joshua Benjamin Jewell.
 Source code is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
 This documentation (README.md) is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+File-level identifier annotations and the fork/upstream licence split are
+summarised in [`NOTICE`](NOTICE); canonical texts live in
+[`LICENSES/`](LICENSES/). Security reporting: [`SECURITY.md`](SECURITY.md).

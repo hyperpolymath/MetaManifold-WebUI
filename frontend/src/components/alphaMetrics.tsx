@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 /** Alpha diversity metric filter for Plotly figures.
  *
  * The backend always returns a 3-panel figure (Richness, Shannon, Simpson).

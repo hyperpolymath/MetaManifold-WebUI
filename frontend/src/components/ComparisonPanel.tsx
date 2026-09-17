@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import { ChartCustomiser } from './ChartCustomiser'

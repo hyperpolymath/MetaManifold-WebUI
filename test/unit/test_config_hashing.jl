@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "Config hashing and staleness" begin
 
     @testset "stage_sections" begin

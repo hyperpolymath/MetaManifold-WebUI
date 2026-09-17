@@ -1,3 +1,6 @@
+<!--
+SPDX-License-Identifier: AGPL-3.0-only
+-->
 # Global Configuration
 
 In this directory is the machine-level override. Anything written here

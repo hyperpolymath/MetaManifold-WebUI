@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Scaffold smoke test — component/view/hook module graph (unit battery).
 //
 // Constraint honesty: bun test runs without a DOM, and neither

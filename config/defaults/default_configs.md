@@ -1,3 +1,6 @@
+<!--
+SPDX-License-Identifier: AGPL-3.0-only
+-->
 # Default Configuration
 
 In this directory is the baseline for every pipeline run on every

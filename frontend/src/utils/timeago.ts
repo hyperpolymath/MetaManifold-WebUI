@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 const UNITS: [number, string, string][] = [
   [60,       'second', 'seconds'],
   [60,       'minute', 'minutes'],

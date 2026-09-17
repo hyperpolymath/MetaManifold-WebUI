@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 ## MetaManifold factory defaults
 ## Every pipeline option carries a default here; a study, group, or run
 ## pipeline.yml overrides only the keys it names, cascading over these.

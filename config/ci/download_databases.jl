@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 root = joinpath(@__DIR__, "..", "..")
 include(joinpath(root, "src/core/types.jl"))
 include(joinpath(root, "src/core/log.jl"))
