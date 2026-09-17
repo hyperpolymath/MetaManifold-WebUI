@@ -257,6 +257,7 @@ docs/*
 !docs/migration/
 !docs/audit/
 !docs/type-system/
+!docs/types/
 
 # translation temp files
 

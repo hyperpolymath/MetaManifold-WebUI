@@ -183,15 +183,18 @@ context.d.ts(46,151)  — all TS2344: type does not satisfy constraint
 'AgnosticRouteObject'
 ```
 
-react-router 6.30.3's own declaration files are internally inconsistent under
+react-router 6.30.x's own declaration files are internally inconsistent under
 `exactOptionalPropertyTypes`. Per the principles, `@ts-expect-error` cannot be
-used (the errors are outside the repo), dependencies must not be upgraded
-here, and patching node_modules is not acceptable. Therefore
-`"skipLibCheck": true` is retained as a **documented exception** (comment in
-`tsconfig.json` points here) with a standing follow-up: re-attempt
-`skipLibCheck: false` when react-router is upgraded in the planned dependency
-task. Everything else (all own `.d.ts` files, all other packages) passes
-lib-checking — the only losses are these seven upstream diagnostics.
+used (the errors are outside the repo) and patching node_modules is not
+acceptable. Therefore `"skipLibCheck": true` is retained as a **documented
+exception** (comment in `tsconfig.json` points here). **Re-tried 2026-09-17
+at `react-router-dom` 6.30.6** (in-range lockfile refresh; see
+`category-d-e-closure.md`): identical 7 errors at the same seven locations —
+the defect lives in `@remix-run/router`'s `AgnosticRouteObject` declarations
+and ships unchanged in every 6.30 patch. Retry condition: `react-router@7`
+or a fixed router-types release. Everything else (all own `.d.ts` files, all
+other packages) passes lib-checking — the only losses are these seven
+upstream diagnostics.
 
 ## 5. Verification
 
@@ -207,10 +210,15 @@ lib-checking — the only losses are these seven upstream diagnostics.
 
 ## 6. Follow-ups handed to later prompts
 
-- **Prompt 4 (domain types):** replace the `Record<string, unknown>` Plotly
-  facade and table-row `unknown` casts with real domain types; type the
-  `react-chart-editor` surface instead of the bare `declare module`.
-- **Dependencies task:** upgrade react-router → re-try `skipLibCheck: false`;
-  remove dead `react-plotly.js`/`@types/*` trio (Prompt 0 finding).
+- **Prompt 4 (domain types):** replace the `Record<string, unknown>` facades
+  at the five `TODO(types/prompt-4)` markers (inventory:
+  `docs/types/strict-mode-status.md`) with real domain types.
+  ~~type the `react-chart-editor` surface instead of the bare
+  `declare module`~~ **DONE** — typed `FIXME(types)` stub in
+  `src/types/declarations.d.ts`.
+- **Dependencies task:** ~~remove dead `@types/*` pair (Prompt 0 finding)~~
+  **DONE** 2026-09-17. Still open: `react-plotly.js` (statically unused,
+  retained per the deferral prompt's dependency constraint) and
+  `react-router@7` (or fixed router types) → re-try `skipLibCheck: false`.
 - **Prompt 3 (tests):** none exist frontend-side; `bun test` finds none (as
   recorded in the migration log).
