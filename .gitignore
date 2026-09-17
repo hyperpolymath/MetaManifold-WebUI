@@ -250,9 +250,12 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-## Documentation kept local except published release notes
+## Documentation kept local except published release notes and toolchain
+## migration/audit records, which are part of the maintained repository state.
 docs/*
 !docs/release-notes/
+!docs/migration/
+!docs/audit/
 
 # translation temp files
 
@@ -323,6 +326,7 @@ archive/
 !.github
 !.github/**
 !.Rprofile
+!.bun-version
 
 # Brainstorming visual-companion scratch (mock-ups, server state)
 .superpowers/
