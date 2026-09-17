@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // src/types/api/tables.ts — boundary types for run results tables.
 //
 // SOURCE: src/server/routes/results.jl

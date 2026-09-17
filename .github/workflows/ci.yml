@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 name: CI
 
 on:
@@ -11,6 +12,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Estate hygiene gates (standards/RSR alignment): cheap, fail-fast, run
+  # before the heavyweight Julia/frontend matrix. Each gate has a documented
+  # local equivalent — scripts/check-*.sh (see CONTRIBUTING.md).
+  repo-hygiene:
+    name: Repo hygiene (licence · format · lint · commit)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      - name: Licence header check
+        run: scripts/check-spdx.sh
+
+      - name: Formatting check
+        run: scripts/check-format.sh
+
+      - name: Lint check
+        run: scripts/check-lint.sh
+
+      # Commit convention mirror of .githooks/commit-msg (enforced locally by
+      # the hooksPath setting documented in CONTRIBUTING.md).
+      - name: Commit convention check
+        run: |
+          subject="$(git log -1 --pretty=%s)"
+          if ! printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_/-]+\))?!?: .{1,72}$'; then
+            echo "::error::commit subject fails the conventional pattern: $subject"
+            exit 1
+          fi
+          echo "commit subject ok: $subject"
+
   test:
     name: Julia ${{ matrix.julia-version }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

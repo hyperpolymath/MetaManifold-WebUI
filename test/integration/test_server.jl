@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Integration smoke tests for the Oxygen.jl HTTP server.
 #
 # These tests start the server as a subprocess to avoid module-redefinition

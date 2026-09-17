@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 /** A simple skeleton loading placeholder. */
 export function Skeleton({ lines = 3 }: { lines?: number }) {
   const widths = ['60%', '80%', '45%', '70%', '55%']

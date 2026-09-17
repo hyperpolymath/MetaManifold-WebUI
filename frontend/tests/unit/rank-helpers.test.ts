@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Type-boundary tests — components/annotationShared.ts taxonomy rank helpers.
 //
 // Boundary under test: TaxonomyRank (src/types/domain/index.ts) derives from

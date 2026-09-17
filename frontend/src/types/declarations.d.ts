@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Ambient declarations for dependencies that publish no types.
 // Pattern per estate type policy: a FIXME(types) header + tracking pointer +
 // unknown-safe declarations (never `any`).

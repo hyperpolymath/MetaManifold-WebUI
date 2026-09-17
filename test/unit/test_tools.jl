@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "Tools - _parse_cdhit_clstr" begin
     clstr_path = joinpath(tempdir(), "test_cdhit_$(getpid()).clstr")
     write(clstr_path, """

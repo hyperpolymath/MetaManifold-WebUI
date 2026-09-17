@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Scaffold smoke test — components/annotationShared.ts rank helpers
 // (unit battery). Pure module: no DOM required.
 import { test, expect } from 'bun:test'

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useParams } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'

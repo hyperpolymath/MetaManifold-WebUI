@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 #!/usr/bin/env julia
 # Drive MetaManifold's DADA2 pipeline against every dataset in datasets.yml
 # whose FASTQ inputs have been fetched. Writes per-dataset pipeline configs

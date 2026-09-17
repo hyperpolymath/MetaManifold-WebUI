@@ -1,3 +1,6 @@
+<!--
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
 # Category D & E closure — third-party and framework type infrastructure
 
 Date: 2026-09-17 · Scope: follow-up to `strict-mode-foundation.md` (the

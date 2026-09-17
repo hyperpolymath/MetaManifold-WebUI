@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Opt-in e2e lane (NOT part of `bun run check` yet — browser binaries are a
 // CI provisioning decision for a later prompt; see
 // docs/testing/infrastructure.md). Standard Playwright configuration shape;

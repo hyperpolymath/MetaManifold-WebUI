@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Scaffold smoke test — api client wiring against a stubbed fetch
 // (integration battery). Verifies the request path end-to-end in-process:
 // URL shape, HTTP method, response parsing. The backend is NOT contacted —

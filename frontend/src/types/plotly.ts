@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // src/types/plotly.ts — manual vocabulary for the plotly.js subset the WebUI uses.
 //
 // SOURCE: https://plotly.com/javascript/reference/ (trace + layout attributes)

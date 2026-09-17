@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Filed TODO scaffolds (machine-enumerated, per the constraint: "if
 // something is untestable, document why and file a TODO").
 //

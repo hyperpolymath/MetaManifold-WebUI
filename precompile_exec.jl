@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Precompile execution script for PackageCompiler sysimage build.
 #
 # Exercises MetaManifold code paths so all method specializations are

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // src/types/components/index.ts — cross-component contracts only.
 //
 // Framework convention is React-style co-located props (component files own

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Shared database configuration for all projects.
 # Copy to config/databases.yml and set local: paths for pre-downloaded files.
 

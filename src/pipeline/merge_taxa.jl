@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 module TaxonomyTableTools
 
 # © 2026 Joshua Benjamin Jewell. All rights reserved.
@@ -125,7 +126,7 @@ export merge_taxonomy_counts, filter_table, filter_table_dada2, merge_taxa, merg
         counts_csv_path,
         db_meta::DatabaseMeta;
         bootstraps_path=nothing)
-        
+
         @info("Merge taxa: Merging taxonomy counts.")
 
         # Build taxonomy dataframe
@@ -133,7 +134,7 @@ export merge_taxonomy_counts, filter_table, filter_table_dada2, merge_taxa, merg
         df_tax_raw = vsearch_to_df(imported)
         header, rows = build_taxonomy_table_rows(df_tax_raw, db_meta)
         df_taxonomy = DataFrame([Symbol(h) => String[] for h in header])
-        
+
         for r in rows
             push!(df_taxonomy, r)
         end

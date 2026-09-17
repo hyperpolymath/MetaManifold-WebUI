@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Unit tests for the composition routes.
 #
 # The sub-group scoping and double-counting cases from the old build path are

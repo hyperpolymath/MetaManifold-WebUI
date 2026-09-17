@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 #!/usr/bin/env julia
 # MetabarcodingPipeline test suite
 #

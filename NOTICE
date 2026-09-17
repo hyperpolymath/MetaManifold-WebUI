@@ -1,0 +1,43 @@
+<!--
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+# NOTICE — MetaManifold-WebUI
+
+## Provenance and licensing summary
+
+MetaManifold-WebUI as a work is **AGPL-3.0-only** (see `LICENSE`). It was
+created by **Joshua Benjamin Jewell** (upstream:
+`github.com/JoshuaJewell/MetaManifold-WebUI`), and this repository is the
+**hyperpolymath fork** (`github.com/hyperpolymath/MetaManifold-WebUI`)
+tracking that upstream.
+
+File-level licensing follows the estate Licence Policy
+(`hyperpolymath/standards`, `LICENCE-POLICY.adoc`):
+
+| Authorship | Code / config / scripts | Prose documentation |
+|---|---|---|
+| Upstream files (first-committed by JoshuaJewell) | `AGPL-3.0-only` (inherited from `LICENSE`; upstream headers preserved verbatim) | `AGPL-3.0-only` |
+| Fork-series files (first-committed by the hyperpolymath engineering series) | `MPL-2.0` (Rule 3a: owner-only components inside an AGPL work stay MPL-2.0) | `CC-BY-SA-4.0` |
+
+Each source file carries an `SPDX-License-Identifier` comment stating which
+row applies. Canonical licence texts: `LICENSE` (AGPL-3.0), and
+`LICENSES/MPL-2.0.txt`, `LICENSES/CC-BY-SA-4.0.txt`. The authorship
+classification is mechanical (first-commit author in this repository's
+history) and exists to keep headers — and the CI licence check —
+unambiguous; it is not a claim of copyright ownership either way.
+
+## Third-party components
+
+MetaManifold orchestrates, but does not vendor, third-party command-line
+tools (cutadapt, DADA2, SWARM, vsearch, cd-hit-est, R/vegan). Each tool
+retains its own licence; see `README.md § Third-party tools` for the
+runtime dependency list and upstream references. Frontend npm dependencies
+are declared in `frontend/package.json` / `frontend/bun.lock` under their
+own licences.
+
+## Notices required by AGPL-3.0
+
+This work is licensed under the GNU Affero General Public License, version
+3 only (AGPL-3.0-only). As a network service, offering modified versions
+requires offering the corresponding source, per AGPL §13. The canonical
+source location is the repository above.

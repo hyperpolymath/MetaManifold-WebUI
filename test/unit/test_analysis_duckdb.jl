@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "Analysis DuckDB helpers" begin
 
     # Set up an in-memory DuckDB with test data

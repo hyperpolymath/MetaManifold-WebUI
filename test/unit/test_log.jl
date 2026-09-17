@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "PipelineLog" begin
 
     @testset "reset_log creates log file" begin

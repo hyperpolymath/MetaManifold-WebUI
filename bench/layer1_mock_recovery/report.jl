@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 #!/usr/bin/env julia
 # Render results/metrics.yml as a compact markdown report at results/report.md.
 # The summary table is one row per dataset; a per-sample appendix follows for

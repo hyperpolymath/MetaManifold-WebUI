@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { Component, type ReactNode } from 'react'
 
 interface State { error: Error | null }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // src/types/api/cosmetics.ts — boundary types for chart cosmetics.
 //
 // SOURCE: src/server/routes/analysis.jl

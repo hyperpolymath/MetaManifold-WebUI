@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Boundary interfaces for the Julia REST API (see src/types/api/index.ts
 // for the endpoint → source map). Low-level wire shapes live under
 // src/types/api/ and are imported here.

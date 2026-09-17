@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import Plotly, { type Data, type Layout } from 'plotly.js-dist-min'
 

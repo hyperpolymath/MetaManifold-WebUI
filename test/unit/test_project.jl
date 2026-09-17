@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "ProjectSetup" begin
 
     @testset "new_project discovers leaf runs" begin

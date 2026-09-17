@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 #!/usr/bin/env julia
 # Compare predicted L6 (genus-level) taxa tables produced by the runner to
 # the expected ground truth recorded in expected/. For each dataset the

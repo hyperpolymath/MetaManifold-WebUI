@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # CI-only databases config. Uses URI downloads (no local: paths).
 # Committed to the repo; the real config/databases.yml is gitignored.
 

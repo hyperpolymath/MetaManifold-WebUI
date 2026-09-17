@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "Databases" begin
 
     @testset "make_db_meta parses database config" begin

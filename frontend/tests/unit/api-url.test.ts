@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Scaffold smoke test — api/client.ts URL building (unit battery).
 // One known property per the infrastructure prompt: proves the module loads
 // and its pure helper behaves. NOT domain coverage (Prompt 5+).

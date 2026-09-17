@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 module DuckDBStore
 
 # © 2026 Joshua Benjamin Jewell. All rights reserved.

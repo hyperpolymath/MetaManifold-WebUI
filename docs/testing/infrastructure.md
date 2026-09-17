@@ -1,3 +1,6 @@
+<!--
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
 # Test & benchmark infrastructure
 
 Established 2026-09-17 from the patterns in **hyperpolymath/proven-tests-and-benches**

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "merge_taxa mappings and corrections" begin
 
     @testset "_apply_single_mapping! remaps values" begin
