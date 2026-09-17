@@ -122,7 +122,7 @@ export function ComparisonPanel({ study, runs }: {
             {options.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
           </select>
         ) : options.length === 1 ? (
-          <code>{options[0].label}</code>
+          <code>{options[0]?.label ?? ''}</code>
         ) : (
           <span>no shared results table</span>
         )}

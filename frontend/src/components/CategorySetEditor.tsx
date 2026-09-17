@@ -46,7 +46,9 @@ export function CategorySetEditor({ name, set, filterNames, onSave, onDelete }: 
       if (target < 0 || target >= prev.length) return prev
       const next = [...prev]
       const tmp = next[index]
-      next[index] = next[target]
+      const tgt = next[target]
+      if (tmp === undefined || tgt === undefined) return next
+      next[index] = tgt
       next[target] = tmp
       return next
     })

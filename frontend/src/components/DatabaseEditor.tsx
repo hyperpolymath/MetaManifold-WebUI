@@ -111,6 +111,7 @@ function moveAt<T>(items: T[], from: number, to: number): T[] {
   if (to < 0 || to >= items.length) return items
   const next = items.slice()
   const [row] = next.splice(from, 1)
+  if (row === undefined) return items
   next.splice(to, 0, row)
   return next
 }
@@ -128,7 +129,7 @@ export function renameInCorrections(
   before: LevelRow[], after: LevelRow[], corrections: CorrectionRow[],
 ): CorrectionRow[] {
   if (before.length === after.length &&
-      before.every((b, i) => b.id === after[i].id && b.name === after[i].name)) return corrections
+      before.every((b, i) => { const a = after[i]; return a !== undefined && b.id === a.id && b.name === a.name })) return corrections
   const moved = new Map<string, string>()
   const byId = new Map(after.map(r => [r.id, r]))
   for (const b of before) {

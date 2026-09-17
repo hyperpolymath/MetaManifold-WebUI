@@ -20,11 +20,11 @@ export function CompositionPanel({
 }: {
   study: string
   run: string
-  group?: string
-  subgroups?: string[]
+  group?: string | undefined
+  subgroups?: string[] | undefined
   // Pipeline-configured annotation source, resolved from tagging.source in the
   // run config cascade. Passed by RunView; defaults to VSEARCH when absent.
-  source?: AnnotationSource
+  source?: AnnotationSource | undefined
 }) {
   const toast = useToast()
   // Resolve the effective source: prefer the caller-supplied pipeline value, then VSEARCH.

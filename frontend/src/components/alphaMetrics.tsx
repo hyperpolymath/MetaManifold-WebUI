@@ -60,13 +60,13 @@ function remapLayoutRefs(
   for (const raw of items) {
     if (!raw || typeof raw !== 'object') { out.push(raw); continue }
     const item = raw as Record<string, unknown>
-    const panel = panelYOfRef(item.yref) ?? panelYOfRef(item.xref)
+    const panel = panelYOfRef(item['yref']) ?? panelYOfRef(item['xref'])
     if (panel === null) { out.push(item); continue }
     const mapped = axisMap.get(panel)
     if (!mapped) continue // this panel is not in the kept selection
     const next: Record<string, unknown> = { ...item }
-    if (typeof item.xref === 'string') next.xref = remapRef(item.xref, mapped.x)
-    if (typeof item.yref === 'string') next.yref = remapRef(item.yref, mapped.y)
+    if (typeof item['xref'] === 'string') next['xref'] = remapRef(item['xref'], mapped.x)
+    if (typeof item['yref'] === 'string') next['yref'] = remapRef(item['yref'], mapped.y)
     out.push(next)
   }
   return out

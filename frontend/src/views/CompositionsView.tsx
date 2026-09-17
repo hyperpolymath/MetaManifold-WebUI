@@ -122,7 +122,7 @@ export function CompositionsView() {
                 <FilterEditor
                   key={fname}
                   name={fname}
-                  filter={library.filters[fname]}
+                  filter={library.filters[fname] ?? {}}
                   usedBy={usedByMap[fname] ?? []}
                   onSave={body => handleSaveFilter(fname, body)}
                   onDelete={() => handleDeleteFilter(fname)}
@@ -144,7 +144,7 @@ export function CompositionsView() {
                 <CategorySetEditor
                   key={sname}
                   name={sname}
-                  set={library.sets[sname]}
+                  set={library.sets[sname] ?? { categories: [] }}
                   filterNames={filterNames}
                   onSave={body => handleSaveSet(sname, body)}
                   onDelete={() => handleDeleteSet(sname)}

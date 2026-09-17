@@ -1,9 +1,8 @@
 /// <reference types="vite/client" />
 
-declare module '*.module.css' {
-  const classes: Record<string, string>
-  export default classes
-}
+// vite/client already declares '*.module.css' (const classes); a local
+// re-declaration here collided with it (TS2300 duplicate identifier) once
+// lib checking was examined under the strict foundation and has been removed.
 
 declare module 'plotly.js-dist-min' {
   const Plotly: {

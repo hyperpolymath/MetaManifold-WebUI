@@ -69,7 +69,7 @@ export function AddFuncdbModal({
       toast.error('At least one taxonomy field is required')
       return
     }
-    if (!fields.Function?.trim()) {
+    if (!fields['Function']?.trim()) {
       toast.error('Function is required')
       return
     }

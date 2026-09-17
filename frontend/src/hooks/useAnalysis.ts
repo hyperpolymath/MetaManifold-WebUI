@@ -9,18 +9,18 @@ import type { AnalysisRequest, AnnotationSource } from '../api/types'
 export interface UseAnalysisOpts {
   study: string
   run: string
-  group?: string | null
+  group?: string | null | undefined
   table: string | null
-  source?: AnnotationSource
-  colFilters?: Record<string, ColFilter>
-  prefix?: string | null
+  source?: AnnotationSource | undefined
+  colFilters?: Record<string, ColFilter> | undefined
+  prefix?: string | null | undefined
   /** Subgroup names for pool-by-group support. */
-  subgroups?: string[]
+  subgroups?: string[] | undefined
   /** When false, rank fetching is suppressed (e.g. table not yet ready). Default true. */
-  enabled?: boolean
+  enabled?: boolean | undefined
 }
 
-type ColFilter = { include?: string[]; min?: number; max?: number }
+type ColFilter = { include?: string[] | undefined; min?: number | undefined; max?: number | undefined }
 
 export interface UseAnalysisResult {
   ranks: string[]

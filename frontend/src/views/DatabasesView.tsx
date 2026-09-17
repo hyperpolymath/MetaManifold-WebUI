@@ -182,7 +182,7 @@ export function DatabasesView() {
             <DatabaseEditor
               key={row.id}
               row={row}
-              keyProblem={keyProblems[i]}
+              keyProblem={keyProblems[i] ?? null}
               onChange={next => changeRow(i, next)}
               onRemove={() => removeRow(i)}
               disabled={busy}

@@ -1,0 +1,23 @@
+{
+  // Sidecar declaration emit (opt-in). The app config (tsconfig.json) is a
+  // pure noEmit type gate; this config emits .d.ts + .d.ts.map files for src/
+  // into dist-types/ when run explicitly (`bun run dts`). No part of the
+  // normal build (tsc gate + vite bundling into web/dist) consumes this
+  // output; it exists so the emit trio (declaration / declarationMap /
+  // sourceMap) is exercised and available if typed artefacts are ever needed
+  // by a consumer. sourceMap is inert under emitDeclarationOnly (there is no
+  // JS emit for it to map) but is kept for verbatim parity with the mandated
+  // option set. allowImportingTsExtensions remains valid here because
+  // emitDeclarationOnly satisfies its noEmit-or-declaration-only requirement.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit":                false,
+    "emitDeclarationOnly":   true,
+    "declaration":           true,
+    "declarationMap":        true,
+    "sourceMap":             true,
+    "rootDir":               "src",
+    "outDir":                "dist-types"
+  },
+  "include": ["src"]
+}

@@ -35,6 +35,7 @@ export function findFinestRank(
   const from = startIdx >= 0 ? startIdx : 0
   for (let i = from; i < RANK_ORDER.length; i++) {
     const rank = RANK_ORDER[i]
+    if (rank === undefined) continue
     const col = RANK_COL[rank]?.[source]
     if (col && row[col] != null && String(row[col]).trim() !== '') return rank
   }
@@ -108,8 +109,8 @@ export function prefillFromRow(row: Record<string, unknown>, source: AnnotationS
     if (v) result[dest] = v
   }
 
-  const rank = str(row.match_rank)
-  if (rank && rank !== 'unmatched') result.Assignment_level = rank
+  const rank = str(row['match_rank'])
+  if (rank && rank !== 'unmatched') result['Assignment_level'] = rank
 
   return result
 }
