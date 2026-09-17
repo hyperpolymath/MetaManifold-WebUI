@@ -22,6 +22,8 @@ frontend/
 │   ├── fixtures/              # hand-authored, committed on-disk fixtures
 │   │   └── run-table-payload.json   # shared with bench (recorded in both manifests)
 │   ├── unit/                  # *.test.ts — pure-module + import-graph smokes
+│   │                          #   and Prompt-5 type-boundary behaviour suites
+│   │                          #   (inventory: docs/testing/coverage.md)
 │   ├── integration/           # *.test.ts — fetch-stubbed api-client wiring
 │   ├── e2e/                   # *.e2e.ts — playwright lane (opt-in, see below)
 │   ├── results/               # junit.xml  (gitignored; CI artifact)
