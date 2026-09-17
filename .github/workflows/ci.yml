@@ -161,6 +161,30 @@ jobs:
         working-directory: frontend
         run: bun run typecheck
 
+      # Scaffold smoke battery (bun:test) — machine-readable results + coverage
+      # profile, both shipped as artifacts. No coverage gate yet by design
+      # (docs/testing/infrastructure.md).
+      - name: Test frontend
+        working-directory: frontend
+        run: bun test --coverage --coverage-reporter=lcov --coverage-dir tests/coverage --reporter=junit --reporter-outfile tests/results/junit.xml
+
+      # Benchmark harness (proven-tests-and-benches discipline): informational
+      # medians vs committed baseline; JSON result ships as an artifact.
+      - name: Benchmark frontend
+        working-directory: frontend
+        run: bun run bench -- --json bench/results/results.json
+
+      - name: Upload frontend test & benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-tests-benchmarks
+          path: |
+            frontend/tests/results/junit.xml
+            frontend/tests/coverage/lcov.info
+            frontend/bench/results/results.json
+          if-no-files-found: warn
+
       - name: Build frontend
         working-directory: frontend
         run: bun run build

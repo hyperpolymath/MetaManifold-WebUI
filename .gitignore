@@ -258,6 +258,12 @@ docs/*
 !docs/audit/
 !docs/type-system/
 !docs/types/
+!docs/testing/
+
+# Test + benchmark run artifacts (not the committed fixtures/baselines)
+frontend/tests/results/
+frontend/tests/coverage/
+frontend/bench/results/
 
 # translation temp files
 

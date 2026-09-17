@@ -1,0 +1,28 @@
+# Benchmark harness manifest — frontend/bench/
+# Pattern: measurement discipline of benchmarks/Benchmark.idr in
+# hyperpolymath/proven-tests-and-benches (monotonic clock, median-of-samples
+# headline, checksum verification, --json machine-readable emission).
+# Baselines: per-workload, versioned, committed at bench/baseline.json.
+
+[identity]
+battery = "metamanifold-webui-frontend"
+category = "latency"
+purpose = "track the frontend's representative operations: API payload parsing and the figure colour-override hot path."
+standard = "infra scaffold per docs/testing/infrastructure.md"
+
+[workloads]
+frozen_since = "2026-09-17"
+# Per standard: editing a workload definition invalidates its history and
+# requires re-cutting bench/baseline.json in the same change.
+names = ["run-table-json-parse", "figure-colour-overrides"]
+
+[shared_dependencies]
+toolchain = "bun 1.3.10 (pinned via .bun-version; the runner reports environment.commit/bun/platform/arch into every JSON artifact)"
+fixtures = "tests/fixtures/run-table-payload.json (shared with the test battery — see tests/manifest.a2ml [shared_dependencies].fixtures)"
+environment_caveat = "medians are host-relative: sandbox/CI/local numbers differ; baseline comparison is informational only, never a gate"
+
+[subject_shape]
+input = "workloads iterate REPS=5 samples with per-iteration inner loops calibrated to tens of ms"
+build = "no build step; bun run bench/ executes bench/index.ts directly"
+commands = "bun run bench (human) | bun run bench -- --json bench/results/results.json (machine-readable, as in CI)"
+last_fired = "2026-09-17"
