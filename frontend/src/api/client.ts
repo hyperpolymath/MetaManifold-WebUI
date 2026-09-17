@@ -71,9 +71,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const get  = <T>(path: string)                       => request<T>(path)
-const post = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'POST',  body: body !== undefined ? JSON.stringify(body) : undefined })
-const patch = <T>(path: string, body?: unknown)      => request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined })
-const put  = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'PUT',  body: body !== undefined ? JSON.stringify(body) : undefined })
+// exactOptionalPropertyTypes: RequestInit.body must be *absent*, not explicitly
+// undefined, when no body is sent.
+const post = <T>(path: string, body?: unknown)       => request<T>(path, body !== undefined ? { method: 'POST',  body: JSON.stringify(body) } : { method: 'POST' })
+const patch = <T>(path: string, body?: unknown)      => request<T>(path, body !== undefined ? { method: 'PATCH', body: JSON.stringify(body) } : { method: 'PATCH' })
+const put  = <T>(path: string, body?: unknown)       => request<T>(path, body !== undefined ? { method: 'PUT',  body: JSON.stringify(body) } : { method: 'PUT' })
 const del  = <T>(path: string)                       => request<T>(path, { method: 'DELETE' })
 
 /** Append ?group=X query parameter when group is provided. */
@@ -213,7 +215,7 @@ export const api = {
                      post<unknown>(`/api/v1/studies/${study}/runs/${run}/analysis/chart${gq(group)}`, body),
     pipelineStats: (study: string, run: string, group?: string | null) =>
                      get<unknown>(`/api/v1/studies/${study}/runs/${run}/analysis/pipeline-stats${gq(group)}`),
-    ranks:         (study: string, run: string, opts?: { table?: string; group?: string | null; source?: AnnotationSource }) => {
+    ranks:         (study: string, run: string, opts?: { table?: string | undefined; group?: string | null | undefined; source?: AnnotationSource | undefined }) => {
                      const query = new URLSearchParams()
                      if (opts?.group) query.set('group', opts.group)
                      if (opts?.table) query.set('table', opts.table)

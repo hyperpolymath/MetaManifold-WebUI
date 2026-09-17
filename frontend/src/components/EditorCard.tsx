@@ -170,7 +170,7 @@ export function nameIssues(names: string[]): NameIssue[] {
     acc[n] = (acc[n] ?? 0) + 1
     return acc
   }, {})
-  return trimmed.map(n => (n === '' ? 'blank' : counts[n] > 1 ? 'duplicate' : null))
+  return trimmed.map(n => (n === '' ? 'blank' : (counts[n] ?? 0) > 1 ? 'duplicate' : null))
 }
 
 // The chrome for one editable row in a list of them.

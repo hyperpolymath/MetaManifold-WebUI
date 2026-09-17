@@ -16,7 +16,7 @@ function extractCosmetics(data: unknown[], layout: Record<string, unknown>): Cha
   for (const trace of data) {
     if (!trace || typeof trace !== 'object') continue
     const t = trace as Record<string, unknown>
-    const name = t.name as string | undefined
+    const name = t['name'] as string | undefined
     if (!name) continue
     const picked: Record<string, unknown> = {}
     for (const k of TRACE_COSMETIC_KEYS) if (k in t) picked[k] = t[k]

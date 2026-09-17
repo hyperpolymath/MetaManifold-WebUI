@@ -191,17 +191,17 @@ export const CONFIG_TYPES: Record<string, ConfigType> = {
 
 interface Props {
   stages:   RunStages
-  onRun?:   (stage: string) => void
-  disabled?: boolean
-  configMap?: ConfigMap | null
-  study?:    string
-  run?:      string
-  group?:    string
-  onConfigChanged?: () => void
+  onRun?:   ((stage: string) => void) | undefined
+  disabled?: boolean | undefined
+  configMap?: ConfigMap | null | undefined
+  study?:    string | undefined
+  run?:      string | undefined
+  group?:    string | undefined
+  onConfigChanged?: (() => void) | undefined
 }
 
 function StatusDot({ status }: { status: StageStatus }) {
-  return <span className={`${styles.dot} ${styles[status]}`} title={status} />
+  return <span className={`${styles['dot']} ${styles[status]}`} title={status} />
 }
 
 export function PipelineStages({ stages, onRun, disabled, configMap, study, run, group, onConfigChanged }: Props) {
@@ -222,7 +222,7 @@ export function PipelineStages({ stages, onRun, disabled, configMap, study, run,
   }, [stages])
 
   return (
-    <div className={styles.grid}>
+    <div className={styles['grid']}>
       {STAGE_ORDER.map(key => {
         const info = stages?.[key]
         const status   = info?.status ?? 'not_started'
@@ -236,10 +236,10 @@ export function PipelineStages({ stages, onRun, disabled, configMap, study, run,
           n + Object.entries(configMap).filter(([k, { source }]) => k.startsWith(prefix) && source === 'run').length, 0) : 0
         return (
           <div key={key}>
-            <div className={`${styles.row} ${styles[status]}`}>
+            <div className={`${styles['row']} ${styles[status]}`}>
               <StatusDot status={status} />
               <span
-                className={styles.label}
+                className={styles['label']}
                 style={{ cursor: hasConfig ? 'pointer' : 'default' }}
                 onClick={() => hasConfig && setExpanded(isExpanded ? null : key)}
               >
@@ -252,10 +252,10 @@ export function PipelineStages({ stages, onRun, disabled, configMap, study, run,
                   </span>
                 )}
               </span>
-              <span className={styles.ts} title={last_run ? new Date(last_run).toLocaleString() : ''}>{last_run ? timeAgo(last_run) : '-'}</span>
+              <span className={styles['ts']} title={last_run ? new Date(last_run).toLocaleString() : ''}>{last_run ? timeAgo(last_run) : '-'}</span>
               {onRun && status !== 'disabled' && (
                 <button
-                  className={styles.run}
+                  className={styles['run']}
                   disabled={disabled || status === 'running' || pending.has(key)}
                   onClick={() => { setPending(prev => new Set(prev).add(key)); onRun(key) }}
                 >
@@ -285,12 +285,12 @@ export function StageConfig({ configMap, prefixes, study, run, group, onConfigCh
   prefixes: string[]
   study: string
   run: string
-  group?: string
+  group?: string | undefined
   onConfigChanged: () => void
-  patchFn?: (study: string, run: string, body: Record<string, unknown>, group?: string) => Promise<ConfigMap>
-  deleteFn?: (study: string, run: string, key: string, group?: string) => Promise<ConfigMap>
-  sourceLevel?: ConfigSource
-  overrides?: Record<string, string[]> | null
+  patchFn?: ((study: string, run: string, body: Record<string, unknown>, group?: string) => Promise<ConfigMap>) | undefined
+  deleteFn?: ((study: string, run: string, key: string, group?: string) => Promise<ConfigMap>) | undefined
+  sourceLevel?: ConfigSource | undefined
+  overrides?: Record<string, string[]> | null | undefined
 }) {
   // Group entries by section prefix for nice headers
   const sections: { label: string | null; entries: { dottedKey: string; leafKey: string; value: unknown; source: ConfigSource }[] }[] = []
@@ -319,7 +319,7 @@ export function StageConfig({ configMap, prefixes, study, run, group, onConfigCh
   if (sections.length === 0) return null
 
   return (
-    <div className={styles.configPanel}>
+    <div className={styles['configPanel']}>
       {sections.map(section => (
         <div key={section.label ?? section.entries.map(e => e.dottedKey).join('|')}>
           {section.label && (
@@ -355,12 +355,12 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
   source: ConfigSource
   study: string
   run: string
-  group?: string
+  group?: string | undefined
   onChanged: () => void
-  patchFn?: (study: string, run: string, body: Record<string, unknown>, group?: string) => Promise<ConfigMap>
-  deleteFn?: (study: string, run: string, key: string, group?: string) => Promise<ConfigMap>
-  sourceLevel?: ConfigSource
-  overrides?: string[]
+  patchFn?: ((study: string, run: string, body: Record<string, unknown>, group?: string) => Promise<ConfigMap>) | undefined
+  deleteFn?: ((study: string, run: string, key: string, group?: string) => Promise<ConfigMap>) | undefined
+  sourceLevel?: ConfigSource | undefined
+  overrides?: string[] | undefined
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -578,7 +578,7 @@ function MultiSelectField({ value, tooltip, optionsFrom, saving, saveValue,
   labelEl, sourceEl, removeBtn,
 }: {
   value: unknown
-  tooltip?: string; optionsFrom: string; saving: boolean
+  tooltip?: string | undefined; optionsFrom: string; saving: boolean
   saveValue: (v: unknown) => Promise<void>
   labelEl: React.ReactNode; sourceEl: React.ReactNode; removeBtn: React.ReactNode
 }) {

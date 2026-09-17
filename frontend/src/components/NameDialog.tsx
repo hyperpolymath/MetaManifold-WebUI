@@ -3,8 +3,8 @@ import { errorMessage } from '../api/errorMessage'
 
 interface Props {
   title: string
-  initialValue?: string
-  placeholder?: string
+  initialValue?: string | undefined
+  placeholder?: string | undefined
   onConfirm: (name: string) => Promise<void>
   onClose: () => void
 }

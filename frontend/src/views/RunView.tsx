@@ -221,7 +221,7 @@ export function RunView({ runName }: { runName?: string } = {}) {
 
 interface QCOutput { has_report: boolean; report_url: string | null }
 
-function QCPanel({ qcData, stages, onRunStage, configMap, cacheKey }: { study: string; run: string; group?: string; qcData: QCOutput | null; stages: RunStages | null; onRunStage: (stage: string) => void; configMap?: ConfigMap | null; cacheKey?: string | null }) {
+function QCPanel({ qcData, stages, onRunStage, configMap, cacheKey }: { study: string; run: string; group?: string | undefined; qcData: QCOutput | null; stages: RunStages | null; onRunStage: (stage: string) => void; configMap?: ConfigMap | null | undefined; cacheKey?: string | null | undefined }) {
   const fastqcStatus = stages?.fastqc?.status
   const isStale = fastqcStatus === 'stale'
   const isRunning = fastqcStatus === 'running'
@@ -319,7 +319,7 @@ function isSubTabStale(tab: DADA2SubTab, staleKeys: string[]): boolean {
   return sections.some(sec => staleKeys.some(k => k.startsWith(sec)))
 }
 
-function StaleKeysBadge({ staleKeys, configMap }: { staleKeys: string[]; configMap?: ConfigMap | null }) {
+function StaleKeysBadge({ staleKeys, configMap }: { staleKeys: string[]; configMap?: ConfigMap | null | undefined }) {
   if (!Array.isArray(staleKeys) || staleKeys.length === 0) return null
 
   const lines = staleKeys.map(k => {
@@ -353,10 +353,10 @@ function StaleKeysBadge({ staleKeys, configMap }: { staleKeys: string[]; configM
 
 
 function DADA2Panel({ study, run, group, dada2Data, configMap, onConfigChanged, stages, onRunStage, cacheKey }: {
-  study: string; run: string; group?: string; dada2Data: DADA2Output | null
+  study: string; run: string; group?: string | undefined; dada2Data: DADA2Output | null
   configMap: ConfigMap | null; onConfigChanged: () => void
   stages: RunStages | null; onRunStage: (stage: string) => void
-  cacheKey?: string | null
+  cacheKey?: string | null | undefined
 }) {
   const [showStats, setShowStats] = useState(false)
   const [statsData, setStatsData] = useState<{ columns: string[]; rows: Record<string, unknown>[] } | null>(null)
@@ -435,10 +435,12 @@ function DADA2Panel({ study, run, group, dada2Data, configMap, onConfigChanged, 
         {/* Figures: side-by-side for pairs, single for solo */}
         {figNames.length > 0 && (
           <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-            {figures.map((fig, i) => (
-              <div key={figNames[i]} style={{ flex: 1 }}>
+            {figures.map((fig, i) => {
+              const figName = figNames[i] ?? ''
+              return (
+              <div key={figName || i} style={{ flex: 1 }}>
                 <div style={{ fontSize: '.78rem', fontWeight: 600, color: 'var(--color-muted-fg)', marginBottom: 4 }}>
-                  {figNames[i].replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                  {figName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                 </div>
                 {fig ? (
                   <iframe
@@ -452,7 +454,8 @@ function DADA2Panel({ study, run, group, dada2Data, configMap, onConfigChanged, 
                   </div>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -496,7 +499,9 @@ function DADA2Panel({ study, run, group, dada2Data, configMap, onConfigChanged, 
                             if (vals.length === 0) return <td key={c} style={{ padding: '4px 10px' }}>{ci === 0 ? 'Median' : ''}</td>
                             const sorted = [...vals].sort((a, b) => a - b)
                             const mid = Math.floor(sorted.length / 2)
-                            const med = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+                            const lo = sorted[mid - 1], hi = sorted[mid]
+                            if (lo === undefined || hi === undefined) return <td key={c} style={{ padding: '4px 10px' }} />
+                            const med = sorted.length % 2 !== 0 ? hi : (lo + hi) / 2
                             return <td key={c} style={{ padding: '4px 10px', whiteSpace: 'nowrap' }}>{Number.isInteger(med) ? med.toLocaleString() : med.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
                           })}
                         </tr>
@@ -568,12 +573,13 @@ function DADA2Panel({ study, run, group, dada2Data, configMap, onConfigChanged, 
   )
 }
 
-function TablesPanel({ study, run, group, subgroups, tables, onTablesChanged, cacheKey }: { study: string; run: string; group?: string; subgroups?: string[]; tables: TableMeta[]; onTablesChanged: () => void; cacheKey?: string | null }) {
+function TablesPanel({ study, run, group, subgroups, tables, onTablesChanged, cacheKey }: { study: string; run: string; group?: string | undefined; subgroups?: string[] | undefined; tables: TableMeta[]; onTablesChanged: () => void; cacheKey?: string | null | undefined }) {
   const [selected, setSelected] = useState<string | null>(tables[0]?.id ?? null)
 
   useEffect(() => {
-    if (tables.length > 0 && !tables.some(t => t.id === selected)) {
-      setSelected(tables[0].id)
+    const first = tables[0]
+    if (first !== undefined && !tables.some(t => t.id === selected)) {
+      setSelected(first.id)
     }
   }, [tables])
   const [filters, setFilters]   = useState<Record<string, ColFilter>>({})
@@ -871,9 +877,9 @@ function TablesPanel({ study, run, group, subgroups, tables, onTablesChanged, ca
 }
 
 function AnalysisPanel({ study, run, group, table, filters, subgroups }: {
-  study: string; run: string; group?: string; table: string
+  study: string; run: string; group?: string | undefined; table: string
   filters: Record<string, ColFilter>
-  subgroups?: string[]
+  subgroups?: string[] | undefined
 }) {
   // Analysis runs directly on the selected results table; the merged results DB
   // carries taxonomy ranks and Category__ columns, so there is no separate
@@ -900,7 +906,7 @@ function AnalysisPanel({ study, run, group, table, filters, subgroups }: {
   )
 }
 
-function PipelineStatsChart({ study, run, group }: { study: string; run: string; group?: string }) {
+function PipelineStatsChart({ study, run, group }: { study: string; run: string; group?: string | undefined }) {
   const fetcher = useCallback(
     () => api.analysis.pipelineStats(study, run, group),
     [study, run, group]
@@ -927,8 +933,10 @@ function parseFilterYaml(text: string): Record<string, ColFilter> {
 
     const colMatch = line.match(/^  (\S+):$/)
     if (colMatch) {
-      currentCol = colMatch[1]
-      result[currentCol] = {}
+      const colName = colMatch[1]
+      if (colName === undefined) continue
+      currentCol = colName
+      result[colName] = {}
       inInclude = false
       continue
     }
@@ -937,24 +945,29 @@ function parseFilterYaml(text: string): Record<string, ColFilter> {
 
     if (trimmed === 'include:') {
       inInclude = true
-      result[currentCol].include = []
+      const f = result[currentCol]
+      if (f) f.include = []
       continue
     }
 
     if (inInclude && trimmed.startsWith('- ')) {
       const val = trimmed.slice(2).replace(/^["']|["']$/g, '')
-      result[currentCol].include = result[currentCol].include ?? []
-      result[currentCol].include!.push(val)
+      const f = result[currentCol]
+      if (f) f.include = [...(f.include ?? []), val]
       continue
     }
 
     const numMatch = trimmed.match(/^(min|max):\s*(.+)$/)
     if (numMatch) {
       inInclude = false
-      const num = parseFloat(numMatch[2])
-      if (!isNaN(num)) {
-        if (numMatch[1] === 'min') result[currentCol].min = num
-        else result[currentCol].max = num
+      const rawNum = numMatch[2]
+      const f = result[currentCol]
+      if (rawNum !== undefined) {
+        const num = parseFloat(rawNum)
+        if (!isNaN(num) && f) {
+          if (numMatch[1] === 'min') f.min = num
+          else f.max = num
+        }
       }
       continue
     }

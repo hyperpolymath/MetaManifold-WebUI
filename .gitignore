@@ -256,6 +256,7 @@ docs/*
 !docs/release-notes/
 !docs/migration/
 !docs/audit/
+!docs/type-system/
 
 # translation temp files
 
@@ -290,6 +291,8 @@ data/MiSeq_SOP/run_B/*
 
 ### Frontend
 node_modules/
+# Optional declaration-emit output (tsc -p tsconfig.build.json)
+frontend/dist-types/
 
 ### Lock files
 .~lock.*
