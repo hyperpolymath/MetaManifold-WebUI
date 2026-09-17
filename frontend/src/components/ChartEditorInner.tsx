@@ -6,13 +6,12 @@ import PlotlyEditor, {
 } from 'react-chart-editor'
 import 'react-chart-editor/lib/react-chart-editor.css'
 import './chartEditor.css'
+import type { ChartEditorState, ChartEditorUpdateHandler } from '../types/components'
 
 //## Curated chart editor (Style panels only)
-// TODO(types/prompt-4): the state/onUpdate shapes below are placeholder
-// structural types — replace with domain types from src/types/
 export default function ChartEditorInner({ state, onUpdate }: {
-  state: { data: unknown[]; layout: Record<string, unknown>; frames: unknown[] }
-  onUpdate: (data: unknown[], layout: Record<string, unknown>, frames: unknown[]) => void
+  state: ChartEditorState
+  onUpdate: ChartEditorUpdateHandler
 }) {
   return (
     <PlotlyEditor

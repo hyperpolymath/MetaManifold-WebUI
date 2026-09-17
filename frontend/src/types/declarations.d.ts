@@ -25,10 +25,10 @@ declare module 'plotly.js-dist-min' {
     ): Promise<void>
   }
   export default Plotly
-  // TODO(types/prompt-4): replace with domain type from src/types/
-  export type Data = Record<string, unknown>
-  // TODO(types/prompt-4): replace with domain type from src/types/
-  export type Layout = Record<string, unknown>
+  // Data/Layout are aliases of the manual plotly vocabulary; the bundle
+  // itself remains untyped (see src/types/plotly.ts).
+  export type Data = import('./plotly').PlotTrace
+  export type Layout = import('./plotly').PlotLayout
 }
 
 // FIXME(types): react-chart-editor has no published types.
@@ -38,15 +38,16 @@ declare module 'plotly.js-dist-min' {
 // boundary until the component is replaced or vendored.)
 declare module 'react-chart-editor' {
   import type { ComponentType, ReactNode } from 'react'
+  import type { PlotTrace, PlotLayout } from './plotly'
 
   interface PlotlyEditorProps {
-    data?: unknown[] | undefined
-    layout?: Record<string, unknown> | undefined
+    data?: PlotTrace[] | undefined
+    layout?: Partial<PlotLayout> | undefined
     frames?: unknown[] | undefined
     config?: Record<string, unknown> | undefined
     plotly?: unknown
     onUpdate?:
-      | ((data: unknown[], layout: Record<string, unknown>, frames: unknown[]) => void)
+      | ((data: PlotTrace[], layout: Partial<PlotLayout>, frames: unknown[]) => void)
       | undefined
     useResizeHandler?: boolean | undefined
     children?: ReactNode
