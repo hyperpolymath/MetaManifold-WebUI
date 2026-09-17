@@ -1,3 +1,9 @@
+// Boundary interfaces for the Julia REST API (see src/types/api/index.ts
+// for the endpoint → source map). Low-level wire shapes live under
+// src/types/api/ and are imported here.
+import type { TableRow } from '../types/api/tables'
+import type { LayoutOverrides, TraceOverrides } from '../types/api/cosmetics'
+
 export interface StudySummary {
   name:             string
   run_count:        number
@@ -116,8 +122,9 @@ export interface TablePage {
   per_page:               number
   columns:                string[]
   sample_count_columns:   string[]
-  // TODO(types/prompt-4): replace with domain type from src/types/
-  rows:                   Record<string, unknown>[]
+  /** One row per table page item; cells are DuckDB scalars.
+   *  (src/types/api/tables.ts; SOURCE src/server/routes/results.jl) */
+  rows:                   TableRow[]
 }
 
 export type ConfigSource = 'default' | 'study' | 'group' | 'run'
@@ -289,10 +296,10 @@ export interface CompositionSummaryRequest {
   subgroup?:    string | null
 }
 
-// TODO(types/prompt-4): replace with domain types from src/types/
+// Cosmetic overrides are narrows of the manual plotly vocabulary.
 export interface ChartCosmetics {
-  layout?: Record<string, unknown> | undefined
-  traces?: Record<string, Record<string, unknown>> | undefined
+  layout?: LayoutOverrides | undefined
+  traces?: Record<string, TraceOverrides> | undefined
 }
 export type ChartCosmeticsMap = Record<string, ChartCosmetics>
 export interface ChartCosmeticsPatch extends ChartCosmetics {

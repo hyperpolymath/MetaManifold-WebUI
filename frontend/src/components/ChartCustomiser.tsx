@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import { applyChartCosmetics } from '../api/figureColours'
 import { PlotlyChart } from './PlotlyChart'
 import type { ChartCosmetics } from '../api/types'
+import type { ChartEditorState } from '../types/components'
 
 const ChartEditorInner = lazy(() => import('./ChartEditorInner'))
 
@@ -47,9 +48,13 @@ export function ChartCustomiser({ study, chartType, figure, heightRatio }: {
   const styled = useMemo(() => applyChartCosmetics(figure, cosmetics), [figure, cosmetics])
 
   // Editor seed: the styled figure split into data/layout/frames.
-  const seed = useMemo(() => {
+  const seed = useMemo<ChartEditorState>(() => {
     const s = styled as { data?: unknown[]; layout?: Record<string, unknown> }
-    return { data: (s?.data ?? []) as unknown[], layout: (s?.layout ?? {}) as Record<string, unknown>, frames: [] as unknown[] }
+    return {
+      data: (s?.data ?? []) as ChartEditorState['data'],
+      layout: (s?.layout ?? {}) as ChartEditorState['layout'],
+      frames: [] as unknown[],
+    }
   }, [styled])
 
   if (editing) {

@@ -7,7 +7,7 @@
 | **Error count after** | **0** `tsc` errors (`./node_modules/.bin/tsc`, the strict app config) |
 | **Lib-check probe** | `tsc --skipLibCheck false`: 0 in-repo errors; 7 errors confined to `node_modules/react-router/dist/**/*.d.ts` (see Known issues) |
 | **Deferred `FIXME(types)` annotations** | **2** |
-| **`TODO(types/prompt-4)` placeholders** | **5** |
+| **Domain-type placeholders** | **0** (all five replaced in prompt 4) |
 | **Suppression annotations** | 0 (`@ts-ignore`, `@ts-expect-error`) · new `any` introduced: 0 |
 
 Gate statement per the prompt's acceptance bar: **`bun run typecheck`
@@ -25,22 +25,19 @@ declared `unknown`-safely (never `any`):
 
 Tracking detail: `docs/type-system/category-d-e-closure.md`.
 
-## `TODO(types/prompt-4)` placeholders (5)
+## Domain-type placeholders — REPLACED (prompt 4)
 
-Domain types deliberately **not invented** in this prompt:
+All five tracked placeholders are now grounded domain/boundary types:
 
-| # | Location | Placeholder |
+| # | Was (`src/…`) | Now |
 |---|---|---|
-| 1 | `frontend/src/types/declarations.d.ts` — `plotly.js-dist-min` module | `export type Data = Record<string, unknown>` |
-| 2 | `frontend/src/types/declarations.d.ts` — `plotly.js-dist-min` module | `export type Layout = Record<string, unknown>` |
-| 3 | `frontend/src/api/types.ts` (`RunTable`) | `rows: Record<string, unknown>[]` |
-| 4 | `frontend/src/api/types.ts` (`ChartCosmetics`) | `layout` / `traces` `Record<…>` DTOs |
-| 5 | `frontend/src/components/ChartEditorInner.tsx` | inline `state` / `onUpdate` structural shapes |
+| 1+2 | `types/declarations.d.ts` facade `Data`/`Layout` as `Record<string, unknown>` | aliases of the manual `PlotTrace`/`PlotLayout` vocabulary (`types/plotly.ts`) |
+| 3 | `api/types.ts` `TablePage.rows: Record<string, unknown>[]` | `TableRow[]` (`types/api/tables.ts`; cells = `string\|number\|boolean\|null`, anchored to `results.jl`) |
+| 4 | `api/types.ts` `ChartCosmetics.layout/traces` free Records | `LayoutOverrides` / `Record<string, TraceOverrides>` (`types/api/cosmetics.ts`) |
+| 5 | `ChartEditorInner` inline `state`/`onUpdate` shapes | `ChartEditorState` / `ChartEditorUpdateHandler` (`types/components/`) |
 
-Related un-marked duplicates (`src/api/client.ts` inline response literals,
-`src/api/figureColours.ts` merge helpers) derive from the same shapes and
-follow whatever domain types Prompt 4 lands in `src/types/` — the five
-markers above are the canonical replacement points.
+Layer map, boundary rules, add-a-type procedure, and the remaining known
+narrows: `docs/types/architecture.md`.
 
 ## CI integration
 
@@ -96,5 +93,5 @@ markers above are the canonical replacement points.
    OOMs on the Plotly bundle. The merged CI run is the authoritative
    end-to-end confirmation (`typecheck` gate passes ahead of it, and the
    change profile is type-level).
-4. **Domain types are placeholders by design** — see the five
-   `TODO(types/prompt-4)` markers; replacing them is Prompt 4.
+4. **Domain types are placeholders by design** — REPLACED in prompt 4;
+   see `docs/types/architecture.md`.
