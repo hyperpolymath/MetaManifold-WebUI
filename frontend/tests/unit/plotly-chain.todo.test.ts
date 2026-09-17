@@ -6,9 +6,11 @@
 // bundle touches `document` at module-initialisation time
 // (node_modules/plotly.js-dist-min/plotly.min.js). Establishing a DOM
 // harness (happy-dom/jsdom) or driving these through the playwright e2e
-// lane is a later-prompt decision — tracking:
-//   TODO(tests/prompt-5): plotly-chain modules need a DOM-capable lane
-//   (see docs/testing/infrastructure.md §"What the scaffolds deliberately
+// lane is a later decision — tracking:
+//   TODO(tests/e2e-lane): plotly-chain modules need a DOM-capable lane
+//   (decision at Prompt 5: remain queued for the e2e lane; see
+//   docs/testing/coverage.md §"Not tested" and
+//   docs/testing/infrastructure.md §"What the scaffolds deliberately
 //   do not test")
 import { test } from 'bun:test'
 
