@@ -326,3 +326,7 @@ archive/
 
 # Brainstorming visual-companion scratch (mock-ups, server state)
 .superpowers/
+
+# Track the Stipple/Vue migration recon and implementation plan.
+!docs/migration/
+!docs/migration/**

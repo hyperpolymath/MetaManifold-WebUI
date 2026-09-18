@@ -1,0 +1,56 @@
+file,lines,imports (heuristic),api calls (heuristic)
+frontend/src/App.tsx,37,react-router-dom; ./components/Toast; ./layout/Layout; ./views/StudiesView; ./views/StudyView; ./views/RunView; ./views/SlugResolver; ./views/JobsView; ./views/DatabasesView; ./views/NotFoundView; ./views/DefaultConfigView; ./views/CompositionsView; ./views/PrimersView,
+frontend/src/api/client.ts,322,./types,
+frontend/src/api/errorMessage.ts,6,,
+frontend/src/api/events.ts,32,./types; ./client,
+frontend/src/api/figureColours.ts,61,,
+frontend/src/api/types.ts,403,,
+frontend/src/components/AnalysisControls.tsx,37,./PlotlyChart; ./alphaMetrics; ../hooks/useAnalysis,
+frontend/src/components/AnnotationPanel.tsx,497,react; react; ../api/client; ../api/errorMessage; ../hooks/useAnalysis; ./DataTable; ./AnalysisControls; ./Toast; ./AnnotationPanelControls; ./annotationShared; ../api/types,annotations.contaminationStats; annotations.distinct; annotations.exportCsv; annotations.generate; annotations.list; annotations.query; annotations.updateBlastAssignment; annotations.updateContamination; config.getDefault; config.getRun
+frontend/src/components/AnnotationPanelControls.tsx,152,react; ../api/client; ../api/errorMessage; ./Toast; ../api/types; ./annotationShared,annotations.addFuncdbEntry
+frontend/src/components/Breadcrumb.tsx,51,react-router-dom,
+frontend/src/components/CardActions.tsx,65,react-router-dom; ../api/types,
+frontend/src/components/CategorySetEditor.tsx,217,react; react; ./EditorCard; ../api/types,
+frontend/src/components/ChartCustomiser.tsx,92,react; ../api/client; ../api/figureColours; ./PlotlyChart; ../api/types,chartCosmetics.get; chartCosmetics.patch
+frontend/src/components/ChartEditorInner.tsx,29,plotly.js-dist-min; react-chart-editor,
+frontend/src/components/ComparisonPanel.tsx,186,react; ../api/client; ./ChartCustomiser; ./alphaMetrics; ./Toast; ./VennPanel; ./TaxaCompositionChart; ./annotationShared; ../api/errorMessage; ../api/types,analysis.capabilities; analysis.compareAlpha; analysis.nmds; analysis.permanova
+frontend/src/components/CompositionPanel.tsx,339,react; ../api/client; ../api/errorMessage; ./DataTable; ./NameDialog; ./TaxaCompositionChart; ./Toast; ../api/types,composition.categorySets; composition.deleteCategorySet; composition.distinct; composition.query; composition.saveCategorySet; composition.summary
+frontend/src/components/ConfigAccordion.tsx,62,react; ./PipelineStages; ../api/types,
+frontend/src/components/DataTable.tsx,825,react; ../hooks/useApi; ../api/types; ./DataTable.module.css,
+frontend/src/components/DatabaseEditor.tsx,617,react; react; ./EditorCard; ../api/types,
+frontend/src/components/EditorCard.tsx,190,react; react,
+frontend/src/components/ErrorBoundary.tsx,26,react,
+frontend/src/components/FilterEditor.tsx,182,react; react; ./EditorCard; ../utils/text; ../api/types,
+frontend/src/components/JobBadge.tsx,16,../api/types; ./JobBadge.module.css,
+frontend/src/components/NameDialog.tsx,89,react; ../api/errorMessage,
+frontend/src/components/PairEditor.tsx,56,./EditorCard; ../api/types,
+frontend/src/components/PipelineStages.tsx,634,react; ../api/types; ../api/client; ../api/errorMessage; ./Toast; ../utils/timeago; ../utils/text; ./annotationShared; ./PipelineStages.module.css,config.deleteRun; config.patchRun; primers.list
+frontend/src/components/PlotlyChart.tsx,123,react; plotly.js-dist-min,
+frontend/src/components/PrimerListEditor.tsx,78,./EditorCard; ./EditorCard; ./EditorCard,
+frontend/src/components/Skeleton.tsx,11,,
+frontend/src/components/TaxaCompositionChart.tsx,269,react; ../api/client; ../api/errorMessage; ./ChartCustomiser; ./Toast; ../api/types,analysis.chart; analysis.chartCompare; composition.categorySets
+frontend/src/components/Toast.tsx,79,react,current.error; current.info; current.success
+frontend/src/components/VennPanel.tsx,144,react; @upsetjs/react; ../api/client; ../api/errorMessage; ./Toast; ../api/types; ./annotationShared,analysis.ranks; analysis.venn
+frontend/src/components/alphaMetrics.tsx,230,react,
+frontend/src/components/annotationShared.ts,138,react; ../api/types; ../api/client,results.runTables
+frontend/src/hooks/useAnalysis.ts,71,react; ../api/client; ../api/errorMessage; ../components/Toast; ../api/types,analysis.alpha; analysis.ranks
+frontend/src/hooks/useApi.ts,30,react,
+frontend/src/hooks/useJobEvents.ts,56,react; ../api/types,
+frontend/src/hooks/useSSE.ts,23,react; ../api/events,
+frontend/src/layout/Layout.tsx,135,react; react-router-dom; ../hooks/useApi; ../hooks/useSSE; ../api/client; ../hooks/useJobEvents; ../components/Breadcrumb; ../components/ErrorBoundary; ../api/types,jobs.list; runs.listGroup; studies.get; studies.list
+frontend/src/main.tsx,13,react; react-dom/client; ./api/client; ./App,
+frontend/src/types/react-chart-editor.d.ts,3,,
+frontend/src/utils/text.ts,11,,
+frontend/src/utils/timeago.ts,28,,
+frontend/src/views/CompositionsView.tsx,177,react; ../hooks/useApi; ../api/client; ../api/errorMessage; ../components/Toast; ../components/Skeleton; ../components/NameDialog; ../components/FilterEditor; ../components/CategorySetEditor; ../api/types,composition.deleteFilter; composition.deleteSet; composition.library; composition.saveFilter; composition.saveSet
+frontend/src/views/DatabasesView.tsx,251,react; ../hooks/useApi; ../api/client; ../api/errorMessage; ../components/Toast; ../components/Skeleton; ../components/EditorCard; ../components/DatabaseEditor; ../components/DatabaseEditor; ../api/types,databases.document; databases.download; databases.list; databases.save
+frontend/src/views/DefaultConfigView.tsx,40,react; ../hooks/useApi; ../api/client; ../components/ConfigAccordion,config.deleteDefault; config.getDefault; config.patchDefault
+frontend/src/views/GroupView.tsx,177,react-router-dom; react; ../hooks/useApi; ../api/client; ../components/Skeleton; ../components/NameDialog; ../components/CardActions; ../components/Toast; ../components/ComparisonPanel; ../api/types; ../components/ConfigAccordion,config.deleteGroup; config.getGroup; config.groupOverrides; config.patchGroup; groups.delete; groups.rename; runs.create; runs.delete; runs.listGroup; runs.rename
+frontend/src/views/JobsView.tsx,79,react; ../hooks/useApi; ../hooks/useJobEvents; ../api/client; ../components/JobBadge; ../components/Skeleton; ../utils/timeago; ../api/types,jobs.cancel; jobs.list
+frontend/src/views/NotFoundView.tsx,15,react-router-dom,
+frontend/src/views/PrimersView.tsx,170,react; ../hooks/useApi; ../api/client; ../api/errorMessage; ../components/Toast; ../components/Skeleton; ../components/PrimerListEditor; ../components/PrimerListEditor; ../components/PairEditor; ../api/types,primers.document; primers.save
+frontend/src/views/RunView.tsx,966,react; react-router-dom; ../hooks/useApi; ../hooks/useAnalysis; ../hooks/useJobEvents; ../api/client; ../api/errorMessage; ../components/PipelineStages; ../components/AnalysisControls; ../components/PlotlyChart; ../components/DataTable; ../components/Skeleton; ../components/Toast; ../components/NameDialog; ../components/ComparisonPanel; ../components/AnnotationPanel; ../components/CompositionPanel; ../components/TaxaCompositionChart; ../api/types; ../components/DataTable,analysis.pipelineStats; config.getRun; pipeline.runRun; pipeline.runStage; presets.apply; presets.delete; presets.list; presets.save; results.dada; results.deleteTable; results.distinctValues; results.exportTable; results.otuCounts; results.otuMembers; results.qcOutputs; results.runTable; results.runTables; results.saveTable; runs.delete; runs.get; runs.rename
+frontend/src/views/SlugResolver.tsx,26,react-router-dom; react; ../hooks/useApi; ../api/client; ../components/Skeleton; ./GroupView; ./RunView; ./NotFoundView,studies.get
+frontend/src/views/StudiesView.tsx,103,react-router-dom; react; ../hooks/useApi; ../api/client; ../components/Skeleton; ../components/NameDialog; ../components/CardActions; ../components/Toast,studies.create; studies.delete; studies.list; studies.rename
+frontend/src/views/StudyView.tsx,280,react-router-dom; react; ../hooks/useApi; ../hooks/useJobEvents; ../api/client; ../components/Skeleton; ../components/NameDialog; ../components/CardActions; ../components/Toast; ../components/ComparisonPanel; ../api/types; ../api/types; ../components/ConfigAccordion,config.deleteStudy; config.getStudy; config.patchStudy; config.studyOverrides; groups.create; groups.delete; groups.rename; pipeline.runStudy; runs.create; runs.delete; runs.list; runs.listGroup; runs.rename; studies.delete; studies.get; studies.rename
+frontend/src/vite-env.d.ts,28,,
