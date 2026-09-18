@@ -1,0 +1,29 @@
+name: Stipple UI contracts
+
+on:
+  pull_request:
+    paths: ['ui/**', '.github/workflows/ui.yml']
+  push:
+    branches: [main]
+    paths: ['ui/**', '.github/workflows/ui.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.5'
+      - uses: julia-actions/cache@v2
+      - name: Instantiate isolated UI environment
+        run: julia --project=ui -e 'using Pkg; Pkg.instantiate()'
+      - name: Test contracts and backend URL validation
+        run: julia --compiled-modules=no --compile=min -O0 --project=ui ui/test/runtests.jl
