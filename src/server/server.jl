@@ -22,6 +22,7 @@ module Server
     using MetaManifold.Tools, MetaManifold.TaxonomyTableTools, MetaManifold.ProjectSetup
     using MetaManifold.DADA2, MetaManifold.OTUPipeline
     using MetaManifold.DiversityMetrics, MetaManifold.Analysis
+    using MetaManifold.Epistemic, MetaManifold.AnalysisConfig, MetaManifold.CladeCumulus
 
     ## EPIPE log filter
     # HTTP.jl logs every broken-pipe error from SSE streams as @error
@@ -86,6 +87,7 @@ module Server
     include(joinpath(@__DIR__, "routes", "events.jl"))
     include(joinpath(@__DIR__, "routes", "analysis.jl"))
     include(joinpath(@__DIR__, "routes", "composition.jl"))
+    include(joinpath(@__DIR__, "routes", "analysis_config.jl"))
 
     ## R-runtime busy middleware
     # The embedded R interpreter is shared between the pipeline and the analysis

@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hyperpolymath.github.io/MetaManifold-WebUI/schemas/analysis_config.schema.json",
+  "title": "AnalysisConfig — versioned, explicit, provenance-rich analysis configuration",
+  "description": "Safe, explicit, versioned AnalysisConfig layer for parametric and nonparametric analyses (NB GLM, CLR/ILR+Gaussian LM, logistic in v1; BH mandatory; DANGER banner on overrides; DOI-ready bundles). From hyperpolymath/standards JSON + Nickel + DEED schemes.",
+  "type": "object",
+  "required": ["schema_version", "id", "method", "formula", "metadata_columns", "normalization", "correction"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "enum": ["1.0.0"],
+      "description": "Semver schema version. Currently only 1.0.0 is supported."
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique immutable identifier for this config (UUIDv4). Part of provenance chain."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO8601 UTC timestamp of creation"
+    },
+    "created_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "User or system that created this config (for provenance)"
+    },
+    "method": {
+      "type": "string",
+      "enum": ["nb_glm", "clr_lm", "ilr_lm", "logistic"],
+      "description": "Analysis method — explicit, no silent switching. NB_GLM for counts, CLR/ILR+LM for compositional, logistic for presence/absence."
+    },
+    "formula": {
+      "type": "string",
+      "minLength": 2,
+      "pattern": "^[^;`$]+$",
+      "description": "R-style formula containing '~', e.g. '~ group' or 'disease ~ group + batch'. Must reference only metadata_columns. Refuses empty or meaningless formulas."
+    },
+    "outcome_column": {
+      "type": ["string", "null"],
+      "description": "Binary outcome column for logistic regression. Required for logistic, ignored for others unless formula uses it."
+    },
+    "metadata_columns": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-zA-Z0-9_\\.\\-]+$"
+      },
+      "description": "Explicit list of metadata columns used. Must exist in study metadata. No auto-selection."
+    },
+    "normalization": {
+      "type": "object",
+      "required": ["method"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["none", "rarefy", "relative", "size_factors", "clr", "ilr", "presence_absence"],
+          "description": "Normalization / transform. Must be compatible with method: nb_glm allows none/rarefy/size_factors/relative, clr_lm requires clr, ilr_lm requires ilr, logistic allows none/relative/rarefy/presence_absence."
+        },
+        "pseudocount": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Pseudocount for zero replacement in CLR/ILR. Must be >0. Typical 0.5. Refuses 0 because log(0) undefined."
+        },
+        "ilr_basis": {
+          "type": ["string", "null"],
+          "enum": ["default", "phylogenetic", "sequential_binary_partition", "balance_dendrogram", null],
+          "description": "ILR basis. Only meaningful for ilr method. Refuses meaningless use for other methods."
+        },
+        "multiplicative_replacement_delta": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Delta for multiplicative replacement, in (0,1)"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "method": { "const": "clr" } } },
+          "then": { "required": ["pseudocount"] }
+        },
+        {
+          "if": { "properties": { "method": { "const": "ilr" } } },
+          "then": { "required": ["pseudocount"] }
+        }
+      ]
+    },
+    "correction": {
+      "type": "object",
+      "required": ["method", "alpha"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "description": "BH mandatory in v1. Any override triggers DANGER banner and requires acknowledgment token."
+        },
+        "alpha": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "FDR threshold, typically 0.05"
+        },
+        "allow_no_correction": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, allows non-BH methods, but triggers DANGER banner and requires acknowledgment_token"
+        },
+        "acknowledgment_token": {
+          "type": ["string", "null"],
+          "description": "Must be 'I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH' if allow_no_correction=true"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "allow_no_correction": { "const": true } }
+          },
+          "then": {
+            "properties": {
+              "acknowledgment_token": { "const": "I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH" }
+            },
+            "required": ["acknowledgment_token"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "allow_no_correction": { "const": false } }
+          },
+          "then": {
+            "properties": {
+              "method": { "enum": ["BH", "FDR", "Benjamini-Hochberg", "benjamini-hochberg"] }
+            }
+          }
+        }
+      ]
+    },
+    "advanced": {
+      "type": "object",
+      "description": "All advanced options behind 'Advanced Analysis' expander, hidden unless Evidence Mode enabled. Heavy validation.",
+      "properties": {
+        "dispersion_method": {
+          "type": "string",
+          "enum": ["parametric", "local", "mean", "pooled", "glmGamPoi"],
+          "description": "Dispersion estimation for NB_GLM"
+        },
+        "zero_handling": {
+          "type": "string",
+          "enum": ["pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse"],
+          "description": "Zero handling. 'refuse' is DANGEROUS and requires acknowledgment token."
+        },
+        "min_prevalence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum prevalence filter in [0,1]. 0.1 = present in >=10% samples."
+        },
+        "min_abundance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum abundance threshold >=0"
+        },
+        "max_features": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Max features to test. >100k refused as meaningless."
+        },
+        "min_samples_per_group": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Minimum samples per group for variance estimation. <2 refused, <3 triggers DANGER."
+        },
+        "robust": {
+          "type": "boolean",
+          "description": "Robust estimation flag"
+        },
+        "acknowledgment_token": {
+          "type": ["string", "null"],
+          "description": "Required for dangerous zero_handling='refuse'"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Provenance chain: metamanifold version, host, tools, etc. Enriched automatically."
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA256 of canonical JSON representation (immutable, content-addressed)"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "method": { "const": "logistic" } }
+      },
+      "then": {
+        "required": ["outcome_column"],
+        "properties": {
+          "outcome_column": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "method": { "const": "clr_lm" } }
+      },
+      "then": {
+        "properties": {
+          "normalization": {
+            "properties": { "method": { "const": "clr" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "method": { "const": "ilr_lm" } }
+      },
+      "then": {
+        "properties": {
+          "normalization": {
+            "properties": { "method": { "const": "ilr" } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "epistemic": {
+      "description": "Epistemic layer integration: avec_fibre column and present_in_every_admissible_world",
+      "type": "object",
+      "properties": {
+        "avec_fibre": {
+          "type": "boolean",
+          "description": "True if artefact carries enough semantic fibre to support inferences (Echo Types)"
+        },
+        "epistemic_status": {
+          "type": "string",
+          "enum": ["present_in_every_admissible_world", "present_in_some_admissible_world", "absent_in_every_admissible_world", "unknown"],
+          "description": "Residual evidence status: Holds Present across all admissible worlds?"
+        }
+      }
+    }
+  }
+}
