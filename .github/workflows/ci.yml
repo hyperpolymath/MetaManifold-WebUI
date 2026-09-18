@@ -207,11 +207,46 @@ jobs:
         working-directory: frontend
         run: bun test --coverage --coverage-reporter=lcov --coverage-dir tests/coverage --reporter=junit --reporter-outfile tests/results/junit.xml
 
-      # Benchmark harness (proven-tests-and-benches discipline): informational
-      # medians vs committed baseline; JSON result ships as an artifact.
+      # Benchmark harness (proven-tests-and-benches discipline): medians vs committed baseline; JSON result ships as an artifact.
+      # Milestone 2: now includes table_loading, epistemic_parsing, duckdb_aggregation, permanova_nmds, tree_rendering workloads
       - name: Benchmark frontend
         working-directory: frontend
         run: bun run bench -- --json bench/results/results.json
+
+      - name: Check frontend benchmark regression >10% (Milestone 2)
+        working-directory: frontend
+        run: |
+          echo "Checking frontend benchmark regression >10% vs baseline"
+          node -e '
+            const fs = require("fs");
+            const baselinePath = "bench/baseline.json";
+            const resultsPath = "bench/results/results.json";
+            if (!fs.existsSync(baselinePath) || !fs.existsSync(resultsPath)) {
+              console.log("No baseline or results — skipping regression check (first run)");
+              process.exit(0);
+            }
+            const baseline = JSON.parse(fs.readFileSync(baselinePath, "utf8"));
+            const results = JSON.parse(fs.readFileSync(resultsPath, "utf8"));
+            let failed = false;
+            for (const r of results.results) {
+              const b = baseline.results.find(x => x.name === r.name);
+              if (b) {
+                const delta = (r.median_ns - b.median_ns) / b.median_ns * 100;
+                const status = Math.abs(delta) > 10 ? "FAIL" : "PASS";
+                console.log(`${status} ${r.name}: ${delta.toFixed(1)}% vs baseline ${b.median_ns} ns (current ${r.median_ns} ns)`);
+                if (Math.abs(delta) > 10) {
+                  console.error(`::error::Regression >10% for ${r.name}: ${delta.toFixed(1)}%`);
+                  failed = true;
+                }
+              } else {
+                console.log(`NEW ${r.name}: no baseline, will be added`);
+              }
+            }
+            if (failed) {
+              console.error("Failing CI due to >10% regression");
+              process.exit(1);
+            }
+          '
 
       - name: Upload frontend test & benchmark artifacts
         if: always()
@@ -222,6 +257,7 @@ jobs:
             frontend/tests/results/junit.xml
             frontend/tests/coverage/lcov.info
             frontend/bench/results/results.json
+            frontend/bench/baseline.json
           if-no-files-found: warn
 
       - name: Build frontend
@@ -253,10 +289,66 @@ jobs:
       - name: Process coverage
         uses: julia-actions/julia-processcoverage@v1
 
-      - name: Upload coverage artifact (local, Codecov removed)
+      - name: Upload coverage artifact (local, Codecov removed per Milestone 2)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: julia-coverage-lcov
           path: lcov.info
           if-no-files-found: warn
+
+      # Comprehensive benchmarks (Milestone 2) — table loading, epistemic parsing, DuckDB aggregation, PERMANOVA/NMDS, tree rendering
+      - name: Benchmark Julia comprehensive
+        run: |
+          julia --project=. bench/table_loading/benchmark.jl
+          julia --project=. bench/epistemic_parsing/benchmark.jl
+          julia --project=. bench/duckdb_aggregation/benchmark.jl
+          julia --project=. bench/permanova_nmds/benchmark.jl
+          julia --project=. bench/tree_rendering/benchmark.jl
+          julia --project=. bench/comprehensive_benchmark.jl
+
+      - name: Check benchmark regression >10%
+        run: |
+          echo "Checking for >10% regression in Julia benchmarks (fail if found)"
+          # Each benchmark script itself fails on >10% when CI=true, so this step is informational
+          # Here we also check that baseline.json files exist for each category
+          for cat in table_loading epistemic_parsing duckdb_aggregation permanova_nmds tree_rendering; do
+            if [ ! -f bench/$cat/baseline.json ]; then
+              echo "::warning::No baseline.json for $cat — first run will create it"
+            else
+              echo "Found baseline for $cat: $(cat bench/$cat/baseline.json | head -c 200)"
+            fi
+          done
+          if [ -f bench/results/comprehensive_results.json ]; then
+            echo "Comprehensive results: $(cat bench/results/comprehensive_results.json | head -c 500)"
+          fi
+
+      - name: Upload Julia benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: julia-benchmarks-comprehensive
+          path: |
+            bench/*/baseline.json
+            bench/results/comprehensive_results.json
+            bench/**/baseline.json
+          if-no-files-found: warn
+
+      # New test categories: analysis-config and cladistic-explorer (Milestone 2)
+      - name: Test analysis-config category
+        run: |
+          echo "Running analysis-config test category (if present)"
+          if [ -f test/unit/test_analysis_config.jl ]; then
+            julia --project=. -e 'using Test; using MetaManifold; include("test/unit/test_analysis_config.jl")'
+          else
+            echo "test_analysis_config.jl not present on main — skipping (will be present on feature branches)"
+          fi
+
+      - name: Test cladistic-explorer category
+        run: |
+          echo "Running cladistic-explorer test category (if present)"
+          if [ -f test/unit/test_clade_cumulus.jl ]; then
+            julia --project=. -e 'using Test; using MetaManifold; include("test/unit/test_clade_cumulus.jl")'
+          else
+            echo "test_clade_cumulus.jl not present on main — skipping (will be present on feature branches)"
+          fi

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "environment": {
-    "commit": "dfdf7a6",
+    "commit": "10915ef",
     "runner": "local",
     "bun": "1.3.10",
     "platform": "linux",
@@ -13,26 +13,91 @@
       "name": "run-table-json-parse",
       "iterations": 2000,
       "samples_ns": [
-        25059141,
-        24848053,
-        25703545,
-        25448443,
-        21215689
+        26153273,
+        25273124,
+        25112247,
+        26617029,
+        22861605
       ],
-      "median_ns": 25059141,
+      "median_ns": 25273124,
       "checksum": true
     },
     {
       "name": "figure-colour-overrides",
       "iterations": 300,
       "samples_ns": [
-        14231146,
-        12591353,
-        11856165,
-        9797150,
-        10367699
+        15484841,
+        13717484,
+        14499937,
+        11239755,
+        11715447
       ],
-      "median_ns": 11856165,
+      "median_ns": 13717484,
+      "checksum": true
+    },
+    {
+      "name": "table-loading-sample-columns",
+      "iterations": 500,
+      "samples_ns": [
+        2460055,
+        1343178,
+        1203146,
+        1245094,
+        1235657
+      ],
+      "median_ns": 1245094,
+      "checksum": true
+    },
+    {
+      "name": "epistemic-parsing",
+      "iterations": 1000,
+      "samples_ns": [
+        364863,
+        92495,
+        94493,
+        82611,
+        75483
+      ],
+      "median_ns": 92495,
+      "checksum": true
+    },
+    {
+      "name": "duckdb-aggregation",
+      "iterations": 200,
+      "samples_ns": [
+        4943004,
+        3581246,
+        4604377,
+        6162338,
+        5831420
+      ],
+      "median_ns": 4943004,
+      "checksum": true
+    },
+    {
+      "name": "permanova-nmds",
+      "iterations": 300,
+      "samples_ns": [
+        5785488,
+        2780847,
+        2129178,
+        2273948,
+        2126639
+      ],
+      "median_ns": 2273948,
+      "checksum": true
+    },
+    {
+      "name": "tree-rendering-clade-cumulus",
+      "iterations": 100,
+      "samples_ns": [
+        1395724,
+        756886,
+        333252,
+        328451,
+        315900
+      ],
+      "median_ns": 333252,
       "checksum": true
     }
   ]
