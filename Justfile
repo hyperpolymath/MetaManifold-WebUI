@@ -157,6 +157,19 @@ drift:
 codegen-tools:
     ./scripts/gen-tools-yml.sh
 
+# Complete first-run on a bare machine, clone-to-launchable in one recipe:
+# toolchain + JS deps + machine tool map (bootstrap), Julia package
+# instantiate, then install.sh's sha256-pinned external pipeline tools.
+# After this: just start. (install-tools downloads several hundred MB by
+# design — skip it when you only develop the frontend.)
+setup-full: bootstrap julia-instantiate install-tools
+    @echo "setup-full: complete — launch with: just start"
+
+# Pipeline tools via the byte-exact lane: install.sh fetches the archives
+# recorded in config/defaults/tool_versions.yml (sha256-verified per tool).
+install-tools:
+    bash install.sh
+
 # All codegen lanes (repo pins + machine tool map).
 codegen: sync-pins codegen-tools
     @echo "codegen: pins synced, machine tool map written"

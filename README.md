@@ -75,6 +75,8 @@ peer lane and `.envrc` for direnv auto-activation:
 ```bash
 curl https://mise.run | sh && just bootstrap   # or: guix time-machine -C channels.scm -- shell -D -f guix.scm
 just ci                                        # the proof: all gates green
+just setup-full                                # full first-run: + Julia deps + sha256-pinned pipeline tools
+just start                                     # launches the server (estate launcher, :8080)
 ```
 
 Then every task is a `just` recipe (`just` lists them). R remains a system
