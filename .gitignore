@@ -252,11 +252,16 @@ vignettes/*.pdf
 
 ## Documentation kept local except published release notes and toolchain
 ## migration/audit records, which are part of the maintained repository state.
+## Milestone reports and deferred issues are part of maintained state for project board tracking.
 docs/*
 !docs/release-notes/
 !docs/audit/
 !docs/compliance/
 !docs/migration/
+!docs/milestones/
+!docs/milestones/**
+!docs/issues/
+!docs/issues/**
 !docs/testing/
 !docs/type-system/
 !docs/types/
