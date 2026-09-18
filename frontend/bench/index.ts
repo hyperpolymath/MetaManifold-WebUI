@@ -108,6 +108,98 @@ function wColour(iters: number): BenchmarkResult {
   })
 }
 
+// W3: table loading — parse large table payload and extract sample columns (DuckDB-like)
+const sampleColumnsFixture = Array.from({ length: 50 }, (_, i) => `Sample${i}`)
+const allColumnsFixture = ['SeqName', 'Domain', 'Phylum', 'Genus', 'Species', 'Pident', ...sampleColumnsFixture, 'total']
+
+function wTableLoading(iters: number): BenchmarkResult {
+  return runWorkload('table-loading-sample-columns', iters, (i) => {
+    // Simulate sample_columns logic: filter numeric, exclude taxonomy, etc.
+    const excluded = new Set(['SeqName', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Pident', 'total'])
+    const sampleCols = allColumnsFixture.filter(c => !excluded.has(c) && !c.endsWith('_dada2') && !c.endsWith('_boot'))
+    return sampleCols.length + (i % 10)
+  })
+}
+
+// W4: epistemic parsing — avec_fibre boolean coercion and colour coding
+function wEpistemicParsing(iters: number): BenchmarkResult {
+  const values = ['true', 'false', 'avec_fibre', 'sans_fibre', '1', '0', true, false, null] as const
+  const statuses = ['present_in_every', 'present_in_some', 'absent', 'sans_fibre'] as const
+  return runWorkload('epistemic-parsing', iters, (i) => {
+    const v = values[i % values.length]
+    const avec = v === true || v === 'true' || v === '1' || v === 'avec_fibre'
+    const status = statuses[i % statuses.length]
+    let colour = '#9e9e9e'
+    if (status === 'present_in_every') colour = '#2e7d32'
+    else if (status === 'present_in_some') colour = '#f9a825'
+    else if (status === 'sans_fibre') colour = '#c62828'
+    const residual = i % 1000
+    const cloudSize = Math.log(1 + residual) * 10 + 5
+    return (avec ? 1 : 0) + colour.length + Math.floor(cloudSize)
+  })
+}
+
+// W5: DuckDB aggregation — aggregate_by_taxon mock (group by genus, sum) — deterministic for checksum
+function wDuckDBAggregation(iters: number): BenchmarkResult {
+  // Deterministic mock rows using seeded LCG-like pattern based on index
+  const mockRows = Array.from({ length: 1000 }, (_, i) => ({
+    Genus: ['Bacteroides', 'Prevotella', 'Faecalibacterium'][i % 3],
+    Sample1: (i * 9301 + 49297) % 1000,
+    Sample2: (i * 9301 + 49297 + 12345) % 1000,
+  }))
+  return runWorkload('duckdb-aggregation', iters, (i) => {
+    const map = new Map<string, number>()
+    for (const r of mockRows) {
+      map.set(r.Genus, (map.get(r.Genus) ?? 0) + r.Sample1 + r.Sample2)
+    }
+    // Include iteration-dependent access to prevent DCE but keep checksum stable across reps (i is inner iteration)
+    // We use iteration value to add small deterministic offset, same across reps for same i
+    return map.size + (map.get('Bacteroides') ?? 0) + (i % 5)
+  })
+}
+
+// W6: PERMANOVA/NMDS — diversity metrics and chart generation (mock) — deterministic
+function wPermanovaNmds(iters: number): BenchmarkResult {
+  return runWorkload('permanova-nmds', iters, (i) => {
+    // Deterministic counts based on iteration index (no Math.random for checksum stability)
+    const counts = Array.from({ length: 100 }, (_, j) => (i * 100 + j * 9301 + 49297) % 1000)
+    const total = counts.reduce((a, b) => a + b, 0) || 1
+    const richness = counts.filter(c => c > 0).length
+    let shannon = 0
+    for (const c of counts) {
+      if (c > 0) {
+        const p = c / total
+        shannon -= p * Math.log(p)
+      }
+    }
+    const groups = ['Control', 'Disease']
+    const group = groups[i % groups.length]
+    return richness + Math.floor(shannon * 100) + group.length
+  })
+}
+
+// W7: tree rendering — CladeCumulus SVG generation (mock) — deterministic
+function wTreeRendering(iters: number): BenchmarkResult {
+  const nodes = Array.from({ length: 100 }, (_, i) => ({
+    id: `node${i}`,
+    label: `Taxon ${i}`,
+    parent: i === 0 ? '' : `node${Math.floor(i / 2)}`,
+    count: (i * 9301 + 49297) % 1000,
+    residual: (i * 9301) % 100,
+    status: ['present_in_every', 'present_in_some', 'absent', 'sans_fibre'][i % 4] as const,
+  }))
+  return runWorkload('tree-rendering-clade-cumulus', iters, (i) => {
+    let svgLen = 0
+    for (const n of nodes) {
+      const colour = n.status === 'present_in_every' ? '#2e7d32' : n.status === 'present_in_some' ? '#f9a825' : n.status === 'sans_fibre' ? '#c62828' : '#9e9e9e'
+      const cloudSize = Math.log(1 + n.residual) * 10 + 5
+      // Instead of building huge string (alloc heavy), accumulate length deterministically
+      svgLen += n.label.length + colour.length + Math.floor(cloudSize)
+    }
+    return svgLen + (i % 10)
+  })
+}
+
 // ---------------------------------------------------------------------------
 
 function environment(): BenchRun['environment'] {
@@ -131,7 +223,15 @@ function humanLine(r: BenchmarkResult): string {
 }
 
 function main(): void {
-  const results = [wParse(2000), wColour(300)]
+  const results = [
+    wParse(2000),
+    wColour(300),
+    wTableLoading(500),
+    wEpistemicParsing(1000),
+    wDuckDBAggregation(200),
+    wPermanovaNmds(300),
+    wTreeRendering(100),
+  ]
 
   console.log('Proven-discipline benchmark run (bun test infra scaffold)')
   console.log('(monotonic clock; median of samples; compare against baseline.json)')
