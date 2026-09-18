@@ -10,7 +10,7 @@ let NormalizationMethod = std.enum.TagOrString & [| 'none, 'rarefy, 'relative, '
 let CorrectionMethod = std.enum.TagOrString & [| 'BH, 'FDR, 'Benjamini-Hochberg |] in
 let DispersionMethod = std.enum.TagOrString & [| 'parametric, 'local, 'mean, 'pooled, 'glmGamPoi |] in
 let ZeroHandling = std.enum.TagOrString & [| 'pseudocount, 'multiplicative_replacement, 'bayesian_multiplicative, 'refuse |] in
-let ZeroPolicy = std.enum.TagOrString & [| 'pseudocount, 'multiplicative_replacement, 'bayesian_multiplicative, 'refuse |] in
+let ZeroPolicy = ZeroHandling in
 let IlrBasis = std.enum.TagOrString & [| 'default, 'phylogenetic, 'sequential_binary_partition, 'balance_dendrogram |] in
 
 let DANGER_TOKEN = "I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH" in
