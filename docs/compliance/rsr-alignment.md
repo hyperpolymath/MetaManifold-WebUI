@@ -25,7 +25,7 @@ Reference: `rsr-template-repo@main` as cloned in the verification sandbox.
 | `.editorconfig` | `.editorconfig` | ✅ canonical copy, byte-identical |
 | `.gitattributes` | `.gitattributes` | ✅ canonical copy, byte-identical |
 | `.gitmessage` | `.gitmessage` | ✅ canonical copy, byte-identical |
-| `Justfile` | — | ❌ **absent by design**: task surface lives in `frontend/package.json` scripts + `scripts/check-*.sh`; a Justfile would duplicate them |
+| `Justfile` | ✅ | **present** (39 recipes; reinstated from this deviation on user instruction). Thin wrappers only — every recipe delegates to the canonical entry points (`frontend/package.json` scripts, `scripts/check-*.sh`, the estate launcher, the Julia project), so no logic is duplicated. Mirrors the rsr doctrine of fail-loud lanes (e.g. `test-e2e` without browsers, Julia lanes without Julia) |
 | `mise.toml` / `.tool-versions` | `.bun-version` | ❌/✅ toolchain pinning is upstream's `tool_versions.yml` + `.bun-version`; adding a second pin = drift source |
 | `README.adoc` | `README.md` | ➖ upstream's, Markdown; refreshed, not converted |
 | Agent-context files (`CLAUDE.md`, `.cursorrules`, `GEMINI.md`, …) | — | ❌ intentionally absent — fork carries no agent-instruction surface; estate canon lives in `standards` |
