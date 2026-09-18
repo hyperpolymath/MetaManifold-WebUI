@@ -201,7 +201,8 @@ in
           | doc "Zero handling policy: pseudocount (default safe), multiplicative_replacement, bayesian_multiplicative, refuse (DANGEROUS requires DANGER token, mathematically invalid for CLR/ILR).",
 
         ilr_basis
-          | std.option.IlrBasis
+          | IlrBasis
+          | optional
           | doc "ILR basis, only meaningful for ILR method. phylogenetic/sequential_binary_partition/balance_dendrogram deferred, see GitHub issue 05.",
 
         multiplicative_replacement_delta
