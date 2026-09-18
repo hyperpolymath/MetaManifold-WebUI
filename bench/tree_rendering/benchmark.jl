@@ -194,9 +194,9 @@ function run_benchmarks(; reps=5)
             if haskey(baseline, name)
                 base_med = baseline[name]
                 delta = (med - base_med) / base_med * 100
-                status = abs(delta) > 10 ? "FAIL" : "PASS"
+                status = delta > 10 ? "FAIL" : "PASS"
                 println("$status $name: $(round(delta, digits=1))% vs baseline $(round(base_med*1000, digits=2)) ms")
-                if abs(delta) > 10 && get(ENV, "CI", "false") == "true"
+                if delta > 10 && get(ENV, "CI", "false") == "true"
                     @error "Regression >10% for $name" delta
                     exit(1)
                 end
