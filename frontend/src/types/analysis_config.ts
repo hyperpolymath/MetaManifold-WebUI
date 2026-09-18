@@ -86,6 +86,7 @@ export const DANGER_ACK_TOKEN = 'I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH'
 
 export const SCHEMA_VERSION = '1.0.0'
 
+/** Report whether the current fields match a client-recognised risky configuration. */
 export function isDangerous(config: AnalysisConfig): boolean {
   if (config.correction.allow_no_correction) return true
   if (config.advanced.zero_handling === 'refuse' || config.advanced.zero_policy === 'refuse') return true
@@ -95,6 +96,7 @@ export function isDangerous(config: AnalysisConfig): boolean {
   return false
 }
 
+/** Return a provenance-rich warning banner for a dangerous configuration, otherwise null. */
 export function dangerBanner(config: AnalysisConfig): string | null {
   if (!isDangerous(config)) return null
   const reasons: string[] = []
@@ -134,6 +136,7 @@ ${reasons.map(r => `║  - ${r}`).join('\n')}
 `
 }
 
+/** Return help for a recognised analysis field path, or a path-specific fallback. */
 export function contextHelp(fieldPath: string): string {
   const helpDb: Record<string, string> = {
     method: `Analysis Method (required, explicit, no auto-selection) — v1: NB GLM, CLR/ILR+Gaussian, logistic
