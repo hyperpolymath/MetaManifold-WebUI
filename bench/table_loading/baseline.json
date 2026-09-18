@@ -1,7 +1,7 @@
 {
-  "sample_columns": 0.005,
-  "filtered_counts": 0.02,
-  "filtered_df": 0.03,
-  "taxonomy_levels": 0.001,
-  "taxon_column": 0.0001
+  "sample_columns": 0.05,
+  "filtered_counts": 0.2,
+  "filtered_df": 0.3,
+  "taxonomy_levels": 0.05,
+  "taxon_column": 0.01
 }

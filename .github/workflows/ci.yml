@@ -216,7 +216,7 @@ jobs:
       - name: Check frontend benchmark regression >10% (Milestone 2)
         working-directory: frontend
         run: |
-          echo "Checking frontend benchmark regression >10% vs baseline"
+          echo "Checking frontend benchmark regression >10% vs baseline (fail only on >10% slowdown, not speedup)"
           node -e '
             const fs = require("fs");
             const baselinePath = "bench/baseline.json";
@@ -232,10 +232,13 @@ jobs:
               const b = baseline.results.find(x => x.name === r.name);
               if (b) {
                 const delta = (r.median_ns - b.median_ns) / b.median_ns * 100;
-                const status = Math.abs(delta) > 10 ? "FAIL" : "PASS";
-                console.log(`${status} ${r.name}: ${delta.toFixed(1)}% vs baseline ${b.median_ns} ns (current ${r.median_ns} ns)`);
-                if (Math.abs(delta) > 10) {
-                  console.error(`::error::Regression >10% for ${r.name}: ${delta.toFixed(1)}%`);
+                // Only fail on regression (slower), not improvement (faster). Task says fail on >10% regression.
+                const isRegression = delta > 10;
+                const status = isRegression ? "FAIL" : "PASS";
+                const note = delta < -10 ? " (improvement)" : "";
+                console.log(`${status} ${r.name}: ${delta.toFixed(1)}% vs baseline ${b.median_ns} ns (current ${r.median_ns} ns)${note}`);
+                if (isRegression) {
+                  console.error(`::error::Regression >10% for ${r.name}: +${delta.toFixed(1)}% slower than baseline`);
                   failed = true;
                 }
               } else {
@@ -243,8 +246,10 @@ jobs:
               }
             }
             if (failed) {
-              console.error("Failing CI due to >10% regression");
+              console.error("Failing CI due to >10% regression (slowdown)");
               process.exit(1);
+            } else {
+              console.log("No regressions >10% — all benchmarks within tolerance or improved");
             }
           '
 
