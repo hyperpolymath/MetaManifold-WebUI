@@ -35,7 +35,9 @@ Reference: `hyperpolymath/standards@main` (in particular
 | Expectation | Here | Status |
 |---|---|---|
 | `mise.toml` toolchain manifest, pinned to CI versions, every name verified against the registry (estate doctrine from rsr-template) | `mise.toml` — julia 1.12.5 / bun 1.3.10 / node 20.20.2 / just 1.43.1, all confirmed resolvable 2026-09-18; R absent from registry → documented system exception | ✅ |
-| Guix development environment (`guix.scm`, per estate REQUIRED-FILES) | `guix.scm` (dev-shell inputs: julia, r, node-lts, just, git) + `channels.scm` time-machine pin (guix master 2026-09-18; `just` input sighted live at the pinned commit) | ✅ recreation on hosts/CI |
+| Guix development environment (`guix.scm`, per estate REQUIRED-FILES) | `guix.scm` (dev-shell inputs: julia, r, node-lts, just, git + pipeline-tool equivalents cutadapt/multiqc/fastqc/vsearch/cd-hit; swarm documented as download-lane-only) + `channels.scm` time-machine pin (guix master 2026-09-18; `just` input sighted live at the pinned commit) | ✅ recreation on hosts/CI |
+| Pipeline tools byte-exact | `config/defaults/tool_versions.yml` (version + URL + sha256-of-archive per tool) fetched by `install.sh`; preflight asserts against it | ✅ upstream-designed, fork-verified |
+| Pin single-sourcing (codegen, minimal duplication) | `.bun-version` is generated from `mise.toml` by `just sync-pins`; overlap copies (`tool_versions.yml`, `ci.yml` matrix) are drift-checked, not generated | ✅ `coupling-toolchain-pins` test gates it |
 | direnv auto-activation (`.envrc`) | `.envrc` — mise lane first, Guix fallback, `METAMANIFOLD_REPO_DIR` export | ✅ |
 | Single command to stand up a bare machine | `curl https://mise.run \| sh && just bootstrap` (or the time-machine one-liner) → `just ci` green from a naked env (evidence logged in `docs/reproducibility.md`) | ✅ verified 2026-09-18 |
 

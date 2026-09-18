@@ -80,6 +80,10 @@ just ci                                        # the proof: all gates green
 Then every task is a `just` recipe (`just` lists them). R remains a system
 install (not in the mise registry — documented exception in
 `docs/reproducibility.md`, which is the toolchain source of truth).
+Pipeline tools (cutadapt, MultiQC, FastQC, cd-hit-est, vsearch, swarm) are
+fetched byte-exact by `install.sh` against the sha256-pinned records in
+`config/defaults/tool_versions.yml`; the Guix shell also carries functional
+equivalents for development.
 
 - **Julia** >= 1.0, pinned 1.12.5 via `mise.toml` (installed automatically by `install.sh` if missing)
 - **R** >= 4.0 (required for the DADA2 stage and NMDS/PERMANOVA analysis)
