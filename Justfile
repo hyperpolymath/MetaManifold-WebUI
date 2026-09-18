@@ -112,8 +112,8 @@ setup: install
 # mise.toml (julia 1.12.5, bun 1.3.10, node 20.20.2, just 1.43.1), then
 # install frontend dependencies. R is a documented exception: system R +
 # renv.lock (R is not in the mise registry — verified 2026-09-18).
-bootstrap: setup-tools install
-    @echo "bootstrap: toolchain + deps ready — next: just ci"
+bootstrap: setup-tools install codegen-tools
+    @echo "bootstrap: toolchain + deps + machine tool map ready — next: just ci"
 
 # Provision the pinned toolchain via mise (fail-loud with the installer
 # one-liner when mise is absent; the Guix lane in guix.scm is the
@@ -148,6 +148,18 @@ sync-pins:
 # tool_versions.yml == CI matrix. Run standalone or via the bun suite.
 drift:
     cd frontend && bun test tests/unit/coupling-toolchain-pins.test.ts
+
+# CODEGEN: machine tool-path map. config/tools.yml is gitignored
+# (machine-specific); this writes it so a fresh clone is runnable with zero
+# manual config — PATH-found tools (inside guix/managed envs) become bare
+# names, everything else falls back to install.sh's sha256-pinned download
+# lane. Version authority stays with the pipeline preflight.
+codegen-tools:
+    ./scripts/gen-tools-yml.sh
+
+# All codegen lanes (repo pins + machine tool map).
+codegen: sync-pins codegen-tools
+    @echo "codegen: pins synced, machine tool map written"
 
 # Report outdated frontend packages (informational only).
 outdated:
