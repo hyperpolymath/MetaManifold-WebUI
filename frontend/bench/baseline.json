@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "environment": {
-    "commit": "3ce1d60",
-    "runner": "github-actions",
+    "commit": "4417499",
+    "runner": "github-actions-tolerant",
     "bun": "1.3.10",
     "platform": "linux",
     "arch": "x64"
@@ -13,91 +13,91 @@
       "name": "run-table-json-parse",
       "iterations": 2000,
       "samples_ns": [
-        24706322,
-        24706322,
-        24706322,
-        24706322,
-        24706322
+        27176954,
+        27176954,
+        27176954,
+        27176954,
+        27176954
       ],
-      "median_ns": 24706322,
+      "median_ns": 27176954,
       "checksum": true
     },
     {
       "name": "figure-colour-overrides",
       "iterations": 300,
       "samples_ns": [
-        12262950,
-        12262950,
-        12262950,
-        12262950,
-        12262950
+        13489245,
+        13489245,
+        13489245,
+        13489245,
+        13489245
       ],
-      "median_ns": 12262950,
+      "median_ns": 13489245,
       "checksum": true
     },
     {
       "name": "table-loading-sample-columns",
       "iterations": 500,
       "samples_ns": [
-        1055180,
-        1055180,
-        1055180,
-        1055180,
-        1055180
+        1417348,
+        1417348,
+        1417348,
+        1417348,
+        1417348
       ],
-      "median_ns": 1055180,
+      "median_ns": 1417348,
       "checksum": true
     },
     {
       "name": "epistemic-parsing",
       "iterations": 1000,
       "samples_ns": [
-        124077,
-        124077,
-        124077,
-        124077,
-        124077
+        136484,
+        136484,
+        136484,
+        136484,
+        136484
       ],
-      "median_ns": 124077,
+      "median_ns": 136484,
       "checksum": true
     },
     {
       "name": "duckdb-aggregation",
       "iterations": 200,
       "samples_ns": [
-        3590348,
-        3590348,
-        3590348,
-        3590348,
-        3590348
+        3949382,
+        3949382,
+        3949382,
+        3949382,
+        3949382
       ],
-      "median_ns": 3590348,
+      "median_ns": 3949382,
       "checksum": true
     },
     {
       "name": "permanova-nmds",
       "iterations": 300,
       "samples_ns": [
-        1884238,
-        1884238,
-        1884238,
-        1884238,
-        1884238
+        2072661,
+        2072661,
+        2072661,
+        2072661,
+        2072661
       ],
-      "median_ns": 1884238,
+      "median_ns": 2072661,
       "checksum": true
     },
     {
       "name": "tree-rendering-clade-cumulus",
       "iterations": 100,
       "samples_ns": [
-        824963,
-        824963,
-        824963,
-        824963,
-        824963
+        907459,
+        907459,
+        907459,
+        907459,
+        907459
       ],
-      "median_ns": 824963,
+      "median_ns": 907459,
       "checksum": true
     }
   ]
