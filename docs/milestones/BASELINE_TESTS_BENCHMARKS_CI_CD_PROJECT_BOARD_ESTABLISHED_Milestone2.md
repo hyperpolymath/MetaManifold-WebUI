@@ -8,7 +8,7 @@ SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@
 **Repo:** hyperpolymath/MetaManifold-WebUI
 **Main:** 18eff7c fix(bench): set tolerant frontend baseline to max*1.1 of observed CI (includes 3ce1d60 merge of PR #14 feat/baseline-benchmarks-ci)
 **Board:** https://github.com/users/hyperpolymath/projects/45 — "Analysis Layer & Cladistics Development" (PVT_kwHOAGclzc4Bj75p)
-**Tokens Used:** GitHub PAT ghp_kGEH0... (provided, scopes repo+workflow+project, missing read:org → user-level board), Codecov removed per user request, gitar not found (grep -i returns 0)
+**Tokens Used:** GitHub PAT ghp_***REDACTED*** (provided, scopes repo+workflow+project, missing read:org → user-level board), Codecov removed per user request, gitar not found (grep -i returns 0)
 
 ---
 
@@ -329,7 +329,7 @@ Ran 586 tests across 16 files. [389.00ms] first run, [415ms] with --coverage
 **Board Name:** "Analysis Layer & Cladistics Development"
 **URL:** https://github.com/users/hyperpolymath/projects/45
 **ID:** PVT_kwHOAGclzc4Bj75p
-**Owner:** user hyperpolymath (viewer id MDQ6VXNlcjY3NTk4ODU=, global U_kgDOAGclzQ) — org hyperpolymath requires read:org scope which PAT lacked (scopes: audit_log, notifications, project, repo, workflow), so user-level project used. For org-level, need new PAT with read:org. PAT ghp_kGEH0... used via env var, never logged, remote url reset after push. Should be revoked per security (pasted in clear chat).
+**Owner:** user hyperpolymath (viewer id MDQ6VXNlcjY3NTk4ODU=, global U_kgDOAGclzQ) — org hyperpolymath requires read:org scope which PAT lacked (scopes: audit_log, notifications, project, repo, workflow), so user-level project used. For org-level, need new PAT with read:org. PAT ghp_***REDACTED*** used via env var, never logged, remote url reset after push. Should be revoked per security (pasted in clear chat).
 
 **Fields Created via GraphQL:**
 
@@ -463,7 +463,7 @@ All commits follow conventional pattern `^(feat|fix|docs|style|refactor|perf|tes
 3. Rebase feat/analysis-config-v1 and feat/clade-cumulus onto new main 18eff7c to include tolerant baseline fix
 4. Implement full CladeCumulus D3 hierarchy, real DuckDB cumulative queries, drag-drop API in RunView.tsx
 5. Add .github/workflows/project-board.yml automation with actions/add-to-project@v0.5.0 using PROJECT_PAT secret
-6. Rotate PAT ghp_kGEH0..., create fine-grained PAT with read:org, store as PROJECT_PAT secret in repo settings
+6. Rotate PAT ghp_***REDACTED***, create fine-grained PAT with read:org, store as PROJECT_PAT secret in repo settings
 7. Milestone report after each PR merge (Milestone 3: AnalysisConfig v1 complete, Milestone 4: CladeCumulus complete)
 
 ---
