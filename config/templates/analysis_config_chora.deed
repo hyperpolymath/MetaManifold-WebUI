@@ -3,7 +3,8 @@
 ;; AnalysisConfig DEED template — from hyperpolymath/standards 1-formats/deed
 ;; Filename dispatch: *_chora.deed → repo-deed, :schema-version first
 ;; This file is a template; actual configs are generated via AnalysisConfig.to_deed()
-;; See DEED-GRAMMAR-SPEC.adoc v0.2.0: :schema-version structurally first, only () brackets, #t/#f booleans, :kebab-case keywords
+;; See DEED-GRAMMAR-SPEC.adoc v0.2.0: :schema-version structurally first, only () brackets, #t/#f booleans, :kebab-case keywords, #u5 UUID5, SPDX header mandatory
+;; Milestone 3: immutable AnalysisConfig exactly matching user's answers (NB GLM, CLR/ILR+Gaussian, logistic v1, BH mandatory, DANGER banner, Advanced Analysis heavy validation for pseudocount/epsilon/zero_policy/etc.)
 
 (repo-deed
   :schema-version "1.0.0"
@@ -19,32 +20,42 @@
   (normalization
     :method "size_factors"
     :pseudocount 0.5
-    :ilr-basis "")
+    :epsilon 0.000001
+    :zero-policy "pseudocount"
+    :ilr-basis ""
+    :multiplicative-replacement-delta 0
+    :tss-css-rss-note "TSS/CSS/RSS deferred alias to relative, see GitHub issue 01")
 
   (correction
     :method "BH"
     :alpha 0.05
-    :allow-no-correction #f)
+    :allow-no-correction #f
+    :acknowledgment-token "")
 
   (advanced
     :dispersion-method "parametric"
     :zero-handling "pseudocount"
+    :zero-policy "pseudocount"
+    :pseudocount 0.5
+    :epsilon 0.000001
     :min-prevalence 0.1
     :min-abundance 0.0
     :max-features 0
     :min-samples-per-group 3
-    :robust #f)
+    :robust #f
+    :acknowledgment-token "")
 
   (provenance
     :id "00000000-0000-0000-0000-000000000000"
     :hash "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     :created-at "2026-09-18T00:00:00Z"
     :created-by "template"
-    :dangerous #f)
+    :dangerous #f
+    :schema-version "1.0.0")
 
   (warrant
     :evidence-type "AnalysisConfig"
-    :soundness "BH mandatory, requires acknowledgment token for override"
+    :soundness "BH mandatory, requires acknowledgment token for override, heavy validation for pseudocount/epsilon/zero_policy"
     :fiber "Echo of raw counts through size_factors transform"
     :epistemic-status "present_in_every_admissible_world")
 
@@ -52,14 +63,14 @@
     :title "MetaManifold Analysis Bundle"
     :license "CC-BY-4.0"
     :authors ("Anonymous")
-    :description "Differential abundance analysis with nb_glm, BH correction, DOI-ready")
+    :description "Differential abundance analysis with nb_glm, BH correction, DOI-ready, pseudocount/epsilon/zero_policy validated")
 
   (context-help
-    :method "Analysis method — explicit, no auto-selection. See JSON schema for scientific context."
-    :formula "R-style formula, e.g. '~ group' or 'disease ~ group + batch'. Must reference only metadata_columns."
-    :correction "BH mandatory in v1. Any override triggers DANGER banner and requires acknowledgment token I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH."
-    :normalization "Normalization must be compatible with method: nb_glm allows none/rarefy/size_factors/relative, clr_lm requires clr, ilr_lm requires ilr."
-    :advanced "All advanced options behind Advanced Analysis expander, hidden unless Evidence Mode enabled. Heavy validation, refusal of meaningless inputs."))
+    :method "Analysis method — explicit, no auto-selection v1 nb_glm clr_lm ilr_lm logistic. See JSON schema for scientific context and GitHub issues for deferred multinomial/occupancy/ordination."
+    :formula "R-style formula, e.g. '~ group' or 'disease ~ group + batch'. Must reference only metadata_columns. Forbidden ; backtick dollar. See ValidFormula Nickel contract."
+    :correction "BH mandatory in v1. Any override triggers DANGER banner and requires acknowledgment token I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH. Scary banner for paper writers."
+    :normalization "Normalization must be compatible with method: nb_glm allows none/rarefy/size_factors/relative/TSS/CSS/RSS (TSS/CSS/RSS deferred alias), clr_lm requires clr, ilr_lm requires ilr. Pseudocount/epsilon/zero_policy heavy validation."
+    :advanced "All advanced options behind Advanced Analysis expander, hidden unless Evidence Mode enabled. Heavy validation, refusal of meaningless inputs, warnings for custom pseudocount/epsilon/zero_policy/min_prevalence/max_features/min_samples_per_group."))
 
 ;; SPDX-License-Identifier: AGPL-3.0-only
 ;; End of template — generated files will have same structure with filled values
@@ -67,4 +78,7 @@
 ;; ;; ╔════════════════════════════════════════════════════════════════════════════╗
 ;; ;; ║  ⚠️  DANGER — SCIENTIFICALLY RISKY CONFIGURATION DETECTED  ⚠️             ║
 ;; ;; ║  BH correction disabled — will inflate false discoveries                 ║
+;; ;; ║  Config ID: 00000000-0000-0000-0000-000000000000                         ║
+;; ;; ║  If you are writing a paper, you MUST disclose these overrides in Methods║
 ;; ;; ╚════════════════════════════════════════════════════════════════════════════╝
+;; Deferred features: TSS/CSS/RSS offsets, multinomial/DM, occupancy, constrained ordinations, ILR basis phylogenetic/SBP, glmGamPoi/Bayesian multiplicative — see docs/issues/milestone3/
