@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 # Disposable API fixture. NOT the scientific backend; never reads or writes studies.
 using HTTP, JSON3
 const STUDIES = [
