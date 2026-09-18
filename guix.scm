@@ -13,6 +13,15 @@
 ;;   just    -> estate task runner (Justfile)
 ;;   git     -> hygiene gates read git ls-files
 ;;
+;; Pipeline tools: config/defaults/tool_versions.yml is the BYTE-EXACT lane
+;; (install.sh downloads cutadapt 5.2, multiqc 1.33, fastqc 0.12.1,
+;; cd-hit-est 4.8.1, vsearch 2.30.5, swarm 3.1.6 against recorded sha256
+;; checksums — that is the authoritative, reproducible path the pipeline
+;; preflight asserts against). The guix inputs below are functional
+;; equivalents for development convenience; their versions follow the
+;; channels pin, NOT tool_versions.yml. swarm stays download-lane only
+;; (no guix package at the pinned commit — checked 2026-09-18).
+;;
 ;; Honest limitations (verified 2026-09-18, never faked):
 ;;   - Version drift: Guix package versions follow the channels.scm commit,
 ;;     so `julia` may not equal CI's exact 1.12.5. Where the exact CI pin is
@@ -28,6 +37,7 @@
              (guix licenses)
              (gnu packages base)
              (gnu packages bash)
+             (gnu packages bioinformatics)
              (gnu packages julia)
              (gnu packages statistics)
              (gnu packages node)
@@ -39,7 +49,9 @@
   (version "0.1.0")
   (source #f)
   (build-system gnu-build-system)
-  (inputs (list julia r node-lts just git coreutils bash))
+  (inputs (list julia r node-lts just git coreutils bash
+                ;; pipeline-tool equivalents (see header scope note):
+                cutadapt multiqc fastqc vsearch cd-hit))
   (synopsis "MetaManifold-WebUI development environment")
   (description "Development toolchain for the MetaManifold-WebUI fork:
 Julia backend, bun-managed Vite/React frontend (bun bootstrapped via

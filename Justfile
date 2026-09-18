@@ -132,6 +132,23 @@ setup-tools:
 install:
     cd frontend && bun install
 
+# CODEGEN: regenerate generated pin artefacts from their source of truth.
+# .bun-version is generated FROM mise.toml (CI consumes it via
+# bun-version-file); config/defaults/tool_versions.yml is upstream-owned and
+# only cross-CHECKED (by the coupling-toolchain-pins drift test), never
+# written by this lane. Idempotent; safe to run any time.
+sync-pins:
+    #!/usr/bin/env bash
+    bunver=$(grep -E '^bun\s*=' mise.toml | sed -E 's/^bun\s*=\s*"([^"]+)".*/\1/')
+    [[ -n "$bunver" ]] || { echo "sync-pins: no bun pin in mise.toml" >&2; exit 1; }
+    printf '%s\n' "$bunver" > .bun-version
+    echo "sync-pins: .bun-version <- mise.toml (bun $bunver)"
+
+# Pin-web drift check (coupling category): mise.toml == .bun-version ==
+# tool_versions.yml == CI matrix. Run standalone or via the bun suite.
+drift:
+    cd frontend && bun test tests/unit/coupling-toolchain-pins.test.ts
+
 # Report outdated frontend packages (informational only).
 outdated:
     cd frontend && bun outdated || true
