@@ -79,6 +79,13 @@ guix time-machine -C channels.scm -- shell -D -f guix.scm
 just ci            # spdx + format + lint + tsc + 577 tests + bench checksums
 ```
 
+`just bootstrap` = `setup-tools` (mise install) + `install` (bun deps) +
+`codegen-tools` (writes the gitignored, machine-specific `config/tools.yml`
+from whatever this machine actually exposes — PATH-first inside managed
+envs, otherwise the sha256-pinned download lane) — so a fresh clone is
+bootable with zero hand-written configuration. Re-run `just codegen` after
+changing tool providers.
+
 ## Verification evidence (2026-09-18, this sandbox)
 
 - `mise install` provisioned all four pinned tools from a cold cache in
