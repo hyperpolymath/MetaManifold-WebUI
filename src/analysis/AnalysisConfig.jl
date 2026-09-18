@@ -101,10 +101,13 @@ const VALID_NORMALIZATION_FOR_METHOD = Dict{AnalysisMethod, Vector{String}}(
 # --------------------------------------------------------------------------
 
 """
-    NormalizationConfig — explicit normalization / compositional transform
+    NormalizationConfig(; method, ...)
 
-Heavy validation, context-sensitive help, refusal of meaningless inputs.
-For CLR/ILR, pseudocount is mandatory and must be >0. For NB_GLM, size_factors preferred.
+Create a normalisation or compositional-transform configuration. The method name
+is normalised to lower case and the zero-policy name is parsed case-insensitively.
+Incompatible options, non-positive CLR/ILR pseudocounts, and invalid epsilon or
+replacement-delta values raise `ArgumentError`; unusual accepted values may emit
+warnings.
 """
 struct NormalizationConfig
     method::String
@@ -189,9 +192,12 @@ struct NormalizationConfig
 end
 
 """
-    CorrectionConfig — BH mandatory, hard-stop with DANGER banner
+    CorrectionConfig(; method="BH", alpha=0.05, ...)
 
-BH is only sane default for high-dimensional microbiome data. Any override triggers DANGER.
+Create a multiple-testing correction configuration. Non-BH methods are accepted
+only when `allow_no_correction` is true and `acknowledgment_token` matches
+`DANGER_ACK_TOKEN`. Empty or unsafe method strings, invalid tokens, and alpha
+values outside `(0, 1)` raise `ArgumentError`.
 """
 struct CorrectionConfig
     method::String
@@ -235,9 +241,12 @@ struct CorrectionConfig
 end
 
 """
-    AdvancedConfig — all behind Advanced Analysis expander, hidden unless Evidence Mode
+    AdvancedConfig(; ...)
 
-Heavy validation, context-sensitive help, refusal of meaningless inputs, warnings for custom pseudocount/epsilon/zero_policy/etc.
+Create the advanced analysis settings. Invalid categorical choices and values
+outside their supported ranges raise `ArgumentError`; risky but accepted values
+emit warnings. Either zero-handling option set to `"refuse"` also requires the
+danger acknowledgement token.
 """
 struct AdvancedConfig
     dispersion_method::String
@@ -352,25 +361,15 @@ end
 # --------------------------------------------------------------------------
 
 """
-    AnalysisConfig — immutable, versioned, explicit, provenance-rich
+    AnalysisConfig(; method, formula, metadata_columns, ...)
 
-Fields (all explicit, no silent defaults except documented):
-- schema_version: "1.0.0" (from DEED :schema-version first)
-- id: UUID4 string, immutable
-- created_at: DateTime, immutable
-- created_by: String
-- method: AnalysisMethod (NB_GLM, CLR_LM, ILR_LM, LOGISTIC in v1)
-- formula: String R-style must contain ~, e.g. "~ group" or "disease ~ group + batch", forbids semicolon backtick dollar injection
-- outcome_column: Union{String,Nothing} required for logistic
-- metadata_columns: Vector{String} explicit, min 1, unique, pattern ^[a-zA-Z0-9_.\\-]+\$
-- normalization: NormalizationConfig (method-dependent, pseudocount, epsilon, zero_policy, ilr_basis)
-- correction: CorrectionConfig BH mandatory hard-stop DANGER banner on overrides
-- advanced: AdvancedConfig behind Advanced Analysis expander heavy validation/help/warnings custom pseudocount/epsilon/zero_policy/etc.
-- provenance: OrderedDict provenance-rich
-- hash: SHA256 hex content-addressed, immutable
-- dangerous: Bool computed is_dangerous
-
-No silent switching. Every field explicit.
+Create an immutable analysis configuration after validating its schema version,
+UUID, formula, metadata columns, outcome, and method/normalisation pairing. The
+constructor enriches a copy of `provenance`, computes a content hash when none is
+supplied, and derives the stored danger flag from correction and advanced
+settings; an explicitly supplied `dangerous=true` also marks the configuration.
+Invalid combinations raise `ArgumentError`, while accepted but questionable
+settings may emit warnings.
 """
 struct AnalysisConfig
     schema_version::String
@@ -563,7 +562,12 @@ const AnalysisConfigStruct = AnalysisConfig
 const AdvancedOverrides = AdvancedConfig
 
 """
-    AnalysisResult — immutable result with provenance
+    AnalysisResult(; config_id, config_hash, method, ...)
+
+Create an immutable result linked to an analysis configuration. The constructor
+adds the configuration identifiers and method to a copy of `provenance` and
+computes a content hash unless one is supplied. Invalid UUIDs or an empty
+configuration hash raise `ArgumentError`.
 """
 struct AnalysisResult
     id::String
@@ -616,6 +620,13 @@ end
 # Validators — refuse meaningless inputs
 # --------------------------------------------------------------------------
 
+"""
+    validate_config(config, available_columns; strict=true)
+
+Return validation messages for missing metadata columns and formula references.
+With `strict=true`, also recheck the method/normalisation pairing. A dangerous
+configuration emits a warning but does not add a validation message.
+"""
 function validate_config(config::AnalysisConfig, available_columns::Vector{String}; strict::Bool=true)
     errors = String[]
 
@@ -679,10 +690,18 @@ function validate_config(config::AnalysisConfig, available_columns::Vector{Strin
     return errors
 end
 
+"""Return the content hash stored on `config`."""
 function config_hash(config::AnalysisConfig)
     return config.hash
 end
 
+"""
+    canonical_json(config)
+
+Serialise selected fields from `config` in a fixed order. Unlike
+[`to_json`](@ref), this representation omits provenance and several advanced and
+normalisation fields.
+"""
 function canonical_json(config::AnalysisConfig)
     return JSON3.write(OrderedDict(
         "schema_version" => config.schema_version,
@@ -721,6 +740,12 @@ end
 # Context-sensitive help — for UI
 # --------------------------------------------------------------------------
 
+"""
+    context_help(field_path)
+
+Return the UI help text for a recognised analysis field path. Unknown paths
+return a fallback message that includes the requested path.
+"""
 function context_help(field_path::String)
     help_db = Dict{String,String}(
         "method" => """
@@ -945,6 +970,13 @@ end
 # DANGER banner — scary for paper writers on overrides
 # --------------------------------------------------------------------------
 
+"""
+    danger_banner(config)
+
+Return a formatted warning for a configuration whose stored danger flag is set,
+or `nothing` for a safe configuration. The banner lists the risky settings
+recognised by this formatter and includes configuration provenance identifiers.
+"""
 function danger_banner(config::AnalysisConfig)
     if !is_dangerous(config)
         return nothing
@@ -990,10 +1022,18 @@ function danger_banner(config::AnalysisConfig)
     return banner
 end
 
+"""Return the danger flag stored on `config`."""
 function is_dangerous(config::AnalysisConfig)
     return config.dangerous
 end
 
+"""
+    log_danger_banner(config)
+
+Log an informational message and return `nothing` for a safe configuration. For
+a dangerous configuration, log the generated banner at error and warning levels
+and return the banner text.
+"""
 function log_danger_banner(config::AnalysisConfig)
     banner = danger_banner(config)
     if isnothing(banner)
@@ -1011,6 +1051,7 @@ end
 # Serialization — JSON, Nickel, DEED, with standards
 # --------------------------------------------------------------------------
 
+"""Serialise `config` to the JSON representation used by the analysis API."""
 function to_json(config::AnalysisConfig)
     return JSON3.write(OrderedDict(
         "schema_version" => config.schema_version,
@@ -1054,6 +1095,13 @@ function to_json(config::AnalysisConfig)
     ))
 end
 
+"""
+    from_json(json_str)
+
+Parse a JSON analysis configuration and rebuild its nested immutable objects.
+Optional fields absent from older representations receive the constructor
+defaults. JSON parsing and constructor validation errors are propagated.
+"""
 function from_json(json_str::String)
     data = JSON3.read(json_str)
 
@@ -1117,6 +1165,7 @@ function from_json(json_str::String)
     return cfg
 end
 
+"""Render `config` as the module's generated Nickel source text."""
 function to_nickel(config::AnalysisConfig)
     # Nickel contract from hyperpolymath/standards 1-formats/k9/*.ncl style
     # Uses TagOrString for enums, contracts for validation
@@ -1176,6 +1225,14 @@ function to_nickel(config::AnalysisConfig)
     """
 end
 
+"""
+    from_nickel(nickel_str)
+
+Build a minimal configuration from the first method and formula assignments in
+Nickel-like source. This is a partial parser: metadata and most settings use
+defaults. Raise `ArgumentError` when either assignment cannot be found or the
+derived configuration is invalid.
+"""
 function from_nickel(nickel_str::String)
     # For now, parse via simple regex — full Nickel evaluation would require nickel binary
     # This is a placeholder that extracts method and formula and validates via our validators
@@ -1196,6 +1253,13 @@ function from_nickel(nickel_str::String)
     )
 end
 
+"""
+    validate_nickel(nickel_str)
+
+Return messages for required field or contract markers missing from generated
+Nickel text. This performs textual checks only; it does not parse or evaluate
+Nickel.
+"""
 function validate_nickel(nickel_str::String)
     # Validate via contracts — for now check that it contains required fields and contracts pass
     errors = String[]
@@ -1217,6 +1281,7 @@ function validate_nickel(nickel_str::String)
     return errors
 end
 
+"""Render `config` as a `repo-deed` document using DEED syntax."""
 function to_deed(config::AnalysisConfig)
     # DEED from hyperpolymath/standards 1-formats/deed/spec/DEED-GRAMMAR-SPEC.adoc v0.2.0
     # :schema-version first, only () brackets, #t/#f booleans, :kebab-case keywords, #u5 UUID5, SPDX header mandatory
@@ -1299,6 +1364,12 @@ function to_deed(config::AnalysisConfig)
     """
 end
 
+"""
+    validate_deed(deed_str)
+
+Return messages for required DEED markers, forbidden bracket characters, and a
+missing DEED boolean. These are textual checks rather than full DEED parsing.
+"""
 function validate_deed(deed_str::String)
     errors = String[]
     if !occursin(":schema-version", deed_str)
@@ -1330,6 +1401,15 @@ end
 # DOI-ready JSON manifest bundles — DataCite
 # --------------------------------------------------------------------------
 
+"""
+    create_doi_bundle(config, [result]; output_dir, authors, title, license, description)
+
+Create or update `output_dir` with DataCite metadata, JSON, Nickel, DEED,
+provenance, and content-hash files, then return the directory path. An optional
+result is embedded in the DataCite document. Dangerous configurations also write
+`DANGER_BANNER.txt` and emit a warning; existing files with the same names are
+overwritten.
+"""
 function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,Nothing}=nothing; output_dir::String="doi_bundle_$(config.id)", authors::Vector{String}=String[], title::String="MetaManifold Analysis Bundle", license::String="CC-BY-4.0", description::String="Differential abundance analysis")
     mkpath(output_dir)
 
@@ -1427,6 +1507,12 @@ end
 # Epistemic bridge — present_in_every_admissible_world (finite model)
 # --------------------------------------------------------------------------
 
+"""
+    present_in_every_admissible_world(candidates, query)
+
+Return whether `query` is true for every candidate world. An empty candidate
+collection therefore returns `true`, following `all` semantics.
+"""
 function present_in_every_admissible_world(candidates::Vector, query::Function)
     # Finite model from residual-evidence-types: Case inhabited, Holds c P = (x:Candidate) -> P (fst x)
     # Returns true if query holds for every candidate world consistent with observation
