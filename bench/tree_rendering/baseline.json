@@ -1,0 +1,9 @@
+{
+  "build_tree": 0.01,
+  "epistemic_colour": 0.001,
+  "cloud_size": 0.001,
+  "validate_drag_drop": 0.002,
+  "to_plotly_tree": 0.003,
+  "to_json": 0.005,
+  "svg_rendering": 0.002
+}

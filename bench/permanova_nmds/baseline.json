@@ -1,0 +1,10 @@
+{
+  "richness": 0.01,
+  "shannon": 0.01,
+  "simpson": 0.01,
+  "rarefy": 0.05,
+  "normalise_counts": 0.06,
+  "alpha_boxplot": 0.02,
+  "nmds_chart": 0.001,
+  "run_nmds": 0.1
+}

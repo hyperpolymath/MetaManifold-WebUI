@@ -175,7 +175,7 @@ export function AnalysisConfigEditor({ evidenceMode, config, onChange, onSave, a
 
         {(config.normalization.method === 'clr' || config.normalization.method === 'ilr') && (
           <div style={{ marginTop: 8 }}>
-            <label>Pseudocount (must be &gt;0, typical 0.5)</label>
+            <label>{'Pseudocount (must be >0, typical 0.5)'}</label>
             <input
               type="number"
               min={0.000001}
