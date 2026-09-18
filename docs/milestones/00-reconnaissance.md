@@ -1,3 +1,8 @@
+<!--
+SPDX-License-Identifier: CC-BY-SA-4.0
+SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+-->
+
 # Milestone 0 — Full Reconnaissance (2026-09-18 Europe/London)
 
 ## Repository State
