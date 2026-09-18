@@ -3,14 +3,27 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 -->
 # Test coverage — MetaManifold-WebUI frontend
 
-Status: Prompt-5 baseline (2026-09-17, Europe/London). Informational metrics
-only — **no coverage gate** (that decision belongs to CI maturity, per the
-infrastructure prompt). The lane layout and discipline are in
-`docs/testing/infrastructure.md`; this file inventories WHAT is covered and
-what is deliberately not.
+Status: updated 2026-09-18 (Europe/London) for the Prompt-7 extension.
+Informational metrics only — **no coverage gate** (that decision belongs to
+CI maturity, per the infrastructure prompt). The lane layout and discipline
+are in `docs/testing/infrastructure.md`; the standards-taxonomy facet states
+(REAL/THIN/ABSENT per category) are in `docs/testing/taxonomy-facets.md`;
+this file inventories WHAT is covered and what is deliberately not.
 
-Run: `bun test` (67 pass / 5 todo / 0 fail / 204 assertions, ~120 ms).
-Metrics snapshot below: `bun test --coverage` at the Prompt-5 commit.
+Run: `bun test` (577 pass / 5 todo / 0 fail / 3343 assertions, ~300 ms —
+Prompt-5 baseline was 67 pass / 204 assertions; the Prompt-7 suites are
+additive-only). Metrics snapshot below remains the Prompt-5 one.
+
+Prompt-7 additions (seeded/disciplined ports from `proven-tests-and-benches`
+and the standards TESTING-TAXONOMY):
+
+| File | Category | What it proves |
+|---|---|---|
+| `tests/unit/property-figure-colours.test.ts` | Property / generative | Seeded generators + laws over `figureColours` (totality, immutability, selectivity, application, idempotence; 400 cases, seeds pinned) |
+| `tests/unit/fuzz-totality.test.ts` | Fuzz (lite) + chaos-lite | Hostile wire-shaped corpus never throws the boundary adapters; error funnel string contract |
+| `tests/unit/reflexive-gates.test.ts` | Reflexive | `check-spdx.sh`/`check-format.sh` executed unmodified against fixture repos — silence AND firing proven for each gate |
+| `tests/unit/coupling-api-routes.test.ts` | Coupling / drift | Every TS client endpoint exists in the Julia routes (0 orphans over 61 endpoints / 74 routes) |
+| `tests/fixtures/gates/spdx-silence.txt` | Reflexive payload | Harness/payload separation per TEST-DOCTRINE (firing variants are runtime mutations of the silence payload) |
 
 ## What is tested — by type boundary
 
