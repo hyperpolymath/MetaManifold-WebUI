@@ -67,7 +67,21 @@ Counts may be normalised before analysis (none, rarefaction to a fixed or auto-r
 
 ## Prerequisites
 
-- **Julia** >= 1.0 (installed automatically by `install.sh` if missing)
+**One-command toolchain (recommended — the repo is standalone):** the pinned
+dev toolchain lives in `mise.toml` (julia 1.12.5, bun 1.3.10, node 20.20.2,
+just 1.43.1 — exact CI pins) with `guix.scm`/`channels.scm` as the Guix
+peer lane and `.envrc` for direnv auto-activation:
+
+```bash
+curl https://mise.run | sh && just bootstrap   # or: guix time-machine -C channels.scm -- shell -D -f guix.scm
+just ci                                        # the proof: all gates green
+```
+
+Then every task is a `just` recipe (`just` lists them). R remains a system
+install (not in the mise registry — documented exception in
+`docs/reproducibility.md`, which is the toolchain source of truth).
+
+- **Julia** >= 1.0, pinned 1.12.5 via `mise.toml` (installed automatically by `install.sh` if missing)
 - **R** >= 4.0 (required for the DADA2 stage and NMDS/PERMANOVA analysis)
   - Ubuntu/Debian: `sudo apt install r-base`
   - macOS: `brew install r` or [CRAN package](https://cran.r-project.org/bin/macosx/)
