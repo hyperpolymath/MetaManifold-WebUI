@@ -21,9 +21,10 @@ set positional-arguments
 # Configuration
 # ----------------------------------------------------------------------- #
 
-# Julia command. CI pins 1.12.5 (see .github/workflows/ci.yml); override
-# with JULIA_CMD if your machine uses a different channel naming.
-export JULIA_CMD := env_var_or_default("JULIA_CMD", "julia +1.12.5")
+# Julia command. The repo-standard lane is mise (pins 1.12.5 exactly behind
+# plain `julia`). juliaup users override: JULIA_CMD="julia +1.12.5".
+# CI pins 1.12.5 (see .github/workflows/ci.yml).
+export JULIA_CMD := env_var_or_default("JULIA_CMD", "julia")
 
 # Estate launcher (standards repo). Override with METAMANIFOLD_LAUNCHER.
 LAUNCHER := env_var_or_default("METAMANIFOLD_LAUNCHER", justfile_directory() / "../standards/launcher/metamanifold-webui-launcher.sh")
@@ -106,6 +107,26 @@ stats:
 
 # One-time setup: install frontend dependencies.
 setup: install
+
+# One-time setup on a BARE machine: provision the pinned toolchain from
+# mise.toml (julia 1.12.5, bun 1.3.10, node 20.20.2, just 1.43.1), then
+# install frontend dependencies. R is a documented exception: system R +
+# renv.lock (R is not in the mise registry — verified 2026-09-18).
+bootstrap: setup-tools install
+    @echo "bootstrap: toolchain + deps ready — next: just ci"
+
+# Provision the pinned toolchain via mise (fail-loud with the installer
+# one-liner when mise is absent; the Guix lane in guix.scm is the
+# alternative, see docs/reproducibility.md).
+setup-tools:
+    #!/usr/bin/env bash
+    if ! command -v mise >/dev/null 2>&1; then
+        echo "MISE UNAVAILABLE: install with: curl https://mise.run | sh" >&2
+        echo "(or use the Guix lane: guix time-machine -C channels.scm -- shell -D -f guix.scm)" >&2
+        exit 1
+    fi
+    mise install
+    mise ls
 
 # Install frontend dependencies (bun).
 install:

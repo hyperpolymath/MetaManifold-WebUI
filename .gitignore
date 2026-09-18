@@ -338,6 +338,7 @@ archive/
 !.gitattributes
 !.gitmessage
 !.githooks/
+!.envrc
 
 ### Exceptions
 !.github

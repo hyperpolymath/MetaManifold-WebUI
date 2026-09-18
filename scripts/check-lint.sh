@@ -25,7 +25,17 @@ command -v bun >/dev/null 2>&1 || export PATH="$HOME/.bun/bin:$PATH"
 command -v bun >/dev/null 2>&1 || { printf '%s\n' 'check-lint: bun not found' >&2; exit 1; }
 
 printf '%s\n' '[1/3] tsc --noEmit (frontend)'
-( cd frontend && bun x tsc --noEmit ) || fail=1
+# Resolve the project's own tsc binary (node_modules/.bin), NOT `bun x tsc`:
+# bun's package-name resolution can reach the registry for a name published
+# on npm (the legacy 'tsc' wrapper), yielding a foreign TypeScript major
+# (observed: TS 7.0.2 under bun 1.3.10, the pinned version) and red-herring
+# failures like "Option 'baseUrl' has been removed". The dependency manifest
+# owns the compiler version; the gate must use it, exactly like CI does.
+if [ -x frontend/node_modules/.bin/tsc ]; then
+  ( cd frontend && ./node_modules/.bin/tsc --noEmit ) || fail=1
+else
+  ( cd frontend && bun run typecheck ) || fail=1
+fi
 
 printf '%s\n' '[2/3] bash -n on tracked shell scripts'
 mapfile -t scripts < <(git ls-files -- '*.sh')

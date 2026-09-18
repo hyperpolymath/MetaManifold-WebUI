@@ -25,7 +25,10 @@ Reference: `rsr-template-repo@main` as cloned in the verification sandbox.
 | `.editorconfig` | `.editorconfig` | ✅ canonical copy, byte-identical |
 | `.gitattributes` | `.gitattributes` | ✅ canonical copy, byte-identical |
 | `.gitmessage` | `.gitmessage` | ✅ canonical copy, byte-identical |
-| `Justfile` | ✅ | **present** (39 recipes; reinstated from this deviation on user instruction). Thin wrappers only — every recipe delegates to the canonical entry points (`frontend/package.json` scripts, `scripts/check-*.sh`, the estate launcher, the Julia project), so no logic is duplicated. Mirrors the rsr doctrine of fail-loud lanes (e.g. `test-e2e` without browsers, Julia lanes without Julia) |
+| `Justfile` | ✅ | **present** (41 recipes; reinstated from this deviation on user instruction). Thin wrappers only — every recipe delegates to the canonical entry points (`frontend/package.json` scripts, `scripts/check-*.sh`, the estate launcher, the Julia project), so no logic is duplicated. Mirrors the rsr doctrine of fail-loud lanes (e.g. `test-e2e` without browsers, Julia lanes without Julia) |
+| `mise.toml` | ✅ | **present** — exact CI-pinned binaries (julia 1.12.5, bun 1.3.10, node 20.20.2, just 1.43.1); every registry name verified per the header doctrine of the template's own mise.toml; R is a verified-as-absent documented exception (system R + renv.lock) |
+| `guix.scm` (+ `channels.scm`) | ✅ | **present** — time-machine-pinned dev shell (guix master 2026-09-18); honest gaps documented in the file header (channel-version drift vs exact CI pins → use mise for parity; bun not packaged by Guix → pinned upstream installer) |
+| `.envrc` | ✅ | **present** — direnv activates mise first / Guix fallback; exports `METAMANIFOLD_REPO_DIR` |
 | `mise.toml` / `.tool-versions` | `.bun-version` | ❌/✅ toolchain pinning is upstream's `tool_versions.yml` + `.bun-version`; adding a second pin = drift source |
 | `README.adoc` | `README.md` | ➖ upstream's, Markdown; refreshed, not converted |
 | Agent-context files (`CLAUDE.md`, `.cursorrules`, `GEMINI.md`, …) | — | ❌ intentionally absent — fork carries no agent-instruction surface; estate canon lives in `standards` |
