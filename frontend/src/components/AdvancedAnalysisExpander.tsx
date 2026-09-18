@@ -141,7 +141,7 @@ export function AdvancedAnalysisExpander({ evidenceMode, advanced, onChange, val
 
           {/* Min abundance */}
           <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 600 }}>Min Abundance ≥0</label>
+            <label style={{ fontWeight: 600 }}>{'Min Abundance ≥0'}</label>
             <input
               type="number"
               min={0}
@@ -161,7 +161,7 @@ export function AdvancedAnalysisExpander({ evidenceMode, advanced, onChange, val
 
           {/* Max features */}
           <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 600 }}>Max Features (optional, >0, ≤100k)</label>
+            <label style={{ fontWeight: 600 }}>{'Max Features (optional, >0, ≤100k)'}</label>
             <input
               type="number"
               min={1}
@@ -191,8 +191,8 @@ export function AdvancedAnalysisExpander({ evidenceMode, advanced, onChange, val
           {/* Min samples per group */}
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-              Min Samples Per Group ≥2
-              <span style={{ fontSize: 10, color: '#666' }}>(≥3 recommended, &lt;3 triggers DANGER)</span>
+              {'Min Samples Per Group ≥2'}
+              <span style={{ fontSize: 10, color: '#666' }}>{'(≥3 recommended, <3 triggers DANGER)'}</span>
             </label>
             <input
               type="number"
@@ -210,7 +210,7 @@ export function AdvancedAnalysisExpander({ evidenceMode, advanced, onChange, val
             />
             {advanced.min_samples_per_group < 3 && (
               <div style={{ color: '#c62828', fontSize: 12, marginTop: 4 }}>
-                DANGER: &lt;3 samples per group — variance estimation will be unstable.
+                {'DANGER: <3 samples per group — variance estimation will be unstable.'}
               </div>
             )}
           </div>

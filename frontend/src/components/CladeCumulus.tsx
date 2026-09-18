@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 
 interface CladeNode {
   id: string
@@ -116,7 +116,8 @@ export function CladeCumulus({ evidenceMode, tree, onDragDrop, onNodeClick }: Cl
           stroke={isHovered ? '#000' : '#fff'}
           strokeWidth={isHovered ? 2 : 1}
           style={{ cursor: 'grab' }}
-          draggable
+          // @ts-ignore — draggable not in SVGProps but needed for drag-drop validation with present_in_every
+          draggable={true}
           onDragStart={() => handleDragStart(node.id)}
           onDragOver={e => { e.preventDefault(); handleDragOver(node.id) }}
           onDrop={e => { e.preventDefault(); handleDrop(node.id) }}
