@@ -1,3 +1,8 @@
+<!--
+SPDX-License-Identifier: CC-BY-SA-4.0
+SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
+
 # Standalone releases: agreed requirements
 
 Status: **requirements recorded; release builder, signed updater and standalone binaries are not implemented yet.** Do not advertise the current source archive as an offline-ready application.

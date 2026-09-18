@@ -1,3 +1,8 @@
+<!--
+SPDX-License-Identifier: CC-BY-SA-4.0
+SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
+
 # Stipple/Vue implementation backlog
 
 Baseline and architecture: [recon report](README.md). Implementation has started in `ui/`; see [current evidence and limits](IMPLEMENTATION.md). Unchecked tasks remain pending. Suggested work packages, not remote issues or commitments to dates.
