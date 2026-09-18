@@ -973,7 +973,7 @@ function danger_banner(config::AnalysisConfig)
     ║  and in DOI bundle.                                                    ║
     ╠════════════════════════════════════════════════════════════════════════════╣
     ║  Reasons:                                                              ║
-    $(join(["║  - \$r" for r in reasons], "\n"))
+    $(join(["║  - $r" for r in reasons], "\n"))
     ║                                                                        ║
     ║  Acknowledgment token: $(config.correction.acknowledgment_token === nothing ? config.advanced.acknowledgment_token : config.correction.acknowledgment_token) ║
     ║  Config ID: $(config.id)                                                ║
