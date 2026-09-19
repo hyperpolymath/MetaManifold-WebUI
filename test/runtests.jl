@@ -21,7 +21,7 @@ using MetaManifold.Tools, MetaManifold.TaxonomyTableTools, MetaManifold.ProjectS
 using MetaManifold.DiversityMetrics, MetaManifold.Analysis
 using MetaManifold.FuncDBAnnotation
 using MetaManifold.Categories, MetaManifold.CompositionLibrary
-using MetaManifold.Epistemic, MetaManifold.AnalysisConfig, MetaManifold.CladeCumulus
+using MetaManifold.Epistemic, MetaManifold.AnalysisConfig, MetaManifold.CladeCumulus, MetaManifold.Execution
 
 ## Unit tests (always run)
 @testset "MetabarcodingPipeline" begin
@@ -54,6 +54,7 @@ using MetaManifold.Epistemic, MetaManifold.AnalysisConfig, MetaManifold.CladeCum
     include("unit/test_install_pins.jl")
     include("unit/test_migrate_composition.jl")
     include("unit/test_analysis_config.jl")
+    include("unit/test_execution.jl")
 
     ## Integration tests (opt-in)
     if RUN_INTEGRATION
