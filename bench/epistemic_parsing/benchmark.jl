@@ -13,6 +13,8 @@ Measures (future epistemic layer, currently mocked with categories + avec_fibre)
 """
 
 using Random
+using JSON3
+using Statistics
 
 # Mock epistemic types (mirrors src/core/epistemic.jl future implementation)
 @enum EpistemicStatus present_in_every=1 present_in_some=2 absent=3 unknown=4 sans_fibre=5
@@ -124,25 +126,23 @@ function run_benchmarks(; reps=5)
 
     baseline_path = joinpath(@__DIR__, "baseline.json")
     if isfile(baseline_path)
-        using JSON3
         baseline = JSON3.read(read(baseline_path, String))
-        println("\nBaseline comparison (fail on >10% regression):")
+        println("\nBaseline comparison (informational):")
         for (name, times) in results
             med = median(times)
             if haskey(baseline, name)
                 base_med = baseline[name]
                 delta = (med - base_med) / base_med * 100
-                status = delta > 10 ? "FAIL" : "PASS"
+                status = delta > 10 ? "NOTE" : "ok"
                 println("$status $name: $(round(delta, digits=1))% vs baseline $(round(base_med*1000, digits=2)) ms")
-                if delta > 10 && get(ENV, "CI", "false") == "true"
-                    @error "Regression >10% for $name" delta
-                    exit(1)
+                if delta > 10
+                    # Informational — absolute ns vs a committed baseline measures the host, not the change (see the benchmark step comment in .github/workflows/ci.yml). Never gates in CI.
+                    @warn "Delta >10% vs baseline for $name (informational)" delta
                 end
             end
         end
     else
         println("\nNo baseline.json — saving current as baseline")
-        using JSON3
         baseline = Dict(name => median(times) for (name, times) in results)
         open(baseline_path, "w") do io
             JSON3.write(io, baseline)

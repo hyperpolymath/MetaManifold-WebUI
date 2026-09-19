@@ -14,6 +14,9 @@ Measures:
 using Random
 using MetaManifold.DiversityMetrics: richness, shannon, simpson, rarefy, normalise_counts
 using MetaManifold.Analysis: alpha_boxplot, nmds_chart
+using JSON3
+using RCall
+using Statistics
 
 function bench_richness(n::Int=1000, n_features::Int=1000)
     mat = rand(0:1000, n, n_features)
@@ -67,7 +70,6 @@ end
 # R-dependent benchmarks — only run if R available
 function bench_run_nmds(n::Int=20, n_features::Int=100)
     try
-        using RCall
         mat = rand(0:1000, n, n_features) .|> Float64
         # Check R available
         R"library(vegan)"
@@ -109,27 +111,25 @@ function run_benchmarks(; reps=5)
 
     baseline_path = joinpath(@__DIR__, "baseline.json")
     if isfile(baseline_path)
-        using JSON3
         baseline = JSON3.read(read(baseline_path, String))
-        println("\nBaseline comparison (fail on >10% regression):")
+        println("\nBaseline comparison (informational):")
         for (name, times) in results
             med = median(times)
             if haskey(baseline, name)
                 base_med = baseline[name]
                 if base_med > 0
                     delta = (med - base_med) / base_med * 100
-                    status = delta > 10 ? "FAIL" : "PASS"
+                    status = delta > 10 ? "NOTE" : "ok"
                     println("$status $name: $(round(delta, digits=1))% vs baseline $(round(base_med*1000, digits=2)) ms")
-                    if delta > 10 && get(ENV, "CI", "false") == "true"
-                        @error "Regression >10% for $name" delta
-                        exit(1)
+                    if delta > 10
+                        # Informational — absolute ns vs a committed baseline measures the host, not the change (see the benchmark step comment in .github/workflows/ci.yml). Never gates in CI.
+                        @warn "Delta >10% vs baseline for $name (informational)" delta
                     end
                 end
             end
         end
     else
         println("\nNo baseline.json — saving current as baseline")
-        using JSON3
         baseline = Dict(name => median(times) for (name, times) in results)
         open(baseline_path, "w") do io
             JSON3.write(io, baseline)
