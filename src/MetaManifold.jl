@@ -32,5 +32,6 @@ include("analysis/diversity.jl")
 include("analysis/analysis.jl")
 include("analysis/analysis_config.jl")
 include("analysis/clade_cumulus.jl")
+include("analysis/Execution.jl")
 
 end
