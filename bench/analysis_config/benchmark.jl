@@ -19,6 +19,7 @@ using OrderedCollections
 using MetaManifold.AnalysisConfig
 using MetaManifold.Epistemic
 using MetaManifold.CladeCumulus
+using Statistics
 
 const SUITE = BenchmarkGroup()
 

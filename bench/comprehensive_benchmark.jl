@@ -15,6 +15,7 @@ Uploads artifacts via GitHub Actions (see .github/workflows/ci.yml)
 """
 
 using Logging
+using JSON3
 
 const BENCH_DIR = @__DIR__
 
@@ -68,7 +69,6 @@ function main()
     results_path = joinpath(BENCH_DIR, "results", "comprehensive_results.json")
     mkpath(dirname(results_path))
     try
-        using JSON3
         open(results_path, "w") do io
             JSON3.write(io, all_results)
         end

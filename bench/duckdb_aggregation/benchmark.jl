@@ -14,6 +14,8 @@ Measures:
 using DuckDB, DataFrames, DBInterface
 using MetaManifold.Analysis: aggregate_by_taxon, venn_taxa_present, alpha_chart, bar_chart, taxa_bar_chart, sample_columns, filtered_counts
 using Random
+using JSON3
+using Statistics
 
 function _create_mock_db(n_samples::Int=20, n_features::Int=1000)
     db = DuckDB.DB()
@@ -90,25 +92,23 @@ function run_benchmarks(; n_samples=20, n_features=1000, reps=5)
 
     baseline_path = joinpath(@__DIR__, "baseline.json")
     if isfile(baseline_path)
-        using JSON3
         baseline = JSON3.read(read(baseline_path, String))
-        println("\nBaseline comparison (fail on >10% regression):")
+        println("\nBaseline comparison (informational):")
         for (name, times) in results
             med = median(times)
             if haskey(baseline, name)
                 base_med = baseline[name]
                 delta = (med - base_med) / base_med * 100
-                status = delta > 10 ? "FAIL" : "PASS"
+                status = delta > 10 ? "NOTE" : "ok"
                 println("$status $name: $(round(delta, digits=1))% vs baseline $(round(base_med*1000, digits=2)) ms")
-                if delta > 10 && get(ENV, "CI", "false") == "true"
-                    @error "Regression >10% for $name" delta
-                    exit(1)
+                if delta > 10
+                    # Informational — absolute ns vs a committed baseline measures the host, not the change (see the benchmark step comment in .github/workflows/ci.yml). Never gates in CI.
+                    @warn "Delta >10% vs baseline for $name (informational)" delta
                 end
             end
         end
     else
         println("\nNo baseline.json — saving current as baseline")
-        using JSON3
         baseline = Dict(name => median(times) for (name, times) in results)
         open(baseline_path, "w") do io
             JSON3.write(io, baseline)
