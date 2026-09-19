@@ -223,14 +223,22 @@ function humanLine(r: BenchmarkResult): string {
 }
 
 function main(): void {
+  // Iteration counts are CALIBRATION parameters, not workload definitions:
+  // they are sized so one sample costs ~13-27 ms on the reference runner,
+  // honouring the header discipline ("one sample costs tens of milliseconds;
+  // sub-millisecond totals are timer-resolution noise"). Initially four
+  // workloads ran 0.1-4 ms samples, which made their 5-sample medians jitter
+  // by >10% run-to-run on shared CI hosts (observed: epistemic-parsing
+  // +11.5% pure noise failing the hardness gate). Bumped 2026-09-19 and the
+  // baseline re-cut from this calibration, per the re-cutting rule above.
   const results = [
     wParse(2000),
     wColour(300),
-    wTableLoading(500),
-    wEpistemicParsing(1000),
-    wDuckDBAggregation(200),
-    wPermanovaNmds(300),
-    wTreeRendering(100),
+    wTableLoading(5000),
+    wEpistemicParsing(100000),
+    wDuckDBAggregation(800),
+    wPermanovaNmds(2000),
+    wTreeRendering(1500),
   ]
 
   console.log('Proven-discipline benchmark run (bun test infra scaffold)')
