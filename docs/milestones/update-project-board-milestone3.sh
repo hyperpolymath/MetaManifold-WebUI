@@ -80,11 +80,11 @@ echo "=== Creating issues from docs/issues/milestone3/*.md ==="
 for issue_file in docs/issues/milestone3/*.md; do
   [[ "$issue_file" == *"README.md" ]] && continue
   echo "--- Processing $issue_file ---"
-  # Extract title: first line after **Title:** 
+  # Extract title: first line after **Title:**
   TITLE=$(grep -m1 "^\*\*Title:\*\*" "$issue_file" | sed -E 's/.*`([^`]+)`.*/\1/' || echo "feat(analysis): $(basename $issue_file .md)")
   # Extract labels
   LABELS=$(grep -m1 "^\*\*Labels:\*\*" "$issue_file" | sed -E 's/\*\*Labels:\*\* //' || echo "enhancement,analysis,deferred")
-  # Body is everything after **Body:** 
+  # Body is everything after **Body:**
   BODY=$(awk '/^\*\*Body:\*\*/{flag=1; next} flag' "$issue_file")
 
   echo "Title: $TITLE"

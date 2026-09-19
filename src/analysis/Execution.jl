@@ -846,7 +846,7 @@ function prepare_analysis_table(
             if length(avec) == size(filtered_counts, 1)
                 keep_avec = [i for (i, v) in enumerate(avec) if v == true]
                 if isempty(keep_avec)
-                    @warn "No taxa have avec_fibre=true — epistemic filtering would remove all taxa. Keeping all for now, but marking as dangerous." 
+                    @warn "No taxa have avec_fibre=true — epistemic filtering would remove all taxa. Keeping all for now, but marking as dangerous."
                 else
                     # Only filter if at least one has avec_fibre and epistemic_status is present_in_every?
                     # For now, we don't filter aggressively, just warn
