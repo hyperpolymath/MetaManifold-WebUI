@@ -178,4 +178,4 @@ export ensure_databases, resolve_db, make_db_meta
         return cached
     end
 
-end\n\n
+end

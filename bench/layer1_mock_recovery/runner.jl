@@ -110,4 +110,6 @@ function main(args::Vector{String}=String[])
     return runs
 end
 
-abspath(PROGRAM_FILE) == @__FILE__ && main(ARGS)
+if abspath(PROGRAM_FILE) == @__FILE__
+    main(ARGS)
+end
