@@ -1,23 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-"""
-    AnalysisConfig — immutable, versioned, explicit, provenance-rich analysis configuration
-
-Implements exactly the user's answers for v1:
-- Methods: NB GLM, CLR/ILR+Gaussian LM, logistic
-- BH mandatory, hard-stop with DANGER banner on overrides
-- Advanced Analysis section behind Evidence Mode with heavy validation/help/warnings for custom pseudocount/epsilon/zero_policy/etc.
-- JSON + Nickel + DEED schemes from hyperpolymath/standards (draft 2020-12, ABNF)
-- Validators that refuse meaningless inputs
-- Scary DANGER banner logging for paper writers on overrides
-- Full DOI-ready JSON manifest bundles with DataCite
-
-No silent switching or auto-selection. Every field explicit, immutable.
-Standards alignment:
-- JSON: https://json-schema.org/draft/2020-12/schema — \$id https://hyperpolymath.github.io/MetaManifold-WebUI/schemas/analysis_config.schema.json
-- Nickel: 1-formats/k9/*.ncl style, contracts ValidFormula, PseudocountContract, CorrectionContract BH mandatory, ZeroHandlingContract, MethodNormalizationCompatibility
-- DEED: DEED-GRAMMAR-SPEC.adoc v0.2.0 DRAFT — :schema-version first, only () brackets, #t/#f booleans, :kebab-case keywords, filename dispatch *_chora.deed → repo-deed, SPDX header mandatory, #u5 UUID5
-"""
+# NOTE: this design note is a comment block, not a docstring. A docstring above
+# `module AnalysisConfig` is lowered by Julia into `Docs.doc!(AnalysisConfig, ...)`
+# *inside* the module body, where the bare name resolves to the `struct AnalysisConfig`
+# declared below rather than to the module, and precompilation aborts with
+#   MethodError: no method matching doc!(::Type{...AnalysisConfig}, ::Base.Docs.Binding, ::Base.Docs.DocStr)
+# Documenting the module from outside does not help either: the module's own docs and
+# the struct's docs share the key Binding(AnalysisConfig, :AnalysisConfig), so one
+# would silently replace the other. The struct keeps the docstring; the note stays here.
+#     AnalysisConfig — immutable, versioned, explicit, provenance-rich analysis configuration
+#
+# Implements exactly the user's answers for v1:
+# - Methods: NB GLM, CLR/ILR+Gaussian LM, logistic
+# - BH mandatory, hard-stop with DANGER banner on overrides
+# - Advanced Analysis section behind Evidence Mode with heavy validation/help/warnings for custom pseudocount/epsilon/zero_policy/etc.
+# - JSON + Nickel + DEED schemes from hyperpolymath/standards (draft 2020-12, ABNF)
+# - Validators that refuse meaningless inputs
+# - Scary DANGER banner logging for paper writers on overrides
+# - Full DOI-ready JSON manifest bundles with DataCite
+#
+# No silent switching or auto-selection. Every field explicit, immutable.
+# Standards alignment:
+# - JSON: https://json-schema.org/draft/2020-12/schema — \$id https://hyperpolymath.github.io/MetaManifold-WebUI/schemas/analysis_config.schema.json
+# - Nickel: 1-formats/k9/*.ncl style, contracts ValidFormula, PseudocountContract, CorrectionContract BH mandatory, ZeroHandlingContract, MethodNormalizationCompatibility
+# - DEED: DEED-GRAMMAR-SPEC.adoc v0.2.0 DRAFT — :schema-version first, only () brackets, #t/#f booleans, :kebab-case keywords, filename dispatch *_chora.deed → repo-deed, SPDX header mandatory, #u5 UUID5
 module AnalysisConfig
 
 using Dates
