@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          # On pull_request the checkout is GitHub's synthetic merge commit;
+          # depth 2 keeps its parents so the PR head commit is reachable.
+          fetch-depth: 2
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2
@@ -41,9 +45,13 @@ jobs:
 
       # Commit convention mirror of .githooks/commit-msg (enforced locally by
       # the hooksPath setting documented in CONTRIBUTING.md).
+      # Judge the PR head commit, not the synthetic "Merge X into Y" commit
+      # that pull_request checkouts produce (it can never match the pattern).
       - name: Commit convention check
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          subject="$(git log -1 --pretty=%s)"
+          subject="$(git log -1 --pretty=%s "$HEAD_SHA")"
           if ! printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_/-]+\))?!?: .{1,72}$'; then
             echo "::error::commit subject fails the conventional pattern: $subject"
             exit 1
