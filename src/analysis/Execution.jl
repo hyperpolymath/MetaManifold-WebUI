@@ -41,7 +41,7 @@ using Logging
 using Statistics
 
 # Use AnalysisConfig from parent module
-using ..AnalysisConfig
+import ..AnalysisConfig
 using ..Epistemic
 using ..Provenance: probe_metamanifold, probe_host
 

@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+# CI invokes this file as `using Test; using MetaManifold; include(...)`, which does
+# not bring submodules into scope. `:` form binds the module, not the same-named struct.
+using MetaManifold: AnalysisConfig
+
 @testset "AnalysisConfig — safe, explicit, versioned layer" begin
 
     using OrderedCollections

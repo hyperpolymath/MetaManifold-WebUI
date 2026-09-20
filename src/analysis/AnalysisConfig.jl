@@ -137,7 +137,7 @@ struct NormalizationConfig
         isempty(method_clean) && throw(ArgumentError("normalization.method must be non-empty (e.g. 'clr', 'size_factors', 'TSS') — see context_help('normalization.method')"))
 
         # Refuse meaningless: ; backtick dollar injection
-        if occursin(r"[;`dollar]", method_clean)
+        if occursin(r"[;`$]", method_clean)
             throw(ArgumentError("normalization.method contains forbidden ; ` \$ (injection prevention) — got '\$method_clean'"))
         end
 
@@ -220,7 +220,7 @@ struct CorrectionConfig
         method_clean = strip(method)
         isempty(method_clean) && throw(ArgumentError("correction.method must be non-empty — see context_help('correction.method')"))
 
-        if occursin(r"[;`dollar]", method_clean)
+        if occursin(r"[;`$]", method_clean)
             throw(ArgumentError("correction.method contains forbidden ; ` \$ — got '\$method_clean'"))
         end
 
@@ -424,7 +424,7 @@ struct AnalysisConfig
         # Method parsing
         method_clean = strip(method)
         isempty(method_clean) && throw(ArgumentError("method must be non-empty — one of nb_glm, clr_lm, ilr_lm, logistic. See context_help('method')"))
-        occursin(r"[;`dollar]", method_clean) && throw(ArgumentError("method contains forbidden ; ` \$ — got '\$method_clean'"))
+        occursin(r"[;`$]", method_clean) && throw(ArgumentError("method contains forbidden ; ` \$ — got '\$method_clean'"))
         method_enum = get(METHOD_STRINGS, method_clean, get(METHOD_STRINGS, lowercase(method_clean), nothing))
         isnothing(method_enum) && throw(ArgumentError("method must be one of $(join(keys(METHOD_STRINGS), ", ")) — got '\$method_clean'. No auto-selection. See context_help('method')"))
 
@@ -433,7 +433,7 @@ struct AnalysisConfig
         isempty(formula_clean) && throw(ArgumentError("formula must be non-empty, e.g. '~ group' or 'disease ~ group + batch'. See context_help('formula')"))
         length(formula_clean) < 2 && throw(ArgumentError("formula too short, must reference at least one metadata column — got '\$formula_clean'"))
         !occursin("~", formula_clean) && throw(ArgumentError("formula must contain '~' (R-style), e.g. '~ group' — got '\$formula_clean'. See context_help('formula')"))
-        if occursin(r"[;`dollar]", formula_clean)
+        if occursin(r"[;`$]", formula_clean)
             throw(ArgumentError("formula contains forbidden ; ` \$ (injection prevention) — got '\$formula_clean'. See context_help('formula')"))
         end
         # Refuse formulas that are just "~" or "~  "
@@ -450,10 +450,10 @@ struct AnalysisConfig
         end
         for col in metadata_columns
             isempty(strip(col)) && throw(ArgumentError("metadata_columns contains empty string — refusing"))
-            if occursin(r"[;`dollar]", col)
+            if occursin(r"[;`$]", col)
                 throw(ArgumentError("metadata_columns contains forbidden ; ` \$ in '\$col'"))
             end
-            if !occursin(r"^[a-zA-Z0-9_\.\-]+\$", col)
+            if !occursin(r"^[a-zA-Z0-9_\.\-]+$", col)
                 throw(ArgumentError("metadata_columns must match pattern ^[a-zA-Z0-9_.\\-]+\$ — got '\$col'. See JSON schema."))
             end
         end
@@ -669,7 +669,7 @@ function validate_config(config::AnalysisConfig, available_columns::Vector{Strin
                     continue
                 end
                 # Skip numeric
-                if occursin(r"^\d+\$", tok_clean)
+                if occursin(r"^\d+$", tok_clean)
                     continue
                 end
                 if !(tok_clean in config.metadata_columns)
