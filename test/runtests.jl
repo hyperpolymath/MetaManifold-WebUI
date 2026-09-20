@@ -21,7 +21,10 @@ using MetaManifold.Tools, MetaManifold.TaxonomyTableTools, MetaManifold.ProjectS
 using MetaManifold.DiversityMetrics, MetaManifold.Analysis
 using MetaManifold.FuncDBAnnotation
 using MetaManifold.Categories, MetaManifold.CompositionLibrary
-using MetaManifold.Epistemic, MetaManifold.AnalysisConfig, MetaManifold.CladeCumulus, MetaManifold.Execution
+using MetaManifold.Epistemic, MetaManifold.CladeCumulus, MetaManifold.Execution
+# AnalysisConfig must be imported with the `:` form: `using MetaManifold.AnalysisConfig`
+# binds the exported `struct AnalysisConfig`, not the submodule of the same name.
+using MetaManifold: AnalysisConfig
 
 ## Unit tests (always run)
 @testset "MetabarcodingPipeline" begin
