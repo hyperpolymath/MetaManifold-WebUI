@@ -12,12 +12,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Estate hygiene gates (standards/RSR alignment): cheap, fail-fast, run
-  # before the heavyweight Julia/frontend matrix. Each gate has a documented
-  # local equivalent — scripts/check-*.sh (see CONTRIBUTING.md).
+  # Estate hygiene gates (standards/RSR alignment): cheap, run alongside the
+  # heavyweight Julia/frontend matrix. Each gate has a documented local
+  # equivalent — scripts/check-*.sh (see CONTRIBUTING.md).
+  #
+  # Advisory only on this repository. The work is a contribution to upstream
+  # (JoshuaJewell/MetaManifold-WebUI), which does not use conventional-commit /
+  # SPDX / format / lint as a merge gate, so a failed check here must not
+  # block the owner's PR. Checks still run and annotate; they do not fail
+  # the workflow. Local hooks remain available via core.hooksPath=.githooks.
   repo-hygiene:
     name: Repo hygiene (licence · format · lint · commit)
     runs-on: ubuntu-24.04
+    continue-on-error: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
@@ -35,25 +42,30 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Licence header check
+        continue-on-error: true
         run: scripts/check-spdx.sh
 
       - name: Formatting check
+        continue-on-error: true
         run: scripts/check-format.sh
 
       - name: Lint check
+        continue-on-error: true
         run: scripts/check-lint.sh
 
-      # Commit convention mirror of .githooks/commit-msg (enforced locally by
-      # the hooksPath setting documented in CONTRIBUTING.md).
+      # Commit convention mirror of .githooks/commit-msg (available locally via
+      # the hooksPath setting documented in CONTRIBUTING.md). Advisory in CI:
+      # upstream commit subjects are not required to match this pattern.
       # Judge the PR head commit, not the synthetic "Merge X into Y" commit
       # that pull_request checkouts produce (it can never match the pattern).
       - name: Commit convention check
+        continue-on-error: true
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           subject="$(git log -1 --pretty=%s "$HEAD_SHA")"
           if ! printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_/-]+\))?!?: .{1,72}$'; then
-            echo "::error::commit subject fails the conventional pattern: $subject"
+            echo "::warning::commit subject fails the conventional pattern (advisory): $subject"
             exit 1
           fi
           echo "commit subject ok: $subject"

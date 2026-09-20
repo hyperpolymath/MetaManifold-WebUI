@@ -36,7 +36,9 @@ in `docs/reproducibility.md`.
 
 ## Commit conventions
 
-Conventional commit subjects (enforced locally and in CI):
+Conventional commit subjects (enforced locally by the commit-msg hook;
+reported in CI as an advisory check, not a merge gate — this fork's work
+lands on upstream, which does not require conventional commits):
 
 ```
 <type>(<optional scope>): <subject>        # ≤ 72 chars
@@ -75,7 +77,8 @@ not used.
 
 1. `bun run check` green (`frontend/`)
 2. `scripts/check-spdx.sh`, `scripts/check-format.sh`,
-   `scripts/check-lint.sh` green (repo root; these run in CI)
+   `scripts/check-lint.sh` green (repo root; these run in CI as
+   advisory checks and do not block merge)
 3. New source files carry the right `SPDX-License-Identifier` header
    (`NOTICE` explains the authorship rule)
 4. Docs touched if behaviour/developer workflow changed

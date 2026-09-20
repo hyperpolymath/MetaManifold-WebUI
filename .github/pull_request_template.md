@@ -23,7 +23,8 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 - [ ] `bun run check` passes (`frontend/`: typecheck 0 errors, tests,
       benchmarks)
 - [ ] `scripts/check-spdx.sh` / `check-format.sh` / `check-lint.sh` pass
-- [ ] Conventional commit subjects (see `CONTRIBUTING.md`)
+      (advisory in CI — does not block merge)
+- [ ] Conventional commit subjects (see `CONTRIBUTING.md`; advisory in CI)
 - [ ] New source files carry the correct SPDX header (`NOTICE` explains
       the authorship rule)
 - [ ] No secrets, credentials, `.env`, or sequencing data included
