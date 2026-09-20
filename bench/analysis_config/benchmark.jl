@@ -16,7 +16,9 @@ Fail CI on >10% regression.
 
 using BenchmarkTools
 using OrderedCollections
-using MetaManifold.AnalysisConfig
+# `:` form — the dotted form binds the exported `struct AnalysisConfig`,
+# not the same-named submodule, so every `AnalysisConfig.x` below would FieldError.
+using MetaManifold: AnalysisConfig
 using MetaManifold.Epistemic
 using MetaManifold.CladeCumulus
 using Statistics

@@ -3,7 +3,9 @@
 # Implements: NB GLM, CLR/ILR+Gaussian LM, logistic in v1; BH mandatory; DANGER banner; DOI-ready bundles
 
 using OrderedCollections
-using MetaManifold.AnalysisConfig
+# `:` form — the dotted form binds the exported `struct AnalysisConfig`,
+# not the same-named submodule, so every `AnalysisConfig.x` below would FieldError.
+using MetaManifold: AnalysisConfig
 using MetaManifold.Epistemic
 using MetaManifold.CladeCumulus
 
