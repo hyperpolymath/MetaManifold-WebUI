@@ -54,7 +54,7 @@ export function sanitiseApiBase(raw: unknown): string {
   // config.json would supply to the one function written to bound it.
   const path = url.pathname
   let end = path.length
-  while (end > 0 && path.charCodeAt(end - 1) === 47 /* '/' */) end--
+  while (end > 0 && path.codePointAt(end - 1) === 47 /* '/' */) end--
   return `${url.protocol}//${url.host}${path.slice(0, end)}`
 }
 
