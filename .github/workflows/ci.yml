@@ -58,7 +58,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Licence header check
         continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
@@ -173,7 +173,7 @@ jobs:
       # this resolves rather than merely requesting the newest.
       - name: Set up R
         run: |
-          wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
+          wget --https-only -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
             | sudo gpg --dearmor -o /usr/share/keyrings/r-project.gpg
           echo "deb [signed-by=/usr/share/keyrings/r-project.gpg] https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/" \
             | sudo tee /etc/apt/sources.list.d/r-project.list
@@ -252,7 +252,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
 
       # Explicit strict-typecheck gate (strict foundation; see
       # docs/types/strict-mode-status.md). Runs before the (heavier) build so
@@ -485,7 +485,7 @@ jobs:
           git clone --quiet https://github.com/hyperpolymath/cicd-squabbler.git /tmp/squabbler
           git -C /tmp/squabbler checkout --quiet "$SQUABBLER_SHA"
           echo "building cicd-squabbler at $(git -C /tmp/squabbler rev-parse HEAD)"
-          cargo build --release --quiet --manifest-path /tmp/squabbler/Cargo.toml -p squabble-cli
+          cargo build --release --locked --quiet --manifest-path /tmp/squabbler/Cargo.toml -p squabble-cli
           "$SQUABBLE" --version
 
       # Proves the engine itself works before we trust its verdict on this repo.
