@@ -366,6 +366,11 @@ jobs:
           julia --project=. bench/duckdb_aggregation/benchmark.jl
           julia --project=. bench/permanova_nmds/benchmark.jl
           julia --project=. bench/tree_rendering/benchmark.jl
+          # bench/analysis_config existed but was never run here, which is why its
+          # 13 broken qualified references survived until the unit tests tripped
+          # over the same shadowing. Running it means the next AnalysisConfig API
+          # change breaks this step immediately instead of at test time.
+          julia --project=. bench/analysis_config/benchmark.jl
           julia --project=. bench/comprehensive_benchmark.jl
 
       - name: Summarise Julia benchmark deltas (informational)
