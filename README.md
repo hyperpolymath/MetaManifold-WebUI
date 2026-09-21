@@ -4,15 +4,11 @@ SPDX-License-Identifier: AGPL-3.0-only
 # MetaManifold
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Julia ≥ 1.0](https://img.shields.io/badge/Julia-%E2%89%A51.0-9558B2?logo=julia)](https://julialang.org)
+[![Julia 1.12.5](https://img.shields.io/badge/Julia-1.12.5-9558B2?logo=julia)](https://julialang.org)
 [![R ≥ 4.0](https://img.shields.io/badge/R-%E2%89%A54.0-276DC3?logo=r)](https://www.r-project.org)
-[![CI](https://github.com/JoshuaJewell/MetaManifold-WebUI/actions/workflows/ci.yml/badge.svg)](https://github.com/JoshuaJewell/MetaManifold-WebUI/actions/workflows/ci.yml)
+[![CI](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/ci.yml)
 
 MetaManifold wraps standard amplicon sequencing workflows into a single configurable Julia orchestrator: from raw paired-end Next Generation Sequencing reads through denoising, taxonomy assignment, taxonomic filtering, and functional annotation, with interactive configuration and analysis in the browser.
-
-<p align="center">
-  <img src=".github/screenshots/hero.png" width="850" alt="MetaManifold web interface showing a study with interactive analysis charts">
-</p>
 
 ## Overview
 
@@ -87,7 +83,7 @@ fetched byte-exact by `install.sh` against the sha256-pinned records in
 equivalents for development.
 
 - **Julia** >= 1.0, pinned 1.12.5 via `mise.toml` (installed automatically by `install.sh` if missing)
-- **R** >= 4.0 (required for the DADA2 stage and NMDS/PERMANOVA analysis)
+- **Julia** 1.12.5 exactly, pinned via `mise.toml` (installed automatically by `install.sh` if missing)
   - Ubuntu/Debian: `sudo apt install r-base`
   - macOS: `brew install r` or [CRAN package](https://cran.r-project.org/bin/macosx/)
 - **Bun** >= 1.3.10 for building the frontend (pinned in `.bun-version`; CI reads the same version from `config/defaults/tool_versions.yml`). `bun install` in `frontend/` pulls all JS dependencies, including `react-chart-editor` and `react-plotly.js`. The chart editor is fed `plotly.js-dist-min` rather than full `plotly.js` to keep the bundle size manageable.
