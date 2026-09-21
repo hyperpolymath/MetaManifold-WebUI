@@ -446,7 +446,15 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
                     } : undefined
                     return (
                       <th key={c} className={styles['sortable']}
-                        onClick={() => handleSort(c)}
+                        onClick={e => {
+                          // The filter dropdown renders inside this <th>, so a click
+                          // in it would otherwise bubble up and re-sort the column.
+                          // Guarding here rather than calling stopPropagation() in the
+                          // dropdown keeps that non-interactive wrapper free of a click
+                          // handler -- and so free of the ARIA role S6819 objects to.
+                          if ((e.target as HTMLElement).closest('[data-dropdown]')) return
+                          handleSort(c)
+                        }}
                         style={stickyStyle}>
                         <span className={styles['headerLabel']}>
                           {c}{sortIndicator(c)}
@@ -656,7 +664,7 @@ function ColumnDropdown({ column, distinctFetcher, activeFilters, keywordFilter,
   }, [onClose])
 
   return (
-    <div ref={ref} role="presentation" className={styles['dropdown']} onClick={e => e.stopPropagation()}>
+    <div ref={ref} data-dropdown className={styles['dropdown']}>
       <label className={styles['dropdownItem']} style={{ borderBottom: '1px solid var(--color-border)', paddingTop: 6, paddingBottom: 6 }}>
         <input type="checkbox" checked={isSticky} onChange={onToggleSticky} />
         <span style={{ fontWeight: 600, fontSize: '.78rem' }}>Sticky column</span>
