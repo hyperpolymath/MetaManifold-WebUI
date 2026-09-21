@@ -54,7 +54,7 @@ Reference: `hyperpolymath/standards@main` (in particular
 
 | Expectation | Here | Status |
 |---|---|---|
-| Large/dead blobs kept out | `scripts/check-blob-hygiene.sh` — one implementation, two callers: `.githooks/pre-commit` (local) and the CI repo-hygiene `Blob hygiene check` (binding on this repo). Primary rule is a 4 MiB size ceiling, not a path list; the six `data/MiSeq_SOP/run_[AB]/*.fastq.gz` fixtures are allowlisted | ✅ verified by mutant — five reintroduction attempts refused, two legitimate files admitted |
+| Large/dead blobs kept out | `scripts/check-blob-hygiene.sh` — one implementation, two callers: `.githooks/pre-commit` (local) and the CI repo-hygiene `Blob hygiene check` (binding on this repo). Primary rule is a 4 MiB size ceiling, not a path list; the six `data/MiSeq_SOP/run_[AB]/*.fastq.gz` fixtures are allowlisted | ✅ verified by mutant **2026-09-21** — five reintroduction attempts refused, two legitimate files admitted. ⚠ a one-off manual battery, not an enforced control: the date is here so this cell cannot read as ongoing status. Re-run `scripts/check-blob-hygiene.sh` against fresh mutants after any change to its rules |
 | Diff/linguist markings | `.gitattributes` marks `*.fastq{,.gz}`, `*.fq{,.gz}`, `*.fasta`, `*.fa`, `*.sam`, `*.bam` binary `-diff linguist-generated=true` | ✅ hygiene only, not the gate |
 
 ## Branch conventions
