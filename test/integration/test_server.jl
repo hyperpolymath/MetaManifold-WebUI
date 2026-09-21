@@ -50,26 +50,48 @@
                                          "JULIA_METAMANIFOLD_PORT" => string(port))))
     proc = run(pipeline(server_cmd; stdout=server_out, stderr=server_err); wait=false)
 
-    ## Wait up to 30 s for the server to accept connections.
-    ## (60 iterations x 0.5 s sleep. `readtimeout` does NOT add to this: a
-    ## refused connection on localhost returns immediately while nothing is
-    ## listening, so it never fires during startup.)
+    ## Wait for the server to accept connections, on a DEADLINE rather than an
+    ## iteration count.
+    ##
+    ## ⚠ MEASURED 2026-09-21, HTTP.jl 1.11.0 — the obvious arithmetic is wrong.
+    ## A refused connection on localhost does NOT return immediately: HTTP.jl's
+    ## default retry layer treats ECONNREFUSED as recoverable and retries it
+    ## with backoff INSIDE a single `HTTP.get`, so one probe costs ~1.8-2.1 s,
+    ## not ~0. An earlier "60 iterations x 0.5 s sleep = 30 s" comment here was
+    ## therefore off by 5x: the loop actually ran 2m45s (measured against a
+    ## server that was alive but never listening).
+    ##
+    ## Two fixes, so the number in this comment is true by construction:
+    ##   * `retry=false` — this loop IS the retry; a retry layer inside a retry
+    ##     loop just makes the budget unpredictable.
+    ##   * a wall-clock deadline instead of a count, so probe cost can drift
+    ##     without silently changing what the test waits for.
+    ##
+    ## The value is deliberately ABOVE the ~165 s the OLD loop effectively
+    ## allowed, because that budget is the one that already proved insufficient
+    ## in CI — adopting a smaller number would have been a tolerance regression
+    ## dressed up as a fix. It is only ever spent on the FAILURE path: the loop
+    ## exits the moment the server binds (measured 47.1 s locally, whole
+    ## testset, with the child's --compiled-modules=no stripped).
+    READINESS_BUDGET_SECONDS = 300
+    readiness_started = time()
     ready = false
     exited_early = false
-    for _ in 1:60
+    while time() - readiness_started < READINESS_BUDGET_SECONDS
         if process_exited(proc)
             exited_early = true
             break
         end
         try
             HTTP.get("http://localhost:$port/api/v1/studies"; readtimeout=1,
-                     status_exception=false)
+                     retry=false, status_exception=false)
             ready = true
             break
         catch
             sleep(0.5)
         end
     end
+    readiness_elapsed = time() - readiness_started
 
     ## Turn a silent `false` into an actual diagnosis. This is what makes a CI
     ## failure here actionable: it settles crash-vs-slow-load in one run.
@@ -81,8 +103,11 @@
         if process_exited(proc)
             println(io, "  exit code     : ", proc.exitcode)
         else
-            println(io, "  state         : still running (30 s readiness budget exhausted)")
-            println(io, "  reading       : consistent with slow cold load, not a crash")
+            println(io, "  state         : still running after ",
+                    round(readiness_elapsed, digits=1),
+                    " s (full ", READINESS_BUDGET_SECONDS, " s budget exhausted)")
+            println(io, "  reading       : no crash. Either a cold load slower than the")
+            println(io, "                  budget, or it is listening on a different port.")
         end
         for (label, path) in (("stdout", server_out), ("stderr", server_err))
             if isfile(path)
