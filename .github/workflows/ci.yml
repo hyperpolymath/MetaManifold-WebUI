@@ -16,15 +16,20 @@ jobs:
   # heavyweight Julia/frontend matrix. Each gate has a documented local
   # equivalent — scripts/check-*.sh (see CONTRIBUTING.md).
   #
-  # Advisory only on this repository. The work is a contribution to upstream
-  # (JoshuaJewell/MetaManifold-WebUI), which does not use conventional-commit /
-  # SPDX / format / lint as a merge gate, so a failed check here must not
-  # block the owner's PR. Checks still run and annotate; they do not fail
-  # the workflow. Local hooks remain available via core.hooksPath=.githooks.
+  # ENFORCING on this fork, ADVISORY upstream. The original blanket
+  # `continue-on-error: true` (67f2faaf) was correct about upstream and wrong
+  # about here: it left the fork with a check that literally could not fail,
+  # so its green carried no information. The expression below keeps the
+  # upstream guarantee — JoshuaJewell/MetaManifold-WebUI does not use
+  # conventional-commit / SPDX / format / lint as a merge gate, and a
+  # `pull_request` run against that base evaluates `github.repository` as the
+  # BASE repo, so the checks stay non-blocking for the owner's PR — while
+  # restoring real teeth on pushes and PRs to this fork.
+  # Local hooks remain available via core.hooksPath=.githooks.
   repo-hygiene:
     name: Repo hygiene (licence · format · lint · commit)
     runs-on: ubuntu-24.04
-    continue-on-error: true
+    continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
@@ -42,30 +47,30 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Licence header check
-        continue-on-error: true
+        continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
         run: scripts/check-spdx.sh
 
       - name: Formatting check
-        continue-on-error: true
+        continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
         run: scripts/check-format.sh
 
       - name: Lint check
-        continue-on-error: true
+        continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
         run: scripts/check-lint.sh
 
       # Commit convention mirror of .githooks/commit-msg (available locally via
-      # the hooksPath setting documented in CONTRIBUTING.md). Advisory in CI:
-      # upstream commit subjects are not required to match this pattern.
+      # the hooksPath setting documented in CONTRIBUTING.md). Advisory only when
+      # this runs under upstream, whose commit subjects need not match.
       # Judge the PR head commit, not the synthetic "Merge X into Y" commit
       # that pull_request checkouts produce (it can never match the pattern).
       - name: Commit convention check
-        continue-on-error: true
+        continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           subject="$(git log -1 --pretty=%s "$HEAD_SHA")"
           if ! printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_/-]+\))?!?: .{1,72}$'; then
-            echo "::warning::commit subject fails the conventional pattern (advisory): $subject"
+            echo "::error::commit subject fails the conventional pattern: $subject"
             exit 1
           fi
           echo "commit subject ok: $subject"
@@ -399,24 +404,17 @@ jobs:
             bench/**/baseline.json
           if-no-files-found: warn
 
-      # New test categories: analysis-config and cladistic-explorer (Milestone 2)
+      # Milestone 2 category. Deliberately NOT wrapped in `if [ -f … ]`: that
+      # shape reports success when the file is absent, so it cannot distinguish
+      # "passed" from "never ran". If the file is deleted, `include` raises and
+      # this step goes red, which is the intended behaviour.
+      #
+      # The companion `test_clade_cumulus.jl` step was removed: the file has
+      # never existed on main (only src/analysis/clade_cumulus.jl), so the step
+      # was a permanent no-op reporting success. Restore it alongside the file.
       - name: Test analysis-config category
         run: |
-          echo "Running analysis-config test category (if present)"
-          if [ -f test/unit/test_analysis_config.jl ]; then
-            julia --project=. -e 'using Test; using MetaManifold; include("test/unit/test_analysis_config.jl")'
-          else
-            echo "test_analysis_config.jl not present on main — skipping (will be present on feature branches)"
-          fi
-
-      - name: Test cladistic-explorer category
-        run: |
-          echo "Running cladistic-explorer test category (if present)"
-          if [ -f test/unit/test_clade_cumulus.jl ]; then
-            julia --project=. -e 'using Test; using MetaManifold; include("test/unit/test_clade_cumulus.jl")'
-          else
-            echo "test_clade_cumulus.jl not present on main — skipping (will be present on feature branches)"
-          fi
+          julia --project=. -e 'using Test; using MetaManifold; include("test/unit/test_analysis_config.jl")'
 
   # ─────────────────────────────────────────────────────────────────────────
   # cicd-squabbler — gate-deadlock triage
@@ -449,7 +447,12 @@ jobs:
     name: Gate triage (cicd-squabbler)
     runs-on: ubuntu-latest
     needs: [test]
-    if: ${{ !cancelled() }}
+    # Gate triage needs a PR: every substantive step below takes <owner>/<repo>
+    # <pr-number>. On a push it could only build squabbler and run a bundled
+    # fixture, then report 'Gate triage: success' having triaged nothing.
+    # !cancelled() stays so triage still runs when the test job FAILS — that
+    # is the case it exists for.
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     permissions:
       contents: read
       actions: read
@@ -477,17 +480,14 @@ jobs:
         run: |
           "$SQUABBLE" diagnose /tmp/squabbler/examples/gate-deadlock.json
 
-      # The live leg needs a pull request: `squabble fetch` and `squabble fight`
-      # both take <owner>/<repo> <pr-number>. On a push there is no PR, so only
-      # the build and self-check run, which still catches squabbler regressions.
+      # `squabble fetch` and `squabble fight` both take <owner>/<repo>
+      # <pr-number>; the job-level gate above guarantees a PR is present.
       - name: Fetch the live gate for this PR
-        if: github.event_name == 'pull_request'
         run: |
           "$SQUABBLE" fetch "${{ github.repository }}" "${{ github.event.pull_request.number }}" > gate.json
           echo "--- gate.json ---"; cat gate.json
 
       - name: Diagnose the gate
-        if: github.event_name == 'pull_request'
         run: |
           "$SQUABBLE" diagnose gate.json | tee squabble-diagnose.txt
 
@@ -495,7 +495,6 @@ jobs:
       # cannot legitimately land — that is a finding to report, not a build break,
       # and failing here would mask the very deadlock we are trying to surface.
       - name: Fight (propose only — never commits, pushes or re-runs CI)
-        if: github.event_name == 'pull_request'
         run: |
           "$SQUABBLE" fight "${{ github.repository }}" "${{ github.event.pull_request.number }}" \
             --repo-root . --json > squabble-fight.json || true
