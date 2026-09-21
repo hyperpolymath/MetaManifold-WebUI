@@ -103,6 +103,7 @@ cd "$WORK"
 echo "==> BEFORE"
 git count-objects -vH | sed 's/^/    /'
 BEFORE_HEAD="$(git rev-parse HEAD)"
+BEFORE_TREE="$(git rev-parse HEAD^{tree})"
 
 echo "==> Rewriting"
 # --invert-paths: everything listed is REMOVED, everything else is kept.
@@ -134,7 +135,15 @@ printf '    node_modules blobs remaining (expect 0): %s\n' \
   "$(git rev-list --objects --all | grep -c 'node_modules/' || true)"
 printf '    commit count: %s\n' "$(git rev-list --count --all)"
 printf '    HEAD was %s, is now %s\n' "$BEFORE_HEAD" "$(git rev-parse HEAD)"
-echo "    HEAD tree identical to pre-rewrite? (expect 'same')"
+AFTER_TREE="$(git rev-parse HEAD^{tree})"
+if [ "$BEFORE_TREE" = "$AFTER_TREE" ]; then
+  printf '    HEAD tree identical to pre-rewrite: same (%s)\n' "$AFTER_TREE"
+else
+  printf '    HEAD tree CHANGED: %s -> %s\n' "$BEFORE_TREE" "$AFTER_TREE"
+  echo "    ^^ STOP, DO NOT PUSH. Every stripped path is already absent from"
+  echo "       HEAD, so the checked-out tree MUST be byte-identical. A change"
+  echo "       here means the strip set caught a LIVE file."
+fi
 echo "    run the test suite in $WORK before believing any of this."
 
 cat <<'NEXT'
