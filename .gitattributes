@@ -102,6 +102,20 @@ Containerfile  text eol=lf
 *.rlib  binary
 *.beam  binary
 
+# --- Sequencing data -------------------------------------------------------
+# History carried 269 MiB of these. They are binary, they must never be
+# line-ending-normalised (a CRLF rewrite corrupts a gzip member), and they are
+# not source. The recurrence guard with teeth is scripts/check-blob-hygiene.sh,
+# run by .githooks/pre-commit and by CI; these lines are hygiene, not the gate.
+*.fastq    binary -diff linguist-generated=true
+*.fastq.gz binary -diff linguist-generated=true
+*.fq       binary -diff linguist-generated=true
+*.fq.gz    binary -diff linguist-generated=true
+*.fasta    binary -diff linguist-generated=true
+*.fa       binary -diff linguist-generated=true
+*.sam      binary -diff linguist-generated=true
+*.bam      binary -diff linguist-generated=true
+
 # --- Generated lockfiles: no diff noise, not counted as source -------------
 Cargo.lock        text eol=lf -diff linguist-generated=true
 mix.lock          text eol=lf -diff linguist-generated=true

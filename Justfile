@@ -112,8 +112,17 @@ setup: install
 # mise.toml (julia 1.12.5, bun 1.3.10, node 20.20.2, just 1.43.1), then
 # install frontend dependencies. R is a documented exception: system R +
 # renv.lock (R is not in the mise registry — verified 2026-09-18).
-bootstrap: setup-tools install codegen-tools
+bootstrap: setup-tools install codegen-tools hooks
     @echo "bootstrap: toolchain + deps + machine tool map ready — next: just ci"
+
+# Point git at .githooks so the commit-msg gate actually runs. core.hooksPath is
+# per-clone local config -- it cannot be committed -- so documenting it in
+# CONTRIBUTING.md left it unset in every clone that did not read that line.
+# Wiring it here makes the enablement a consequence of bootstrapping rather than
+# of remembering. Idempotent; safe to re-run.
+hooks:
+    @git config core.hooksPath .githooks
+    @echo "hooks: core.hooksPath -> .githooks (commit-msg gate live)"
 
 # Provision the pinned toolchain via mise (fail-loud with the installer
 # one-liner when mise is absent; the Guix lane in guix.scm is the
