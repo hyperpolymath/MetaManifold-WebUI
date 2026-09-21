@@ -519,7 +519,13 @@ function self_diagnostics(
     counts::Matrix{Float64},
     prepared::Matrix{Float64},
     config::AnalysisConfig.AnalysisConfig;
-    sample_metadata::Union{OrderedDict{String,Any},Nothing}=nothing
+    sample_metadata::Union{OrderedDict{String,Any},Nothing}=nothing,
+    # Pre-filtering counts. The prevalence/abundance check exists to tell the user
+    # how many taxa *will be* filtered, so it must run on the unfiltered matrix.
+    # Callers pass the post-filter matrix as `counts`, which made this check
+    # vacuous: every surviving taxon clears the thresholds by construction, so
+    # low_prevalence_count and low_abundance_count were permanently 0.
+    raw_counts::Union{Matrix{Float64},Nothing}=nothing
 )
     checks = OrderedDict{String,Any}()
 
@@ -528,7 +534,7 @@ function self_diagnostics(
     checks["all_zero_samples"] = check_all_zero_samples(counts)
     checks["all_zero_taxa"] = check_all_zero_taxa(counts)
     checks["library_size_outliers"] = check_library_size_outliers(counts)
-    checks["prevalence_abundance"] = check_prevalence_abundance(counts, config.advanced.min_prevalence, config.advanced.min_abundance)
+    checks["prevalence_abundance"] = check_prevalence_abundance(something(raw_counts, counts), config.advanced.min_prevalence, config.advanced.min_abundance)
     checks["batch_confounding"] = check_batch_confounding(sample_metadata, config.formula)
 
     warnings = String[]
@@ -703,6 +709,21 @@ end
 # --------------------------------------------------------------------------
 # Core functions: prepare_analysis_table and run_analysis
 # --------------------------------------------------------------------------
+
+"""
+    prepared_table_hash(prepared) -> String
+
+Canonical sha256 of a prepared table.
+
+Hashes the raw bytes rather than a JSON rendering on purpose: JSON has no
+representation for NaN or Inf, and a prepared table may legitimately contain
+them — detecting those is the whole job of `check_nan_inf`, and `run_analysis`
+hard-stops on them. A JSON-based hash therefore threw "NaN not allowed to be
+written in JSON spec" on precisely the tables it most needed to fingerprint.
+"""
+function prepared_table_hash(prepared::AbstractMatrix{Float64})::String
+    return bytes2hex(sha256(reinterpret(UInt8, vec(prepared))))
+end
 
 """
     prepare_analysis_table(config, counts, sample_metadata; taxa_metadata, sample_ids, taxa_ids, drop_policy, impute_policy) -> (prepared, diagnostics, manifest)
@@ -1092,7 +1113,7 @@ function prepare_analysis_table(
     # Self-diagnostics and safe self-healing
     # ----------------------------------------------------------------------
 
-    (checks, warnings, errors) = self_diagnostics(filtered_counts, prepared, config; sample_metadata=sample_metadata)
+    (checks, warnings, errors) = self_diagnostics(filtered_counts, prepared, config; sample_metadata=sample_metadata, raw_counts=counts)
 
     healings = String[]
     is_dangerous_diag = false
@@ -1220,7 +1241,7 @@ function prepare_analysis_table(
     # Manifest with full provenance
     # ----------------------------------------------------------------------
 
-    prepared_hash = bytes2hex(sha256(JSON3.write(prepared)))
+    prepared_hash = prepared_table_hash(prepared)
 
     adapter_type_str = isnothing(adapter) ? "none" : string(typeof(adapter))
     adapter_config_dict = if isnothing(adapter)

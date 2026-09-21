@@ -14,6 +14,10 @@ const RUN_SERVER      = "--server"      in ARGS
 
 using MetaManifold
 using CSV, DataFrames, JSON3, Logging, YAML, DuckDB, DBInterface, Dates
+# Statistics and SHA are declared in Project.toml and used directly by the unit
+# tests (mean() for CLR column-centering, sha256() for manifest hashes); without
+# them here the tests raise UndefVarError instead of testing anything.
+using Statistics, SHA
 
 using MetaManifold.PipelineTypes, MetaManifold.PipelineLog, MetaManifold.Config
 using MetaManifold.Databases, MetaManifold.DuckDBStore, MetaManifold.Validation

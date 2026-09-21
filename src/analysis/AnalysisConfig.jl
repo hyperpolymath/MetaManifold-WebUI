@@ -35,6 +35,9 @@ using Logging
 
 # Re-use provenance from core
 using ..Provenance: CapturedEnvironment, probe_metamanifold, probe_host
+# Epistemic owns the canonical evidence-based finite model; this module only
+# re-exposes it (see present_in_every_admissible_world at the foot of this file).
+import ..Epistemic
 
 export AnalysisMethod, ZeroPolicy, NormalizationConfig, CorrectionConfig, AdvancedConfig, AdvancedOverrides,
        AnalysisConfig, AnalysisConfigStruct, AnalysisResult,
@@ -138,24 +141,24 @@ struct NormalizationConfig
 
         # Refuse meaningless: ; backtick dollar injection
         if occursin(r"[;`$]", method_clean)
-            throw(ArgumentError("normalization.method contains forbidden ; ` \$ (injection prevention) — got '\$method_clean'"))
+            throw(ArgumentError("normalization.method contains forbidden ; ` \$ (injection prevention) — got '$method_clean'"))
         end
 
         # Zero policy parsing
         zp_str = lowercase(strip(zero_policy))
         zp = get(ZERO_POLICY_STRINGS, zp_str, nothing)
-        isnothing(zp) && throw(ArgumentError("zero_policy must be one of $(join(keys(ZERO_POLICY_STRINGS), ", ")) — got '\$zero_policy'. See context_help('advanced.zero_policy')"))
+        isnothing(zp) && throw(ArgumentError("zero_policy must be one of $(join(keys(ZERO_POLICY_STRINGS), ", ")) — got '$zero_policy'. See context_help('advanced.zero_policy')"))
 
         # Heavy validation per method
         if method_clean in ("clr", "ilr")
-            pseudocount <= 0 && throw(ArgumentError("For compositional methods (CLR/ILR), pseudocount must be >0 (got \$pseudocount). Zero replacement mandatory because log(0) undefined. See context_help('normalization.pseudocount')"))
-            pseudocount >= 1 && @warn "pseudocount >=1 unusual for CLR/ILR (got \$pseudocount); typical 0.5 or 0.65. May distort low-abundance features." pseudocount method_clean
+            pseudocount <= 0 && throw(ArgumentError("For compositional methods (CLR/ILR), pseudocount must be >0 (got $pseudocount). Zero replacement mandatory because log(0) undefined. See context_help('normalization.pseudocount')"))
+            pseudocount >= 1 && @warn "pseudocount >=1 unusual for CLR/ILR (got $pseudocount); typical 0.5 or 0.65. May distort low-abundance features." pseudocount method_clean
             if zp == REFUSE
                 throw(ArgumentError("zero_policy='refuse' is mathematically invalid for CLR/ILR (log(0) undefined). Refusing even with DANGER token. Use pseudocount or multiplicative_replacement."))
             end
             if method_clean == "ilr"
                 if !isnothing(ilr_basis) && !(ilr_basis in VALID_ILR_BASIS)
-                    throw(ArgumentError("ilr_basis must be one of $(join(VALID_ILR_BASIS, ", ")) (got '\$ilr_basis')"))
+                    throw(ArgumentError("ilr_basis must be one of $(join(VALID_ILR_BASIS, ", ")) (got '$ilr_basis')"))
                 end
             else # clr
                 if !isnothing(ilr_basis)
@@ -164,17 +167,17 @@ struct NormalizationConfig
             end
         else
             if !isnothing(ilr_basis)
-                throw(ArgumentError("ilr_basis only meaningful for ILR method, not for '\$method_clean'"))
+                throw(ArgumentError("ilr_basis only meaningful for ILR method, not for '$method_clean'"))
             end
             # For NB_GLM, pseudocount is allowed but warned if used with size_factors
             if method_clean == "size_factors" && pseudocount != 0.5
-                @warn "pseudocount is ignored for size_factors (NB_GLM). Using size_factors from DESeq2, not pseudocount. Got pseudocount=\$pseudocount — will be ignored unless you switch to clr/ilr."
+                @warn "pseudocount is ignored for size_factors (NB_GLM). Using size_factors from DESeq2, not pseudocount. Got pseudocount=$pseudocount — will be ignored unless you switch to clr/ilr."
             end
         end
 
         # Epsilon validation — advanced
         if !(0 < epsilon < 1)
-            throw(ArgumentError("epsilon must be in (0,1) for numerical stability, got \$epsilon. Typical 1e-6. See context_help('advanced.epsilon')"))
+            throw(ArgumentError("epsilon must be in (0,1) for numerical stability, got $epsilon. Typical 1e-6. See context_help('advanced.epsilon')"))
         end
         if epsilon > 1e-3
             @warn "epsilon >1e-3 is large and may affect zero handling and log transforms" epsilon
@@ -183,7 +186,7 @@ struct NormalizationConfig
         # Multiplicative replacement delta
         if !isnothing(multiplicative_replacement_delta)
             delta = multiplicative_replacement_delta
-            (delta <= 0 || delta >= 1) && throw(ArgumentError("multiplicative_replacement_delta must be in (0,1), got \$delta — see context_help('advanced.zero_policy')"))
+            (delta <= 0 || delta >= 1) && throw(ArgumentError("multiplicative_replacement_delta must be in (0,1), got $delta — see context_help('advanced.zero_policy')"))
         end
 
         # TSS/CSS/RSS note — deferred feature
@@ -221,24 +224,24 @@ struct CorrectionConfig
         isempty(method_clean) && throw(ArgumentError("correction.method must be non-empty — see context_help('correction.method')"))
 
         if occursin(r"[;`$]", method_clean)
-            throw(ArgumentError("correction.method contains forbidden ; ` \$ — got '\$method_clean'"))
+            throw(ArgumentError("correction.method contains forbidden ; ` \$ — got '$method_clean'"))
         end
 
         # BH mandatory check
         is_bh = uppercase(method_clean) in ("BH", "FDR", "BENJAMINI-HOCHBERG", "BENJAMINI_HOCHBERG")
         if !is_bh
             if !allow_no_correction
-                throw(ArgumentError("p-value correction method must be BH (Benjamini-Hochberg) in v1. Got '\$method_clean'. Microbiome data tests thousands of taxa — uncorrected p-values give ~5% false positives under null. If you truly want to override, set allow_no_correction=true and acknowledgment_token='\$DANGER_ACK_TOKEN'. This will trigger DANGER banner and be recorded in provenance. See context_help('correction.method')"))
+                throw(ArgumentError("p-value correction method must be BH (Benjamini-Hochberg) in v1. Got '$method_clean'. Microbiome data tests thousands of taxa — uncorrected p-values give ~5% false positives under null. If you truly want to override, set allow_no_correction=true and acknowledgment_token='$DANGER_ACK_TOKEN'. This will trigger DANGER banner and be recorded in provenance. See context_help('correction.method')"))
             end
         end
 
         if allow_no_correction
             if isnothing(acknowledgment_token) || acknowledgment_token != DANGER_ACK_TOKEN
-                throw(ArgumentError("DANGER: Attempting to disable BH correction — scientifically dangerous for high-dimensional data, will inflate false discoveries. To proceed, set acknowledgment_token to exactly '\$DANGER_ACK_TOKEN'. This action will be logged, bannered, and included in DOI bundle provenance. See context_help('correction.method') and danger_banner()."))
+                throw(ArgumentError("DANGER: Attempting to disable BH correction — scientifically dangerous for high-dimensional data, will inflate false discoveries. To proceed, set acknowledgment_token to exactly '$DANGER_ACK_TOKEN'. This action will be logged, bannered, and included in DOI bundle provenance. See context_help('correction.method') and danger_banner()."))
             end
         end
 
-        (alpha <= 0 || alpha >= 1) && throw(ArgumentError("alpha must be in (0,1), got \$alpha. Typical 0.05. See context_help('correction.alpha')"))
+        (alpha <= 0 || alpha >= 1) && throw(ArgumentError("alpha must be in (0,1), got $alpha. Typical 0.05. See context_help('correction.alpha')"))
 
         canonical_method = allow_no_correction ? method_clean : "BH"
 
@@ -286,75 +289,75 @@ struct AdvancedConfig
 
         # Dispersion method validation
         if !(dispersion_method_clean in VALID_DISPERSION_METHODS)
-            throw(ArgumentError("dispersion_method must be one of $(join(VALID_DISPERSION_METHODS, ", ")) — got '\$dispersion_method_clean'. See context_help('advanced.dispersion_method')"))
+            throw(ArgumentError("dispersion_method must be one of $(join(VALID_DISPERSION_METHODS, ", ")) — got '$dispersion_method_clean'. See context_help('advanced.dispersion_method')"))
         end
 
         # Zero handling validation
         if !(zero_handling_clean in VALID_ZERO_HANDLING)
-            throw(ArgumentError("zero_handling must be one of $(join(VALID_ZERO_HANDLING, ", ")) — got '\$zero_handling_clean'. See context_help('advanced.zero_handling')"))
+            throw(ArgumentError("zero_handling must be one of $(join(VALID_ZERO_HANDLING, ", ")) — got '$zero_handling_clean'. See context_help('advanced.zero_handling')"))
         end
 
         # Zero policy enum
         zp = get(ZERO_POLICY_STRINGS, zero_policy_clean, nothing)
-        isnothing(zp) && throw(ArgumentError("zero_policy must be one of $(join(keys(ZERO_POLICY_STRINGS), ", ")) — got '\$zero_policy_clean'"))
+        isnothing(zp) && throw(ArgumentError("zero_policy must be one of $(join(keys(ZERO_POLICY_STRINGS), ", ")) — got '$zero_policy_clean'"))
 
         # Pseudocount heavy validation
         if pseudocount <= 0
-            throw(ArgumentError("advanced.pseudocount must be >0 (got \$pseudocount) because log(0) undefined. Typical 0.5. See context_help('normalization.pseudocount')"))
+            throw(ArgumentError("advanced.pseudocount must be >0 (got $pseudocount) because log(0) undefined. Typical 0.5. See context_help('normalization.pseudocount')"))
         end
         if pseudocount >= 1
-            @warn "advanced.pseudocount >=1 unusual (got \$pseudocount); typical 0.5 or 0.65. May distort low-abundance features." pseudocount
+            @warn "advanced.pseudocount >=1 unusual (got $pseudocount); typical 0.5 or 0.65. May distort low-abundance features." pseudocount
         end
         if pseudocount < 0.1
-            @warn "advanced.pseudocount <0.1 very small (got \$pseudocount); will create extreme log-ratios for zeros. Consider 0.5." pseudocount
+            @warn "advanced.pseudocount <0.1 very small (got $pseudocount); will create extreme log-ratios for zeros. Consider 0.5." pseudocount
         end
 
         # Epsilon heavy validation
         if !(0 < epsilon < 1)
-            throw(ArgumentError("advanced.epsilon must be in (0,1) for numerical stability, got \$epsilon. Typical 1e-6. See context_help('advanced.epsilon')"))
+            throw(ArgumentError("advanced.epsilon must be in (0,1) for numerical stability, got $epsilon. Typical 1e-6. See context_help('advanced.epsilon')"))
         end
         if epsilon > 1e-3
-            @warn "advanced.epsilon >1e-3 large (got \$epsilon) may affect zero handling and log transforms" epsilon
+            @warn "advanced.epsilon >1e-3 large (got $epsilon) may affect zero handling and log transforms" epsilon
         end
         if epsilon < 1e-12
-            @warn "advanced.epsilon <1e-12 extremely small (got \$epsilon) may cause underflow" epsilon
+            @warn "advanced.epsilon <1e-12 extremely small (got $epsilon) may cause underflow" epsilon
         end
 
         # Prevalence validation
         if !(0 <= min_prevalence <= 1)
-            throw(ArgumentError("min_prevalence must be in [0,1], got \$min_prevalence. 0.1 = present in >=10% samples. See context_help('advanced.min_prevalence')"))
+            throw(ArgumentError("min_prevalence must be in [0,1], got $min_prevalence. 0.1 = present in >=10% samples. See context_help('advanced.min_prevalence')"))
         end
 
         # Abundance validation
         if min_abundance < 0
-            throw(ArgumentError("min_abundance must be >=0, got \$min_abundance"))
+            throw(ArgumentError("min_abundance must be >=0, got $min_abundance"))
         end
 
         # Max features validation
         if !isnothing(max_features)
             if max_features <= 0
-                throw(ArgumentError("max_features must be >0 or nothing, got \$max_features — meaningless to test 0 features"))
+                throw(ArgumentError("max_features must be >0 or nothing, got $max_features — meaningless to test 0 features"))
             end
             if max_features > 100000
-                throw(ArgumentError("max_features >100000 (got \$max_features) is excessive and will cause memory issues. Refusing."))
+                throw(ArgumentError("max_features >100000 (got $max_features) is excessive and will cause memory issues. Refusing."))
             end
             if max_features < 10
-                @warn "max_features <10 very small (got \$max_features) — will test only \$max_features features, may miss biology" max_features
+                @warn "max_features <10 very small (got $max_features) — will test only $max_features features, may miss biology" max_features
             end
         end
 
         # Min samples per group validation
         if min_samples_per_group < 2
-            throw(ArgumentError("min_samples_per_group must be >=2 (got \$min_samples_per_group) — need at least 2 samples per group for statistical test, 3 recommended"))
+            throw(ArgumentError("min_samples_per_group must be >=2 (got $min_samples_per_group) — need at least 2 samples per group for statistical test, 3 recommended"))
         end
         if min_samples_per_group < 3
-            @warn "min_samples_per_group <3 (got \$min_samples_per_group) — statistical power very low, results may be unreliable" min_samples_per_group
+            @warn "min_samples_per_group <3 (got $min_samples_per_group) — statistical power very low, results may be unreliable" min_samples_per_group
         end
 
         # Zero handling refuse requires token — DANGER
         if zero_handling_clean == "refuse" || zp == REFUSE
             if isnothing(acknowledgment_token) || acknowledgment_token != DANGER_ACK_TOKEN
-                throw(ArgumentError("DANGER: zero_handling='refuse' will cause log(0) for CLR/ILR and biased handling for NB_GLM. Requires acknowledgment_token='\$DANGER_ACK_TOKEN'. Even then, CLR/ILR + refuse is mathematically invalid and will be refused at runtime. See context_help('advanced.zero_handling')"))
+                throw(ArgumentError("DANGER: zero_handling='refuse' will cause log(0) for CLR/ILR and biased handling for NB_GLM. Requires acknowledgment_token='$DANGER_ACK_TOKEN'. Even then, CLR/ILR + refuse is mathematically invalid and will be refused at runtime. See context_help('advanced.zero_handling')"))
             end
         end
 
@@ -411,34 +414,34 @@ struct AnalysisConfig
     )
         # Schema version check
         if !(schema_version in SCHEMA_VERSIONS_SUPPORTED)
-            throw(ArgumentError("schema_version must be one of $(join(SCHEMA_VERSIONS_SUPPORTED, ", ")) — got '\$schema_version'. See DEED spec :schema-version first"))
+            throw(ArgumentError("schema_version must be one of $(join(SCHEMA_VERSIONS_SUPPORTED, ", ")) — got '$schema_version'. See DEED spec :schema-version first"))
         end
 
         # ID validation UUID
         try
             UUID(id)
         catch
-            throw(ArgumentError("id must be valid UUID4, got '\$id'"))
+            throw(ArgumentError("id must be valid UUID4, got '$id'"))
         end
 
         # Method parsing
         method_clean = strip(method)
         isempty(method_clean) && throw(ArgumentError("method must be non-empty — one of nb_glm, clr_lm, ilr_lm, logistic. See context_help('method')"))
-        occursin(r"[;`$]", method_clean) && throw(ArgumentError("method contains forbidden ; ` \$ — got '\$method_clean'"))
+        occursin(r"[;`$]", method_clean) && throw(ArgumentError("method contains forbidden ; ` \$ — got '$method_clean'"))
         method_enum = get(METHOD_STRINGS, method_clean, get(METHOD_STRINGS, lowercase(method_clean), nothing))
-        isnothing(method_enum) && throw(ArgumentError("method must be one of $(join(keys(METHOD_STRINGS), ", ")) — got '\$method_clean'. No auto-selection. See context_help('method')"))
+        isnothing(method_enum) && throw(ArgumentError("method must be one of $(join(keys(METHOD_STRINGS), ", ")) — got '$method_clean'. No auto-selection. See context_help('method')"))
 
         # Formula validation — heavy, refuses meaningless
         formula_clean = strip(formula)
         isempty(formula_clean) && throw(ArgumentError("formula must be non-empty, e.g. '~ group' or 'disease ~ group + batch'. See context_help('formula')"))
-        length(formula_clean) < 2 && throw(ArgumentError("formula too short, must reference at least one metadata column — got '\$formula_clean'"))
-        !occursin("~", formula_clean) && throw(ArgumentError("formula must contain '~' (R-style), e.g. '~ group' — got '\$formula_clean'. See context_help('formula')"))
+        length(formula_clean) < 2 && throw(ArgumentError("formula too short, must reference at least one metadata column — got '$formula_clean'"))
+        !occursin("~", formula_clean) && throw(ArgumentError("formula must contain '~' (R-style), e.g. '~ group' — got '$formula_clean'. See context_help('formula')"))
         if occursin(r"[;`$]", formula_clean)
-            throw(ArgumentError("formula contains forbidden ; ` \$ (injection prevention) — got '\$formula_clean'. See context_help('formula')"))
+            throw(ArgumentError("formula contains forbidden ; ` \$ (injection prevention) — got '$formula_clean'. See context_help('formula')"))
         end
         # Refuse formulas that are just "~" or "~  "
         if strip(replace(formula_clean, "~" => "")) == ""
-            throw(ArgumentError("formula must reference at least one metadata column after '~' — got '\$formula_clean'. Refusing meaningless input."))
+            throw(ArgumentError("formula must reference at least one metadata column after '~' — got '$formula_clean'. Refusing meaningless input."))
         end
 
         # Metadata columns validation
@@ -446,15 +449,15 @@ struct AnalysisConfig
             throw(ArgumentError("metadata_columns must be non-empty, at least 1 explicit column, no auto-selection. See context_help('metadata_columns')"))
         end
         if length(unique(metadata_columns)) != length(metadata_columns)
-            throw(ArgumentError("metadata_columns must be unique, got duplicates in \$metadata_columns"))
+            throw(ArgumentError("metadata_columns must be unique, got duplicates in $metadata_columns"))
         end
         for col in metadata_columns
             isempty(strip(col)) && throw(ArgumentError("metadata_columns contains empty string — refusing"))
             if occursin(r"[;`$]", col)
-                throw(ArgumentError("metadata_columns contains forbidden ; ` \$ in '\$col'"))
+                throw(ArgumentError("metadata_columns contains forbidden ; ` \$ in '$col'"))
             end
             if !occursin(r"^[a-zA-Z0-9_\.\-]+$", col)
-                throw(ArgumentError("metadata_columns must match pattern ^[a-zA-Z0-9_.\\-]+\$ — got '\$col'. See JSON schema."))
+                throw(ArgumentError("metadata_columns must match pattern ^[a-zA-Z0-9_.\\-]+\$ — got '$col'. See JSON schema."))
             end
         end
 
@@ -468,7 +471,7 @@ struct AnalysisConfig
             # Allow outcome_column to be in metadata_columns OR left side of formula
             # For simplicity, require it in metadata_columns for now, but warn if not
             if !(oc_clean in metadata_columns)
-                @warn "outcome_column '\$oc_clean' not in metadata_columns \$metadata_columns — may be left side of formula, but should be listed in metadata_columns for explicitness" outcome_column metadata_columns
+                @warn "outcome_column '$oc_clean' not in metadata_columns $metadata_columns — may be left side of formula, but should be listed in metadata_columns for explicitness" outcome_column metadata_columns
             end
         else
             if !isnothing(outcome_column) && !isempty(strip(outcome_column))
@@ -480,7 +483,7 @@ struct AnalysisConfig
         norm_method = normalization.method
         allowed_norms = get(VALID_NORMALIZATION_FOR_METHOD, method_enum, String[])
         if !(norm_method in allowed_norms)
-            throw(ArgumentError("normalization.method '\$norm_method' incompatible with method '$(METHOD_TO_STRING[method_enum])'. Allowed for $(METHOD_TO_STRING[method_enum]): $(join(allowed_norms, ", ")). See context_help('normalization.method') and MethodNormalizationCompatibility contract in Nickel. Refusing meaningless combination."))
+            throw(ArgumentError("normalization.method '$norm_method' incompatible with method '$(METHOD_TO_STRING[method_enum])'. Allowed for $(METHOD_TO_STRING[method_enum]): $(join(allowed_norms, ", ")). See context_help('normalization.method') and MethodNormalizationCompatibility contract in Nickel. Refusing meaningless combination."))
         end
 
         # Dangerous computed
@@ -639,7 +642,7 @@ function validate_config(config::AnalysisConfig, available_columns::Vector{Strin
     # Check metadata_columns exist in available
     for col in config.metadata_columns
         if !(col in available_columns)
-            push!(errors, "metadata_columns '\$col' not found in available columns $(available_columns) — see context_help('metadata_columns')")
+            push!(errors, "metadata_columns '$col' not found in available columns $(available_columns) — see context_help('metadata_columns')")
         end
     end
 
@@ -655,7 +658,7 @@ function validate_config(config::AnalysisConfig, available_columns::Vector{Strin
             # Left side for logistic should be outcome_column if present
             if config.method == LOGISTIC && !isempty(left)
                 if !isnothing(config.outcome_column) && left != config.outcome_column
-                    push!(errors, "For logistic, left side of formula '\$left' should match outcome_column '$(config.outcome_column)' — see context_help('formula')")
+                    push!(errors, "For logistic, left side of formula '$left' should match outcome_column '$(config.outcome_column)' — see context_help('formula')")
                 end
             end
             # Right side tokens
@@ -673,7 +676,7 @@ function validate_config(config::AnalysisConfig, available_columns::Vector{Strin
                     continue
                 end
                 if !(tok_clean in config.metadata_columns)
-                    push!(errors, "Formula references '\$tok_clean' which is not in metadata_columns $(config.metadata_columns) — refusing. See context_help('formula')")
+                    push!(errors, "Formula references '$tok_clean' which is not in metadata_columns $(config.metadata_columns) — refusing. See context_help('formula')")
                 end
             end
         end
@@ -684,7 +687,7 @@ function validate_config(config::AnalysisConfig, available_columns::Vector{Strin
         norm_method = config.normalization.method
         allowed = get(VALID_NORMALIZATION_FOR_METHOD, config.method, String[])
         if !(norm_method in allowed)
-            push!(errors, "Incompatible normalization.method '\$norm_method' for method '$(METHOD_TO_STRING[config.method])' — allowed $(join(allowed, ", "))")
+            push!(errors, "Incompatible normalization.method '$norm_method' for method '$(METHOD_TO_STRING[config.method])' — allowed $(join(allowed, ", "))")
         end
     end
 
@@ -969,7 +972,7 @@ function context_help(field_path::String)
         """,
     )
 
-    return get(help_db, field_path, "No help available for '\$field_path'. See JSON schema and Nickel contracts. Field path examples: method, formula, metadata_columns, normalization.method, correction.method, advanced.pseudocount, advanced.epsilon, advanced.zero_policy.")
+    return get(help_db, field_path, "No help available for '$field_path'. See JSON schema and Nickel contracts. Field path examples: method, formula, metadata_columns, normalization.method, correction.method, advanced.pseudocount, advanced.epsilon, advanced.zero_policy.")
 end
 
 # --------------------------------------------------------------------------
@@ -1124,21 +1127,25 @@ function from_json(json_str::String)
     corr_data = data.correction
     corr = CorrectionConfig(
         method=corr_data.method,
-        alpha=get(corr_data, :alpha, 0.05),
+        alpha=Float64(get(corr_data, :alpha, 0.05)),
         allow_no_correction=get(corr_data, :allow_no_correction, false),
         acknowledgment_token=get(corr_data, :acknowledgment_token, nothing)
     )
 
     adv_data = data.advanced
+    # JSON has no int/float distinction, so `1` round-trips as Int64 and a bare
+    # `min_abundance=1` used to raise TypeError against the Float64 keyword.
+    # Coerce every numeric field explicitly; `nothing` stays `nothing`.
+    _f64(v) = isnothing(v) ? nothing : Float64(v)
     adv = AdvancedConfig(
         dispersion_method=get(adv_data, :dispersion_method, "parametric"),
         zero_handling=get(adv_data, :zero_handling, "pseudocount"),
         zero_policy=get(adv_data, :zero_policy, "pseudocount"),
-        pseudocount=get(adv_data, :pseudocount, 0.5),
-        epsilon=get(adv_data, :epsilon, 1e-6),
-        min_prevalence=get(adv_data, :min_prevalence, 0.1),
-        min_abundance=get(adv_data, :min_abundance, 0.0),
-        max_features=get(adv_data, :max_features, nothing),
+        pseudocount=Float64(get(adv_data, :pseudocount, 0.5)),
+        epsilon=Float64(get(adv_data, :epsilon, 1e-6)),
+        min_prevalence=Float64(get(adv_data, :min_prevalence, 0.1)),
+        min_abundance=Float64(get(adv_data, :min_abundance, 0.0)),
+        max_features=_f64(get(adv_data, :max_features, nothing)),
         min_samples_per_group=get(adv_data, :min_samples_per_group, 3),
         robust=get(adv_data, :robust, false),
         acknowledgment_token=get(adv_data, :acknowledgment_token, nothing)
@@ -1191,7 +1198,7 @@ function to_nickel(config::AnalysisConfig)
       method = '$(METHOD_TO_STRING[config.method])',
       formula = "$(config.formula)" | ValidFormula,
       outcome_column = $(isnothing(config.outcome_column) ? "null" : "\"$(config.outcome_column)\""),
-      metadata_columns = [$(join(["\"\$c\"" for c in config.metadata_columns], ", "))],
+      metadata_columns = [$(join(["\"$c\"" for c in config.metadata_columns], ", "))],
 
       normalization = {
         method = '$(config.normalization.method)',
@@ -1312,7 +1319,7 @@ function to_deed(config::AnalysisConfig)
         :name "$(METHOD_TO_STRING[config.method])"
         :formula "$(config.formula)"
         :outcome-column "$(isnothing(config.outcome_column) ? "" : config.outcome_column)"
-        :metadata-columns ($(join(["\"\$c\"" for c in config.metadata_columns], " "))))
+        :metadata-columns ($(join(["\"$c\"" for c in config.metadata_columns], " "))))
 
       (normalization
         :method "$(config.normalization.method)"
@@ -1500,6 +1507,59 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
     end
 
     # Content-addressed hash file
+    # Result payload — the analysed output this bundle is minted for.
+    if !isnothing(result)
+        open(joinpath(output_dir, "analysis_result.json"), "w") do io
+            JSON3.write(io, OrderedDict{String,Any}(
+                "id" => result.id,
+                "config_id" => result.config_id,
+                "config_hash" => result.config_hash,
+                "created_at" => string(result.created_at),
+                "method" => METHOD_TO_STRING[result.method],
+                "results" => result.results,
+                "provenance" => result.provenance,
+                "hash" => result.hash
+            ))
+        end
+    end
+
+    # Human-readable bundle description, expected by DataCite-style deposits.
+    open(joinpath(output_dir, "README.md"), "w") do io
+        write(io, """# $title
+
+        $description
+
+        - **Config ID:** `$(config.id)`
+        - **Config hash:** `$(config.hash)`
+        - **Method:** `$(METHOD_TO_STRING[config.method])`
+        - **Formula:** `$(config.formula)`
+        - **Schema:** analysis_config.schema.json v$SCHEMA_VERSION
+        - **Licence:** $license
+
+        ## Files
+
+        | File | Purpose |
+        | --- | --- |
+        | `datacite.json` | DataCite metadata for minting a DOI |
+        | `analysis_config.json` | Machine-readable analysis configuration |
+        | `analysis_config.ncl` | Nickel serialisation of the configuration |
+        | `analysis_config_chora.deed` | DEED attestation of the configuration |
+        | `analysis_result.json` | The analysis result this bundle was minted for |
+        | `provenance.json` | Captured software and host environment |
+        | `content_hash.txt` | Content hash of the configuration |
+
+        ## Authors
+
+        $(isempty(authors) ? "_(none recorded)_" : join("- " .* authors, "\n"))
+
+        ## Reproducibility
+
+        The configuration is immutable and content-hashed. Re-running the analysis
+        requires the same MetaManifold version and database snapshot recorded in
+        `provenance.json`.
+        """)
+    end
+
     open(joinpath(output_dir, "content_hash.txt"), "w") do io
         write(io, config.hash)
     end
@@ -1507,6 +1567,15 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
     @info "Created DOI-ready bundle" output_dir config_id=config.id hash=config.hash dangerous=config.dangerous
 
     return output_dir
+end
+
+# Convenience overloads taking the destination positionally. Purely additive —
+# the keyword form above is unchanged.
+function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,Nothing}, output_dir::String; kwargs...)
+    return create_doi_bundle(config, result; output_dir=output_dir, kwargs...)
+end
+function create_doi_bundle(config::AnalysisConfig, output_dir::String; kwargs...)
+    return create_doi_bundle(config, nothing; output_dir=output_dir, kwargs...)
 end
 
 # --------------------------------------------------------------------------
@@ -1524,6 +1593,23 @@ function present_in_every_admissible_world(candidates::Vector, query::Function)
     # Returns true if query holds for every candidate world consistent with observation
     # Example: r = u + n = 2 with NoiseBound n ≤ 1 gives presence without identification (u ≠ 0 but u=1 or 2)
     return all(c -> query(c), candidates)
+end
+
+"""
+    present_in_every_admissible_world(counts, evidence; threshold=1.0) -> Bool
+
+Evidence-based form: decide presence from observed `counts` plus an `evidence`
+dict carrying `avec_fibre`, `epistemic_status` and an optional `noise_bound`.
+
+This is not a second model — it delegates to `Epistemic.present_in_every_admissible_world`,
+the canonical implementation, so the AnalysisConfig layer and the CladeCumulus /
+EchoFiber paths cannot drift apart. Kept as a distinct method alongside the
+`(candidates, query)` form above rather than replacing it, because both are used.
+"""
+function present_in_every_admissible_world(counts::Vector{Float64},
+                                          evidence::Dict{String,Any};
+                                          threshold::Float64=1.0)::Bool
+    return Epistemic.present_in_every_admissible_world(counts, evidence; threshold=threshold)
 end
 
 end # module AnalysisConfig
