@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react'
-import { BUTTON_RESET } from './buttonReset'
 
 type ToastVariant = 'success' | 'error' | 'info'
 
@@ -57,10 +56,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div key={t.id} role="status" style={{ pointerEvents: 'auto' }}>
             <button
               type="button"
+              className="btn-reset"
               onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}
               title="Click to dismiss"
               style={{
-                ...BUTTON_RESET,
                 display: 'block',
                 width: '100%',
                 cursor: 'pointer',

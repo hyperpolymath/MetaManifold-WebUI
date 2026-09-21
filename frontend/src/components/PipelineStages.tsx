@@ -235,24 +235,39 @@ export function PipelineStages({ stages, onRun, disabled, configMap, study, run,
         // Count how many config keys are overridden at run level for this stage
         const runOverrides = configMap ? STAGE_CONFIG_PREFIXES[key].reduce((n, prefix) =>
           n + Object.entries(configMap).filter(([k, { source }]) => k.startsWith(prefix) && source === 'run').length, 0) : 0
+        // The label is a disclosure control only when the stage actually has
+        // config to disclose. With none there is nothing to expand, so it stays
+        // a plain span: a focusable button that does nothing when activated is
+        // worse for a keyboard user than no control at all.
+        const stageLabel = (
+          <>
+            {hasConfig && <span style={{ fontSize: '.8rem', marginRight: 6, opacity: .65 }}>{isExpanded ? 'v' : '>'}</span>}
+            {STAGE_LABELS[key]}
+            {runOverrides > 0 && (
+              <span style={{ marginLeft: 6, fontSize: '.68rem', fontWeight: 600, color: 'var(--color-primary)', verticalAlign: 'middle' }}
+                title={`${runOverrides} run-level override${runOverrides > 1 ? 's' : ''}`}>
+                {runOverrides} override{runOverrides > 1 ? 's' : ''}
+              </span>
+            )}
+          </>
+        )
         return (
           <div key={key}>
             <div className={`${styles['row']} ${styles[status]}`}>
               <StatusDot status={status} />
-              <span
-                className={styles['label']}
-                style={{ cursor: hasConfig ? 'pointer' : 'default' }}
-                onClick={() => hasConfig && setExpanded(isExpanded ? null : key)}
-              >
-                {hasConfig && <span style={{ fontSize: '.8rem', marginRight: 6, opacity: .65 }}>{isExpanded ? 'v' : '>'}</span>}
-                {STAGE_LABELS[key]}
-                {runOverrides > 0 && (
-                  <span style={{ marginLeft: 6, fontSize: '.68rem', fontWeight: 600, color: 'var(--color-primary)', verticalAlign: 'middle' }}
-                    title={`${runOverrides} run-level override${runOverrides > 1 ? 's' : ''}`}>
-                    {runOverrides} override{runOverrides > 1 ? 's' : ''}
-                  </span>
-                )}
-              </span>
+              {hasConfig ? (
+                <button
+                  type="button"
+                  className={`btn-reset ${styles['label']}`}
+                  aria-expanded={isExpanded}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setExpanded(isExpanded ? null : key)}
+                >
+                  {stageLabel}
+                </button>
+              ) : (
+                <span className={styles['label']}>{stageLabel}</span>
+              )}
               <span className={styles['ts']} title={last_run ? new Date(last_run).toLocaleString() : ''}>{last_run ? timeAgo(last_run) : '-'}</span>
               {onRun && status !== 'disabled' && (
                 <button
@@ -428,15 +443,15 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
   }
 
   const labelEl = (
-    <div style={{ minWidth: 120, fontSize: '.78rem' }}>
+    <span style={{ display: 'block', minWidth: 120, fontSize: '.78rem' }}>
       {(leafKey || dottedKey).replace(/_/g, ' ')}
       {overrides && overrides.length > 0 && (
-        <div style={{ fontSize: '.68rem', color: '#e67700', lineHeight: 1.2 }}
+        <span style={{ display: 'block', fontSize: '.68rem', color: '#e67700', lineHeight: 1.2 }}
           title={overrides.join(', ')}>
           {overrides.length} override{overrides.length > 1 ? 's' : ''}
-        </div>
+        </span>
       )}
-    </div>
+    </span>
   )
   const sourceEl = <span style={{ fontSize: '.68rem', fontWeight: 600, color: SOURCE_COLORS[source], textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{source}</span>
   const removeBtn = source === sourceLevel && (
@@ -509,13 +524,17 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
       : items.length <= 3 ? items.join(', ')
       : `${items.slice(0, 3).join(', ')} ... (${items.length})`
     return (
-      <div
-        style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '2px 0 2px 8px', cursor: 'pointer' }}
-        onClick={startEdit}
-        title={tooltip ?? 'Click to edit'}
-      >
-        {labelEl}
-        <div style={{ fontFamily: 'monospace', fontSize: '.78rem', flex: 1, color: items.length === 0 ? 'var(--color-muted-fg)' : undefined }}>{preview}</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '2px 0 2px 8px' }} title={tooltip}>
+        <button
+          type="button"
+          className="btn-reset"
+          style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, cursor: 'pointer', textAlign: 'left' }}
+          onClick={startEdit}
+          title={tooltip ?? 'Click to edit'}
+        >
+          {labelEl}
+          <span style={{ display: 'block', fontFamily: 'monospace', fontSize: '.78rem', flex: 1, color: items.length === 0 ? 'var(--color-muted-fg)' : undefined }}>{preview}</span>
+        </button>
         {sourceEl}{removeBtn}
       </div>
     )
@@ -559,13 +578,17 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
   }
 
   return (
-    <div
-      style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '2px 0 2px 8px', cursor: 'pointer' }}
-      onClick={startEdit}
-      title={tooltip ?? 'Click to edit'}
-    >
-      {labelEl}
-      <div style={{ fontFamily: 'monospace', fontSize: '.78rem', flex: 1 }}>{displayValue}</div>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '2px 0 2px 8px' }} title={tooltip}>
+      <button
+        type="button"
+        className="btn-reset"
+        style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, cursor: 'pointer', textAlign: 'left' }}
+        onClick={startEdit}
+        title={tooltip ?? 'Click to edit'}
+      >
+        {labelEl}
+        <span style={{ display: 'block', fontFamily: 'monospace', fontSize: '.78rem', flex: 1 }}>{displayValue}</span>
+      </button>
       {sourceEl}{removeBtn}
     </div>
   )
@@ -603,7 +626,11 @@ function MultiSelectField({ value, tooltip, optionsFrom, saving, saveValue,
     <div style={{ padding: '2px 0 2px 8px' }} title={tooltip}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         {labelEl}
-        <div
+        <button
+          type="button"
+          className="btn-reset"
+          aria-expanded={open}
+          aria-haspopup="listbox"
           style={{ fontFamily: 'monospace', fontSize: '.78rem', flex: 1, cursor: 'pointer', padding: '1px 4px', border: '1px solid var(--color-border)', borderRadius: 3, minHeight: 22, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}
           onClick={() => setOpen(!open)}
         >
@@ -615,7 +642,7 @@ function MultiSelectField({ value, tooltip, optionsFrom, saving, saveValue,
               ))
             : <span style={{ color: 'var(--color-muted-fg)' }}>none</span>}
           <span style={{ marginLeft: 'auto', fontSize: '.68rem', opacity: .5 }}>{open ? 'Hide' : 'Show'}</span>
-        </div>
+        </button>
         {sourceEl}{removeBtn}
       </div>
       {open && options && (
