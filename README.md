@@ -543,7 +543,7 @@ clean checkout (`frontend/`):
 | Lint (tsc semantics + shell) | `scripts/check-lint.sh` | gated |
 
 CI runs the same gates (see `.github/workflows/ci.yml`: repo-hygiene job,
-then the pinned Julia/frontend matrix). Contributor setup, commit and
+then the pinned Julia and frontend jobs). Contributor setup, commit and
 branch conventions: `CONTRIBUTING.md`. Frontend reproducibility:
 `docs/reproducibility.md`. Type estate map: `docs/types/architecture.md`.
 Test inventory and metrics: `docs/testing/coverage.md`.

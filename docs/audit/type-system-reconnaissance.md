@@ -207,7 +207,7 @@ Observations on settings (facts, with contrast against actual code):
   (`apt_version: 4.5.0-3.2404.0`), Bioconductor 3.22, cutadapt 5.2,
   MultiQC 1.33, FastQC 0.12.1, vsearch/swarm/cd-hit with SHA-256-verified
   archives. `test/unit/test_install_pins.jl` exists to fail CI if the pin
-  file, `Manifest.toml`, and the CI matrix disagree.
+  file, `Manifest.toml`, and the `ci.yml` setup-julia step disagree.
 
 ---
 
