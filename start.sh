@@ -11,7 +11,7 @@ has_bundled_frontend() {
 
 build_frontend() {
   if command -v bun >/dev/null 2>&1; then
-    (cd frontend && bun install --frozen-lockfile && bun run build)
+    (cd frontend && bun install --frozen-lockfile --ignore-scripts && bun run build)
     return
   fi
 
