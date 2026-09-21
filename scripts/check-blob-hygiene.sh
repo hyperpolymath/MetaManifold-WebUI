@@ -94,7 +94,14 @@ case "$mode" in
             [ -n "$blob" ] || continue
             size="$(git cat-file -s "$blob")"
             check_one "$path" "$size"
-        done < <(git diff --cached --name-only --diff-filter=AM -z)
+        # --no-renames is load-bearing, not a tidy-up. With rename detection on,
+        # `git mv pool.fastq other.bin` is one R entry, and --diff-filter=AM drops
+        # it -- so an oversized blob already in the index can be moved past this
+        # hook without check_one() ever seeing it. --no-renames decomposes the
+        # rename into D + A, and the A is examined like any other addition.
+        # The --tree mode is immune (it walks the whole tree), which is exactly
+        # why the gap was invisible: CI stayed correct while the hook did not.
+        done < <(git diff --cached --no-renames --name-only --diff-filter=AM -z)
         ;;
     --tree)
         # Every tracked file at a ref, rather than a commit range. A range needs
