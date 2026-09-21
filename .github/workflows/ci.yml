@@ -200,11 +200,62 @@ jobs:
       # .Rprofile, and with it the renv autoloader, which would otherwise rebind
       # .Library to its own sandbox under root's cache; the flag is used rather than
       # the environment variable above because sudo resets the environment first.
+
+      # renv keeps a content-addressed cache: a package already in it is linked into
+      # the library instead of being downloaded and compiled again. Persisting that
+      # cache across runs is what makes a failed restore RESUMABLE. Without it all 79
+      # packages are rebuilt from source on every run -- measured at 10m08s and 13m21s
+      # on two consecutive runs, the largest single cost in this workflow -- and a
+      # restore that dies at package 60 throws away all 60.
+      #
+      # Reordering the packages is not an alternative: renv derives install order from
+      # the dependency graph, so a package cannot be pulled to the front of the queue
+      # ahead of the packages it links against.
+      #
+      # The cache path is pinned rather than left at the default ~/.cache/R/renv,
+      # because the restore runs under sudo where ~ is root's home, not the runner's.
+      - name: Restore the renv cache
+        id: renv-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: /opt/renv-cache
+          # The run id keeps every key unique so each attempt writes a NEW entry and
+          # progress accumulates; restore-keys then picks the most recent entry that
+          # matches the prefix. A changed renv.lock still falls through to the second
+          # key and re-uses every package whose version did not move.
+          key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-
+            renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-
+
       - name: Install R packages
+        env:
+          RENV_PATHS_CACHE: /opt/renv-cache
         run: |
+          sudo mkdir -p "$RENV_PATHS_CACHE"
+          sudo chmod 777 "$RENV_PATHS_CACHE"
           sudo Rscript --no-init-file -e 'install.packages(c("renv", "BiocManager"), repos="https://cloud.r-project.org", lib=.Library)'
-          sudo Rscript --no-init-file -e 'renv::restore(project=".", library=.Library, prompt=FALSE)'
+          # `sudo env VAR=...` rather than `sudo -E` or a bare VAR=value prefix: it sets
+          # the variable for Rscript directly and so does not depend on the runner's
+          # sudoers env_reset policy, which the comment above already notes resets it.
+          sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" Rscript --no-init-file -e 'renv::restore(project=".", library=.Library, prompt=FALSE)'
           Rscript --no-init-file -e 'for (pkg in c("dada2","Biostrings","ShortRead","vegan","dplyr")) if (!require(pkg,character.only=TRUE,quietly=TRUE)) stop(pkg, " failed to install")'
+
+      # Both of the next two steps run on failure ON PURPOSE. actions/cache saves only
+      # when the job succeeds, which would discard exactly the partial progress this
+      # cache exists to preserve: the packages that DID build before the restore died
+      # are the ones the next attempt must not build again. The cache is written by
+      # root, so it is made readable before it is packed.
+      - name: Make the renv cache readable
+        if: always()
+        run: sudo chmod -R a+rX /opt/renv-cache || true
+
+      - name: Save the renv cache
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: /opt/renv-cache
+          key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
 
       - name: Install cutadapt
         run: pip install "$CUTADAPT_SPEC"
