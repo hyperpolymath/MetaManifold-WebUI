@@ -24,7 +24,7 @@ Milestone 3 delivers exactly the user's answers for v1 AnalysisConfig as an immu
 
 ### 1. `src/analysis/AnalysisConfig.jl` (capital file) — canonical Milestone 3
 
-**Why capital?** Existing `analysis_config.jl` lowercase was from Milestone 1/2 (7300 lines total unit). Milestone 3 requires new immutable struct exactly matching user's answers with new fields epsilon/zero_policy. To avoid overwriting colleagues' work (per constraint ALWAYS start with full reconnaissance), we created new capital file `AnalysisConfig.jl` and made lowercase file a shim `include("AnalysisConfig.jl")` for backwards compatibility. `MetaManifold.jl` includes lowercase which includes capital, so module `AnalysisConfig` defined once.
+**Why capital?** Existing `analysis_config.jl` lowercase was from Milestone 1/2 (7300 lines total unit). Milestone 3 requires new immutable struct exactly matching user's answers with new fields epsilon/zero_policy. To avoid overwriting colleagues' work (per constraint ALWAYS start with full reconnaissance), we created new capital file `AnalysisConfig.jl` and made lowercase file a shim `include("AnalysisConfig.jl")` for backwards compatibility. `MetaManifold.jl` originally included the lowercase shim, which included the capital file, so module `AnalysisConfig` was defined once. Superseded: `MetaManifold.jl` now includes `AnalysisConfig.jl` directly and the shim is off the load path.
 
 **Constants:**
 - `SCHEMA_VERSION="1.0.0"`, `SCHEMA_VERSIONS_SUPPORTED=("1.0.0",)`, `AVEC_FIBRE_COLUMN="avec_fibre"`, `EPISTEMIC_STATUS_VALUES`
