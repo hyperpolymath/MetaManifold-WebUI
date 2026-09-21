@@ -72,6 +72,17 @@ jobs:
         continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
         run: scripts/check-lint.sh
 
+      # Blob-hygiene mirror of .githooks/pre-commit. Both callers exec the SAME
+      # script, so the local gate and this one cannot disagree about what is
+      # allowed -- a CI check that re-implements a hook drifts from it, and the
+      # drift is invisible because both keep passing.
+      #
+      # --tree, not a commit range: the checkout above is depth 2, and a whole-
+      # tree check also catches anything that landed before the guard existed.
+      - name: Blob hygiene check
+        continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
+        run: scripts/check-blob-hygiene.sh --tree HEAD
+
       # Commit convention mirror of .githooks/commit-msg (available locally via
       # the hooksPath setting documented in CONTRIBUTING.md). Advisory only when
       # this runs under upstream, whose commit subjects need not match.

@@ -49,9 +49,18 @@ Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`,
 checklist is in `.gitmessage`:
 
 ```bash
-git config commit.template .gitmessage     # one-time, loads it
-git config core.hooksPath .githooks        # one-time, enables commit-msg gate
+just hooks                                 # one-time, enables the commit-msg
+                                           # and pre-commit gates
+git config commit.template .gitmessage     # one-time, loads the template
 ```
+
+`just hooks` is already a dependency of `just bootstrap`, so a clone that was
+bootstrapped has both gates live. It only sets `core.hooksPath`, which is local
+config and therefore cannot be committed — that is why it has to be a command
+rather than a file. The hooks are `commit-msg` (conventional-commit subject) and
+`pre-commit` (blob hygiene: no uncompressed sequencing data, nothing over 4 MiB).
+CI re-checks both, so forgetting to run this costs a red build, not a bad commit
+on `main`.
 
 ---
 

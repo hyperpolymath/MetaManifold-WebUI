@@ -46,8 +46,16 @@ Reference: `hyperpolymath/standards@main` (in particular
 | Expectation | Here | Status |
 |---|---|---|
 | Documented | `CONTRIBUTING.md` + `.gitmessage` template (`git config commit.template .gitmessage`) | ✅ |
-| Enforced | `.githooks/commit-msg` (`git config core.hooksPath .githooks`) **and** CI repo-hygiene subject check | ✅ |
+| Enforced (the gate) | CI repo-hygiene `Commit convention check` — binding on this repo, advisory only under upstream (`continue-on-error: github.repository != 'hyperpolymath/MetaManifold-WebUI'`) | ✅ |
+| Enforced (local pre-flight) | `.githooks/commit-msg`, enabled by `just hooks` (a `just bootstrap` dependency) | ⚠ opt-in per clone — `core.hooksPath` is local config and cannot be committed |
 | Type list | `feat fix docs style refactor perf test build ci chore revert` | ✅ canonical list |
+
+## History hygiene
+
+| Expectation | Here | Status |
+|---|---|---|
+| Large/dead blobs kept out | `scripts/check-blob-hygiene.sh` — one implementation, two callers: `.githooks/pre-commit` (local) and the CI repo-hygiene `Blob hygiene check` (binding on this repo). Primary rule is a 4 MiB size ceiling, not a path list; the six `data/MiSeq_SOP/run_[AB]/*.fastq.gz` fixtures are allowlisted | ✅ verified by mutant — five reintroduction attempts refused, two legitimate files admitted |
+| Diff/linguist markings | `.gitattributes` marks `*.fastq{,.gz}`, `*.fq{,.gz}`, `*.fasta`, `*.fa`, `*.sam`, `*.bam` binary `-diff linguist-generated=true` | ✅ hygiene only, not the gate |
 
 ## Branch conventions
 
