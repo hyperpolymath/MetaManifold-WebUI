@@ -121,14 +121,16 @@
         )
 
         # Create counts with zeros
+        # >= 2*min_samples_per_group samples: prepare_analysis_table refuses fewer,
+        # needing 2 groups of min_samples_per_group for variance estimation.
         counts = [
-            0.0 1.0 2.0;
-            1.0 0.0 3.0;
-            2.0 3.0 0.0;
-            10.0 20.0 30.0
-        ] # 4 taxa x 3 samples, with zeros
+            0.0 1.0 2.0 1.0;
+            1.0 0.0 3.0 2.0;
+            2.0 3.0 0.0 1.0;
+            10.0 20.0 30.0 40.0
+        ] # 4 taxa x 4 samples, with zeros
 
-        sample_ids = ["s1", "s2", "s3"]
+        sample_ids = ["s1", "s2", "s3", "s4"]
         taxa_ids = ["t1", "t2", "t3", "t4"]
 
         # Test drop policy
@@ -140,7 +142,7 @@
             impute_policy="pseudocount"
         )
 
-        @test size(prepared_drop, 2) == 3 # 3 samples, no all-zero samples in this case
+        @test size(prepared_drop, 2) == 4 # 4 samples, no all-zero samples in this case
         @test size(prepared_drop, 1) == 4 # CLR keeps 4 taxa (or 4 for CLR, not ILR)
         @test !any(isnan, prepared_drop)
         @test !any(isinf, prepared_drop)
@@ -157,11 +159,11 @@
 
         # Test impute policy with all-zero sample
         counts_with_all_zero_sample = [
-            1.0 0.0 3.0;
-            2.0 0.0 4.0;
-            3.0 0.0 5.0
-        ] # second sample all zero
-        sample_ids_az = ["s1", "s2", "s3"]
+            1.0 0.0 3.0 4.0 5.0;
+            2.0 0.0 4.0 5.0 6.0;
+            3.0 0.0 5.0 6.0 7.0
+        ] # second sample all zero; 5 samples so 4 remain after the drop
+        sample_ids_az = ["s1", "s2", "s3", "s4", "s5"]
         taxa_ids_az = ["t1", "t2", "t3"]
 
         # Drop policy should drop all-zero sample
@@ -172,7 +174,7 @@
             drop_policy="drop",
             impute_policy="pseudocount"
         )
-        @test size(prepared_drop_az, 2) == 2 # dropped s2
+        @test size(prepared_drop_az, 2) == 4 # dropped s2, 4 remain
         @test "s2" ∉ sids_drop_az
         @test length(diag_drop_az.healings) >= 1
         @test occursin("Dropped", diag_drop_az.healings[1])
@@ -185,7 +187,7 @@
             drop_policy="impute",
             impute_policy="epsilon"
         )
-        @test size(prepared_imp_az, 2) == 3 # kept all 3 samples
+        @test size(prepared_imp_az, 2) == 5 # kept all 5 samples
         @test "s2" ∈ sids_imp_az
         @test length(diag_imp_az.healings) >= 1
         @test occursin("Imputed", diag_imp_az.healings[1])
@@ -201,9 +203,9 @@
 
         # Test with all-zero taxa
         counts_with_all_zero_taxa = [
-            1.0 2.0 3.0;
-            0.0 0.0 0.0;
-            4.0 5.0 6.0
+            1.0 2.0 3.0 4.0 5.0;
+            0.0 0.0 0.0 0.0 0.0;
+            4.0 5.0 6.0 7.0 8.0
         ]
         (prepared_drop_azt, diag_drop_azt, _, sids_drop_azt, tids_drop_azt) = Execution.prepare_analysis_table(
             config, counts_with_all_zero_taxa;
@@ -219,10 +221,10 @@
         # pseudocount=1 should be added to all counts for CLR, so 0->1, 1->2, etc.
         # Then log(1)=0, log(2)=0.693, etc., CLR centered
         # Check that prepared table does not have -Inf (which would happen with pseudocount=0)
-        counts_simple = [0.0 1.0; 1.0 0.0]
+        counts_simple = [0.0 1.0 2.0 3.0; 1.0 0.0 2.0 1.0]
         (prepared_simple, _, _, _, _) = Execution.prepare_analysis_table(
             config, counts_simple;
-            sample_ids=["s1","s2"],
+            sample_ids=["s1","s2","s3","s4"],
             taxa_ids=["t1","t2"],
             drop_policy="drop",
             impute_policy="pseudocount"
@@ -243,8 +245,8 @@
             created_by="test_m4_run"
         )
 
-        counts = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
-        sample_ids = ["s1","s2","s3"]
+        counts = [1.0 2.0 3.0 4.0; 4.0 5.0 6.0 7.0; 7.0 8.0 9.0 10.0]
+        sample_ids = ["s1","s2","s3","s4"]
         taxa_ids = ["t1","t2","t3"]
 
         (prepared, diagnostics, manifest, sids, tids) = Execution.prepare_analysis_table(
@@ -307,7 +309,7 @@
             adapter_type="JuliaAdapter",
             transform="none",
             zero_policy="pseudocount",
-            prepared_table_hash=bytes2hex(sha256(JSON3.write(prepared_with_nan))),
+            prepared_table_hash=Execution.prepared_table_hash(prepared_with_nan),
             diagnostics=diag_clean
         )
         @test_throws ArgumentError Execution.run_analysis(r_adapter, config, prepared_with_nan; diagnostics=diag_clean, manifest=manifest_clean, sample_ids=sample_ids, taxa_ids=taxa_ids)
