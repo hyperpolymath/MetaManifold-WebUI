@@ -546,7 +546,13 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       # Pinned, matching this file's convention for every other external ref.
-      SQUABBLER_SHA: 6be52e3489783669fef29ef9228022a6439819bd
+      # FLOOR: this pin must be at or after hyperpolymath/cicd-squabbler#99
+      # (merged 2026-09-21T18:55Z as 9846169c), which is what introduced the
+      # distinct exit 3 the Fetch step below branches on. At any earlier
+      # revision "no gate" is exit 2, falls into the `*` arm, and hard-fails --
+      # i.e. moving this pin backwards silently reverts the fix below without
+      # touching it. Bump it forwards freely; never behind 9846169c.
+      SQUABBLER_SHA: 9846169c1dc8e549edd72fa20efc6680d324d484
       SQUABBLE: /tmp/squabbler/target/release/squabble
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
