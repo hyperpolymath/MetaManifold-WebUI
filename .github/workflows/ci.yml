@@ -231,14 +231,23 @@ jobs:
       - name: Install R packages
         env:
           RENV_PATHS_CACHE: /opt/renv-cache
+          # renv draws its download counter by hiding the cursor (ESC[?25l), rewriting
+          # the line in place, then showing it again (ESC[?25h) -- the "25l25h" residue
+          # that litters the log. A captured CI log is not a terminal, so the rewrite
+          # never lands and the counter appears frozen at (0/79) for the whole ten
+          # minutes while the download is in fact progressing. Disabling cli's dynamic
+          # output makes each update print on its own line, so the log shows real
+          # progress and a genuine hang becomes distinguishable from a working step.
+          R_CLI_DYNAMIC: "false"
+          TERM: dumb
         run: |
           sudo mkdir -p "$RENV_PATHS_CACHE"
           sudo chmod 777 "$RENV_PATHS_CACHE"
-          sudo Rscript --no-init-file -e 'install.packages(c("renv", "BiocManager"), repos="https://cloud.r-project.org", lib=.Library)'
+          sudo env R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'install.packages(c("renv", "BiocManager"), repos="https://cloud.r-project.org", lib=.Library)'
           # `sudo env VAR=...` rather than `sudo -E` or a bare VAR=value prefix: it sets
           # the variable for Rscript directly and so does not depend on the runner's
           # sudoers env_reset policy, which the comment above already notes resets it.
-          sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" Rscript --no-init-file -e 'renv::restore(project=".", library=.Library, prompt=FALSE)'
+          sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'renv::restore(project=".", library=.Library, prompt=FALSE)'
           Rscript --no-init-file -e 'for (pkg in c("dada2","Biostrings","ShortRead","vegan","dplyr")) if (!require(pkg,character.only=TRUE,quietly=TRUE)) stop(pkg, " failed to install")'
 
       # Both of the next two steps run on failure ON PURPOSE. actions/cache saves only
