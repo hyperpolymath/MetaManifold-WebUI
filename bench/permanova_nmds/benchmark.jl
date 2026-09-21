@@ -50,15 +50,25 @@ function bench_normalise_counts(n::Int=100, n_features::Int=1000)
 end
 
 function bench_alpha_boxplot(n_groups::Int=3, n_per_group::Int=10)
-    groups = []
+    # Two defects, both latent until the bench steps were wired into CI.
+    #
+    # 1. `groups = []` is a `Vector{Any}`, which matches NEITHER `alpha_boxplot`
+    #    method (`src/analysis/analysis.jl:734` and `:840` both dispatch on a
+    #    concrete `Vector{Tuple{...}}`). The elements pushed below are already the
+    #    right 5-tuple shape, so annotating the container is all that is needed.
+    # 2. `metric=` is not a keyword of either method. The accepted keywords are
+    #    show_points, annotate_significance, pairwise_brackets, paired_samples and
+    #    significance_test. This file's own header says it measures "alpha_boxplot
+    #    with significance", so `annotate_significance=true` is what was meant --
+    #    and it exercises more of the function than the default would.
+    groups = Tuple{String, Vector{String}, Vector{Int}, Vector{Float64}, Vector{Float64}}[]
     for g in 1:n_groups
         sample_names = ["Group$(g)_Sample$(i)" for i in 1:n_per_group]
-        counts = rand(50:500, n_per_group)
         shannon_vals = rand(1.0:0.1:5.0, n_per_group)
         simpson_vals = rand(0.5:0.01:0.99, n_per_group)
         push!(groups, ("Group$g", sample_names, collect(1:n_per_group), shannon_vals, simpson_vals))
     end
-    @elapsed alpha_boxplot(groups, metric="shannon")
+    @elapsed alpha_boxplot(groups, annotate_significance=true)
 end
 
 function bench_nmds_chart(n::Int=20)
