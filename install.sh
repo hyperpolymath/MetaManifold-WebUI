@@ -75,7 +75,7 @@ if command -v julia &>/dev/null; then
     echo "Found Julia: $(julia --version)"
 else
     echo "Julia not found. Installing via juliaup..."
-    curl -fsSL https://install.julialang.org | sh -s -- --yes
+    curl -fsSL --proto '=https' --proto-redir '=https' https://install.julialang.org | sh -s -- --yes
 
     # juliaup installs to ~/.juliaup; source the env file if present
     if [ -f "$HOME/.juliaup/env" ]; then
