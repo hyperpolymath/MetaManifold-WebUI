@@ -5,7 +5,6 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
 import type { TablePage, TableQuery, ColFilter, DistinctInfo } from '../api/types'
 import styles from './DataTable.module.css'
-import { BUTTON_RESET } from './buttonReset'
 
 const blastUrl = (seq: string) =>
   `https://blast.ncbi.nlm.nih.gov/Blast.cgi?PROGRAM=blastn&DATABASE=nt&CMD=Put&ENTREZ_QUERY=NOT+uncultured+organism%5Borganism%5D+NOT+environmental+sample%5Borganism%5D&QUERY=${encodeURIComponent(seq)}`
@@ -752,8 +751,8 @@ function Stat({ value, fmt }: { value: number; fmt: (v: number) => string }) {
   return (
     <button
       type="button"
-      className={styles['statValue']}
-      style={{ ...BUTTON_RESET, cursor: 'pointer' }}
+      className={`btn-reset ${styles['statValue']}`}
+      style={{ cursor: 'pointer' }}
       onClick={flashCopy(String(value))}
       title="Click to copy"
     >

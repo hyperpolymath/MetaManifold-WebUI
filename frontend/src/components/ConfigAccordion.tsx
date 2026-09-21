@@ -7,7 +7,6 @@ import {
   STAGE_LABELS,
   StageConfig,
 } from './PipelineStages'
-import { BUTTON_RESET } from './buttonReset'
 import type { ConfigMap, ConfigSource } from '../api/types'
 
 const VISIBLE_STAGES = Object.keys(STAGE_CONFIG_PREFIXES) as (keyof typeof STAGE_CONFIG_PREFIXES)[]
@@ -37,9 +36,9 @@ export function ConfigAccordion({ configMap, study, run, group, onConfigChanged,
           <div key={stage} style={{ marginBottom: 4 }}>
             <button
               type="button"
+              className="btn-reset"
               aria-expanded={isExpanded}
               style={{
-                ...BUTTON_RESET,
                 display: 'block', width: '100%', textAlign: 'left',
                 cursor: 'pointer', fontWeight: 600, fontSize: '.85rem', padding: '4px 0',
               }}

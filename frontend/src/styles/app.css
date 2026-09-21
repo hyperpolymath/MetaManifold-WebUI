@@ -256,3 +256,26 @@ a:hover  { text-decoration: underline; }
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* Strips a <button> back to the appearance of the div or span it replaced.
+   Several controls carried an onClick on a non-interactive element, which made
+   them keyboard-unreachable: no focus stop, no Enter, no Space. A real <button>
+   brings that behaviour for free, and also brings the user agent's button
+   chrome, which would change how the page looks.
+
+   :where() is deliberate. It matches with ZERO specificity, so every author
+   rule beats it -- a component's own .label or .statValue keeps its font,
+   padding and colour -- while the user agent stylesheet still loses, because an
+   author rule outranks a UA rule whatever its specificity. An inline style
+   object could not do this: inline always wins, so it silently overrode the very
+   class it was sitting next to. */
+:where(button.btn-reset) {
+  appearance:  none;
+  background:  none;
+  border:      none;
+  margin:      0;
+  padding:     0;
+  font:        inherit;
+  color:       inherit;
+  text-align:  inherit;
+}
