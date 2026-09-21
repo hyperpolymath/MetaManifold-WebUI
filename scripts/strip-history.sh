@@ -113,6 +113,8 @@ git filter-repo --force --invert-paths \
   --path      'data/VESPA_pool' \
   --path      'data/Multiplex_pool' \
   --path      'web' \
+  --path      'inputs' \
+  --path-glob 'logs_*.zip' \
   --path-regex '^data/MiSeq_SOP/.*\.fastq$' \
   --path-regex '(^|/)node_modules/'
 
@@ -145,6 +147,23 @@ else
   echo "       here means the strip set caught a LIVE file."
 fi
 echo "    run the test suite in $WORK before believing any of this."
+
+# A path-based strip CANNOT prove a blob is gone: the same blob can be reachable
+# under a SECOND path, and `git rev-list --objects` names each object exactly
+# once, so the census that chose the strip set credits it to one path only.
+# Measured 2026-09-21: stripping data/Multiplex_pool left its 71.58 MiB intact
+# under inputs/fastq/, and the pre-rewrite listing never mentioned inputs/ at
+# all. The named checks above all passed while 71 MiB survived. So print what
+# actually REMAINS and read it -- an unexpected heavy path here is the tell.
+echo
+echo "    heaviest paths REMAINING (read this; do not trust the checks above alone):"
+git rev-list --objects --all \
+ | git cat-file --batch-check='%(objecttype) %(objectsize:disk) %(rest)' \
+ | awk '$1=="blob" && $3!="" {
+     n=split($3,a,"/"); k=(n>=2 ? a[1]"/"a[2] : a[1]); s[k]+=$2; c[k]++
+   }
+   END { for (k in s) printf "      %10.2f MiB %6d  %s\n", s[k]/1048576, c[k], k }' \
+ | sort -rn | head -8
 
 cat <<'NEXT'
 
