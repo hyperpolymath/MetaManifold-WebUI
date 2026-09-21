@@ -471,7 +471,11 @@ function DADA2Panel({ study, run, group, dada2Data, configMap, onConfigChanged, 
                 style={{ display: 'block', fontSize: '.85rem', fontWeight: 600, marginBottom: 8, cursor: 'pointer' }}
                 onClick={() => setShowStats(!showStats)}
               >
-                Pipeline Stats
+                {/* Explicit string: the span sits flush against this text and
+                    supplies its own gap via marginLeft, so no whitespace should
+                    render between them. A bare text node here left that
+                    ambiguous (typescript:S6772). */}
+                {'Pipeline Stats'}
                 <span style={{ fontSize: '.78rem', color: 'var(--color-muted-fg)', marginLeft: 8 }}>{showStats ? 'Hide' : 'Show'}</span>
               </button>
             ) : (
