@@ -17,34 +17,44 @@ test('apiUrl: same-origin paths pass through unchanged by default', () => {
 // in events.ts. These cases pin the three things it must do -- reject non-HTTP
 // schemes, strip credentials/query/fragment, and leave a legitimate
 // cross-origin base usable.
-test('sanitiseApiBase: absent or empty config yields same-origin', () => {
-  expect(sanitiseApiBase(undefined)).toBe('')
-  expect(sanitiseApiBase(null)).toBe('')
-  expect(sanitiseApiBase('')).toBe('')
-  expect(sanitiseApiBase('   ')).toBe('')
-  expect(sanitiseApiBase(42)).toBe('')
-})
+//
+// Written as one table rather than five test bodies. The bodies were all
+// `expect(sanitiseApiBase(x)).toBe(y)` repeated, which is duplicated code by
+// token count as well as by eye -- SonarCloud measured 6.7% duplication on new
+// code against a 3% limit, and it was right. A row still becomes its own named
+// test below, so a failure names the exact case rather than a block of five.
+const cases: ReadonlyArray<readonly [label: string, raw: unknown, expected: string]> = [
+  // Absent, blank or non-string config: same outcome as a missing config.json.
+  ['undefined yields same-origin', undefined, ''],
+  ['null yields same-origin', null, ''],
+  ['empty string yields same-origin', '', ''],
+  ['whitespace-only yields same-origin', '   ', ''],
+  ['a non-string yields same-origin', 42, ''],
 
-test('sanitiseApiBase: a legitimate split-deployment base survives intact', () => {
-  expect(sanitiseApiBase('https://bioserver:8080')).toBe('https://bioserver:8080')
-  expect(sanitiseApiBase('http://bioserver')).toBe('http://bioserver')
-})
+  // A split deployment genuinely needs a cross-origin base; it must survive.
+  ['a host:port base survives intact', 'https://bioserver:8080', 'https://bioserver:8080'],
+  ['a bare http host survives intact', 'http://bioserver', 'http://bioserver'],
 
-test('sanitiseApiBase: trailing slashes are stripped so apiUrl never doubles them', () => {
-  expect(sanitiseApiBase('https://bioserver:8080/')).toBe('https://bioserver:8080')
-  expect(sanitiseApiBase('https://bioserver:8080///')).toBe('https://bioserver:8080')
-  expect(sanitiseApiBase('https://bioserver:8080/backend/')).toBe('https://bioserver:8080/backend')
-})
+  // apiUrl concatenates, so a trailing slash here would double up in every URL.
+  ['one trailing slash is stripped', 'https://bioserver:8080/', 'https://bioserver:8080'],
+  ['repeated trailing slashes are stripped', 'https://bioserver:8080///', 'https://bioserver:8080'],
+  ['a path prefix keeps its slash stripped', 'https://bioserver:8080/backend/', 'https://bioserver:8080/backend'],
 
-test('sanitiseApiBase: non-HTTP schemes are refused', () => {
-  expect(sanitiseApiBase('javascript:alert(1)')).toBe('')
-  expect(sanitiseApiBase('data:text/html,<script>alert(1)</script>')).toBe('')
-  expect(sanitiseApiBase('blob:https://bioserver/abc')).toBe('')
-  expect(sanitiseApiBase('file:///etc/passwd')).toBe('')
-})
+  // The dangerous schemes: config.json is fetched at runtime, so these would
+  // otherwise reach fetch() and EventSource verbatim.
+  ['javascript: is refused', 'javascript:alert(1)', ''],
+  ['data: is refused', 'data:text/html,<script>alert(1)</script>', ''],
+  ['blob: is refused', 'blob:https://bioserver/abc', ''],
+  ['file: is refused', 'file:///etc/passwd', ''],
 
-test('sanitiseApiBase: credentials, query and fragment are dropped, traversal normalised', () => {
-  expect(sanitiseApiBase('https://user:pass@bioserver:8080/api')).toBe('https://bioserver:8080/api')
-  expect(sanitiseApiBase('https://bioserver:8080/api?token=secret#frag')).toBe('https://bioserver:8080/api')
-  expect(sanitiseApiBase('https://bioserver:8080/api/../../etc')).toBe('https://bioserver:8080/etc')
-})
+  // Rebuilding from parsed components is what drops these, not a regex.
+  ['embedded credentials are dropped', 'https://user:pass@bioserver:8080/api', 'https://bioserver:8080/api'],
+  ['query and fragment are dropped', 'https://bioserver:8080/api?token=secret#frag', 'https://bioserver:8080/api'],
+  ['path traversal is normalised', 'https://bioserver:8080/api/../../etc', 'https://bioserver:8080/etc'],
+]
+
+for (const [label, raw, expected] of cases) {
+  test(`sanitiseApiBase: ${label}`, () => {
+    expect(sanitiseApiBase(raw)).toBe(expected)
+  })
+}
