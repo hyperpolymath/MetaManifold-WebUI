@@ -463,13 +463,20 @@ function DADA2Panel({ study, run, group, dada2Data, configMap, onConfigChanged, 
         {/* Taxonomy: pipeline stats instead of figures */}
         {subTab === 'taxonomy' && (
           <>
-            <div style={{ fontSize: '.85rem', fontWeight: 600, marginBottom: 8, cursor: dada2Data?.has_stats ? 'pointer' : 'default' }}
-              onClick={() => dada2Data?.has_stats && setShowStats(!showStats)}>
-              Pipeline Stats
-              {dada2Data?.has_stats && (
+            {dada2Data?.has_stats ? (
+              <button
+                type="button"
+                className="btn-reset"
+                aria-expanded={showStats}
+                style={{ display: 'block', fontSize: '.85rem', fontWeight: 600, marginBottom: 8, cursor: 'pointer' }}
+                onClick={() => setShowStats(!showStats)}
+              >
+                Pipeline Stats
                 <span style={{ fontSize: '.78rem', color: 'var(--color-muted-fg)', marginLeft: 8 }}>{showStats ? 'Hide' : 'Show'}</span>
-              )}
-            </div>
+              </button>
+            ) : (
+              <div style={{ fontSize: '.85rem', fontWeight: 600, marginBottom: 8 }}>Pipeline Stats</div>
+            )}
             {dada2Data?.has_stats && showStats && (
               statsData ? (
                 <div style={{ overflowX: 'auto', marginBottom: 12 }}>
@@ -742,20 +749,29 @@ function TablesPanel({ study, run, group, subgroups, tables, onTablesChanged, ca
     <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {tables.map(t => (
-          <button
+          <span
             key={t.id}
             className={`btn ${selected === t.id ? 'btn-primary' : ''}`}
-            onClick={() => { setSelected(t.id); setFilters({}); setSortBy(null); setSortDir('asc'); setFilterKey(k => k + 1); setLiveStats(null) }}
+            style={{ padding: 0, gap: 0 }}
           >
-            {t.label} ({t.rows})
+            <button
+              type="button"
+              className="btn-reset"
+              style={{ padding: '7px 16px', cursor: 'pointer' }}
+              onClick={() => { setSelected(t.id); setFilters({}); setSortBy(null); setSortDir('asc'); setFilterKey(k => k + 1); setLiveStats(null) }}
+            >
+              {t.label} ({t.rows})
+            </button>
             {t.id !== 'merged' && t.id !== 'merged_otu' && (
-              <span
-                style={{ marginLeft: 6, opacity: 0.6, cursor: 'pointer' }}
+              <button
+                type="button"
+                className="btn-reset"
+                style={{ padding: '7px 12px 7px 0', opacity: 0.6, cursor: 'pointer' }}
                 title={`Delete ${t.id}`}
-                onClick={e => { e.stopPropagation(); deleteTable(t.id) }}
-              >&times;</span>
+                onClick={() => deleteTable(t.id)}
+              >&times;</button>
             )}
-          </button>
+          </span>
         ))}
       </div>
 
@@ -764,9 +780,10 @@ function TablesPanel({ study, run, group, subgroups, tables, onTablesChanged, ca
         if (!meta) return null
         const copy = (v: string | number) => () => navigator.clipboard.writeText(String(v))
         const N = ({ v, raw }: { v: string | number; raw?: string | number }) => (
-          <strong onClick={copy(raw ?? v)} style={{ color: 'var(--color-fg)', cursor: 'pointer' }} title="Click to copy">
-            {typeof v === 'number' ? v.toLocaleString() : v}
-          </strong>
+          <button type="button" className="btn-reset" onClick={copy(raw ?? v)}
+            style={{ color: 'var(--color-fg)', cursor: 'pointer' }} title="Click to copy">
+            <strong>{typeof v === 'number' ? v.toLocaleString() : v}</strong>
+          </button>
         )
         const fmt = (n: number) => n.toLocaleString()
         const s = liveStats
