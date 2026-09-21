@@ -23,9 +23,8 @@
 //     gate (per the infrastructure prompt; gating is a later-prompt
 //     decision).
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { execSync } from 'node:child_process'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
+import { dirname, join, resolve, isAbsolute } from 'node:path'
 import { applyColourOverrides } from '../src/api/figureColours'
 
 const REPS = 5
@@ -202,10 +201,76 @@ function wTreeRendering(iters: number): BenchmarkResult {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve the checkout's HEAD commit by reading git's own files.
+ *
+ * This used to shell out to `git rev-parse --short HEAD`. That resolved the
+ * `git` binary through PATH, so whatever `git` happened to be first on PATH ran
+ * with this process's privileges -- and a benchmark harness has no need of a
+ * subprocess at all. Reading the plaintext files git already maintains is both
+ * safer and faster, and it works with no git installed.
+ *
+ * Handles the four shapes HEAD can take: a detached SHA, a symbolic ref to a
+ * loose ref file, a symbolic ref that is only in `packed-refs`, and a linked
+ * worktree (where `.git` is a FILE pointing at the real gitdir, and refs live
+ * in the common dir rather than beside HEAD).
+ */
+function headCommit(startDir: string): string {
+  // Walk up for the checkout root rather than trusting cwd: the harness is run
+  // from frontend/ by `just bench` and from the repo root by CI.
+  let dir = startDir
+  let gitPath = ''
+  for (;;) {
+    const candidate = join(dir, '.git')
+    if (existsSync(candidate)) { gitPath = candidate; break }
+    const parent = dirname(dir)
+    if (parent === dir) return 'unknown'
+    dir = parent
+  }
+
+  // A linked worktree's `.git` is a file: "gitdir: /abs/or/rel/path".
+  let gitDir = gitPath
+  if (statSync(gitPath).isFile()) {
+    const pointer = readFileSync(gitPath, 'utf8').trim()
+    if (!pointer.startsWith('gitdir:')) return 'unknown'
+    const target = pointer.slice('gitdir:'.length).trim()
+    gitDir = isAbsolute(target) ? target : resolve(dir, target)
+  }
+
+  // Refs of a linked worktree live in the common dir, not next to its HEAD.
+  const commonFile = join(gitDir, 'commondir')
+  let commonDir = gitDir
+  if (existsSync(commonFile)) {
+    const rel = readFileSync(commonFile, 'utf8').trim()
+    commonDir = isAbsolute(rel) ? rel : resolve(gitDir, rel)
+  }
+
+  const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
+  if (/^[0-9a-f]{40}$/.test(head)) return head            // detached
+  if (!head.startsWith('ref:')) return 'unknown'
+  const ref = head.slice(4).trim()
+
+  const loose = join(commonDir, ref)
+  if (existsSync(loose)) return readFileSync(loose, 'utf8').trim()
+
+  // Fresh clones pack their refs, so the loose file may simply not exist.
+  const packed = join(commonDir, 'packed-refs')
+  if (existsSync(packed)) {
+    for (const line of readFileSync(packed, 'utf8').split('\n')) {
+      if (line.startsWith('#') || line.startsWith('^')) continue
+      const [sha, name] = line.trim().split(' ')
+      if (name === ref && sha) return sha
+    }
+  }
+  return 'unknown'
+}
+
 function environment(): BenchRun['environment'] {
   let commit = 'unknown'
   try {
-    commit = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    // 7 hex is git's own default abbreviation; `rev-parse --short` would widen
+    // it only in a repository large enough to collide, which this is not.
+    commit = headCommit(import.meta.dir).slice(0, 7) || 'unknown'
   } catch {
     /* outside a git checkout — artifacts still carry every other field */
   }
