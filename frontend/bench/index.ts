@@ -201,6 +201,53 @@ function wTreeRendering(iters: number): BenchmarkResult {
 
 // ---------------------------------------------------------------------------
 
+/** Walk up from `startDir` for the nearest `.git`; '' when there is none. */
+function findGitPath(startDir: string): string {
+  // Walk up for the checkout root rather than trusting cwd: the harness is run
+  // from frontend/ by `just bench` and from the repo root by CI.
+  let dir = startDir
+  for (;;) {
+    const candidate = join(dir, '.git')
+    if (existsSync(candidate)) return candidate
+    const parent = dirname(dir)
+    if (parent === dir) return ''
+    dir = parent
+  }
+}
+
+/** A linked worktree's `.git` is a FILE: "gitdir: /abs/or/rel/path". */
+function resolveGitDir(gitPath: string): string {
+  if (!statSync(gitPath).isFile()) return gitPath
+  const pointer = readFileSync(gitPath, 'utf8').trim()
+  if (!pointer.startsWith('gitdir:')) return ''
+  const target = pointer.slice('gitdir:'.length).trim()
+  return isAbsolute(target) ? target : resolve(dirname(gitPath), target)
+}
+
+/** Refs of a linked worktree live in the common dir, not beside its own HEAD. */
+function resolveCommonDir(gitDir: string): string {
+  const commonFile = join(gitDir, 'commondir')
+  if (!existsSync(commonFile)) return gitDir
+  const rel = readFileSync(commonFile, 'utf8').trim()
+  return isAbsolute(rel) ? rel : resolve(gitDir, rel)
+}
+
+/** Resolve a ref name to its sha: the loose file first, then `packed-refs`. */
+function resolveRef(commonDir: string, ref: string): string {
+  const loose = join(commonDir, ref)
+  if (existsSync(loose)) return readFileSync(loose, 'utf8').trim()
+
+  // Fresh clones pack their refs, so the loose file may simply not exist.
+  const packed = join(commonDir, 'packed-refs')
+  if (!existsSync(packed)) return 'unknown'
+  for (const line of readFileSync(packed, 'utf8').split('\n')) {
+    if (line.startsWith('#') || line.startsWith('^')) continue
+    const [sha, name] = line.trim().split(' ')
+    if (name === ref && sha) return sha
+  }
+  return 'unknown'
+}
+
 /**
  * Resolve the checkout's HEAD commit by reading git's own files.
  *
@@ -210,59 +257,24 @@ function wTreeRendering(iters: number): BenchmarkResult {
  * subprocess at all. Reading the plaintext files git already maintains is both
  * safer and faster, and it works with no git installed.
  *
- * Handles the four shapes HEAD can take: a detached SHA, a symbolic ref to a
- * loose ref file, a symbolic ref that is only in `packed-refs`, and a linked
- * worktree (where `.git` is a FILE pointing at the real gitdir, and refs live
- * in the common dir rather than beside HEAD).
+ * The four shapes HEAD can take -- a detached SHA, a symbolic ref to a loose
+ * ref file, a symbolic ref that is only in `packed-refs`, and a linked worktree
+ * -- are handled by the four helpers above. They were inlined here until
+ * SonarCloud measured this function's cognitive complexity at 26 against a
+ * limit of 15; splitting on the seams the doc comment already described costs
+ * nothing and makes each shape separately readable.
  */
 function headCommit(startDir: string): string {
-  // Walk up for the checkout root rather than trusting cwd: the harness is run
-  // from frontend/ by `just bench` and from the repo root by CI.
-  let dir = startDir
-  let gitPath = ''
-  for (;;) {
-    const candidate = join(dir, '.git')
-    if (existsSync(candidate)) { gitPath = candidate; break }
-    const parent = dirname(dir)
-    if (parent === dir) return 'unknown'
-    dir = parent
-  }
-
-  // A linked worktree's `.git` is a file: "gitdir: /abs/or/rel/path".
-  let gitDir = gitPath
-  if (statSync(gitPath).isFile()) {
-    const pointer = readFileSync(gitPath, 'utf8').trim()
-    if (!pointer.startsWith('gitdir:')) return 'unknown'
-    const target = pointer.slice('gitdir:'.length).trim()
-    gitDir = isAbsolute(target) ? target : resolve(dir, target)
-  }
-
-  // Refs of a linked worktree live in the common dir, not next to its HEAD.
-  const commonFile = join(gitDir, 'commondir')
-  let commonDir = gitDir
-  if (existsSync(commonFile)) {
-    const rel = readFileSync(commonFile, 'utf8').trim()
-    commonDir = isAbsolute(rel) ? rel : resolve(gitDir, rel)
-  }
+  const gitPath = findGitPath(startDir)
+  if (!gitPath) return 'unknown'
+  const gitDir = resolveGitDir(gitPath)
+  if (!gitDir) return 'unknown'
 
   const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
   if (/^[0-9a-f]{40}$/.test(head)) return head            // detached
   if (!head.startsWith('ref:')) return 'unknown'
-  const ref = head.slice(4).trim()
 
-  const loose = join(commonDir, ref)
-  if (existsSync(loose)) return readFileSync(loose, 'utf8').trim()
-
-  // Fresh clones pack their refs, so the loose file may simply not exist.
-  const packed = join(commonDir, 'packed-refs')
-  if (existsSync(packed)) {
-    for (const line of readFileSync(packed, 'utf8').split('\n')) {
-      if (line.startsWith('#') || line.startsWith('^')) continue
-      const [sha, name] = line.trim().split(' ')
-      if (name === ref && sha) return sha
-    }
-  }
-  return 'unknown'
+  return resolveRef(resolveCommonDir(gitDir), head.slice(4).trim())
 }
 
 function environment(): BenchRun['environment'] {
