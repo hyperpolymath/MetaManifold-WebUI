@@ -567,12 +567,62 @@ jobs:
 
       # `squabble fetch` and `squabble fight` both take <owner>/<repo>
       # <pr-number>; the job-level gate above guarantees a PR is present.
+      #
+      # Exit codes, fixed by SHA pin so their meaning cannot drift underneath:
+      #   0  a gate exists and was fetched -> triage it
+      #   3  the base branch has no `required_status_checks` ruleset rule
+      #      -> there is nothing to triage. A finding, not a breakage.
+      #   *  anything else is a real failure and still fails this job.
+      #
+      # Before hyperpolymath/cicd-squabbler#99 every one of those was exit 2, so
+      # this step could not tell "nothing to triage" from "squabble is broken".
+      # It went red on a legitimate non-finding, and the only alternative was to
+      # swallow rc=2 -- which would have muted genuine breakage along with it.
+      # Discriminating on the message, or inferring the state from the error
+      # code, would both be guesses; the producer answers it instead.
       - name: Fetch the live gate for this PR
+        id: fetch
         run: |
-          "$SQUABBLE" fetch "${{ github.repository }}" "${{ github.event.pull_request.number }}" > gate.json
-          echo "--- gate.json ---"; cat gate.json
+          set +e
+          "$SQUABBLE" fetch "${{ github.repository }}" \
+            "${{ github.event.pull_request.number }}" > gate.json 2> fetch.err
+          rc=$?
+          set -e
+          cat fetch.err >&2
+          case "$rc" in
+            0)
+              echo "has_gate=true" >> "$GITHUB_OUTPUT"
+              echo "--- gate.json ---"; cat gate.json
+              ;;
+            3)
+              echo "has_gate=false" >> "$GITHUB_OUTPUT"
+              rm -f gate.json
+              {
+                echo "## Gate triage: no gate to triage"
+                echo
+                echo "\`squabble fetch\` exited 3. Base branch \`${{ github.event.pull_request.base.ref }}\`"
+                echo "of \`${{ github.repository }}\` carries no \`required_status_checks\` ruleset rule,"
+                echo "so there is no gate to squabble over and triage was skipped."
+                echo
+                echo "**This job is green because nothing was triaged, not because a gate passed.**"
+                echo "Merges into that branch are gated by no required status check."
+                echo
+                echo "Classic branch protection is a separate API and is not visible to this query,"
+                echo "so this says nothing about it."
+              } | tee triage-outcome.md >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning title=No gate to triage::base branch has no required_status_checks ruleset rule -- triage skipped, nothing was verified"
+              ;;
+            *)
+              # The redirect leaves a 0-byte gate.json even when the fetch
+              # failed; uploading it would look like an empty gate was fetched.
+              rm -f gate.json
+              echo "::error title=squabble fetch failed::exit $rc -- this is a real failure, not a missing gate"
+              exit "$rc"
+              ;;
+          esac
 
       - name: Diagnose the gate
+        if: steps.fetch.outputs.has_gate == 'true'
         run: |
           "$SQUABBLE" diagnose gate.json | tee squabble-diagnose.txt
 
@@ -580,6 +630,7 @@ jobs:
       # cannot legitimately land — that is a finding to report, not a build break,
       # and failing here would mask the very deadlock we are trying to surface.
       - name: Fight (propose only — never commits, pushes or re-runs CI)
+        if: steps.fetch.outputs.has_gate == 'true'
         run: |
           "$SQUABBLE" fight "${{ github.repository }}" "${{ github.event.pull_request.number }}" \
             --repo-root . --json > squabble-fight.json || true
@@ -594,4 +645,5 @@ jobs:
             gate.json
             squabble-diagnose.txt
             squabble-fight.json
+            triage-outcome.md
           if-no-files-found: ignore
