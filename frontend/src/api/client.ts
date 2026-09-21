@@ -48,7 +48,14 @@ export function sanitiseApiBase(raw: unknown): string {
     return ''
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
-  return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`
+  // Trailing slashes are stripped with a loop, not /\/+$/. That pattern
+  // backtracks super-linearly on a long run of slashes (SonarCloud
+  // typescript:S8786), and a long run of slashes is exactly what a hostile
+  // config.json would supply to the one function written to bound it.
+  const path = url.pathname
+  let end = path.length
+  while (end > 0 && path.charCodeAt(end - 1) === 47 /* '/' */) end--
+  return `${url.protocol}//${url.host}${path.slice(0, end)}`
 }
 
 /** Called once at startup from main.tsx to load runtime config. */

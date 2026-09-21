@@ -39,6 +39,9 @@ const cases: ReadonlyArray<readonly [label: string, raw: unknown, expected: stri
   ['one trailing slash is stripped', 'https://bioserver:8080/', 'https://bioserver:8080'],
   ['repeated trailing slashes are stripped', 'https://bioserver:8080///', 'https://bioserver:8080'],
   ['a path prefix keeps its slash stripped', 'https://bioserver:8080/backend/', 'https://bioserver:8080/backend'],
+  // 5000 trailing slashes: the case /\/+$/ backtracked on. A correctness
+  // check of the replacement loop on long input, not a timing assertion.
+  ['a long run of trailing slashes is stripped', 'https://bioserver:8080' + '/'.repeat(5000), 'https://bioserver:8080'],
 
   // The dangerous schemes: config.json is fetched at runtime, so these would
   // otherwise reach fetch() and EventSource verbatim.
