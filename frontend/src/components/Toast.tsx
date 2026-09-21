@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react'
+import { BUTTON_RESET } from './buttonReset'
 
 type ToastVariant = 'success' | 'error' | 'info'
 
@@ -53,19 +54,27 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         pointerEvents: 'none',
       }}>
         {toasts.map(t => (
-          <div key={t.id} style={{
-            pointerEvents: 'auto',
-            padding: '10px 18px',
-            borderRadius: 8,
-            fontSize: '.88rem',
-            fontWeight: 500,
-            boxShadow: '0 4px 12px rgba(0,0,0,.15)',
-            animation: 'toast-in .2s ease-out',
-            ...VARIANT_STYLES[t.variant],
-          }}
-            onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}
-          >
-            {t.message}
+          <div key={t.id} role="status" style={{ pointerEvents: 'auto' }}>
+            <button
+              type="button"
+              onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}
+              title="Click to dismiss"
+              style={{
+                ...BUTTON_RESET,
+                display: 'block',
+                width: '100%',
+                cursor: 'pointer',
+                padding: '10px 18px',
+                borderRadius: 8,
+                fontSize: '.88rem',
+                fontWeight: 500,
+                boxShadow: '0 4px 12px rgba(0,0,0,.15)',
+                animation: 'toast-in .2s ease-out',
+                ...VARIANT_STYLES[t.variant],
+              }}
+            >
+              {t.message}
+            </button>
           </div>
         ))}
       </div>

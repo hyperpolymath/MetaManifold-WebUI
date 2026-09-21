@@ -7,6 +7,7 @@
 // and CategorySetEditor supply only the fields between the two.
 import { useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
+import { BUTTON_RESET } from './buttonReset'
 
 interface EditorCardProps {
   name:            string
@@ -27,14 +28,19 @@ export function EditorCard({
 
   return (
     <div className="card" style={{ marginBottom: 12 }}>
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        style={{
+          ...BUTTON_RESET,
+          display: 'flex', width: '100%', alignItems: 'center', gap: 10, cursor: 'pointer',
+        }}
         onClick={() => setExpanded(e => !e)}
       >
         <span style={{ fontSize: '.8rem', opacity: .65 }}>{expanded ? 'v' : '>'}</span>
         <strong style={{ flex: 1 }}>{name}</strong>
         {meta && <span style={metaStyle}>{meta}</span>}
-      </div>
+      </button>
 
       {expanded && (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
