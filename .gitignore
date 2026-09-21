@@ -265,6 +265,7 @@ docs/*
 frontend/tests/results/
 frontend/tests/coverage/
 frontend/bench/results/
+bench/results/
 
 # translation temp files
 

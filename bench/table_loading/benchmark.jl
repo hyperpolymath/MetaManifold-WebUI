@@ -46,8 +46,13 @@ function bench_filtered_counts(con, sample_cols, table::String="merged")
     @elapsed filtered_counts(con, table, sample_cols, "", [])
 end
 
-function bench_filtered_df(con, sample_cols, table::String="merged")
-    @elapsed filtered_df(con, table, sample_cols, "", [], 1, 100)
+function bench_filtered_df(con, table::String="merged")
+    # `filtered_df(con, table, where_clause, where_params)` -- four arguments.
+    # This previously passed seven (sample_cols + an offset/limit pair), a
+    # paginated signature that has never existed on any commit: the function has
+    # taken these four arguments since `2987464`. The call was unreachable until
+    # the bench steps were wired into CI, so it failed the moment it first ran.
+    @elapsed filtered_df(con, table, "", [])
 end
 
 function bench_taxonomy_levels(con, table::String="merged")
@@ -72,7 +77,7 @@ function run_benchmarks(; n_samples=20, n_features=1000, reps=5)
     for _ in 1:reps
         push!(results["sample_columns"], bench_sample_columns(con))
         push!(results["filtered_counts"], bench_filtered_counts(con, sample_cols))
-        push!(results["filtered_df"], bench_filtered_df(con, sample_cols))
+        push!(results["filtered_df"], bench_filtered_df(con))
         push!(results["taxonomy_levels"], bench_taxonomy_levels(con))
         push!(results["taxon_column"], bench_taxon_column())
     end

@@ -9,7 +9,21 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A push to `main` QUEUES; a pull_request head update still cancels.
+  #
+  # Measured 2026-09-21: the Julia job takes ~31 min, and `main` was merged to at
+  # 14:25, 14:28 and 14:43. Every run was cancelled 17-18 min in by the next one,
+  # so three consecutive commits to `main` produced NO test verdict at all --
+  # not a pass, not a failure, nothing. Cancelling is right for a PR, where a
+  # verdict on a superseded head is worthless; it is wrong for `main`, where each
+  # commit is a thing we actually want a recorded answer about.
+  #
+  # Trade-off, stated plainly: pushes to `main` now run serially, so a burst of
+  # N merges takes N x ~31 min to drain. That is the cost of getting an answer.
+  # This does NOT rescue an upstream PR whose head keeps moving (e.g.
+  # JoshuaJewell#6, whose head IS this fork's `main`) -- only letting `main`
+  # settle for ~31 min does that.
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   # Estate hygiene gates (standards/RSR alignment): cheap, run alongside the

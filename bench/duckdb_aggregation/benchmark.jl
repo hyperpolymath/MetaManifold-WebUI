@@ -36,27 +36,53 @@ function _create_mock_db(n_samples::Int=20, n_features::Int=1000)
 end
 
 function bench_aggregate_by_taxon(con, sample_cols)
-    @elapsed aggregate_by_taxon(con, "merged", sample_cols, "Genus")
+    # `aggregate_by_taxon(con, table, sample_cols, rank, where_clause, where_params)`
+    # -- six arguments. This previously passed four, omitting the trailing filter
+    # pair. `src/analysis/analysis.jl:141` has required all six since the function
+    # was introduced, and `test/unit/test_analysis_duckdb.jl` calls it that way.
+    # The call was unreachable until the bench steps were wired into CI, so it
+    # failed the moment it first ran. An empty filter benchmarks the unfiltered
+    # aggregation, which is what the header comment says this measures.
+    @elapsed aggregate_by_taxon(con, "merged", sample_cols, "Genus", "", [])
 end
 
 function bench_venn_taxa_present(con, sample_cols)
     # Split samples into 2 groups
     g1 = sample_cols[1:div(length(sample_cols),2)]
     g2 = sample_cols[div(length(sample_cols),2)+1:end]
-    @elapsed venn_taxa_present(con, "merged", sample_cols, [g1, g2], "Genus")
+    # `venn_taxa_present(con, table, sample_cols, rank_col, where_clause, where_params)`
+    # returns the taxa present in ONE sample set (`src/analysis/analysis.jl:161`).
+    # It has never accepted a list of groups: the previous call passed `[g1, g2]`
+    # as a fourth argument in a five-argument form that matches no method. A Venn
+    # is assembled by calling it once per group, which is what this now measures.
+    @elapsed begin
+        venn_taxa_present(con, "merged", g1, "Genus", "", [])
+        venn_taxa_present(con, "merged", g2, "Genus", "", [])
+    end
 end
 
 function bench_bar_chart()
-    labels = ["GroupA", "GroupB", "GroupC"]
+    # `bar_chart(segment_labels, sample_names, counts; top_n, ...)` -- the counts
+    # matrix is (segments x samples), as `src/analysis/analysis.jl:403` (column
+    # totals are per-sample) and `test/unit/test_analysis.jl:35` ("2 taxa x 2
+    # samples") both establish. The previous call passed (labels, counts, names),
+    # putting the matrix in the `sample_names` position, so no method matched.
+    # The 100x3 matrix means 100 segments (taxa) across 3 samples (groups), so the
+    # taxon vector is the segment labels and the group vector the sample names.
+    segment_labels = ["Taxon$i" for i in 1:100]
+    sample_names = ["GroupA", "GroupB", "GroupC"]
     counts = rand(100, 3) * 1000
-    @elapsed bar_chart(labels, counts, ["Taxon$i" for i in 1:100], top_n=20)
+    @elapsed bar_chart(segment_labels, sample_names, counts, top_n=20)
 end
 
 function bench_taxa_bar_chart()
     labels = ["Taxon$i" for i in 1:50]
     counts = rand(50, 10) * 100
     sample_names = ["Sample$i" for i in 1:10]
-    @elapsed taxa_bar_chart(labels, counts, sample_names, top_n=20)
+    # `taxa_bar_chart(taxon_labels, sample_names, counts; ...)` -- arguments 2 and
+    # 3 were transposed here. The 50x10 matrix is already (taxa x samples), which
+    # is the orientation the function wants; only the call order was wrong.
+    @elapsed taxa_bar_chart(labels, sample_names, counts, top_n=20)
 end
 
 function bench_alpha_chart()
@@ -64,8 +90,11 @@ function bench_alpha_chart()
     richness = rand(50:500, 20)
     shannon = rand(1.0:0.1:5.0, 20)
     simpson = rand(0.5:0.01:0.99, 20)
-    groups = [rand(["Control", "Disease"]) for _ in 1:20]
-    @elapsed alpha_chart(sample_names, richness, shannon, simpson, groups)
+    # `alpha_chart(sample_names, richness, shannon, simpson)` takes exactly four
+    # arguments (`src/analysis/analysis.jl:312`); it has no grouping parameter, and
+    # the `groups` vector built here was never consumed by any method. Grouped
+    # alpha display is `alpha_boxplot`'s job, benchmarked in permanova_nmds.
+    @elapsed alpha_chart(sample_names, richness, shannon, simpson)
 end
 
 function run_benchmarks(; n_samples=20, n_features=1000, reps=5)
