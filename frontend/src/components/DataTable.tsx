@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
 import type { TablePage, TableQuery, ColFilter, DistinctInfo } from '../api/types'
 import styles from './DataTable.module.css'
+import { BUTTON_RESET } from './buttonReset'
 
 const blastUrl = (seq: string) =>
   `https://blast.ncbi.nlm.nih.gov/Blast.cgi?PROGRAM=blastn&DATABASE=nt&CMD=Put&ENTREZ_QUERY=NOT+uncultured+organism%5Borganism%5D+NOT+environmental+sample%5Borganism%5D&QUERY=${encodeURIComponent(seq)}`
@@ -656,7 +657,7 @@ function ColumnDropdown({ column, distinctFetcher, activeFilters, keywordFilter,
   }, [onClose])
 
   return (
-    <div ref={ref} className={styles['dropdown']} onClick={e => e.stopPropagation()}>
+    <div ref={ref} role="presentation" className={styles['dropdown']} onClick={e => e.stopPropagation()}>
       <label className={styles['dropdownItem']} style={{ borderBottom: '1px solid var(--color-border)', paddingTop: 6, paddingBottom: 6 }}>
         <input type="checkbox" checked={isSticky} onChange={onToggleSticky} />
         <span style={{ fontWeight: 600, fontSize: '.78rem' }}>Sticky column</span>
@@ -749,9 +750,15 @@ function TextFilter({ values, current, onApply }: {
 // A single numeric statistic; clicking it copies the raw (unformatted) value.
 function Stat({ value, fmt }: { value: number; fmt: (v: number) => string }) {
   return (
-    <span className={styles['statValue']} onClick={flashCopy(String(value))} title="Click to copy">
+    <button
+      type="button"
+      className={styles['statValue']}
+      style={{ ...BUTTON_RESET, cursor: 'pointer' }}
+      onClick={flashCopy(String(value))}
+      title="Click to copy"
+    >
       {fmt(value)}
-    </span>
+    </button>
   )
 }
 

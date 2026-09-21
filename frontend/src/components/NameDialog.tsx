@@ -35,6 +35,7 @@ export function NameDialog({ title, initialValue = '', placeholder = 'Name', onC
 
   return (
     <div
+      role="presentation"
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
         background: 'rgba(0,0,0,.45)',
