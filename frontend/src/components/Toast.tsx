@@ -53,7 +53,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         pointerEvents: 'none',
       }}>
         {toasts.map(t => (
-          <div key={t.id} role="status" style={{ pointerEvents: 'auto' }}>
+          <output key={t.id} style={{ display: 'block', pointerEvents: 'auto' }}>
             <button
               type="button"
               className="btn-reset"
@@ -74,7 +74,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             >
               {t.message}
             </button>
-          </div>
+          </output>
         ))}
       </div>
     </ToastContext.Provider>
