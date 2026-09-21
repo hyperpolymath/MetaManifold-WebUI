@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 #!/usr/bin/env julia
 # MetabarcodingPipeline test suite
 #
@@ -13,6 +14,10 @@ const RUN_SERVER      = "--server"      in ARGS
 
 using MetaManifold
 using CSV, DataFrames, JSON3, Logging, YAML, DuckDB, DBInterface, Dates
+# Statistics and SHA are declared in Project.toml and used directly by the unit
+# tests (mean() for CLR column-centering, sha256() for manifest hashes); without
+# them here the tests raise UndefVarError instead of testing anything.
+using Statistics, SHA
 
 using MetaManifold.PipelineTypes, MetaManifold.PipelineLog, MetaManifold.Config
 using MetaManifold.Databases, MetaManifold.DuckDBStore, MetaManifold.Validation
@@ -20,6 +25,10 @@ using MetaManifold.Tools, MetaManifold.TaxonomyTableTools, MetaManifold.ProjectS
 using MetaManifold.DiversityMetrics, MetaManifold.Analysis
 using MetaManifold.FuncDBAnnotation
 using MetaManifold.Categories, MetaManifold.CompositionLibrary
+using MetaManifold.Epistemic, MetaManifold.CladeCumulus, MetaManifold.Execution
+# AnalysisConfig must be imported with the `:` form: `using MetaManifold.AnalysisConfig`
+# binds the exported `struct AnalysisConfig`, not the submodule of the same name.
+using MetaManifold: AnalysisConfig
 
 ## Unit tests (always run)
 @testset "MetabarcodingPipeline" begin
@@ -51,6 +60,8 @@ using MetaManifold.Categories, MetaManifold.CompositionLibrary
     include("unit/test_provenance.jl")
     include("unit/test_install_pins.jl")
     include("unit/test_migrate_composition.jl")
+    include("unit/test_analysis_config.jl")
+    include("unit/test_execution.jl")
 
     ## Integration tests (opt-in)
     if RUN_INTEGRATION

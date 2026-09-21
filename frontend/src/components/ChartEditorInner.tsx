@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // (c) 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import Plotly from 'plotly.js-dist-min'
@@ -6,11 +7,12 @@ import PlotlyEditor, {
 } from 'react-chart-editor'
 import 'react-chart-editor/lib/react-chart-editor.css'
 import './chartEditor.css'
+import type { ChartEditorState, ChartEditorUpdateHandler } from '../types/components'
 
 //## Curated chart editor (Style panels only)
 export default function ChartEditorInner({ state, onUpdate }: {
-  state: { data: unknown[]; layout: Record<string, unknown>; frames: unknown[] }
-  onUpdate: (data: unknown[], layout: Record<string, unknown>, frames: unknown[]) => void
+  state: ChartEditorState
+  onUpdate: ChartEditorUpdateHandler
 }) {
   return (
     <PlotlyEditor

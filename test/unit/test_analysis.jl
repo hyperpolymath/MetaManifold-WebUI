@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "Analysis chart builders" begin
 
     @testset "_palette_hex" begin

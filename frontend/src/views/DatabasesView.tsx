@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -182,7 +183,7 @@ export function DatabasesView() {
             <DatabaseEditor
               key={row.id}
               row={row}
-              keyProblem={keyProblems[i]}
+              keyProblem={keyProblems[i] ?? null}
               onChange={next => changeRow(i, next)}
               onRemove={() => removeRow(i)}
               disabled={busy}

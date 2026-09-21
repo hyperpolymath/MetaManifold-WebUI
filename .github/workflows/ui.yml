@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+name: Stipple UI contracts
+
+on:
+  pull_request:
+    paths: ['ui/**', '.github/workflows/ui.yml']
+  push:
+    branches: [main]
+    paths: ['ui/**', '.github/workflows/ui.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
+        with:
+          version: '1.12.5'
+      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - name: Instantiate isolated UI environment
+        run: julia --project=ui -e 'using Pkg; Pkg.instantiate()'
+      - name: Test contracts and backend URL validation
+        run: julia --compiled-modules=no --compile=min -O0 --project=ui ui/test/runtests.jl

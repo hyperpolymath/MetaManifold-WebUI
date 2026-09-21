@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { errorMessage } from '../api/errorMessage'
 import { useToast } from './Toast'
@@ -69,7 +70,7 @@ export function AddFuncdbModal({
       toast.error('At least one taxonomy field is required')
       return
     }
-    if (!fields.Function?.trim()) {
+    if (!fields['Function']?.trim()) {
       toast.error('Function is required')
       return
     }
@@ -87,8 +88,17 @@ export function AddFuncdbModal({
     }
   }
 
+  // Escape is the keyboard equivalent of clicking the backdrop. Without it this
+  // dialog can be opened but not dismissed without a pointer.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
     <div
+      role="presentation"
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
         background: 'rgba(0,0,0,.45)', display: 'flex',

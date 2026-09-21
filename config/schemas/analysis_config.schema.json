@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hyperpolymath.github.io/MetaManifold-WebUI/schemas/analysis_config.schema.json",
+  "title": "AnalysisConfig — versioned, explicit, provenance-rich analysis configuration — Milestone 3",
+  "description": "Safe, explicit, versioned AnalysisConfig layer for parametric and nonparametric analyses (NB GLM, CLR/ILR+Gaussian LM, logistic in v1; BH mandatory; DANGER banner on overrides; Advanced Analysis section heavy validation/help/warnings for custom pseudocount/epsilon/zero_policy/etc.; DOI-ready bundles). From hyperpolymath/standards JSON + Nickel + DEED schemes. TSS/CSS/RSS deferred as alias to relative with warning, see GitHub issues.",
+  "type": "object",
+  "required": ["schema_version", "id", "method", "formula", "metadata_columns", "normalization", "correction"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "enum": ["1.0.0"],
+      "description": "Semver schema version. Currently only 1.0.0 is supported. From DEED :schema-version first."
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique immutable identifier for this config (UUIDv4). Part of provenance chain."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO8601 UTC timestamp of creation"
+    },
+    "created_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "User or system that created this config (for provenance)"
+    },
+    "method": {
+      "type": "string",
+      "enum": ["nb_glm", "clr_lm", "ilr_lm", "logistic"],
+      "description": "Analysis method — explicit, no silent switching. NB_GLM for counts, CLR/ILR+LM for compositional, logistic for presence/absence. v1 only, deferred: multinomial, dirichlet_multinomial, occupancy, zinb, rda, cca, cap, etc. See GitHub issues."
+    },
+    "formula": {
+      "type": "string",
+      "minLength": 2,
+      "pattern": "^[^;`$]+$",
+      "description": "R-style formula containing '~', e.g. '~ group' or 'disease ~ group + batch'. Must reference only metadata_columns. Refuses empty or meaningless formulas. See Nickel ValidFormula contract."
+    },
+    "outcome_column": {
+      "type": ["string", "null"],
+      "description": "Binary outcome column for logistic regression. Required for logistic, ignored for others unless formula uses it."
+    },
+    "metadata_columns": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-zA-Z0-9_\\.\\-]+$"
+      },
+      "description": "Explicit list of metadata columns used. Must exist in study metadata. No auto-selection. Pattern ^[a-zA-Z0-9_.\\-]+$"
+    },
+    "normalization": {
+      "type": "object",
+      "required": ["method"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["none", "rarefy", "relative", "size_factors", "clr", "ilr", "presence_absence", "TSS", "CSS", "RSS", "tss", "css", "rss"],
+          "description": "Normalization / transform. Must be compatible with method: nb_glm allows none/rarefy/size_factors/relative/TSS/CSS/RSS (TSS/CSS/RSS deferred alias to relative with warning), clr_lm requires clr, ilr_lm requires ilr, logistic allows none/relative/rarefy/presence_absence/TSS. See MethodNormalizationCompatibility Nickel contract and GitHub issues for TSS/CSS/RSS exact offsets."
+        },
+        "pseudocount": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Pseudocount for zero replacement in CLR/ILR. Must be >0. Typical 0.5. Refuses 0 because log(0) undefined. Heavy validation, warnings for <0.1 or >=1."
+        },
+        "epsilon": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "default": 1e-6,
+          "description": "Epsilon for numerical stability, in (0,1), typical 1e-6. Advanced, behind Advanced Analysis expander, heavy validation, warnings for >1e-3 or <1e-12."
+        },
+        "zero_policy": {
+          "type": "string",
+          "enum": ["pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse"],
+          "default": "pseudocount",
+          "description": "Zero handling policy: pseudocount (default safe), multiplicative_replacement, bayesian_multiplicative, refuse (DANGEROUS, requires DANGER token, mathematically invalid for CLR/ILR). See ZeroHandlingContract."
+        },
+        "ilr_basis": {
+          "type": ["string", "null"],
+          "enum": ["default", "phylogenetic", "sequential_binary_partition", "balance_dendrogram", null],
+          "description": "ILR basis. Only meaningful for ilr method. Refuses meaningless use for other methods. phylogenetic/sequential_binary_partition/balance_dendrogram deferred, see GitHub issues."
+        },
+        "multiplicative_replacement_delta": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Delta for multiplicative replacement, in (0,1), e.g., 0.65. Advanced, behind Advanced Analysis."
+        },
+        "tss_css_rss_note": {
+          "type": ["string", "null"],
+          "description": "Note for TSS/CSS/RSS deferred features — currently aliased to relative with warning. See GitHub issue 01-tss-css-rss-offsets."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "method": { "const": "clr" } } },
+          "then": { "required": ["pseudocount"] }
+        },
+        {
+          "if": { "properties": { "method": { "const": "ilr" } } },
+          "then": { "required": ["pseudocount"] }
+        }
+      ]
+    },
+    "correction": {
+      "type": "object",
+      "required": ["method", "alpha"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "description": "BH mandatory in v1. Any override triggers DANGER banner and requires acknowledgment token. See CorrectionContract."
+        },
+        "alpha": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "FDR threshold, typically 0.05, in (0,1)"
+        },
+        "allow_no_correction": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, allows non-BH methods, but triggers DANGER banner and requires acknowledgment_token = I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH"
+        },
+        "acknowledgment_token": {
+          "type": ["string", "null"],
+          "description": "Must be 'I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH' if allow_no_correction=true — scary DANGER banner for paper writers"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "allow_no_correction": { "const": true } }
+          },
+          "then": {
+            "properties": {
+              "acknowledgment_token": { "const": "I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH" }
+            },
+            "required": ["acknowledgment_token"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "allow_no_correction": { "const": false } }
+          },
+          "then": {
+            "properties": {
+              "method": { "enum": ["BH", "FDR", "Benjamini-Hochberg", "benjamini-hochberg", "Benjamini_Hochberg"] }
+            }
+          }
+        }
+      ]
+    },
+    "advanced": {
+      "type": "object",
+      "description": "All advanced options behind 'Advanced Analysis' expander, hidden unless Evidence Mode enabled. Heavy validation, context-sensitive help, refusal of meaningless inputs, warnings for custom pseudocount/epsilon/zero_policy/etc.",
+      "properties": {
+        "dispersion_method": {
+          "type": "string",
+          "enum": ["parametric", "local", "mean", "pooled", "glmGamPoi"],
+          "default": "parametric",
+          "description": "Dispersion estimation for NB_GLM. parametric default, glmGamPoi deferred fast exact, see GitHub issue 06-glm-gam-poi."
+        },
+        "zero_handling": {
+          "type": "string",
+          "enum": ["pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse"],
+          "default": "pseudocount",
+          "description": "Zero handling. 'refuse' is DANGEROUS and requires acknowledgment token, mathematically invalid for CLR/ILR."
+        },
+        "zero_policy": {
+          "type": "string",
+          "enum": ["pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse"],
+          "default": "pseudocount",
+          "description": "Zero policy enum, same as zero_handling but explicit. Advanced, heavy validation, warnings."
+        },
+        "pseudocount": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 0.5,
+          "description": "Custom pseudocount advanced, >0, typical 0.5, warnings for <0.1 or >=1, heavy validation."
+        },
+        "epsilon": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "default": 1e-6,
+          "description": "Epsilon for numerical stability, (0,1), typical 1e-6, warnings for >1e-3 or <1e-12, heavy validation."
+        },
+        "min_prevalence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.1,
+          "description": "Minimum prevalence filter in [0,1]. 0.1 = present in >=10% samples."
+        },
+        "min_abundance": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Minimum abundance threshold >=0"
+        },
+        "max_features": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Max features to test. >100k refused as meaningless, <10 warning."
+        },
+        "min_samples_per_group": {
+          "type": "integer",
+          "minimum": 2,
+          "default": 3,
+          "description": "Minimum samples per group for variance estimation. <2 refused, <3 triggers DANGER banner, warning power low."
+        },
+        "robust": {
+          "type": "boolean",
+          "default": false,
+          "description": "Robust estimation flag"
+        },
+        "acknowledgment_token": {
+          "type": ["string", "null"],
+          "description": "Required for dangerous zero_handling='refuse' or min_samples_per_group<3"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Provenance chain: metamanifold version, host, tools, etc. Enriched automatically. Includes dangerous flag, hash, created_at, created_by."
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA256 of canonical JSON representation (immutable, content-addressed)"
+    },
+    "dangerous": {
+      "type": "boolean",
+      "description": "Computed is_dangerous — true if BH disabled, zero_handling refuse, min_samples_per_group<3, rarefy+NB_GLM"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "method": { "const": "logistic" } }
+      },
+      "then": {
+        "required": ["outcome_column"],
+        "properties": {
+          "outcome_column": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "method": { "const": "clr_lm" } }
+      },
+      "then": {
+        "properties": {
+          "normalization": {
+            "properties": { "method": { "const": "clr" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "method": { "const": "ilr_lm" } }
+      },
+      "then": {
+        "properties": {
+          "normalization": {
+            "properties": { "method": { "const": "ilr" } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "epistemic": {
+      "description": "Epistemic layer integration: avec_fibre column and present_in_every_admissible_world from hyperpolymath/echo-types, epistemic-types, residual-evidence-types",
+      "type": "object",
+      "properties": {
+        "avec_fibre": {
+          "type": "boolean",
+          "description": "True if artefact carries enough semantic fibre to support inferences (Echo Types A ≃ Σ B (Echo f))"
+        },
+        "epistemic_status": {
+          "type": "string",
+          "enum": ["present_in_every_admissible_world", "present_in_some_admissible_world", "absent_in_every_admissible_world", "unknown"],
+          "description": "Residual evidence status: Holds Present across all admissible worlds? From residual-evidence-types"
+        }
+      }
+    }
+  }
+}

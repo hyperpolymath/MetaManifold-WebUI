@@ -1,0 +1,3 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Fixture
+export const fixturePayload = 1

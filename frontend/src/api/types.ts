@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Boundary interfaces for the Julia REST API (see src/types/api/index.ts
+// for the endpoint → source map). Low-level wire shapes live under
+// src/types/api/ and are imported here.
+import type { TableRow } from '../types/api/tables'
+import type { LayoutOverrides, TraceOverrides } from '../types/api/cosmetics'
+
 export interface StudySummary {
   name:             string
   run_count:        number
@@ -69,11 +76,11 @@ export interface TableMeta {
 }
 
 export interface ColFilter {
-  text?:     string
-  include?:  string[]
-  exclude?:  string[]
-  min?:      number
-  max?:      number
+  text?:     string | undefined
+  include?:  string[] | undefined
+  exclude?:  string[] | undefined
+  min?:      number | undefined
+  max?:      number | undefined
 }
 
 export interface TableQuery {
@@ -116,7 +123,9 @@ export interface TablePage {
   per_page:               number
   columns:                string[]
   sample_count_columns:   string[]
-  rows:                   Record<string, unknown>[]
+  /** One row per table page item; cells are DuckDB scalars.
+   *  (src/types/api/tables.ts; SOURCE src/server/routes/results.jl) */
+  rows:                   TableRow[]
 }
 
 export type ConfigSource = 'default' | 'study' | 'group' | 'run'
@@ -157,9 +166,9 @@ export interface ApplyPresetResult {
 
 export interface AnalysisRequest {
   table: string
-  source?: AnnotationSource
-  colFilters?: Record<string, ColFilter>
-  prefix?: string | null
+  source?: AnnotationSource | undefined
+  colFilters?: Record<string, ColFilter> | undefined
+  prefix?: string | null | undefined
 }
 
 export interface ChartRequest {
@@ -179,9 +188,9 @@ export interface CrossRunChartRequest extends ChartRequest {
 
 export interface ComparisonRunSpec {
   run: string
-  group?: string | null
-  prefix?: string | null
-  source?: AnnotationSource
+  group?: string | null | undefined
+  prefix?: string | null | undefined
+  source?: AnnotationSource | undefined
 }
 
 /** Expand pooled runs into per-subgroup ComparisonRunSpecs. */
@@ -273,7 +282,7 @@ export interface VennRequest {
   runs: ComparisonRunSpec[]
   table: string
   rank: string
-  source?: AnnotationSource
+  source?: AnnotationSource | undefined
 }
 
 export interface CategorySetSaveRequest {
@@ -288,9 +297,10 @@ export interface CompositionSummaryRequest {
   subgroup?:    string | null
 }
 
+// Cosmetic overrides are narrows of the manual plotly vocabulary.
 export interface ChartCosmetics {
-  layout?: Record<string, unknown>
-  traces?: Record<string, Record<string, unknown>>
+  layout?: LayoutOverrides | undefined
+  traces?: Record<string, TraceOverrides> | undefined
 }
 export type ChartCosmeticsMap = Record<string, ChartCosmetics>
 export interface ChartCosmeticsPatch extends ChartCosmetics {
@@ -317,13 +327,13 @@ export interface CompositionFilter {
 
 export interface CompositionCategory extends CategoryInfo {
   // An absent filter marks the catch-all category.
-  filter?: string
+  filter?: string | undefined
 }
 
 export interface CompositionSet {
-  label?:             string
-  description?:       string
-  unassigned_colour?: string
+  label?:             string | undefined
+  description?:       string | undefined
+  unassigned_colour?: string | undefined
   categories:         CompositionCategory[]
 }
 

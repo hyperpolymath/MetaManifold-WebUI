@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # © 2026 Joshua Benjamin Jewell. All rights reserved.
 # Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 
@@ -27,7 +28,13 @@ function _read_databases()
     try
         DatabasesLibrary.load(_databases_path())
     catch e
-        @error "databases.yml is not readable" path=_databases_path() exception=(e, catch_backtrace())
+        # @warn, not @error: the 400 on the next line is this function's own verdict
+        # that an unreadable config/databases.yml is an operator-fixable input, not a
+        # server fault. Error severity with a backtrace reports a routine bad file as
+        # a crash. The reason is kept -- it is what names the YAML defect -- and only
+        # the backtrace goes, which pointed into YAML.jl's parser, never at the
+        # offending line.
+        @warn "databases.yml is not readable" path=_databases_path() reason=sprint(showerror, e)
         json_error(400, "databases_unreadable",
             "config/databases.yml cannot be read as a databases document and must be repaired by hand: $(sprint(showerror, e))")
     end

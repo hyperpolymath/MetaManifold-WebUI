@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 
@@ -41,7 +42,7 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
 // freshly computed figure, leaving the original untouched.
 export function applyChartCosmetics(
   figure: unknown,
-  cosmetics: { layout?: Record<string, unknown>; traces?: Record<string, Record<string, unknown>> },
+  cosmetics: { layout?: Record<string, unknown> | undefined; traces?: Record<string, Record<string, unknown>> | undefined },
 ): unknown {
   if (figure == null || typeof figure !== 'object') return figure
   const spec = figure as { data?: unknown[]; layout?: Record<string, unknown> }

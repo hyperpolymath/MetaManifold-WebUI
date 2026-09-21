@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: CC-BY-SA-4.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+name: Feature request
+description: Propose an engineering capability this fork does not yet have.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you unable to do today? Describe the situation, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including doing nothing — say why that is insufficient.
+    validations:
+      required: false
+  - type: dropdown
+    id: destination
+    attributes:
+      label: Belongs to
+      description: Engineering/tooling stays in this fork; application behaviour goes upstream.
+      options:
+        - This fork — types, tests, CI, tooling, alignment
+        - Upstream — pipeline, analyses, server routes, UI features
+        - Not sure
+    validations:
+      required: true

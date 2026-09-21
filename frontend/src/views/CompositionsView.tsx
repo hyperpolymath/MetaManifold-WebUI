@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useCallback, useMemo, useState } from 'react'
@@ -20,12 +21,12 @@ export function CompositionsView() {
   const [showNewSet, setShowNewSet] = useState(false)
 
   const filterNames = useMemo(
-    () => (library ? Object.keys(library.filters).sort() : []),
+    () => (library ? Object.keys(library.filters).sort((a, b) => a.localeCompare(b)) : []),
     [library],
   )
 
   const setNames = useMemo(
-    () => (library ? Object.keys(library.sets).sort() : []),
+    () => (library ? Object.keys(library.sets).sort((a, b) => a.localeCompare(b)) : []),
     [library],
   )
 
@@ -122,7 +123,7 @@ export function CompositionsView() {
                 <FilterEditor
                   key={fname}
                   name={fname}
-                  filter={library.filters[fname]}
+                  filter={library.filters[fname] ?? {}}
                   usedBy={usedByMap[fname] ?? []}
                   onSave={body => handleSaveFilter(fname, body)}
                   onDelete={() => handleDeleteFilter(fname)}
@@ -144,7 +145,7 @@ export function CompositionsView() {
                 <CategorySetEditor
                   key={sname}
                   name={sname}
-                  set={library.sets[sname]}
+                  set={library.sets[sname] ?? { categories: [] }}
                   filterNames={filterNames}
                   onSave={body => handleSaveSet(sname, body)}
                   onDelete={() => handleDeleteSet(sname)}

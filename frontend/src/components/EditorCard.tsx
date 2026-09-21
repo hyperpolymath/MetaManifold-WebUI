@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 //
@@ -26,14 +27,19 @@ export function EditorCard({
 
   return (
     <div className="card" style={{ marginBottom: 12 }}>
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+      <button
+        type="button"
+        className="btn-reset"
+        aria-expanded={expanded}
+        style={{
+          display: 'flex', width: '100%', alignItems: 'center', gap: 10, cursor: 'pointer',
+        }}
         onClick={() => setExpanded(e => !e)}
       >
         <span style={{ fontSize: '.8rem', opacity: .65 }}>{expanded ? 'v' : '>'}</span>
         <strong style={{ flex: 1 }}>{name}</strong>
         {meta && <span style={metaStyle}>{meta}</span>}
-      </div>
+      </button>
 
       {expanded && (
         <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -170,7 +176,7 @@ export function nameIssues(names: string[]): NameIssue[] {
     acc[n] = (acc[n] ?? 0) + 1
     return acc
   }, {})
-  return trimmed.map(n => (n === '' ? 'blank' : counts[n] > 1 ? 'duplicate' : null))
+  return trimmed.map(n => (n === '' ? 'blank' : (counts[n] ?? 0) > 1 ? 'duplicate' : null))
 }
 
 // The chrome for one editable row in a list of them.

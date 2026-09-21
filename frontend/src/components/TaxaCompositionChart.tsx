@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // (c) 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useEffect, useState } from 'react'
@@ -34,15 +35,15 @@ export function TaxaCompositionChart({
   subgroup: controlledSubgroup,
 }: {
   study: string
-  run?: string
-  group?: string | null
-  runs?: ComparisonRunSpec[]
-  subgroups?: string[]
+  run?: string | undefined
+  group?: string | null | undefined
+  runs?: ComparisonRunSpec[] | undefined
+  subgroups?: string[] | undefined
   defaultTag: 'rank' | 'category'
-  table?: string
+  table?: string | undefined
   // When provided (even when null), this value is used as the sub-group for
   // requests and the chart's internal sub-group selector is hidden.
-  subgroup?: string | null
+  subgroup?: string | null | undefined
 }) {
   const toast = useToast()
 

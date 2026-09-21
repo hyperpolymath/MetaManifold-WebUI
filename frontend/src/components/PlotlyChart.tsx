@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import Plotly, { type Data, type Layout } from 'plotly.js-dist-min'
 
@@ -8,9 +9,9 @@ interface PlotlySpec {
 
 interface Props {
   figure: unknown
-  className?: string
+  className?: string | undefined
   /** Height as a ratio of container width (default 0.6). */
-  heightRatio?: number
+  heightRatio?: number | undefined
 }
 
 export function PlotlyChart({ figure, className, heightRatio = 0.6 }: Props) {
@@ -26,7 +27,7 @@ export function PlotlyChart({ figure, className, heightRatio = 0.6 }: Props) {
     if (!wrap || !plot || !figure) return
     const spec = figure as PlotlySpec
     const data = (spec.data ?? []).map((t: Record<string, unknown>) =>
-      t.type === 'box' && t.width == null ? { ...t, width: 0.9 } : t
+      t['type'] === 'box' && t['width'] == null ? { ...t, width: 0.9 } : t
     )
     Plotly.react(plot, data as Data[], {
       autosize: true,
@@ -34,8 +35,8 @@ export function PlotlyChart({ figure, className, heightRatio = 0.6 }: Props) {
       width:  wrap.clientWidth,
       margin: { l: 60, r: 30, t: 40, b: 50 },
       ...spec.layout,
-      font:   { size: 16, ...(spec.layout?.font   as object | undefined) },
-      legend: { font: { size: 20 }, ...(spec.layout?.legend as object | undefined) },
+      font:   { size: 16, ...(spec.layout?.['font']   as object | undefined) },
+      legend: { font: { size: 20 }, ...(spec.layout?.['legend'] as object | undefined) },
     }, { responsive: true, displaylogo: false })
     ready.current = true
 

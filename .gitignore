@@ -48,12 +48,6 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-!web/dist/
-!web/dist/index.html
-!web/dist/config.json
-!web/dist/assets/
-!web/dist/assets/*.js
-!web/dist/assets/*.css
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -250,9 +244,28 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-## Documentation kept local except published release notes
+## Documentation kept local except published release notes and toolchain
+## migration/audit records, which are part of the maintained repository state.
+## Milestone reports and deferred issues are part of maintained state for project board tracking.
 docs/*
 !docs/release-notes/
+!docs/audit/
+!docs/compliance/
+!docs/migration/
+!docs/milestones/
+!docs/milestones/**
+!docs/issues/
+!docs/issues/**
+!docs/testing/
+!docs/type-system/
+!docs/types/
+!docs/reproducibility.md
+
+# Test + benchmark run artifacts (not the committed fixtures/baselines)
+frontend/tests/results/
+frontend/tests/coverage/
+frontend/bench/results/
+bench/results/
 
 # translation temp files
 
@@ -287,6 +300,8 @@ data/MiSeq_SOP/run_B/*
 
 ### Frontend
 node_modules/
+# Optional declaration-emit output (tsc -p tsconfig.build.json)
+frontend/dist-types/
 
 ### Lock files
 .~lock.*
@@ -318,11 +333,22 @@ projects/
 pipelinesteps.txt
 archive/
 .*
+# RSR/estate canon dotfiles (see docs/compliance/rsr-alignment.md)
+!.editorconfig
+!.gitattributes
+!.gitmessage
+!.githooks/
+!.envrc
 
 ### Exceptions
 !.github
 !.github/**
 !.Rprofile
+!.bun-version
 
 # Brainstorming visual-companion scratch (mock-ups, server state)
 .superpowers/
+
+# Track the Stipple/Vue migration recon and implementation plan.
+!docs/migration/
+!docs/migration/**

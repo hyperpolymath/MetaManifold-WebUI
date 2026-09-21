@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 module Config
 
 # Hierarchical config cascade and per-section content-hash helpers.

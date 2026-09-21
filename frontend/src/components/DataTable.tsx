@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useState, useCallback, useEffect, useRef } from 'react'
@@ -21,9 +22,11 @@ const StarIcon = ({ filled }: { filled: boolean }) => (
 const flashCopy = (text: string) => (e: React.MouseEvent<HTMLElement>) => {
   navigator.clipboard.writeText(text)
   const el = e.currentTarget
-  el.classList.remove(styles.copied)
+  const copiedCls = styles['copied']
+  if (!copiedCls) return
+  el.classList.remove(copiedCls)
   void el.offsetWidth
-  el.classList.add(styles.copied)
+  el.classList.add(copiedCls)
 }
 
 export interface RowPopupData {
@@ -40,26 +43,26 @@ export interface TableStats {
 
 interface Props {
   fetcher: (q: TableQuery) => Promise<TablePage>
-  refreshKey?: string | number | null
+  refreshKey?: string | number | null | undefined
   /** Stable key for persisting column visibility, sort, and filters to sessionStorage. */
-  storageKey?: string
-  distinctFetcher?: (column: string, activeFilters?: Record<string, ColFilter>, keywordFilter?: string) => Promise<DistinctInfo>
-  rowPopupFetcher?: (row: Record<string, unknown>) => Promise<RowPopupData | null>
+  storageKey?: string | undefined
+  distinctFetcher?: ((column: string, activeFilters?: Record<string, ColFilter>, keywordFilter?: string) => Promise<DistinctInfo>) | undefined
+  rowPopupFetcher?: ((row: Record<string, unknown>) => Promise<RowPopupData | null>) | undefined
   /** Extra columns available only in the popup (e.g. merged table columns not in merged_otu). */
-  popupColumns?: string[]
+  popupColumns?: string[] | undefined
   /** Map from cell value to display label, keyed by column name. E.g. { SeqName: { otu1: 'otu1 (3)' } }. */
-  cellLabels?: Record<string, Record<string, string>>
+  cellLabels?: Record<string, Record<string, string>> | undefined
   /** Override cell rendering for specific columns. Return null to fall back to default. */
-  cellRenderer?: (column: string, value: string, row: Record<string, unknown>) => React.ReactNode | null
+  cellRenderer?: ((column: string, value: string, row: Record<string, unknown>) => React.ReactNode | null) | undefined
   /** Extra actions rendered in the action cell (same cell as BLAST, or its own cell if no sequence col). */
-  extraRowActions?: (row: Record<string, unknown>) => React.ReactNode
+  extraRowActions?: ((row: Record<string, unknown>) => React.ReactNode) | undefined
   /** Show VSEARCH / DADA2 taxonomy column preset buttons (Tables tab). The All button is always shown when _dada2 cols are present. */
-  showTaxonomyPresets?: boolean
-  perPage?: number
-  initialFilters?: Record<string, ColFilter>
-  onFiltersChange?: (filters: Record<string, ColFilter>) => void
-  onSortChange?: (sortBy: string | null, sortDir: 'asc' | 'desc') => void
-  onStatsChange?: (stats: TableStats | null) => void
+  showTaxonomyPresets?: boolean | undefined
+  perPage?: number | undefined
+  initialFilters?: Record<string, ColFilter> | undefined
+  onFiltersChange?: ((filters: Record<string, ColFilter>) => void) | undefined
+  onSortChange?: ((sortBy: string | null, sortDir: 'asc' | 'desc') => void) | undefined
+  onStatsChange?: ((stats: TableStats | null) => void) | undefined
 }
 
 interface PersistedTableState {
@@ -261,8 +264,8 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
   const clearAllFilters = () => { setColFilters({}); setFilter(''); setPage(1) }
 
   const sortIndicator = (col: string) => {
-    if (sortBy !== col) return <span className={styles.sortIcon}> +</span>
-    return <span className={styles.sortIconActive}>{sortDir === 'asc' ? ' ^' : ' v'}</span>
+    if (sortBy !== col) return <span className={styles['sortIcon']}> +</span>
+    return <span className={styles['sortIconActive']}>{sortDir === 'asc' ? ' ^' : ' v'}</span>
   }
 
   const hasAnyFilter = !!filter || Object.keys(colFilters).length > 0
@@ -342,10 +345,10 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
   }
 
   return (
-    <div className={styles.wrapper}>
-      <div className={styles.toolbar}>
+    <div className={styles['wrapper']}>
+      <div className={styles['toolbar']}>
         <input
-          className={styles.search}
+          className={styles['search']}
           placeholder="Global filter..."
           value={filter}
           onChange={e => { setFilter(e.target.value); setPage(1) }}
@@ -361,18 +364,18 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
               Columns{visibleColCount < pickerCols.length ? ` (${visibleColCount}/${pickerCols.length})` : ''}
             </button>
             {showColPicker && (
-              <div ref={colPickerRef} className={styles.dropdown}
+              <div ref={colPickerRef} className={styles['dropdown']}
                 style={{ right: 0, left: 'auto', maxHeight: 320, overflowY: 'auto' }}>
-                <div className={styles.dropdownActions}>
+                <div className={styles['dropdownActions']}>
                   <button onClick={() => setHiddenCols(new Set())}>Show all</button>
                   <button onClick={() => setHiddenCols(new Set(pickerCols))}>Hide all</button>
                 </div>
-                <div className={styles.dropdownList}>
+                <div className={styles['dropdownList']}>
                   {pickerCols.map(c => (
-                    <label key={c} className={styles.dropdownItem}>
+                    <label key={c} className={styles['dropdownItem']}>
                       <input type="checkbox" checked={!hiddenCols.has(c)}
                         onChange={() => toggleColVisibility(c)} />
-                      <span>{c}{popupOnlySet.has(c) ? <span className={styles.popupOnlyTag}> (ASV)</span> : ''}</span>
+                      <span>{c}{popupOnlySet.has(c) ? <span className={styles['popupOnlyTag']}> (ASV)</span> : ''}</span>
                     </label>
                   ))}
                 </div>
@@ -419,17 +422,17 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
         )}
       </div>
 
-      {error && <p className={styles.error}>{error}</p>}
-      {loading && cols.length === 0 && <p className={styles.msg}>Loading...</p>}
-      {!loading && !error && cols.length === 0 && <p className={styles.msg}>No data.</p>}
+      {error && <p className={styles['error']}>{error}</p>}
+      {loading && cols.length === 0 && <p className={styles['msg']}>Loading...</p>}
+      {!loading && !error && cols.length === 0 && <p className={styles['msg']}>No data.</p>}
 
       {cols.length > 0 && (
         <>
-          <div className={styles.scroll}>
-            <table className={styles.table}>
+          <div className={styles['scroll']}>
+            <table className={styles['table']}>
               <thead>
                 <tr>
-                  <th className={styles.handleCol}
+                  <th className={styles['handleCol']}
                     style={{ position: 'sticky', left: 0, zIndex: 12, width: HANDLE_W, background: 'var(--color-surface)' }}
                     title="Highlight rows"
                   ></th>
@@ -442,15 +445,23 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
                       background: 'var(--color-surface)',
                     } : undefined
                     return (
-                      <th key={c} className={styles.sortable}
-                        onClick={() => handleSort(c)}
+                      <th key={c} className={styles['sortable']}
+                        onClick={e => {
+                          // The filter dropdown renders inside this <th>, so a click
+                          // in it would otherwise bubble up and re-sort the column.
+                          // Guarding here rather than calling stopPropagation() in the
+                          // dropdown keeps that non-interactive wrapper free of a click
+                          // handler -- and so free of the ARIA role S6819 objects to.
+                          if ((e.target as HTMLElement).closest('[data-dropdown]')) return
+                          handleSort(c)
+                        }}
                         style={stickyStyle}>
-                        <span className={styles.headerLabel}>
+                        <span className={styles['headerLabel']}>
                           {c}{sortIndicator(c)}
                         </span>
                         {distinctFetcher && (
                           <button
-                            className={`${styles.dropdownBtn} ${colIsFiltered(c) ? styles.dropdownBtnActive : ''}`}
+                            className={`${styles['dropdownBtn']} ${colIsFiltered(c) ? styles['dropdownBtnActive'] : ''}`}
                             onClick={e => { e.stopPropagation(); setOpenDropdown(openDropdown === c ? null : c) }}
                             title="Filter values"
                           >v</button>
@@ -476,10 +487,10 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
               </thead>
               <tbody>
                 {loading && (
-                  <tr><td colSpan={cols.length + 1 + (hasSequenceCol || extraRowActions ? 1 : 0)} className={styles.msg} style={{ textAlign: 'center' }}>Loading...</td></tr>
+                  <tr><td colSpan={cols.length + 1 + (hasSequenceCol || extraRowActions ? 1 : 0)} className={styles['msg']} style={{ textAlign: 'center' }}>Loading...</td></tr>
                 )}
                 {!loading && rows.length === 0 && (
-                  <tr><td colSpan={cols.length + 1 + (hasSequenceCol || extraRowActions ? 1 : 0)} className={styles.msg} style={{ textAlign: 'center' }}>
+                  <tr><td colSpan={cols.length + 1 + (hasSequenceCol || extraRowActions ? 1 : 0)} className={styles['msg']} style={{ textAlign: 'center' }}>
                     {hasAnyFilter ? 'No matching rows.' : 'No data.'}
                   </td></tr>
                 )}
@@ -490,13 +501,13 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
                   <tr key={i}
                     onMouseEnter={rowPopupFetcher ? e => { keepPopup(); startPopup(row, i, e) } : undefined}
                     onMouseLeave={rowPopupFetcher ? cancelPopup : undefined}
-                    className={[popupRowIdx === i ? styles.popupActiveRow : '', isHighlighted ? styles.highlightRow : ''].filter(Boolean).join(' ') || undefined}
+                    className={[popupRowIdx === i ? styles['popupActiveRow'] : '', isHighlighted ? styles['highlightRow'] : ''].filter(Boolean).join(' ') || undefined}
                   >
-                    <td className={styles.handleCol}
+                    <td className={styles['handleCol']}
                       style={{ position: 'sticky', left: 0, zIndex: 1, width: HANDLE_W, background: 'var(--color-bg)' }}
                     >
                       <button
-                        className={`${styles.highlightBtn}${isHighlighted ? ' ' + styles.highlightBtnOn : ''}`}
+                        className={`${styles['highlightBtn']}${isHighlighted ? ' ' + styles['highlightBtnOn'] : ''}`}
                         onClick={e => { e.stopPropagation(); toggleHighlight(rk) }}
                         title={isHighlighted ? 'Remove highlight' : 'Highlight row'}
                       ><StarIcon filled={isHighlighted} /></button>
@@ -523,13 +534,13 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
                       )
                     })}
                     {(hasSequenceCol || extraRowActions) && (
-                      <td className={styles.blastCell}>
+                      <td className={styles['blastCell']}>
                         {hasSequenceCol && (
                           <a
                             href={blastUrl(String(row['sequence'] ?? ''))}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={styles.blastLink}
+                            className={styles['blastLink']}
                             title="Search this sequence on NCBI BLAST"
                           >BLAST</a>
                         )}
@@ -545,22 +556,22 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
           {popupRowIdx !== null && (popupLoading || (popupData && popupData.rows.length > 0)) && (
             <div
               ref={popupRef}
-              className={styles.popup}
+              className={styles['popup']}
               style={{ left: popupPos.x, top: popupPos.y }}
               onMouseEnter={keepPopup}
               onMouseLeave={cancelPopup}
             >
-              {popupLoading && <div className={styles.popupTitle}>Loading...</div>}
+              {popupLoading && <div className={styles['popupTitle']}>Loading...</div>}
               {!popupLoading && popupData && popupData.rows.length > 0 && (() => {
                 const popupCols = popupData.columns.filter(c => !hiddenCols.has(c))
                 const popupHasSeq = popupCols.includes('sequence')
                 return (
                   <>
-                    <div className={styles.popupTitle}>
+                    <div className={styles['popupTitle']}>
                       ASV members ({popupData.rows.length})
                     </div>
-                    <div className={styles.popupScroll}>
-                      <table className={styles.popupTable}>
+                    <div className={styles['popupScroll']}>
+                      <table className={styles['popupTable']}>
                         <thead>
                           <tr>
                             {popupCols.map(c => (
@@ -582,12 +593,12 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
                                 )
                               })}
                               {popupHasSeq && (
-                                <td className={styles.blastCell}>
+                                <td className={styles['blastCell']}>
                                   <a
                                     href={blastUrl(String(r['sequence'] ?? ''))}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className={styles.blastLink}
+                                    className={styles['blastLink']}
                                     title="Search this sequence on NCBI BLAST"
                                   >BLAST</a>
                                 </td>
@@ -603,7 +614,7 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
             </div>
           )}
           {pages > 1 && (
-            <div className={styles.pager}>
+            <div className={styles['pager']}>
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>{'< Prev'}</button>
               <span>Page {page} / {pages}</span>
               <button disabled={page >= pages} onClick={() => setPage(p => p + 1)}>{'Next >'}</button>
@@ -619,8 +630,8 @@ function ColumnDropdown({ column, distinctFetcher, activeFilters, keywordFilter,
   column:          string
   distinctFetcher: (col: string, activeFilters?: Record<string, ColFilter>, keywordFilter?: string) => Promise<DistinctInfo>
   activeFilters:   Record<string, ColFilter>
-  keywordFilter?:  string
-  current?:        ColFilter
+  keywordFilter?:  string | undefined
+  current?:        ColFilter | undefined
   isSticky:        boolean
   onToggleSticky:  () => void
   onApply:         (f: ColFilter | undefined) => void
@@ -653,13 +664,13 @@ function ColumnDropdown({ column, distinctFetcher, activeFilters, keywordFilter,
   }, [onClose])
 
   return (
-    <div ref={ref} className={styles.dropdown} onClick={e => e.stopPropagation()}>
-      <label className={styles.dropdownItem} style={{ borderBottom: '1px solid var(--color-border)', paddingTop: 6, paddingBottom: 6 }}>
+    <div ref={ref} data-dropdown className={styles['dropdown']}>
+      <label className={styles['dropdownItem']} style={{ borderBottom: '1px solid var(--color-border)', paddingTop: 6, paddingBottom: 6 }}>
         <input type="checkbox" checked={isSticky} onChange={onToggleSticky} />
         <span style={{ fontWeight: 600, fontSize: '.78rem' }}>Sticky column</span>
       </label>
-      {loadError && <div className={styles.dropdownError}>{loadError}</div>}
-      {!info && !loadError && <div className={styles.dropdownLoading}>Loading...</div>}
+      {loadError && <div className={styles['dropdownError']}>{loadError}</div>}
+      {!info && !loadError && <div className={styles['dropdownLoading']}>Loading...</div>}
       {info?.type === 'text' && (
         <TextFilter
           values={info.values}
@@ -690,7 +701,7 @@ function ColumnDropdown({ column, distinctFetcher, activeFilters, keywordFilter,
 
 function TextFilter({ values, current, onApply }: {
   values:   string[]
-  current?: string[]
+  current?: string[] | undefined
   onApply:  (vals: string[] | undefined) => void
 }) {
   const [search, setSearch]   = useState('')
@@ -713,27 +724,27 @@ function TextFilter({ values, current, onApply }: {
   return (
     <>
       <input
-        className={styles.dropdownSearch}
+        className={styles['dropdownSearch']}
         placeholder="Search..."
         value={search}
         onChange={e => setSearch(e.target.value)}
         autoFocus
       />
-      <div className={styles.dropdownActions}>
+      <div className={styles['dropdownActions']}>
         <button onClick={() => setChecked(new Set(values))}>All</button>
         <button onClick={() => setChecked(new Set())}>None</button>
-        <span className={styles.dropdownCount}>{checked.size}/{values.length}</span>
+        <span className={styles['dropdownCount']}>{checked.size}/{values.length}</span>
       </div>
-      <div className={styles.dropdownList}>
+      <div className={styles['dropdownList']}>
         {visible.map(v => (
-          <label key={v} className={styles.dropdownItem}>
+          <label key={v} className={styles['dropdownItem']}>
             <input type="checkbox" checked={checked.has(v)} onChange={() => toggle(v)} />
             <span>{v || '(empty)'}</span>
           </label>
         ))}
-        {visible.length === 0 && <div className={styles.dropdownEmpty}>No matching values</div>}
+        {visible.length === 0 && <div className={styles['dropdownEmpty']}>No matching values</div>}
       </div>
-      <div className={styles.dropdownFooter}>
+      <div className={styles['dropdownFooter']}>
         <button className="btn btn-primary" style={{ fontSize: '.78rem', padding: '3px 10px' }}
           onClick={() => onApply(allTicked ? undefined : [...checked])}>Apply</button>
         <button className="btn" style={{ fontSize: '.78rem', padding: '3px 10px' }}
@@ -746,22 +757,28 @@ function TextFilter({ values, current, onApply }: {
 // A single numeric statistic; clicking it copies the raw (unformatted) value.
 function Stat({ value, fmt }: { value: number; fmt: (v: number) => string }) {
   return (
-    <span className={styles.statValue} onClick={flashCopy(String(value))} title="Click to copy">
+    <button
+      type="button"
+      className={`btn-reset ${styles['statValue']}`}
+      style={{ cursor: 'pointer' }}
+      onClick={flashCopy(String(value))}
+      title="Click to copy"
+    >
       {fmt(value)}
-    </span>
+    </button>
   )
 }
 
 function NumericFilter({ dataMin, dataMax, sum, mean, median, q1, q3, currentMin, currentMax, onApply }: {
   dataMin:     number
   dataMax:     number
-  sum?:        number
-  mean?:       number
-  median?:     number
-  q1?:         number
-  q3?:         number
-  currentMin?: number
-  currentMax?: number
+  sum?:        number | undefined
+  mean?:       number | undefined
+  median?:     number | undefined
+  q1?:         number | undefined
+  q3?:         number | undefined
+  currentMin?: number | undefined
+  currentMax?: number | undefined
   onApply:     (min: number | null, max: number | null) => void
 }) {
   const [minVal, setMinVal] = useState(currentMin != null ? String(currentMin) : '')
@@ -781,7 +798,7 @@ function NumericFilter({ dataMin, dataMax, sum, mean, median, q1, q3, currentMin
   return (
     <>
       {(sum != null || mean != null || median != null || q1 != null) && (
-        <div className={styles.numericInfo} style={{ fontSize: '.75rem', color: 'var(--color-muted-fg)' }}>
+        <div className={styles['numericInfo']} style={{ fontSize: '.75rem', color: 'var(--color-muted-fg)' }}>
           {sum != null && <div>Sum: <Stat value={sum} fmt={fmt} /></div>}
           <div>Range: <Stat value={dataMin} fmt={fmt} /> - <Stat value={dataMax} fmt={fmt} /></div>
           {q1 != null && q3 != null && <div>IQR: <Stat value={q1} fmt={fmt} /> - <Stat value={q3} fmt={fmt} /></div>}
@@ -789,12 +806,12 @@ function NumericFilter({ dataMin, dataMax, sum, mean, median, q1, q3, currentMin
           {median != null && <div>Median: <Stat value={median} fmt={fmt} /></div>}
         </div>
       )}
-      <div className={styles.numericInputs}>
+      <div className={styles['numericInputs']}>
         <label>
           <span>Min</span>
           <input
             type="number"
-            className={styles.numericInput}
+            className={styles['numericInput']}
             placeholder="0"
             value={minVal}
             onChange={e => setMinVal(e.target.value)}
@@ -806,7 +823,7 @@ function NumericFilter({ dataMin, dataMax, sum, mean, median, q1, q3, currentMin
           <span>Max</span>
           <input
             type="number"
-            className={styles.numericInput}
+            className={styles['numericInput']}
             placeholder="100"
             value={maxVal}
             onChange={e => setMaxVal(e.target.value)}
@@ -814,7 +831,7 @@ function NumericFilter({ dataMin, dataMax, sum, mean, median, q1, q3, currentMin
           />
         </label>
       </div>
-      <div className={styles.dropdownFooter}>
+      <div className={styles['dropdownFooter']}>
         <button className="btn btn-primary" style={{ fontSize: '.78rem', padding: '3px 10px' }}
           onClick={apply}>Apply</button>
         <button className="btn" style={{ fontSize: '.78rem', padding: '3px 10px' }}

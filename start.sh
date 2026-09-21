@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -10,7 +11,7 @@ has_bundled_frontend() {
 
 build_frontend() {
   if command -v bun >/dev/null 2>&1; then
-    (cd frontend && bun install --frozen-lockfile && bun run build)
+    (cd frontend && bun install --frozen-lockfile --ignore-scripts && bun run build)
     return
   fi
 

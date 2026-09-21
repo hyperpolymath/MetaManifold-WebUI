@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# mise.toml — MetaManifold-WebUI toolchain manifest (mise-en-place).
+#
+# Doctrine (inherited from rsr-template-repo/mise.toml):
+#   - Every name below was verified against `mise registry` AND
+#     `mise ls-remote` on 2026-09-18; every version pinned EXACTLY to what CI
+#     uses, so local and CI agree. No `latest`.
+#   - Project-level dependencies (Julia packages, bun packages, R packages)
+#     do NOT belong here: they live in Project.toml / frontend/bun.lock /
+#     renv.lock and are restored by `just setup`.
+#   - Base system binaries (git, coreutils) are not shadowed.
+#   - `just` is the only task runner: no [tasks]/[alias] section here —
+#     use `just <recipe>` (see Justfile).
+#
+# Boot on a bare machine:
+#   curl https://mise.run | sh && mise install && just setup
+#
+# Known gap (verified, documented): R is not in the mise registry, so the R
+# lane (renv) uses the system R (>= 4.5) exactly as CI does; the R package
+# set itself is fully pinned by renv.lock.
+
+[tools]
+# Julia backend — exact CI pin (.github/workflows/ci.yml matrix).
+julia = "1.12.5"        # http:julia backend, verified resolvable 2026-09-18
+# bun frontend toolchain — exact .bun-version pin (CI reads the same file).
+bun = "1.3.10"          # core:bun, verified resolvable 2026-09-18
+# Node LTS — Vite's production build spawns node (verified: OOM traces were
+# node V8); must exist even though the dev loop runs on bun.
+node = "20.20.2"        # core:node, verified resolvable 2026-09-18
+# Estate task runner.
+just = "1.43.1"         # aqua:casey/just, verified resolvable 2026-09-18
+
+[env]
+# Julia: repo Project.toml is the active project everywhere in this repo.
+JULIA_PROJECT = "{{config_root}}"
+# The estate launcher locates the repo through this variable.
+METAMANIFOLD_REPO_DIR = "{{config_root}}"

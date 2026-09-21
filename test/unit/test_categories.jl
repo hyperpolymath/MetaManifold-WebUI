@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Unit tests for the Categories module.
 #
 # Exercises the self-contained helpers that build SQL fragments for

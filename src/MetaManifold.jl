@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 module MetaManifold
 
 # Core
@@ -15,6 +16,7 @@ include("core/categories.jl")
 include("core/composition_library.jl")
 include("core/primers_library.jl")
 include("core/databases_library.jl")
+include("core/epistemic.jl")
 
 # Annotation
 include("annotation/funcdb.jl")
@@ -28,5 +30,8 @@ include("pipeline/swarm.jl")
 # Analysis
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
+include("analysis/AnalysisConfig.jl")
+include("analysis/clade_cumulus.jl")
+include("analysis/Execution.jl")
 
 end

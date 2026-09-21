@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import type {
   Study, StudySummary, Run,
   Job, JobStatus,
@@ -22,13 +23,48 @@ import type {
 // Set "apiBase" in config.json (e.g. "https://bioserver:8080") for split deployments.
 let _apiBase = ''
 
+/**
+ * Reduce an apiBase from config.json to an origin plus optional path prefix.
+ *
+ * config.json is fetched at runtime and is not part of the build, so whatever it
+ * contains reaches every later fetch() and EventSource as the start of the URL.
+ * A split deployment genuinely needs a cross-origin base, so this cannot be
+ * restricted to same-origin; what it can do is refuse anything that is not http
+ * or https -- javascript:, data: and blob: are the dangerous ones -- and rebuild
+ * the value from parsed components rather than passing the string through.
+ *
+ * Rebuilding is the substantive part: it drops embedded credentials
+ * (https://user:pass@host), query and fragment, and normalises any traversal in
+ * the path prefix. Anything unparseable falls back to same-origin, which is the
+ * same outcome as a missing config.json.
+ */
+export function sanitiseApiBase(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.trim() === '') return ''
+  const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost'
+  let url: URL
+  try {
+    url = new URL(raw, origin)
+  } catch {
+    return ''
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+  // Trailing slashes are stripped with a loop, not /\/+$/. That pattern
+  // backtracks super-linearly on a long run of slashes (SonarCloud
+  // typescript:S8786), and a long run of slashes is exactly what a hostile
+  // config.json would supply to the one function written to bound it.
+  const path = url.pathname
+  let end = path.length
+  while (end > 0 && path.codePointAt(end - 1) === 47 /* '/' */) end--
+  return `${url.protocol}//${url.host}${path.slice(0, end)}`
+}
+
 /** Called once at startup from main.tsx to load runtime config. */
 export async function loadConfig(): Promise<void> {
   try {
     const res = await fetch('/config.json')
     if (res.ok) {
       const cfg = await res.json()
-      _apiBase = (cfg.apiBase as string ?? '').replace(/\/+$/, '')
+      _apiBase = sanitiseApiBase(cfg.apiBase)
     }
   } catch {
     // Missing or malformed config.json - default to same-origin
@@ -71,9 +107,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const get  = <T>(path: string)                       => request<T>(path)
-const post = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'POST',  body: body !== undefined ? JSON.stringify(body) : undefined })
-const patch = <T>(path: string, body?: unknown)      => request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined })
-const put  = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'PUT',  body: body !== undefined ? JSON.stringify(body) : undefined })
+// exactOptionalPropertyTypes: RequestInit.body must be *absent*, not explicitly
+// undefined, when no body is sent.
+const post = <T>(path: string, body?: unknown)       => request<T>(path, body !== undefined ? { method: 'POST',  body: JSON.stringify(body) } : { method: 'POST' })
+const patch = <T>(path: string, body?: unknown)      => request<T>(path, body !== undefined ? { method: 'PATCH', body: JSON.stringify(body) } : { method: 'PATCH' })
+const put  = <T>(path: string, body?: unknown)       => request<T>(path, body !== undefined ? { method: 'PUT',  body: JSON.stringify(body) } : { method: 'PUT' })
 const del  = <T>(path: string)                       => request<T>(path, { method: 'DELETE' })
 
 /** Append ?group=X query parameter when group is provided. */
@@ -213,7 +251,7 @@ export const api = {
                      post<unknown>(`/api/v1/studies/${study}/runs/${run}/analysis/chart${gq(group)}`, body),
     pipelineStats: (study: string, run: string, group?: string | null) =>
                      get<unknown>(`/api/v1/studies/${study}/runs/${run}/analysis/pipeline-stats${gq(group)}`),
-    ranks:         (study: string, run: string, opts?: { table?: string; group?: string | null; source?: AnnotationSource }) => {
+    ranks:         (study: string, run: string, opts?: { table?: string | undefined; group?: string | null | undefined; source?: AnnotationSource | undefined }) => {
                      const query = new URLSearchParams()
                      if (opts?.group) query.set('group', opts.group)
                      if (opts?.table) query.set('table', opts.table)

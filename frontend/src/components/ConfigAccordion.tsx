@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useState } from 'react'
@@ -33,13 +34,19 @@ export function ConfigAccordion({ configMap, study, run, group, onConfigChanged,
         const isExpanded = expanded === stage
         return (
           <div key={stage} style={{ marginBottom: 4 }}>
-            <div
-              style={{ cursor: 'pointer', fontWeight: 600, fontSize: '.85rem', padding: '4px 0' }}
+            <button
+              type="button"
+              className="btn-reset"
+              aria-expanded={isExpanded}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                cursor: 'pointer', fontWeight: 600, fontSize: '.85rem', padding: '4px 0',
+              }}
               onClick={() => setExpanded(isExpanded ? null : stage)}
             >
               <span style={{ fontSize: '.8rem', marginRight: 6, opacity: .65 }}>{isExpanded ? 'v' : '>'}</span>
               {STAGE_LABELS[stage]}
-            </div>
+            </button>
             {isExpanded && (
               <StageConfig
                 configMap={configMap}

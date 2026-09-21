@@ -1,0 +1,60 @@
+# Release requirements, not an implemented builder or updater.
+schema_version = 1
+implementation_status = "planned"
+
+[targets]
+systems = ["x86_64-linux", "aarch64-linux"]
+artifacts = ["linux-x86_64", "linux-aarch64"]
+format = "relocatable-archive"
+
+[support]
+primary = ["native-linux-x86_64", "native-linux-aarch64"]
+secondary = ["wsl2-x86_64", "wsl2-aarch64"]
+unsupported = ["wsl1", "native-windows"]
+validation_status = "planned-not-yet-verified"
+wsl_uses_linux_artifacts = true
+wsl_installation_is_user_prerequisite = true
+wsl_recommended_storage = "linux-filesystem"
+
+[offline]
+first_launch_downloads = false
+requires_host_guix = false
+requires_root = false
+include_application = true
+include_language_runtimes = true
+include_scientific_tools = true
+include_julia_packages_and_artifacts = true
+include_r_packages = true
+include_web_assets = true
+include_reference_databases = false
+include_user_sequencing_data = false
+
+[tooling]
+environment_builder = "guix"
+version_management = "mise"
+task_runner = "just"
+javascript_toolchain = "bun"
+bundled = ["mise", "just", "bun"]
+prohibited_toolchain_commands = ["npm", "pnpm", "deno"]
+new_application_typescript = false
+
+[updates]
+mode = "automatic-when-idle"
+unit = "complete-tested-release"
+version_target = "latest-compatible-stable"
+component_updates_in_place = false
+requires_signed_metadata = true
+requires_artifact_hashes = true
+requires_rollback = true
+requires_idle_gate = true
+requires_health_check = true
+startup_waits_for_network = false
+update_failure_blocks_existing_release = false
+allow_prereleases = false
+
+[acceptance]
+network_disabled_first_launch = true
+clean_host_without_application_tools = true
+both_architectures_required = true
+preserve_existing_features = true
+incremental_migration_allowed = true

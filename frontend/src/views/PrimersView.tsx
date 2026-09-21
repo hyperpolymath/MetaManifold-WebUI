@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -55,7 +56,7 @@ export function PrimersView() {
   // positionally first keeps that case out of the id-matching scan entirely.
   const renameInPairs = (before: PrimerRow[], after: PrimerRow[], side: 'forward' | 'reverse') => {
     if (before.length === after.length &&
-        before.every((b, i) => b.id === after[i].id && b.name === after[i].name)) return
+        before.every((b, i) => { const a = after[i]; return a !== undefined && b.id === a.id && b.name === a.name })) return
     const moved = new Map<string, string>()
     const byId = new Map(after.map(r => [r.id, r]))
     for (const b of before) {

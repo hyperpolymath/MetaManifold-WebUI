@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# pre-commit hook -- refuses a commit that would reintroduce the sequencing
+# blobs stripped from history. Enable once per clone with `just hooks`
+# (or `git config core.hooksPath .githooks`).
+#
+# The rule itself lives in scripts/check-blob-hygiene.sh and is shared verbatim
+# with the CI blob-hygiene step, so the local gate and the remote gate cannot
+# disagree about what is allowed.
+exec "$(git rev-parse --show-toplevel)/scripts/check-blob-hygiene.sh" --staged

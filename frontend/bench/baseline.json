@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "commit": "8f91055",
+    "runner": "local",
+    "bun": "1.3.10",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "reps": 5,
+  "results": [
+    {
+      "name": "run-table-json-parse",
+      "iterations": 2000,
+      "samples_ns": [
+        48774793,
+        39086665,
+        24736140,
+        25981672,
+        22764581
+      ],
+      "median_ns": 25981672,
+      "checksum": true
+    },
+    {
+      "name": "figure-colour-overrides",
+      "iterations": 300,
+      "samples_ns": [
+        15563077,
+        13163165,
+        12758821,
+        10665006,
+        11389367
+      ],
+      "median_ns": 12758821,
+      "checksum": true
+    },
+    {
+      "name": "table-loading-sample-columns",
+      "iterations": 5000,
+      "samples_ns": [
+        14844892,
+        10227056,
+        10239663,
+        9792143,
+        10007350
+      ],
+      "median_ns": 10227056,
+      "checksum": true
+    },
+    {
+      "name": "epistemic-parsing",
+      "iterations": 100000,
+      "samples_ns": [
+        3507094,
+        2417389,
+        2285618,
+        2415272,
+        2452782
+      ],
+      "median_ns": 2417389,
+      "checksum": true
+    },
+    {
+      "name": "duckdb-aggregation",
+      "iterations": 800,
+      "samples_ns": [
+        19332992,
+        10970725,
+        11042735,
+        11627719,
+        10876812
+      ],
+      "median_ns": 11042735,
+      "checksum": true
+    },
+    {
+      "name": "permanova-nmds",
+      "iterations": 2000,
+      "samples_ns": [
+        12280585,
+        8025520,
+        5109458,
+        4265312,
+        4290489
+      ],
+      "median_ns": 5109458,
+      "checksum": true
+    },
+    {
+      "name": "tree-rendering-clade-cumulus",
+      "iterations": 1500,
+      "samples_ns": [
+        3964310,
+        3049166,
+        2956375,
+        2998172,
+        2988319
+      ],
+      "median_ns": 2998172,
+      "checksum": true
+    }
+  ]
+}

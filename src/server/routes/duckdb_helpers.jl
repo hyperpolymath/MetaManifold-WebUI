@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Shared DuckDB query helpers used by results.jl and annotations.jl
 using JSON3, DataFrames, OrderedCollections, DuckDB, DBInterface
 

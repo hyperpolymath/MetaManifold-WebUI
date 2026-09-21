@@ -1,0 +1,7 @@
+{
+  "aggregate_by_taxon": 0.2,
+  "venn_taxa_present": 0.15,
+  "bar_chart": 0.1,
+  "taxa_bar_chart": 0.1,
+  "alpha_chart": 0.1
+}

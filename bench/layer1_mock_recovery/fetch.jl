@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 #!/usr/bin/env julia
 # Fetch FASTQ inputs and expected-taxonomy ground truth for Layer 1 datasets.
 #
@@ -73,4 +74,6 @@ function main()
     @info "Fetch complete" data=DATA_DIR expected=EXPECTED_DIR
 end
 
-abspath(PROGRAM_FILE) == @__FILE__ && main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

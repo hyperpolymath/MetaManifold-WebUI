@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 module DADA2
 
 # DADA2 amplicon sequencing pipeline - Julia orchestrator

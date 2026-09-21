@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useRef, useEffect } from 'react'
 import { errorMessage } from '../api/errorMessage'
 
 interface Props {
   title: string
-  initialValue?: string
-  placeholder?: string
+  initialValue?: string | undefined
+  placeholder?: string | undefined
   onConfirm: (name: string) => Promise<void>
   onClose: () => void
 }
@@ -34,6 +35,7 @@ export function NameDialog({ title, initialValue = '', placeholder = 'Name', onC
 
   return (
     <div
+      role="presentation"
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
         background: 'rgba(0,0,0,.45)',

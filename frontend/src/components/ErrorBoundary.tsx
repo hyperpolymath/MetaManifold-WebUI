@@ -1,15 +1,16 @@
-import { Component, ReactNode } from 'react'
+// SPDX-License-Identifier: AGPL-3.0-only
+import { Component, type ReactNode } from 'react'
 
 interface State { error: Error | null }
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
-  state: State = { error: null }
+  override state: State = { error: null }
 
   static getDerivedStateFromError(error: Error): State {
     return { error }
   }
 
-  render() {
+  override render() {
     if (this.state.error) {
       return (
         <div style={{ padding: 40, textAlign: 'center' }}>

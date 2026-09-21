@@ -3,13 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "bun@1.3.10",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dts": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "test:e2e": "bunx playwright test",
+    "test:types": "tsc --noEmit",
+    "bench": "bun run bench/",
+    "check": "bun run test:types && bun test && bun run bench"
   },
   "dependencies": {
-    "@types/react-plotly.js": "^2.6.4",
     "@upsetjs/react": "^1.11.0",
     "plotly.js-dist-min": "^2.35.2",
     "react": "^18.3.1",
@@ -19,7 +28,6 @@
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
-    "@types/plotly.js": "^2.33.4",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

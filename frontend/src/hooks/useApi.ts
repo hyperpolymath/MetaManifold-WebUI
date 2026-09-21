@@ -1,17 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useEffect, useCallback } from 'react'
-
-interface State<T> {
-  data:    T | null
-  loading: boolean
-  error:   string | null
-}
+import type { FetchState, FetchResult } from '../types/state'
 
 /**
  * Minimal data-fetching hook. Re-fetches when `fetcher` reference changes.
  * Returns `{ data, loading, error, refetch }`.
  */
-export function useApi<T>(fetcher: () => Promise<T>): State<T> & { refetch: () => void } {
-  const [state, setState] = useState<State<T>>({ data: null, loading: true, error: null })
+export function useApi<T>(fetcher: () => Promise<T>): FetchResult<T> {
+  const [state, setState] = useState<FetchState<T>>({ data: null, loading: true, error: null })
   const [tick, setTick]   = useState(0)
 
   const refetch = useCallback(() => setTick(t => t + 1), [])

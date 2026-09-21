@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # Unit tests for the one-shot composition migration.
 using Test
 using YAML

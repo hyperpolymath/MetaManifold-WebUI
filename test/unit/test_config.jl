@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "Config" begin
 
     @testset "_deep_merge" begin

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -115,7 +116,7 @@ export function AnnotationPanel({ study, run, group, subgroups }: { study: strin
 
   useEffect(() => {
     api.config.getDefault().then(cfg => {
-      const value = cfg.your_name?.value
+      const value = cfg['your_name']?.value
       if (typeof value === 'string') setDefaultModifiedBy(value)
     }).catch(() => {})
   }, [])
@@ -213,7 +214,7 @@ export function AnnotationPanel({ study, run, group, subgroups }: { study: strin
     newStatus: ContamStatus,
   ) => {
     if (!selected) return
-    const rank = String(row.match_rank ?? '')
+    const rank = String(row['match_rank'] ?? '')
     if (!rank) return
 
     // For unmatched rows, find the finest rank with a non-empty value in the row,
@@ -253,7 +254,7 @@ export function AnnotationPanel({ study, run, group, subgroups }: { study: strin
   ): ReactNode | null => {
     if (column !== 'Contamination') return null
 
-    const rank = String(row.match_rank ?? '')
+    const rank = String(row['match_rank'] ?? '')
     const effectiveRank = rank === 'unmatched'
       ? findFinestRank(row, source, maxRank) ?? maxRank
       : rank
@@ -317,7 +318,7 @@ export function AnnotationPanel({ study, run, group, subgroups }: { study: strin
     nextValue: string,
   ) => {
     if (!selected) return
-    const sequence = String(row.sequence ?? '').trim()
+    const sequence = String(row['sequence'] ?? '').trim()
     if (!sequence) {
       toast.error('This row has no sequence value to identify it')
       return

@@ -1,0 +1,28 @@
+{
+  "page": 1,
+  "per_page": 25,
+  "sample_count_columns": ["S1_r1", "S1_r2", "S2_r1"],
+  "columns": ["OTU", "Kingdom", "Phylum", "Genus", "S1_r1", "S1_r2", "S2_r1"],
+  "rows": [
+    {"OTU": "OTU_1", "Kingdom": "Fungi", "Phylum": "Ascomycota", "Genus": "Malassezia", "S1_r1": 4021, "S1_r2": 3912, "S2_r1": 0},
+    {"OTU": "OTU_2", "Kingdom": "Fungi", "Phylum": "Basidiomycota", "Genus": "Cryptococcus", "S1_r1": 1203, "S1_r2": 1180, "S2_r1": 55},
+    {"OTU": "OTU_3", "Kingdom": "Fungi", "Phylum": "Ascomycota", "Genus": "Candida", "S1_r1": 841, "S1_r2": 799, "S2_r1": 12},
+    {"OTU": "OTU_4", "Kingdom": "Metazoa", "Phylum": "Arthropoda", "Genus": null, "S1_r1": 233, "S1_r2": 210, "S2_r1": 0},
+    {"OTU": "OTU_5", "Kingdom": "Fungi", "Phylum": "Chytridiomycota", "Genus": "Spizellomyces", "S1_r1": 98, "S1_r2": 87, "S2_r1": 3},
+    {"OTU": "OTU_6", "Kingdom": "Fungi", "Phylum": "Ascomycota", "Genus": "Fusarium", "S1_r1": 64, "S1_r2": 71, "S2_r1": 0},
+    {"OTU": "OTU_7", "Kingdom": "Viridiplantae", "Phylum": "Streptophyta", "Genus": null, "S1_r1": 41, "S1_r2": 38, "S2_r1": 0},
+    {"OTU": "OTU_8", "Kingdom": "Fungi", "Phylum": "Mucoromycota", "Genus": "Rhizophagus", "S1_r1": 22, "S1_r2": 19, "S2_r1": 1},
+    {"OTU": "OTU_9", "Kingdom": "Fungi", "Phylum": "Ascomycota", "Genus": "Penicillium", "S1_r1": 17, "S1_r2": 15, "S2_r1": 0},
+    {"OTU": "OTU_10", "Kingdom": "Fungi", "Phylum": "Basidiomycota", "Genus": "Filobasidium", "S1_r1": 9, "S1_r2": 11, "S2_r1": 0},
+    {"OTU": "OTU_11", "Kingdom": "Fungi", "Phylum": "Ascomycota", "Genus": "Cladosporium", "S1_r1": 7, "S1_r2": 6, "S2_r1": 2},
+    {"OTU": "OTU_12", "Kingdom": "Fungi", "Phylum": "Chytridiomycota", "Genus": "Batrachochytrium", "S1_r1": 5, "S1_r2": 4, "S2_r1": 0},
+    {"OTU": "OTU_13", "Kingdom": "Metazoa", "Phylum": "Nematoda", "Genus": null, "S1_r1": 3, "S1_r2": 3, "S2_r1": 0},
+    {"OTU": "OTU_14", "Kingdom": "Fungi", "Phylum": "Ascomycota", "Genus": "Alternaria", "S1_r1": 2, "S1_r2": 2, "S2_r1": 1},
+    {"OTU": "OTU_15", "Kingdom": "Fungi", "Phylum": "Mortierellomycota", "Genus": "Mortierella", "S1_r1": 1, "S1_r2": 2, "S2_r1": 0},
+    {"OTU": "OTU_16", "Kingdom": "Fungi", "Phylum": "Basidiomycota", "Genus": "Vishniacozyma", "S1_r1": 1, "S1_r2": 1, "S2_r1": 0},
+    {"OTU": "OTU_17", "Kingdom": "Fungi", "Phylum": "Ascomycota", "Genus": "Aureobasidium", "S1_r1": 0, "S1_r2": 1, "S2_r1": 4},
+    {"OTU": "OTU_18", "Kingdom": "Fungi", "Phylum": "Mucoromycota", "Genus": "Mucor", "S1_r1": 1, "S1_r2": 0, "S2_r1": 0},
+    {"OTU": "OTU_19", "Kingdom": "Viridiplantae", "Phylum": "Chlorophyta", "Genus": "Chlamydomonas", "S1_r1": 0, "S1_r2": 1, "S2_r1": 0},
+    {"OTU": "OTU_20", "Kingdom": "Fungi", "Phylum": "Ascomycota", "Genus": "Davidiella", "S1_r1": 1, "S1_r2": 0, "S2_r1": 0}
+  ]
+}

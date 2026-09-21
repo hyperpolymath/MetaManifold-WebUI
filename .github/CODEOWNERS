@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MPL-2.0
+# Ownership for the hyperpolymath fork. Application/domain questions are
+# routed to upstream (JoshuaJewell/MetaManifold-WebUI).
+
+*                 @hyperpolymath
+
+# Engineering estate (types, tests, CI, tooling) — fork owner
+frontend/src/types/   @hyperpolymath
+frontend/tests/       @hyperpolymath
+frontend/bench/       @hyperpolymath
+.github/              @hyperpolymath
+scripts/              @hyperpolymath

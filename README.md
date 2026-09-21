@@ -1,16 +1,14 @@
+<!--
+SPDX-License-Identifier: AGPL-3.0-only
+-->
 # MetaManifold
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Julia ≥ 1.0](https://img.shields.io/badge/Julia-%E2%89%A51.0-9558B2?logo=julia)](https://julialang.org)
+[![Julia 1.12.5](https://img.shields.io/badge/Julia-1.12.5-9558B2?logo=julia)](https://julialang.org)
 [![R ≥ 4.0](https://img.shields.io/badge/R-%E2%89%A54.0-276DC3?logo=r)](https://www.r-project.org)
-[![CI](https://github.com/JoshuaJewell/MetaManifold-WebUI/actions/workflows/ci.yml/badge.svg)](https://github.com/JoshuaJewell/MetaManifold-WebUI/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/JoshuaJewell/MetaManifold-WebUI/graph/badge.svg?token=20F1VLF590)](https://codecov.io/gh/JoshuaJewell/MetaManifold-WebUI)
+[![CI](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/ci.yml)
 
 MetaManifold wraps standard amplicon sequencing workflows into a single configurable Julia orchestrator: from raw paired-end Next Generation Sequencing reads through denoising, taxonomy assignment, taxonomic filtering, and functional annotation, with interactive configuration and analysis in the browser.
-
-<p align="center">
-  <img src=".github/screenshots/hero.png" width="850" alt="MetaManifold web interface showing a study with interactive analysis charts">
-</p>
 
 ## Overview
 
@@ -64,11 +62,31 @@ Counts may be normalised before analysis (none, rarefaction to a fixed or auto-r
 
 ## Prerequisites
 
-- **Julia** >= 1.0 (installed automatically by `install.sh` if missing)
-- **R** >= 4.0 (required for the DADA2 stage and NMDS/PERMANOVA analysis)
+**One-command toolchain (recommended — the repo is standalone):** the pinned
+dev toolchain lives in `mise.toml` (julia 1.12.5, bun 1.3.10, node 20.20.2,
+just 1.43.1 — exact CI pins) with `guix.scm`/`channels.scm` as the Guix
+peer lane and `.envrc` for direnv auto-activation:
+
+```bash
+curl https://mise.run | sh && just bootstrap   # or: guix time-machine -C channels.scm -- shell -D -f guix.scm
+just ci                                        # the proof: all gates green
+just setup-full                                # full first-run: + Julia deps + sha256-pinned pipeline tools
+just start                                     # launches the server (estate launcher, :8080)
+```
+
+Then every task is a `just` recipe (`just` lists them). R remains a system
+install (not in the mise registry — documented exception in
+`docs/reproducibility.md`, which is the toolchain source of truth).
+Pipeline tools (cutadapt, MultiQC, FastQC, cd-hit-est, vsearch, swarm) are
+fetched byte-exact by `install.sh` against the sha256-pinned records in
+`config/defaults/tool_versions.yml`; the Guix shell also carries functional
+equivalents for development.
+
+- **Julia** >= 1.0, pinned 1.12.5 via `mise.toml` (installed automatically by `install.sh` if missing)
+- **Julia** 1.12.5 exactly, pinned via `mise.toml` (installed automatically by `install.sh` if missing)
   - Ubuntu/Debian: `sudo apt install r-base`
   - macOS: `brew install r` or [CRAN package](https://cran.r-project.org/bin/macosx/)
-- **bun** or **Node.js** for building the frontend (bun preferred); `bun install` in `frontend/` pulls all JS dependencies, including `react-chart-editor` and `react-plotly.js`. The chart editor is fed `plotly.js-dist-min` rather than full `plotly.js` to keep the bundle size manageable.
+- **Bun** >= 1.3.10 for building the frontend (pinned in `.bun-version`; CI reads the same version from `config/defaults/tool_versions.yml`). `bun install` in `frontend/` pulls all JS dependencies, including `react-chart-editor` and `react-plotly.js`. The chart editor is fed `plotly.js-dist-min` rather than full `plotly.js` to keep the bundle size manageable.
 
 ## Installation
 
@@ -509,6 +527,27 @@ bash start.sh
 
 Open `http://localhost:8080`. The backend serves the frontend automatically.
 
+## Engineering gates
+
+The fork maintains an engineering estate around the application. From a
+clean checkout (`frontend/`):
+
+| Gate | Command | Authority |
+|---|---|---|
+| Strict typecheck | `bun run typecheck` | 0 errors, gated |
+| Unit + integration tests | `bun test` | gated (no DOM lane) |
+| Benchmarks | `bun run bench/` | informational, no gate |
+| Everything above | `bun run check` | combined pre-push gate |
+| Licence headers | `scripts/check-spdx.sh` | gated |
+| Formatting | `scripts/check-format.sh` | gated |
+| Lint (tsc semantics + shell) | `scripts/check-lint.sh` | gated |
+
+CI runs the same gates (see `.github/workflows/ci.yml`: repo-hygiene job,
+then the pinned Julia/frontend matrix). Contributor setup, commit and
+branch conventions: `CONTRIBUTING.md`. Frontend reproducibility:
+`docs/reproducibility.md`. Type estate map: `docs/types/architecture.md`.
+Test inventory and metrics: `docs/testing/coverage.md`.
+
 ## Input data
 
 Place paired-end FASTQ files under `data/{project_name}/` following Illumina naming:
@@ -640,3 +679,7 @@ Copyright © 2026 Joshua Benjamin Jewell.
 Source code is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
 This documentation (README.md) is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+File-level identifier annotations and the fork/upstream licence split are
+summarised in [`NOTICE`](NOTICE); canonical texts live in
+[`LICENSES/`](LICENSES/). Security reporting: [`SECURITY.md`](SECURITY.md).

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 @testset "merge_taxa helpers" begin
 
     @testset "_first_duplicates" begin

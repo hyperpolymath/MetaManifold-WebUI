@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 # © 2026 Joshua Benjamin Jewell. All rights reserved.
 # Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 
@@ -268,7 +269,10 @@ function _read_primers()
     try
         PrimersLibrary.load(_primers_path())
     catch e
-        @error "primers.yml is not readable" path=_primers_path() exception=(e, catch_backtrace())
+        # @warn, not @error: the 400 on the next line is this function's own verdict
+        # that an unreadable config/primers.yml is an operator-fixable input, not a
+        # server fault. See the matching note in routes/databases.jl.
+        @warn "primers.yml is not readable" path=_primers_path() reason=sprint(showerror, e)
         json_error(400, "primers_unreadable",
             "config/primers.yml cannot be read as a primers document and must be repaired by hand: $(sprint(showerror, e))")
     end

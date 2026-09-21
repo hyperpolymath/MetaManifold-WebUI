@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // (c) 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
@@ -5,6 +6,7 @@ import { api } from '../api/client'
 import { applyChartCosmetics } from '../api/figureColours'
 import { PlotlyChart } from './PlotlyChart'
 import type { ChartCosmetics } from '../api/types'
+import type { ChartEditorState } from '../types/components'
 
 const ChartEditorInner = lazy(() => import('./ChartEditorInner'))
 
@@ -16,7 +18,7 @@ function extractCosmetics(data: unknown[], layout: Record<string, unknown>): Cha
   for (const trace of data) {
     if (!trace || typeof trace !== 'object') continue
     const t = trace as Record<string, unknown>
-    const name = t.name as string | undefined
+    const name = t['name'] as string | undefined
     if (!name) continue
     const picked: Record<string, unknown> = {}
     for (const k of TRACE_COSMETIC_KEYS) if (k in t) picked[k] = t[k]
@@ -47,9 +49,13 @@ export function ChartCustomiser({ study, chartType, figure, heightRatio }: {
   const styled = useMemo(() => applyChartCosmetics(figure, cosmetics), [figure, cosmetics])
 
   // Editor seed: the styled figure split into data/layout/frames.
-  const seed = useMemo(() => {
+  const seed = useMemo<ChartEditorState>(() => {
     const s = styled as { data?: unknown[]; layout?: Record<string, unknown> }
-    return { data: (s?.data ?? []) as unknown[], layout: (s?.layout ?? {}) as Record<string, unknown>, frames: [] as unknown[] }
+    return {
+      data: (s?.data ?? []) as ChartEditorState['data'],
+      layout: (s?.layout ?? {}) as ChartEditorState['layout'],
+      frames: [] as unknown[],
+    }
   }, [styled])
 
   if (editing) {

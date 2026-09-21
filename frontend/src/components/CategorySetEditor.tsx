@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useState } from 'react'
@@ -46,7 +47,9 @@ export function CategorySetEditor({ name, set, filterNames, onSave, onDelete }: 
       if (target < 0 || target >= prev.length) return prev
       const next = [...prev]
       const tmp = next[index]
-      next[index] = next[target]
+      const tgt = next[target]
+      if (tmp === undefined || tgt === undefined) return next
+      next[index] = tgt
       next[target] = tmp
       return next
     })
