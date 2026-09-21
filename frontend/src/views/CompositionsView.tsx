@@ -21,12 +21,12 @@ export function CompositionsView() {
   const [showNewSet, setShowNewSet] = useState(false)
 
   const filterNames = useMemo(
-    () => (library ? Object.keys(library.filters).sort() : []),
+    () => (library ? Object.keys(library.filters).sort((a, b) => a.localeCompare(b)) : []),
     [library],
   )
 
   const setNames = useMemo(
-    () => (library ? Object.keys(library.sets).sort() : []),
+    () => (library ? Object.keys(library.sets).sort((a, b) => a.localeCompare(b)) : []),
     [library],
   )
 
