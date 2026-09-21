@@ -83,6 +83,12 @@ check_one() {
     fi
 }
 
+# How many files the guard actually looked at. Without this, a run that examined
+# 337 files and a run that examined 0 produced byte-identical output ("blob
+# hygiene: ok", rc=0) -- so a guard aimed at nothing reported exactly the same
+# success as a guard that checked everything.
+examined=0
+
 mode="${1:---staged}"
 
 case "$mode" in
@@ -93,8 +99,16 @@ case "$mode" in
             blob="$(git ls-files -s -- "$path" | awk '{print $2}')"
             [ -n "$blob" ] || continue
             size="$(git cat-file -s "$blob")"
+            examined=$((examined + 1))
             check_one "$path" "$size"
-        done < <(git diff --cached --name-only --diff-filter=AM -z)
+        # --no-renames is load-bearing, not a tidy-up. With rename detection on,
+        # `git mv pool.fastq other.bin` is one R entry, and --diff-filter=AM drops
+        # it -- so an oversized blob already in the index can be moved past this
+        # hook without check_one() ever seeing it. --no-renames decomposes the
+        # rename into D + A, and the A is examined like any other addition.
+        # The --tree mode is immune (it walks the whole tree), which is exactly
+        # why the gap was invisible: CI stayed correct while the hook did not.
+        done < <(git diff --cached --no-renames --name-only --diff-filter=AM -z)
         ;;
     --tree)
         # Every tracked file at a ref, rather than a commit range. A range needs
@@ -106,12 +120,32 @@ case "$mode" in
         # paired with only ONE of the paths it is reachable under, which is
         # exactly how the duplicated pool went unnoticed.
         ref="${2:-HEAD}"
+        # Resolve the ref BEFORE walking it. `git ls-tree` on a bad ref writes
+        # "fatal: Not a valid object name" to STDERR and emits no paths -- and a
+        # CI `run:` step does not fail on stderr. The loop below then never
+        # executes and the script falls through to its success line, so a typo'd
+        # ref yields a permanently green gate that inspects nothing. Measured:
+        # `--tree refs/heads/no-such-branch` printed "blob hygiene: ok" rc=0.
+        git rev-parse --quiet --verify "$ref^{tree}" >/dev/null 2>&1 || {
+            echo "blob hygiene: FATAL -- '$ref' does not resolve to a tree" >&2
+            exit 2
+        }
         while IFS= read -r -d '' path; do
             blob="$(git rev-parse --quiet --verify "$ref:$path" 2>/dev/null || true)"
             [ -n "$blob" ] || continue
             size="$(git cat-file -s "$blob")"
+            examined=$((examined + 1))
             check_one "$path" "$size"
         done < <(git ls-tree -r -z --name-only "$ref")
+        # Emptiness guard. A tree with zero tracked files is never a legitimate
+        # state for this repository, so it means the walk failed, not that the
+        # repo is clean. Two empty sets compare equal; this is what stops that
+        # from reading as a pass. (No such guard in --staged mode: a commit that
+        # only DELETES files legitimately stages zero additions.)
+        if [ "$examined" -eq 0 ]; then
+            echo "blob hygiene: FATAL -- examined 0 files at '$ref'; the guard checked nothing" >&2
+            exit 2
+        fi
         ;;
     *)
         echo "usage: $0 --staged | --tree [ref]" >&2
@@ -126,4 +160,4 @@ if [ "$violations" -gt 0 ]; then
     exit 1
 fi
 
-echo "blob hygiene: ok"
+echo "blob hygiene: ok -- $examined file(s) examined, $violations violation(s)"
