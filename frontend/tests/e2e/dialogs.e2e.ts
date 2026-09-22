@@ -5,6 +5,8 @@
 // showModal(); the behaviours that conversion claims -- implicit dialog role,
 // Escape-to-cancel, focus containment, focus restoration -- are only
 // observable in a real browser, which is what this lane exists to provide.
+// Backdrop-click-to-dismiss is dropped deliberately (form dialogs: a stray
+// click must not discard typed input); the last test pins that decision.
 import { test, expect, type Page, type Locator } from '@playwright/test'
 
 // NameDialog is mounted by several views; StudiesView's "new study" flow is the
@@ -62,15 +64,14 @@ test('focus stays inside the open dialog: Tab never reaches the page behind', as
   expect(activeInDialog).toBe(true)
 })
 
-test('clicking the backdrop dismisses; clicking the panel does not', async ({ page }) => {
+test('backdrop click deliberately does NOT dismiss a form dialog', async ({ page }) => {
+  // Decision recorded per #32 criterion 6: these dialogs carry typed input, so
+  // a stray click outside the panel must not discard it. Escape and Cancel are
+  // the dismissals. This test pins the decision so a "restore backdrop click"
+  // change cannot land silently.
   const dialog = await openNameDialog(page)
-  const panel = dialog.locator('h3')
-  await expect(panel).toBeVisible()
-  // A click on the panel must not dismiss.
-  await panel.click()
+  await page.locator('#root').click({ position: { x: 5, y: 5 }, force: true })
   await expect(dialog).toBeVisible()
-  // A click in the corner of the viewport lands on the dialog element itself
-  // (the stretched transparent box), which the component treats as backdrop.
-  await page.mouse.click(5, 5)
+  await page.keyboard.press('Escape')
   await expect(dialog).not.toBeVisible()
 })

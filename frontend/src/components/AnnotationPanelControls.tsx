@@ -94,10 +94,11 @@ export function AddFuncdbModal({
 
   // Native <dialog> via showModal() (#32): the browser supplies the dialog
   // role, aria-modal, the focus trap and Escape-to-cancel that the old
-  // presentational backdrop div lacked. Every dismissal routes through the
-  // dialog's own close(), so the `close` event -- and therefore onClose --
-  // fires exactly once whether the user pressed Escape, clicked the backdrop
-  // or used the Cancel button.
+  // presentational backdrop div lacked. Dismissals route through the dialog's
+  // own close(), so the `close` event -- and therefore onClose -- fires
+  // exactly once. Backdrop-click-to-dismiss is dropped deliberately: this is a
+  // FORM dialog, and losing typed input to a stray click outside the panel is
+  // hostile. Escape and Cancel remain, both keyboard-reachable.
   const dismiss = () => dialogRef.current?.close()
 
   return (
@@ -106,7 +107,6 @@ export function AddFuncdbModal({
       className="mm-modal"
       aria-label="Add FuncDB Entry"
       onClose={onClose}
-      onClick={event => { if (event.target === dialogRef.current) dismiss() }}
     >
       <div style={{
         background: 'var(--color-bg)', borderRadius: 8, padding: '20px 24px',
