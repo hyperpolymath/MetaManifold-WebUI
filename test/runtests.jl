@@ -34,6 +34,7 @@ using MetaManifold: AnalysisConfig
 @testset "MetabarcodingPipeline" begin
 
     include("unit/test_numeric_policy.jl")
+    include("unit/test_numeric_boundaries.jl")
     include("unit/test_diversity.jl")
     include("unit/test_merge_taxa.jl")
     include("unit/test_config.jl")
