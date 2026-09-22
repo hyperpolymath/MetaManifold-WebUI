@@ -194,9 +194,39 @@ end
         @test occursin("tool_versions.yml", runs)
         @test occursin("sha256sum -c", runs)
 
-        for tool in ("vsearch", "swarm")
+        # fastqc and multiqc joined this list with issue #30. Leaving them out would
+        # have made the guard vacuous for exactly the two tools it had just been
+        # extended to cover -- the shape that let the gap open in the first place.
+        for tool in ("vsearch", "swarm", "fastqc", "multiqc")
             @test !occursin(pins["tools"][tool]["version"], runs)
         end
+
+        # And the gap itself: every tool the pipeline shells out to must actually be
+        # installed by the workflow, which is what issue #30 found missing for fastqc
+        # and multiqc.
+        #
+        # The assertion is on the DEREFERENCE of each exported pin, not on the tool's
+        # name. Written the obvious way -- does "fastqc" appear anywhere in the run
+        # blocks -- this guard passes with the install step deleted, because the
+        # pin-export block above mentions every tool by name whether or not anything
+        # installs it. That version was written here, and deleting the fastqc step did
+        # not redden it. `$FASTQC_URL` appears only where a step consumes the pin.
+        for (tool, ref) in (("cutadapt", "\$CUTADAPT_SPEC"),
+                            ("multiqc",  "\$MULTIQC_SPEC"),
+                            ("fastqc",   "\$FASTQC_URL"),
+                            ("vsearch",  "\$VSEARCH_URL"),
+                            ("swarm",    "\$SWARM_URL"))
+            @test occursin(ref, runs)
+        end
+
+        # The two archive tools that are not a single binary still have to end up on
+        # PATH, because config/ci/tools.yml resolves every tool by bare name.
+        for tool in ("vsearch", "swarm", "fastqc")
+            @test occursin("/usr/local/bin/$tool", runs)
+        end
+
+        # cd-hit is the one tool CI does not pin, so it is matched on the apt line.
+        @test occursin("apt-get install -y cd-hit", runs)
     end
 
     @testset "a required check name is a stable identifier" begin
