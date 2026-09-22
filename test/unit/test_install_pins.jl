@@ -211,11 +211,15 @@ end
         # pin-export block above mentions every tool by name whether or not anything
         # installs it. That version was written here, and deleting the fastqc step did
         # not redden it. `$FASTQC_URL` appears only where a step consumes the pin.
-        for (tool, ref) in (("cutadapt", "\$CUTADAPT_SPEC"),
-                            ("multiqc",  "\$MULTIQC_SPEC"),
-                            ("fastqc",   "\$FASTQC_URL"),
-                            ("vsearch",  "\$VSEARCH_URL"),
-                            ("swarm",    "\$SWARM_URL"))
+        # raw"..." rather than "\$...": the string is a shell variable reference to be
+        # found verbatim in the YAML, never a Julia interpolation, and config/ci/lint_source.jl
+        # rejects an escaped `\$` in an interpolating string precisely to force that
+        # distinction to be stated. The two forms carry the same bytes; only one says why.
+        for (tool, ref) in (("cutadapt", raw"$CUTADAPT_SPEC"),
+                            ("multiqc",  raw"$MULTIQC_SPEC"),
+                            ("fastqc",   raw"$FASTQC_URL"),
+                            ("vsearch",  raw"$VSEARCH_URL"),
+                            ("swarm",    raw"$SWARM_URL"))
             @test occursin(ref, runs)
         end
 
