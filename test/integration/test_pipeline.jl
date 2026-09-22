@@ -52,7 +52,7 @@
     if isdir(test_study_dir)
         for entry in readdir(test_study_dir; join=true)
             isdir(entry) || continue
-            for subdir in ("cutadapt", "dada2", "swarm", "vsearch", "merged")
+            for subdir in ("QC", "cutadapt", "dada2", "swarm", "vsearch", "merged")
                 d = joinpath(entry, subdir)
                 isdir(d) && rm(d; recursive=true)
             end
@@ -101,6 +101,25 @@
         if !isempty(errors)
             @warn "Integration test: run $(basename(project.dir)) skipped - validation failed"
             continue
+        end
+
+        # Stage 0: FastQC/MultiQC over the raw reads. The server runs this as an
+        # independent stage rather than a link in the chain, so nothing downstream
+        # consumes it -- which is exactly why it needs asserting here. Until issue #30
+        # CI installed neither tool, so the whole prefilter QC stage, its flag plumbing
+        # out of pipeline.yml and its provenance capture had no coverage at all.
+        multiqc(project)
+        qc_dir = joinpath(project.dir, "QC")
+        @test isfile(joinpath(qc_dir, "multiqc_report.html"))
+        for logname in ("fastqc.log", "multiqc.log")
+            p = joinpath(qc_dir, "logs", logname)
+            @test isfile(p)
+            # Non-empty AND carrying the invocation marker. An empty log is what a stage
+            # that made its log directory and then died leaves behind, and it would
+            # satisfy `isfile` alone; the marker line is the provenance record itself,
+            # the same one the DADA2 assertions below grep for.
+            @test filesize(p) > 0
+            @test any(l -> startswith(l, "[MetaManifold] cmd: "), readlines(p))
         end
 
         # Stage 1: cutadapt

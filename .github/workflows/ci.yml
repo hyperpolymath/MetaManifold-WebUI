@@ -185,6 +185,15 @@ jobs:
                 println(io, "R_APT_VERSION=", pins["runtimes"]["r"]["apt_version"])
                 println(io, "BUN_VERSION=", pins["toolchain"]["bun"]["version"])
                 println(io, "CUTADAPT_SPEC=cutadapt==", pins["tools"]["cutadapt"]["version"])
+                println(io, "MULTIQC_SPEC=multiqc==", pins["tools"]["multiqc"]["version"])
+                # FastQC ships one platform-neutral zip, so its archive hangs off the
+                # "any" key rather than a per-platform one, and it cannot join the loop
+                # below. test_install_pins.jl asserts that shape, so a pin file that
+                # grew a linux-x86_64 fastqc entry would fail there before it failed here.
+                fastqc = pins["tools"]["fastqc"]["archives"]["any"]
+                println(io, "FASTQC_VERSION=", pins["tools"]["fastqc"]["version"])
+                println(io, "FASTQC_URL=", fastqc["url"])
+                println(io, "FASTQC_SHA256=", fastqc["sha256"])
                 for tool in ("vsearch", "swarm")
                     archive = pins["tools"][tool]["archives"]["linux-x86_64"]
                     println(io, uppercase(tool), "_VERSION=", pins["tools"][tool]["version"])
@@ -322,6 +331,25 @@ jobs:
           sudo mv "swarm-$SWARM_VERSION-linux-x86_64/bin/swarm" /usr/local/bin/swarm
           rm -rf swarm.tar.gz "swarm-$SWARM_VERSION-linux-x86_64"
           swarm --version
+
+      - name: Install multiqc
+        run: pip install "$MULTIQC_SPEC"
+
+      # FastQC is a Perl launcher round a Java jar, so it is installed as a directory
+      # rather than a single binary: the launcher resolves its jars relative to its own
+      # location, and moving it out of FastQC/ breaks it. Unpacked to /opt and reached
+      # through a symlink, which is what config/ci/tools.yml means by `path: "fastqc"`.
+      # The launcher runs `java` off PATH, so `fastqc --version` proves both that the
+      # install landed and that a JRE is present on the runner.
+      - name: Install fastqc
+        run: |
+          curl -sSL -o fastqc.zip "$FASTQC_URL"
+          echo "$FASTQC_SHA256  fastqc.zip" | sha256sum -c -
+          sudo unzip -q -d /opt fastqc.zip
+          rm -f fastqc.zip
+          sudo chmod +x /opt/FastQC/fastqc
+          sudo ln -sf /opt/FastQC/fastqc /usr/local/bin/fastqc
+          fastqc --version
 
       - name: Instantiate Julia project
         run: julia --project=. -e 'import Pkg; Pkg.instantiate()'

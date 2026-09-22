@@ -424,16 +424,37 @@ canned(out::String, err::String = "", code::Int = 0) =
     ## Live probes. Gated, so that the suite passes on a machine with neither the
     # binaries nor the R packages installed.
     @testset "live probes of what is actually installed" begin
+        # The gate is not the same question on CI as on a laptop. ci.yml installs every
+        # tool in TOOL_PROBES, so an absent binary there is a provisioning regression;
+        # on a bare checkout it is expected. Issue #30 was this loop skipping fastqc and
+        # multiqc quietly for months because CI installed neither: an `@info` scrolls
+        # past, and a zero-failure count says nothing about which probes ran at all.
+        tools_must_be_present = get(ENV, "CI", "false") == "true"
+
         for (key, probe) in PV.TOOL_PROBES
-            bin = PV.default_bin_resolver(key)
-            if isnothing(Sys.which(bin))
-                @info "Provenance: skipping live probe of $key, which is not installed"
-                continue
+            # One testset per tool, so the suite's own summary names all six and shows
+            # per tool whether it ran, was skipped, or failed. That naming is the
+            # assertion; a flat loop can only report the tools it did not skip.
+            @testset "$key" begin
+                bin      = PV.default_bin_resolver(key)
+                resolved = Sys.which(bin)
+
+                if tools_must_be_present
+                    # Named by the enclosing testset, so a red line reads "fastqc".
+                    @test resolved !== nothing
+                end
+
+                if isnothing(resolved)
+                    # Broken, not passed: it shows in the summary's own column rather
+                    # than disappearing into the count of things that went fine.
+                    @test_skip PV.probe_tool(probe)
+                else
+                    record = PV.probe_tool(probe)
+                    @test !isempty(record.version)
+                    @test isabspath(record.path)
+                    @test length(record.sha256) == 64
+                end
             end
-            record = PV.probe_tool(probe)
-            @test !isempty(record.version)
-            @test isabspath(record.path)
-            @test length(record.sha256) == 64
         end
 
         r_ready = try
