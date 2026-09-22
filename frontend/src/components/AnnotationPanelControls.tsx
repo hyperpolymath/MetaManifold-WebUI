@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { errorMessage } from '../api/errorMessage'
 import { useToast } from './Toast'
@@ -88,23 +88,25 @@ export function AddFuncdbModal({
     }
   }
 
-  // Escape is the keyboard equivalent of clicking the backdrop. Without it this
-  // dialog can be opened but not dismissed without a pointer.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => { dialogRef.current?.showModal() }, [])
+
+  // Native <dialog> via showModal() (#32): the browser supplies the dialog
+  // role, aria-modal, the focus trap and Escape-to-cancel that the old
+  // presentational backdrop div lacked. Every dismissal routes through the
+  // dialog's own close(), so the `close` event -- and therefore onClose --
+  // fires exactly once whether the user pressed Escape, clicked the backdrop
+  // or used the Cancel button.
+  const dismiss = () => dialogRef.current?.close()
 
   return (
-    <div
-      role="presentation"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,.45)', display: 'flex',
-        alignItems: 'center', justifyContent: 'center',
-      }}
-      onClick={event => { if (event.target === event.currentTarget) onClose() }}
+    <dialog
+      ref={dialogRef}
+      className="mm-modal"
+      aria-label="Add FuncDB Entry"
+      onClose={onClose}
+      onClick={event => { if (event.target === dialogRef.current) dismiss() }}
     >
       <div style={{
         background: 'var(--color-bg)', borderRadius: 8, padding: '20px 24px',
@@ -150,13 +152,13 @@ export function AddFuncdbModal({
             />
           </label>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button type="button" className="btn" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn" onClick={dismiss}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving ? 'Saving...' : 'Add entry'}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </dialog>
   )
 }
