@@ -40,8 +40,20 @@ SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@
 Ran 586 tests across 16 files. [415.00ms] first run, [340.00ms] with --coverage
 ```
 
+> **Audited 2026-09-22 (#15).** Re-run on `main` @ `22d228f5`: 599 pass, 5 todo,
+> 0 fail, 3368 expects, **604 tests across 16 files** [461 ms]. Grown by 18 tests;
+> the file count and the todo count are unchanged, so the DOM-lane debt recorded
+> above has not silently grown. Full audit:
+> `docs/audit/milestone-2-close-out.md`.
+
 **Coverage (informational, no gate by policy per docs/testing/infrastructure.md):**
 - All files 40.19% funcs, 47.53% lines
+
+> **Audited 2026-09-22 (#15).** Regenerated: All files **40.23% funcs, 47.50% lines** —
+> unchanged within rounding. The least-covered files are still the DOM-only ones
+> (`DataTable.tsx`, `CardActions.tsx`, `NameDialog.tsx`), which is the documented
+> consequence of a DOM-less unit lane rather than a regression; the e2e lane is where
+> those are exercised.
 - src/api/client.ts 15% funcs 57% lines (many uncovered: config, analysis, etc — API client not fully tested via unit, but via integration)
 - src/api/errorMessage.ts 100%
 - src/components/CardActions.tsx 0% funcs 3.51% lines (UI not DOM-tested)
@@ -58,6 +70,11 @@ Ran 586 tests across 16 files. [415.00ms] first run, [340.00ms] with --coverage
 **Command:** `julia --project=. -t 2 --code-coverage=user test/runtests.jl` (unit always, --integration opt-in, --server opt-in)
 
 **Pathways (27 unit test files, 6830 lines total):**
+
+> **Audited 2026-09-22 (#15).** Measured on `main` @ `22d228f5`: **30 unit test files,
+> 8310 lines**. The list below is the Milestone 2 snapshot and remains an accurate
+> description of the files it names; of the current files, only `test_execution.jl`
+> is not named below. Full audit: `docs/audit/milestone-2-close-out.md`.
 - `test_diversity.jl` (87 lines): richness (5), shannon (6), simpson (6), Normalisation rarefy (1), normalise_counts (1) — total 19 tests
 - `test_merge_taxa.jl` (311): merge_taxa join, tagging, max_x, category_sets
 - `test_config.jl` (62): config cascade, defaults, overrides
@@ -118,7 +135,8 @@ Ran 586 tests across 16 files. [415.00ms] first run, [340.00ms] with --coverage
    - taxonomy_levels (distinct ranks)
    - taxon_column (rank resolution)
    - Baseline: baseline.json with median seconds per op (5 reps)
-   - Regression gate: >10% fail in CI
+   - Baseline comparison: **informational** — see "Regression Gate" below, which was
+     corrected on audit 2026-09-22 (#15)
 
 2. **bench/epistemic_parsing/benchmark.jl**
    - Mock epistemic types mirroring future src/core/epistemic.jl: EpistemicStatus enum present_in_every/present_in_some/absent/unknown/sans_fibre, MockCandidate observation/residual/witness, MockCase candidates
@@ -156,7 +174,7 @@ Ran 586 tests across 16 files. [415.00ms] first run, [340.00ms] with --coverage
 
 6. **bench/comprehensive_benchmark.jl**
    - Runner for all 5 categories, writes bench/results/comprehensive_results.json
-   - Fails on >10% regression when CI=true
+   - Reports deltas against each committed baseline; does not gate (see below)
 
 **Baselines:**
 - Each category has baseline.json committed with placeholder medians (will be overwritten on first CI run that succeeds)
@@ -202,9 +220,25 @@ Ran 586 tests across 16 files. [415.00ms] first run, [340.00ms] with --coverage
 - julia-coverage-lcov: lcov.info
 - julia-benchmarks-comprehensive: bench/*/baseline.json, bench/results/comprehensive_results.json, bench/**/baseline.json
 
-**Regression Gate:** >10% fail
-- Frontend: Node script in CI fails if any workload median delta >10% vs baseline.json
-- Julia: Each bench/*.jl checks baseline.json and fails if delta >10% when ENV["CI"]=="true" (via exit(1) and ::error:: annotation)
+**Regression Gate:** none, deliberately — deltas are reported, never gated
+
+> **Corrected 2026-09-22 (#15).** This section previously recorded a hard
+> ">10% fail" gate for both the frontend script and each `bench/*.jl`. That is not
+> what the repository does, and it was changed on purpose after the gate was built.
+> `ci.yml` carries the measurement: two consecutive runs of *identical* benchmark
+> code on a hosted runner produced per-workload deltas between **-16% and +52%**,
+> flapping in both directions, because the harness workloads import no application
+> code — a delta therefore measures the runner, not the commit. `bench/table_loading/
+> benchmark.jl` agrees: a >10% delta prints `NOTE` and emits
+> `@warn "…(informational)"`, with the comment "Never gates in CI."
+>
+> A gate below the noise floor blocks at random, and a gate that fails for reasons a
+> commit cannot influence teaches people to ignore it. What still holds for real: the
+> harness checksums hard-fail, the workload freeze policy requires re-cutting the
+> baseline (visible in review), and deltas plus the machine factor are printed and
+> shipped as artifacts for human review. Revisiting a same-runner A/B gate is left open
+> once the harness exists on the base branch. Full audit:
+> `docs/audit/milestone-2-close-out.md`.
 
 **New Test Categories:**
 - analysis-config: test_analysis_config.jl (AnalysisConfig creation, validation, BH mandatory, DANGER token, DOI bundle, epistemic, cloud sizing) — 21 files 5276 insertions in feature branches
