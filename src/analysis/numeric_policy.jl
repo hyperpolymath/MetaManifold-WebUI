@@ -479,4 +479,59 @@ function encode_json_number(x)
         "JSON; unsupported type $(typeof(x))"))
 end
 
+## Reading the exact forms back
+# A contract that only runs one way is a convention. `to_storage` says an exact integer
+# beyond 2^53 travels as a string; these are the functions that read such a string back
+# WITHOUT the value having to pass through a float, which is the only property that
+# makes the trip worth taking. They are strict on purpose: a value that has been through
+# a float cannot be inspected for the damage, so the string form is the only one allowed
+# to claim to be a count at all.
+
+"""
+    parse_exact_count(s) -> Integer
+
+The count an exact string declares, or a loud refusal.
+
+Accepts a whole-number literal and nothing else. `"1.5"`, `"1e3"` and
+`"9.007199254740992e15"` all look like numbers to a calculator and none of them is a
+count: the last is exactly what a Float64 says when asked for 9007199254740993, and
+accepting it would launder a rounded value into an exact one.
+"""
+function parse_exact_count(s::AbstractString)
+    text = strip(s)
+    isempty(text) && throw(UnsupportedRepresentationError("a count", s,
+        "parse_exact_count; the string is empty"))
+    occursin(r"^[+-]?[0-9]+$", text) || throw(UnsupportedRepresentationError("a count", s,
+        "parse_exact_count; only a whole-number literal may claim to be a count"))
+    value = parse(BigInt, text)
+    value < 0 && throw(UnsupportedRepresentationError("a count", s,
+        "counts are not negative"))
+    return typemin(Int64) <= value <= typemax(Int64) ? Int64(value) : value
+end
+
+"""
+    parse_exact_rational(s) -> Rational{BigInt}
+
+The proportion an exact string declares, or a loud refusal.
+
+Accepts `"n/d"` and a bare integer (`"3"` is three). Refuses a zero denominator, a
+decimal point, and exponent notation, for the reason `parse_exact_count` refuses them:
+the point of the string form is that no float ever touched it.
+"""
+function parse_exact_rational(s::AbstractString)
+    text = strip(s)
+    isempty(text) && throw(UnsupportedRepresentationError("a proportion", s,
+        "parse_exact_rational; the string is empty"))
+    occursin(r"^[+-]?[0-9]+(?:/[+-]?[0-9]+)?$", text) ||
+        throw(UnsupportedRepresentationError("a proportion", s,
+            "parse_exact_rational; expected an integer or n/d, with no decimal point"))
+    parts = split(text, '/')
+    numerator_text = parts[1]
+    denominator_text = length(parts) == 2 ? parts[2] : "1"
+    denominator_value = parse(BigInt, denominator_text)
+    iszero(denominator_value) && throw(UnsupportedRepresentationError("a proportion", s,
+        "a fraction whose denominator is zero; the same refusal exact_fraction makes"))
+    return Rational{BigInt}(parse(BigInt, numerator_text), denominator_value)
+end
+
 end # module
