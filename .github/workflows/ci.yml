@@ -367,9 +367,16 @@ jobs:
 
       # Downloaded against the pinned URL and refused unless it hashes to the pinned
       # SHA256, so CI runs the same bytes install.jl puts on a developer's machine.
+      #
+      # fetch_pinned adds retries that cover the TLS class (curl does not retry a
+      # certificate failure on its own) and, when a download still fails, annotates
+      # WHICH failure it was. On 2026-09-22T07:09Z the FastQC host's expired
+      # certificate reddened main on a commit that had touched nothing in this area;
+      # the log said only "exit code 60". See scripts/ci/fetch_pinned.sh.
       - name: Install vsearch
         run: |
-          curl -sSL -o vsearch.tar.gz "$VSEARCH_URL"
+          source scripts/ci/fetch_pinned.sh
+          fetch_pinned "$VSEARCH_URL" vsearch.tar.gz
           echo "$VSEARCH_SHA256  vsearch.tar.gz" | sha256sum -c -
           tar xzf vsearch.tar.gz --warning=no-unknown-keyword
           sudo mv "vsearch-$VSEARCH_VERSION-linux-x86_64/bin/vsearch" /usr/local/bin/vsearch
@@ -378,7 +385,8 @@ jobs:
 
       - name: Install swarm
         run: |
-          curl -sSL -o swarm.tar.gz "$SWARM_URL"
+          source scripts/ci/fetch_pinned.sh
+          fetch_pinned "$SWARM_URL" swarm.tar.gz
           echo "$SWARM_SHA256  swarm.tar.gz" | sha256sum -c -
           tar xzf swarm.tar.gz --warning=no-unknown-keyword
           sudo mv "swarm-$SWARM_VERSION-linux-x86_64/bin/swarm" /usr/local/bin/swarm
@@ -396,7 +404,8 @@ jobs:
       # install landed and that a JRE is present on the runner.
       - name: Install fastqc
         run: |
-          curl -sSL -o fastqc.zip "$FASTQC_URL"
+          source scripts/ci/fetch_pinned.sh
+          fetch_pinned "$FASTQC_URL" fastqc.zip
           echo "$FASTQC_SHA256  fastqc.zip" | sha256sum -c -
           sudo unzip -q -d /opt fastqc.zip
           rm -f fastqc.zip

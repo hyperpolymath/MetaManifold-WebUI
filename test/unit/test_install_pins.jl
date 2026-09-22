@@ -231,6 +231,49 @@ end
 
         # cd-hit is the one tool CI does not pin, so it is matched on the apt line.
         @test occursin("apt-get install -y cd-hit", runs)
+
+        # The archive downloads retry, and say what failed when they still do not.
+        #
+        # MEASURED 2026-09-22T07:09Z: main went red on commit 4df7881 -- a commit that
+        # touched nothing in this area -- because the FastQC host's TLS certificate had
+        # expired. The log read "curl: (60) SSL certificate problem: certificate has
+        # expired" and then "##[error]Process completed with exit code 60", which reads
+        # like a code failure until someone opens the log and knows what 60 means.
+        #
+        # curl does not retry a certificate failure unless --retry-all-errors is given,
+        # so `--retry` alone would not have covered the class that bit. And skipping the
+        # tool is not available either: issue #30 exists precisely because fastqc was
+        # silently absent. So the installs share one helper that retries the transient
+        # class and annotates the cause when the failure is real.
+        helper = joinpath(REPO_ROOT, "scripts", "ci", "fetch_pinned.sh")
+        @test isfile(helper)
+
+        # Comments stripped before asserting, and that is not incidental. The obvious
+        # version of this guard -- does "--retry-all-errors" appear in the file --
+        # PASSES with the flag deleted from the command, because the paragraph
+        # explaining the flag names it. MUTATION-TESTED 2026-09-22: removing the flag
+        # from the curl invocation left this testset green until the assertion read the
+        # code alone. The same trap, in the same file, for the same reason as the
+        # `$FASTQC_URL` note above: a guard that can be satisfied by prose guards prose.
+        fetch_code = join([line for line in eachline(helper)
+                           if !startswith(strip(line), "#")], "\n")
+
+        # The load-bearing flag: this is the fix, not a detail.
+        @test occursin("--retry-all-errors", fetch_code)
+        # A diagnosis rather than a bare exit code, and a lever to pull: the next
+        # reader is told it is the certificate and where the pin lives.
+        @test occursin("::error::TLS verification failed", fetch_code)
+        @test occursin("tool_versions.yml", fetch_code)
+        # It reports and then fails; it never converts a failure into a pass.
+        @test !occursin("|| true", fetch_code)
+        @test !occursin("set +e", fetch_code)
+
+        # Every pinned archive goes through it, so a tool added later cannot arrive
+        # with a bare curl that dies on the first TLS hiccup.
+        @test occursin("source scripts/ci/fetch_pinned.sh", runs)
+        for ref in (raw"$VSEARCH_URL", raw"$SWARM_URL", raw"$FASTQC_URL")
+            @test occursin("fetch_pinned \"$ref\"", runs)
+        end
     end
 
     @testset "a required check name is a stable identifier" begin
