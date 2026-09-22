@@ -5,7 +5,7 @@
 **Status:** published, implemented in `src/analysis/numeric_policy.jl` (issue #1).
 **Scope:** how numbers become exact, approximate or rounded; what may cross each
 boundary; what is refused. Methods and their assumptions are catalogued separately in
-`method-catalogue-v1-draft.md`.
+`method-catalogue-v1.md`.
 
 ## Why this document exists
 
