@@ -254,6 +254,8 @@ docs/*
 !docs/migration/
 !docs/milestones/
 !docs/milestones/**
+!docs/statistics/
+!docs/statistics/**
 !docs/issues/
 !docs/issues/**
 !docs/testing/
