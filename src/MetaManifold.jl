@@ -28,6 +28,7 @@ include("pipeline/dada2.jl")
 include("pipeline/swarm.jl")
 
 # Analysis
+include("analysis/numeric_policy.jl")
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
 include("analysis/AnalysisConfig.jl")
