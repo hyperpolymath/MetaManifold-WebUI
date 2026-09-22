@@ -636,13 +636,18 @@ function heal_all_zero_samples(counts::Matrix{Float64}, sample_ids::Vector{Strin
     end
 end
 
-function heal_all_zero_taxa(counts::Matrix{Float64}, taxa_ids::Vector{String}, drop_policy::DropPolicy, epsilon::Float64)
-    check = check_all_zero_taxa(counts)
-    if !check["has_all_zero_taxa"]
+function heal_all_zero_taxa(
+    counts::Matrix{Float64},
+    taxa_ids::Vector{String},
+    drop_policy::DropPolicy,
+    epsilon::Float64;
+    indices::Union{Nothing,Vector{Int}}=nothing
+)
+    indices = isnothing(indices) ? check_all_zero_taxa(counts)["all_zero_taxa_indices"] : indices
+    if isempty(indices)
         return (counts, taxa_ids, String[], Int[])
     end
 
-    indices = check["all_zero_taxa_indices"]
     healings = String[]
 
     if drop_policy == DROP
@@ -944,6 +949,10 @@ function prepare_analysis_table(
     # correct. Fixing a defect is not licence to change the numbers around it.
     healings = String[]
     is_dangerous_diag = false
+    # Preserve the original all-zero taxa before imputing zero-depth samples.
+    # Otherwise an epsilon inserted for an empty sample makes an all-zero taxon
+    # appear nonzero when diagnostics and taxon healing run after the transform.
+    all_zero_taxa_indices = check_all_zero_taxa(filtered_counts)["all_zero_taxa_indices"]
     zero_depth = check_all_zero_samples(filtered_counts)
     if zero_depth["has_all_zero_samples"]
         (filtered_counts, filtered_sample_ids, sample_healings, _) =
@@ -1180,6 +1189,11 @@ function prepare_analysis_table(
     # ----------------------------------------------------------------------
 
     (checks, warnings, errors) = self_diagnostics(filtered_counts, prepared, config; sample_metadata=sample_metadata, raw_counts=counts)
+    checks["all_zero_taxa"] = OrderedDict{String,Any}(
+        "all_zero_taxa_indices" => all_zero_taxa_indices,
+        "all_zero_taxa_count" => length(all_zero_taxa_indices),
+        "has_all_zero_taxa" => !isempty(all_zero_taxa_indices)
+    )
 
     # `healings` and `is_dangerous_diag` are initialised earlier, before the
     # all-zero sample healing that happens before the transform; re-initialising
@@ -1229,7 +1243,13 @@ function prepare_analysis_table(
     # `check_all_zero_samples` to find.
     if checks["all_zero_taxa"]["has_all_zero_taxa"]
         try
-            (healed_counts, healed_taxa_ids, heal_t, _) = heal_all_zero_taxa(filtered_counts, filtered_taxa_ids, dp, effective_epsilon)
+            (healed_counts, healed_taxa_ids, heal_t, _) = heal_all_zero_taxa(
+                filtered_counts,
+                filtered_taxa_ids,
+                dp,
+                effective_epsilon;
+                indices=all_zero_taxa_indices
+            )
             if dp == DROP
                 keep_rows = [i for i in 1:size(prepared,1) if !(i in checks["all_zero_taxa"]["all_zero_taxa_indices"])]
                 # For ILR, prepared has n-1 rows, so need to handle differently — for stub, skip if ILR

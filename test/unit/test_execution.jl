@@ -217,6 +217,23 @@
         @test size(prepared_drop_azt, 1) == 2 # dropped t2
         @test "t2" ∉ tids_drop_azt
 
+        # Snapshot all-zero taxa before zero-depth sample imputation so the
+        # imputed epsilon cannot hide a taxon that must still be healed.
+        counts_with_all_zero_taxon_and_sample = [
+            10.0 20.0 0.0 30.0 25.0;
+            0.0 0.0 0.0 0.0 0.0;
+            30.0 20.0 0.0 10.0 15.0
+        ]
+        (_, diag_imp_azt, _, _, _) = Execution.prepare_analysis_table(
+            config, counts_with_all_zero_taxon_and_sample;
+            sample_ids=sample_ids_az,
+            taxa_ids=taxa_ids_az,
+            drop_policy="impute",
+            impute_policy="epsilon"
+        )
+        @test diag_imp_azt.checks["all_zero_taxa"]["all_zero_taxa_indices"] == [2]
+        @test any(h -> occursin("Imputed 1 all-zero taxa", h), diag_imp_azt.healings)
+
         # Test CLR with pseudocount=1 and epsilon=1e-6 specifically
         # pseudocount=1 should be added to all counts for CLR, so 0->1, 1->2, etc.
         # Then log(1)=0, log(2)=0.693, etc., CLR centered

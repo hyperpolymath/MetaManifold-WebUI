@@ -58,9 +58,14 @@ Re-run the affected analysis. The previous numbers for a zero-depth sample were 
 measurements of a quantity that exists, so there is no correction to apply: the
 computation itself was refusing to say "undefined" and saying "zero" instead.
 
-If you are unsure whether an analysis is affected, check its diagnostics for an
-`Imputed ... all-zero samples` healing entry. A run that contains one, under a relative,
-rarefy or clr transform, is affected.
+If you are unsure whether an analysis is affected, check its diagnostics for the
+recorded all-zero-sample healing and its `drop_policy`. Re-run `rarefy` analyses
+with a `Dropped ... all-zero samples` entry (`drop_policy=drop`), and re-run
+`none`, `relative`, `tss`, `css`, `rss`, `size_factors`, `presence_absence`, or
+`rarefy` analyses with an `Imputed ... all-zero samples` entry
+(`drop_policy=impute`). Successful pseudocount-based `clr` and `ilr` runs retain
+equal log-ratio values, as recorded in the affected method/policy combinations
+above.
 
 ## What deliberately did NOT change
 
