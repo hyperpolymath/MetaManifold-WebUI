@@ -159,31 +159,118 @@ end
 #
 # `using Statistics` in Execution.jl with Statistics missing from [deps] made
 # precompilation fail outright.
+#
+# The first version of this check had two false negatives, and `import Printf`
+# walked through both of them: it passed this gate locally and failed
+# precompilation in CI with "Package MetaManifold does not have Printf in its
+# dependencies" -- precisely the failure the check exists to prevent.
+#
+#   1. It exempted a list of "stdlibs that need no [deps] entry", Printf among
+#      them. There is no such class of name. A stdlib used by a package must be
+#      declared like any other dependency; only Base, Core and Main are bound
+#      without a declaration. Verified by experiment against every name the old
+#      list contained: each one fails with "does not have X in its dependencies"
+#      when undeclared.
+#   2. It matched one name per line, so `using JSON3, YAML` checked JSON3 and
+#      never looked at YAML.
+#
+# Both are fixed by parsing the statement rather than pattern-matching its text:
+# the AST has already resolved comma lists, relative imports and `using A: b, c`
+# selection, none of which need guessing at. `self_test_declared_deps` below
+# replays the exact input that defeated the old version, so a future rewrite that
+# reintroduces either blind spot fails the gate instead of silently passing it.
 # ---------------------------------------------------------------------------
-function check_declared_deps()
-    proj = read(joinpath(ROOT, "Project.toml"), String)
-    # `m` is required: without it `^` anchors to the whole string, not each line.
-    declared = Set(String[m.captures[1] for m in eachmatch(r"^([A-Za-z0-9_]+)\s*=\s*\""m, proj)])
+
+# Bound in every module without a declaration. This list is deliberately tiny,
+# and deliberately not a list of stdlibs: a stdlib is an ordinary dependency.
+const ALWAYS_BOUND = Set(["Base", "Core", "Main"])
+
+"""Root module of one `using`/`import` target, or `nothing` if it is relative."""
+function imported_root(x)::Union{Symbol,Nothing}
+    x isa Symbol && return x === :. ? nothing : x
+    x isa QuoteNode && return imported_root(x.value)
+    x isa Expr || return nothing
+    # `using A`, `using A.B`, `using A, B` -- first arg is the root, except for
+    # `using .A` / `using ..A`, which are relative and name no dependency.
+    x.head === :. && return isempty(x.args) ? nothing : imported_root(x.args[1])
+    x.head === :(:) && return imported_root(x.args[1])   # `using A: b, c`
+    return nothing
+end
+
+"""Package names `source` imports that `project_text` does not declare."""
+function undeclared_deps(project_text::AbstractString, source::AbstractString)::Vector{String}
+    declared = Set{String}(m.captures[1] for m in eachmatch(r"^([A-Za-z0-9_]+)\s*=\s*\""m, project_text))
     # A package refers to itself by name inside its own source; that is not a dep.
-    self_name = match(r"^name\s*=\s*\"([A-Za-z0-9_]+)\""m, proj)
+    self_name = match(r"^name\s*=\s*\"([A-Za-z0-9_]+)\""m, project_text)
     self_name !== nothing && push!(declared, self_name.captures[1])
-    # stdlibs that ship with Julia and need no [deps] entry
-    stdlib = Set(["Base", "Core", "Main", "Pkg", "Test", "UUIDs", "Dates", "Random",
-                  "Printf", "Logging", "Statistics", "SHA", "Downloads", "LinearAlgebra",
-                  "SparseArrays", "DelimitedFiles", "Sockets", "Markdown", "InteractiveUtils",
-                  "Serialization", "Distributed", "Libdl", "Profile", "SuiteSparse"])
-    for file in src_files()
-        for (i, line) in enumerate(eachline(file))
-            s = strip(line)
-            startswith(s, '#') && continue
-            for m in eachmatch(r"^\s*(?:using|import)\s+([A-Za-z0-9_]+)(?![.\w])", s)
-                pkg = m.captures[1]
-                pkg in stdlib && continue
-                pkg in declared && continue
-                note("undeclared-dependency", file, i,
-                     "`$pkg` is used but absent from Project.toml [deps]; precompilation will fail.")
+
+    found = String[]
+    function walk(node)
+        node isa Expr || return nothing
+        if node.head === :using || node.head === :import
+            for arg in node.args
+                root = imported_root(arg)
+                root === nothing && continue
+                name = String(root)
+                (name in declared || name in ALWAYS_BOUND || name in found) && continue
+                push!(found, name)
             end
         end
+        for a in node.args
+            walk(a)
+        end
+        return nothing
+    end
+    walk(Meta.parseall(source))
+    return found
+end
+
+function check_declared_deps()
+    project = read(joinpath(ROOT, "Project.toml"), String)
+    for file in src_files()
+        lines = readlines(file)
+        for pkg in undeclared_deps(project, read(file, String))
+            # Point at the statement, not at the top of the file.
+            ln = findfirst(l -> occursin(r"^\s*(?:using|import)\b", l) && occursin(pkg, l), lines)
+            note("undeclared-dependency", file, something(ln, 0),
+                 "`$pkg` is used but absent from Project.toml [deps]; precompilation will fail.")
+        end
+    end
+end
+
+# ---------------------------------------------------------------------------
+# Check 4b — check 4, tested against the input that defeated it.
+#
+# A gate that cannot fail is decoration. Each case below is a defect that
+# actually reached CI (the first two) or its inverse, which would be a false
+# positive and just as damaging to trust in the gate.
+# ---------------------------------------------------------------------------
+function self_test_declared_deps()
+    fixture = """
+    name = "Fixture"
+
+    [deps]
+    JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+    Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+    """
+    cases = [
+        # 1. The defect that motivated this rewrite: an undeclared STDLIB.
+        #    `import Printf` passed the old check and failed CI precompilation.
+        ("using JSON3\nimport Printf\n", ["Printf"], "an undeclared stdlib"),
+        # 2. The second name in a comma list -- never examined by the old check.
+        ("using JSON3, YAML\n", ["YAML"], "a name after the first in a using list"),
+        # 3. Inverses: none of these is a dependency.
+        ("using ..Sibling\nusing .Local\nusing Fixture: Thing\nusing Fixture.Child\n",
+         String[], "relative and self imports"),
+        # 4. A declared stdlib is fine, and must not be reported.
+        ("import Statistics\n", String[], "a declared stdlib"),
+    ]
+    for (source, expected, what) in cases
+        got = sort(undeclared_deps(fixture, source))
+        got == sort(expected) && continue
+        note("lint-self-test", joinpath("config", "ci", "lint_source.jl"), 0,
+             "the declared-dependency check is wrong about $what: expected $(sort(expected)), " *
+             "got $got. Fix the check before trusting it.")
     end
 end
 
@@ -343,6 +430,7 @@ for (name, f) in [("parse", check_parses),
                   ("escaped interpolation", check_escaped_interpolation),
                   ("adjacent docstrings", check_adjacent_docstrings),
                   ("declared dependencies", check_declared_deps),
+                  ("dependency check self-test", self_test_declared_deps),
                   ("test imports", check_test_imports)]
     n = length(failures)
     try
