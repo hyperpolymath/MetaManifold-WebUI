@@ -8,6 +8,19 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 implementation is held to this document, so it is written to be checked against rather
 than admired.
 
+**Status: implemented** in `src/analysis/exact_summaries.jl`. The conditions below were
+**not** amended to fit the code; where the two disagreed, the code changed. Doing so
+surfaced two defects in the layer underneath, which are fixed in the same change:
+`to_display` printed a rendering labelled *6dp* with eighty digits after it, and it wrote
+exact rationals as Julia's `2//3` — syntax leaking into text a person reads.
+
+**Evidence, as delivered** (in `test/unit/test_exact_summaries.jl`): hand-derived known
+answers; an independent reference compared value by value against Python's
+`fractions.Fraction` (skipping loudly by name if the runner has no `python3`); negative
+controls for the zero-total case, for a float claiming exactness, for a negative count and
+for a budget overrun; and a guard that the pipeline does not call this module, so
+"unchanged when the layer is not selected" is a checked property rather than a promise.
+
 ## What this method is
 
 Counts and proportions per sample — and per group when a grouping is supplied — carried at

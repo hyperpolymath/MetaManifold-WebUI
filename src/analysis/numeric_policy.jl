@@ -433,6 +433,34 @@ function to_storage(v::NumericValue)
     return x isa BigFloat ? string(x) : Float64(x)
 end
 
+# The rendering at `digits` places, computed in INTEGER arithmetic.
+#
+# The first version used BigFloat and a format string, which fixes the symptom -- a
+# label saying 6dp followed by eighty digits, because `round(x; digits)` keeps the
+# significand -- but adds a dependency to do it, and float arithmetic to render a value
+# whose whole point is that it is not a float. This version divides in integers: scaling
+# by 10^digits and rounding half away from zero cannot lose the value, works for numbers
+# far beyond Float64, and needs nothing outside Base.
+function _rounded_scaled(num::Integer, den::Integer, scale::Integer)
+    n = big(num) * scale
+    q, r = divrem(n, den)
+    if 2 * abs(r) >= abs(den)
+        q += sign(n) * sign(den)     # half away from zero, in both directions
+    end
+    return q
+end
+
+function _rendered_decimal(x::Rational, digits::Integer)
+    sign_str = numerator(x) < 0 ? "-" : ""
+    if digits == 0
+        return string(sign_str, _rounded_scaled(abs(numerator(x)), denominator(x), big(1)))
+    end
+    scale = big(10)^digits
+    scaled = _rounded_scaled(abs(numerator(x)), denominator(x), scale)
+    whole, frac = divrem(abs(scaled), scale)
+    return string(sign_str, whole, ".", lpad(string(frac), digits, "0"))
+end
+
 """
     to_display(v::NumericValue; digits=6) -> String
 
@@ -444,10 +472,14 @@ before it arrives.
 function to_display(v::NumericValue; digits::Integer = 6)
     digits >= 0 || throw(ArgumentError("digits must not be negative, got $digits"))
     if v.kind === EXACT
+        # An exact rational renders as "2/3", not Julia's "2//3": the double slash is
+        # syntax leaking into something a person reads, and it also means the fraction
+        # shown is not the fraction that may be copied out. to_storage already writes
+        # numerator/denominator, so display and storage now agree on the form.
         return v.value isa Integer ? string(v.value) :
-               string(v.value, " (exact; ", digits, "dp = ",
-                      round(BigFloat(numerator(v.value)) / BigFloat(denominator(v.value));
-                            digits = digits), ")")
+               string(numerator(v.value), "/", denominator(v.value),
+                      " (exact; ", digits, "dp = ",
+                      _rendered_decimal(v.value, digits), ")")
     end
     kept = v.kind === ROUNDED && !isnothing(v.digits) ? v.digits : Int(digits)
     return string(round(v.value; digits = kept), " (", v.kind, ", ", kept, "dp)")
