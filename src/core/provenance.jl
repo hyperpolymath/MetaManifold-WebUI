@@ -33,6 +33,7 @@ using ..RRuntime: with_r_lock
 
 export ProbeFailure, DatabaseReleaseMismatch,
        ToolProbe, TOOL_PROBES, ToolRecord, JuliaRecord, RRecord,
+       RProbeStatus, r_probe_ok, r_probe_status, classify_r_probe_failure,
        DatabaseFormatSpec, DatabaseFormatRecord, DatabaseRecord,
        CapturedEnvironment, Attestation,
        probe_tool, probe_julia, probe_r, probe_database, probe_host, probe_metamanifold,
@@ -50,7 +51,17 @@ const SCHEMA_VERSION = 1
 struct ProbeFailure <: Exception
     component :: String
     reason    :: String
+    # Names carried separately from `reason` so a caller can act on WHICH packages
+    # were absent instead of matching text. Empty for every probe that does not ask
+    # about packages at all, and for failures that are not about packages: a
+    # component can be unreachable for reasons that have nothing to do with what is
+    # installed. `missing_packages` is what makes "R is not installed" and "R is
+    # installed, dada2 is not" two different answers (#43) rather than one message.
+    missing_packages :: Vector{String}
 end
+
+ProbeFailure(component::AbstractString, reason::AbstractString) =
+    ProbeFailure(String(component), String(reason), String[])
 
 Base.showerror(io::IO, e::ProbeFailure) = print(io,
     "provenance: could not prove '$(e.component)': $(e.reason)")
@@ -331,20 +342,105 @@ function probe_r(; packages::AbstractVector{<:AbstractString} = R_PACKAGES,
         with_r_lock(; timeout) do
             r_version = RCall.rcopy(String, RCall.reval("R.version.string"))
             found = OrderedDict{String,String}()
+            missing = String[]
             for pkg in packages
                 raw = RCall.rcopy(RCall.reval(r_version_query(pkg)))
-                raw isa AbstractString || throw(ProbeFailure("r",
-                    "package '$pkg' is not installed in the R library in use"))
-                found[String(pkg)] = String(raw)
+                # `NA_character_` rather than an exception is how r_version_query
+                # reports a package DESCRIPTION cannot be read. Collect and carry on:
+                # a caller told that one package is absent fixes one package, and a
+                # checkout missing four reports four (#43).
+                if raw isa AbstractString
+                    found[String(pkg)] = String(raw)
+                else
+                    push!(missing, String(pkg))
+                end
             end
+            isempty(missing) || throw(ProbeFailure("r",
+                "R is reachable but these required packages are not installed: " *
+                join(missing, ", "), missing))
             (r_version, found)
         end
     catch err
         err isa ProbeFailure && rethrow()
+        # R itself is the component that could not be proved here, so nothing is
+        # claimed about packages: the interpreter never answered the question.
         throw(ProbeFailure("r", sprint(showerror, err)))
     end
 
     return RRecord(version, file_sha256(renv_lock), versions)
+end
+
+"""
+    RProbeStatus
+
+What an R probe found, as a status rather than as a value or an exception.
+
+The question a provenance guard has to answer is not "is R installed" but "may I
+read an R record". Those differ whenever the interpreter answers and the packages
+do not, which is every bare checkout: the guard used to probe with an empty
+package list, its consumer probed `R_PACKAGES`, and so the guard reported ready
+exactly where the consumer could only throw (#43). One probe, one answer, one
+place to read it from.
+
+`status` is `:ok` only when `record` may be used. The other three are distinct
+because they need different fixes: `:no_lockfile` is a broken checkout,
+`:r_unreachable` is a missing toolchain, `:packages_missing` is a half-restored
+renv library. `missing` names the packages in the third case and is empty
+otherwise.
+"""
+struct RProbeStatus
+    status  :: Symbol
+    record  :: Union{RRecord,Nothing}
+    missing :: Vector{String}
+    reason  :: String
+end
+
+"""
+    r_probe_ok(s::RProbeStatus) -> Bool
+
+Whether `s` holds an R record that may be read. False means no R record exists, so
+neither the version nor any package version may be presented as a fact.
+"""
+r_probe_ok(s::RProbeStatus) = s.status === :ok
+
+"""
+    classify_r_probe_failure(err::ProbeFailure) -> RProbeStatus
+
+The status a failed R probe deserves. Pure: no R, no filesystem, no I/O.
+
+Kept separate from `r_probe_status` so that "R is unreachable" and "R is reachable
+but the packages are absent" can be told apart by a test on a machine that has no
+R at all (#43, where the whole point is that these carry different messages to
+whoever is reading a skip).
+"""
+classify_r_probe_failure(err::ProbeFailure) =
+    isempty(err.missing_packages) ?
+        RProbeStatus(:r_unreachable, nothing, String[], err.reason) :
+        RProbeStatus(:packages_missing, nothing, copy(err.missing_packages), err.reason)
+
+"""
+    r_probe_status(; packages=R_PACKAGES, renv_lock, timeout=60) -> RProbeStatus
+
+Probe R once and report the outcome as a status.
+
+`packages` defaults to `R_PACKAGES` and callers should leave it alone: a readiness
+check that narrows the list asks a different question from the record it is
+standing in front of, which is the defect #43 records.
+"""
+function r_probe_status(; packages::AbstractVector{<:AbstractString} = R_PACKAGES,
+                          renv_lock::AbstractString = joinpath(repo_root(), "renv.lock"),
+                          timeout::Union{Real,Nothing} = 60)
+    # Mirrors probe_r's own guard rather than string-matching its message: a missing
+    # lockfile is this checkout's problem, and reporting it as an unreachable R would
+    # send whoever reads it to install a toolchain they already have.
+    isfile(renv_lock) ||
+        return RProbeStatus(:no_lockfile, nothing, String[], "no renv.lock at $renv_lock")
+    try
+        return RProbeStatus(:ok, probe_r(; packages, renv_lock, timeout), String[], "")
+    catch err
+        err isa ProbeFailure || rethrow()
+        return classify_r_probe_failure(err)
+    end
 end
 
 ## Reference databases
