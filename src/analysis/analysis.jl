@@ -15,6 +15,7 @@ export sample_columns, filtered_counts, filtered_df, taxonomy_levels, taxon_colu
        alpha_chart, bar_chart, taxa_bar_chart, pipeline_stats_chart,
        alpha_boxplot, nmds_chart,
        run_nmds, run_permanova, r_available,
+       AlphaSignificance, was_computed,
        venn_taxa_present
 
 ## DuckDB query helpers for analysis
@@ -561,7 +562,43 @@ function _paired_metric_map(sample_ids::Vector{String}, values::Vector{Float64})
     Dict(k => sum(v) / length(v) for (k, v) in buckets)
 end
 
-_no_significance() = (nothing, DataFrame(group1=String[], group2=String[], p=Float64[]))
+## Why a significance result carries a status rather than only a p-value
+#
+# "The test did not run" and "the test ran and found nothing" are different
+# scientific claims, and the shape this once returned - `(nothing, empty
+# DataFrame)` - could not tell them apart. Five distinct conditions collapsed onto
+# that single value: the R runtime being held by a pipeline, R/vegan being absent,
+# there being no common sample IDs to pair, the statistic itself erroring to
+# `NA_real_`, and a genuine result in which no pair reached significance. Only the
+# last is a finding. Rendering any of the other four the way a null result is
+# rendered publishes a negative result that was never computed.
+#
+# `status` is therefore the primary field and the p-value is subordinate to it:
+# `:computed` is the only status under which these numbers may be read as
+# evidence. `reason` carries the wording shown to whoever is looking at the chart.
+struct AlphaSignificance
+    status   :: Symbol
+    omnibus  :: Union{Float64,Nothing}
+    pairwise :: DataFrame
+    reason   :: String
+end
+
+_empty_pairwise() = DataFrame(group1=String[], group2=String[], p=Float64[])
+
+_computed(omnibus::Union{Float64,Nothing}, pairwise::DataFrame) =
+    AlphaSignificance(:computed, omnibus, pairwise, "")
+
+_not_computed(status::Symbol, reason::AbstractString;
+              pairwise::DataFrame=_empty_pairwise()) =
+    AlphaSignificance(status, nothing, pairwise, String(reason))
+
+"""
+    was_computed(r::AlphaSignificance) -> Bool
+
+Whether `r` holds an actual test result. False means no test was performed, so
+neither `omnibus` nor `pairwise` may be presented as a finding.
+"""
+was_computed(r::AlphaSignificance) = r.status === :computed
 
 # A boxplot is worth drawing even without its significance annotations, so when a
 # pipeline run is holding the R runtime we degrade to an unannotated chart rather
@@ -572,13 +609,26 @@ function _alpha_significance(values::Vector{Float64},
                              pairwise::Bool=false,
                              paired_samples::Bool=false)
     try
-        _ensure_r() || return _no_significance()
+        _ensure_r() || return _not_computed(:r_unavailable,
+            "R/vegan is not available, so no significance test was performed")
         _alpha_significance_r(values, labels, sample_ids; pairwise, paired_samples)
     catch e
         e isa RBusyError || rethrow()
         @warn "Alpha significance skipped: the R runtime is busy with a pipeline run"
-        _no_significance()
+        _not_computed(:r_busy,
+            "the R runtime was busy with a pipeline run, so no significance test was performed")
     end
+end
+
+"""
+    _significance_caption(r, test_label) -> String
+
+The omnibus caption drawn on a panel. When the test did not run this says so in
+words rather than printing "n/a" beside a test name, which reads as a result.
+"""
+function _significance_caption(r::AlphaSignificance, test_label::AbstractString)
+    was_computed(r) || return "$test_label not run<br>$(r.reason)"
+    "$test_label $(_significance_stars(r.omnibus))<br>$(_format_p_value(r.omnibus))"
 end
 
 function _alpha_significance_r(values::Vector{Float64},
@@ -594,7 +644,8 @@ function _alpha_significance_r(values::Vector{Float64},
                 [values[i] for i in eachindex(labels) if labels[i] == label],
             ) for label in groups_u)
             common_ids = reduce(intersect, [Set(keys(m)) for m in Base.values(paired_maps)])
-            isempty(common_ids) && return nothing, DataFrame(group1=String[], group2=String[], p=Float64[])
+            isempty(common_ids) && return _not_computed(:no_paired_samples,
+                "the groups share no sample IDs, so no paired test could be performed")
             common = sort(collect(common_ids))
 
             RCall.globalEnv[:paired_groups] = groups_u
@@ -666,8 +717,16 @@ function _alpha_significance_r(values::Vector{Float64},
             pairwise_df = DataFrame(RCall.rcopy(RCall.reval("pairwise_df")))
             RCall.reval("rm(values, groups, do_pairwise, groups_f, overall_p, pairwise_df); gc()")
         end
-        overall_p = ismissing(p_value) ? nothing : Float64(p_value)
-        overall_p, pairwise_df
+        # R returns `NA_real_` from its own `tryCatch` when the statistic cannot be
+        # computed at all (a degenerate group, say). That is a failed test, not a
+        # non-significant one, so it keeps whatever pairwise rows did come back but
+        # never claims an omnibus result.
+        if ismissing(p_value)
+            return _not_computed(:test_failed,
+                "the omnibus statistic could not be computed for these groups";
+                pairwise=pairwise_df)
+        end
+        _computed(Float64(p_value), pairwise_df)
     end
 end
 
@@ -677,7 +736,22 @@ function _add_pairwise_annotations!(layout::Dict{String,Any},
                                     yaxis_layout_key::String,
                                     group_labels::Vector{String},
                                     values_by_label::Dict{String, Vector{Float64}},
-                                    pairwise_df::DataFrame)
+                                    significance::AlphaSignificance)
+    # Drawing no brackets is how "no pair reached significance" looks, so a test
+    # that never ran must say so instead of borrowing that appearance.
+    if !was_computed(significance)
+        annotations = get!(layout, "annotations", Any[])
+        push!(annotations, Dict{String,Any}(
+            "xref" => "$xaxis_key domain", "yref" => "$yaxis_ref domain",
+            "x" => 0.5, "y" => 1.0,
+            "xanchor" => "center", "yanchor" => "bottom",
+            "text" => "Pairwise tests not run - $(significance.reason)",
+            "showarrow" => false,
+            "font" => Dict("size" => 10, "color" => "#b45309"),
+        ))
+        return
+    end
+    pairwise_df = significance.pairwise
     nrow(pairwise_df) == 0 && return
 
     all_vals = reduce(vcat, values(values_by_label); init=Float64[])
@@ -745,7 +819,7 @@ function alpha_boxplot(groups::Vector{Tuple{String, Vector{String}, Vector{Int},
     ]
     traces = Any[]
     panel_annotations = Dict{Int, Vector{Dict{String,Any}}}()
-    panel_pairwise = Dict{Int, DataFrame}()
+    panel_pairwise = Dict{Int, AlphaSignificance}()
     for (pi, (yax, xax, _, _, _, panel_idx)) in enumerate(panels)
         panel_labels = String[]
         panel_values = Float64[]
@@ -786,9 +860,9 @@ function alpha_boxplot(groups::Vector{Tuple{String, Vector{String}, Vector{Int},
         end
         if length(unique(panel_labels)) >= 2 && significance_test == "kruskal_wallis"
             need_pairwise = pairwise_brackets
-            p_value, pairwise_df = _alpha_significance(panel_values, panel_labels, panel_sample_ids;
-                                                       pairwise=need_pairwise,
-                                                       paired_samples=paired_samples)
+            significance = _alpha_significance(panel_values, panel_labels, panel_sample_ids;
+                                               pairwise=need_pairwise,
+                                               paired_samples=paired_samples)
             if annotate_significance
             anns = get!(panel_annotations, panel_idx, Dict{String,Any}[])
             # Anchor to this panel's axis domain, not paper: a paper-referenced
@@ -798,12 +872,13 @@ function alpha_boxplot(groups::Vector{Tuple{String, Vector{String}, Vector{Int},
                 "xref" => "$xax domain", "yref" => "$yax domain",
                 "x" => 0.98, "y" => 0.98,
                 "xanchor" => "right", "yanchor" => "top",
-                "text" => "$(paired_samples ? (length(unique(panel_labels)) == 2 ? "Paired Wilcoxon" : "Friedman") : "KW") $(_significance_stars(p_value))<br>$(_format_p_value(p_value))",
+                "text" => _significance_caption(significance,
+                    paired_samples ? (length(unique(panel_labels)) == 2 ? "Paired Wilcoxon" : "Friedman") : "KW"),
                 "showarrow" => false,
                 "align" => "right",
             ))
             end
-            pairwise_brackets && (panel_pairwise[panel_idx] = pairwise_df)
+            pairwise_brackets && (panel_pairwise[panel_idx] = significance)
         end
     end
     layout = Dict{String,Any}(
