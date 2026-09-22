@@ -13,9 +13,14 @@ interface Props {
 // Native <dialog> opened with showModal() (#32). The browser supplies what the
 // old presentational backdrop div hand-rolled badly or not at all: the dialog
 // role, aria-modal, a focus trap, Escape-to-cancel, and focus restoration to
-// the invoking control on close. Every dismissal routes through dialog.close()
-// so the `close` event -- and therefore onClose -- fires exactly once whether
-// the user pressed Escape, clicked the backdrop, or used Cancel.
+// the invoking control on close.
+//
+// Backdrop-click-to-dismiss is dropped deliberately, not lost (#32, criterion
+// 6): these are FORM dialogs, and discarding typed input on a stray click
+// outside the panel is hostile. Escape and Cancel stay as the dismissals, and
+// both are keyboard-reachable. Dropping the click handler is also the only
+// way to hold SonarCloud S1082/S6819 at zero on these files — the issue's own
+// history is one rule's cure minting the other rule's finding.
 export function NameDialog({ title, initialValue = '', placeholder = 'Name', onConfirm, onClose }: Props) {
   const [value, setValue] = useState(initialValue)
   const [error, setError] = useState('')
@@ -56,7 +61,6 @@ export function NameDialog({ title, initialValue = '', placeholder = 'Name', onC
       className="mm-modal"
       aria-label={title}
       onClose={onClose}
-      onClick={event => { if (event.target === dialogRef.current) dismiss() }}
     >
       <div style={{
         background: 'var(--color-bg)',

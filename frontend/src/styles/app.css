@@ -285,31 +285,21 @@ a:hover  { text-decoration: underline; }
    Escape-to-cancel for free -- the behaviour the old presentational backdrop
    divs hand-rolled badly or not at all.
 
-   The dialog itself is stretched to fill the viewport with a transparent
-   background so the click target OUTSIDE the visible panel IS the dialog
-   element: the backdrop-click-to-dismiss handler tests
-   `event.target === dialog`, and the visible chrome stays on the inner panel.
-   The dimmed overlay moves to the ::backdrop pseudo-element, which replaces
-   the hand-painted rgba(0,0,0,.45) the old fixed divs carried.
+   The UA default border and padding are reset and `margin: auto` keeps the
+   user agent's centreing; the dimmed overlay lives on the ::backdrop
+   pseudo-element, which replaces the hand-painted rgba(0,0,0,.45) the old
+   fixed divs carried. Backdrop-click-to-dismiss is deliberately NOT provided:
+   these are form dialogs, Escape and Cancel are the dismissals, and a click
+   handler here would only re-mint the SonarCloud S1082 finding (#32).
 
    The user agent's closed-state rule `dialog:not([open]) { display: none }`
-   outranks this class, so the flex centre applies only while the dialog is
-   open. The UA default margin, border and padding are reset so the panel
-   renders exactly as the old hand-rolled overlays did. */
+   outranks any author display rule, so nothing extra is needed to hide a
+   closed dialog. */
 .mm-modal {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-  margin: 0;
+  margin: auto;
   padding: 0;
   border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: var(--color-bg);
 }
 
 .mm-modal::backdrop {
