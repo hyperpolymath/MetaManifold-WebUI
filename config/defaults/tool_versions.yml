@@ -66,14 +66,29 @@ tools:
     version: "1.33"
     source: pypi
 
-  # Babraham publish no release API, so the URL is constructed from the version
-  # and cannot be discovered. Bump both together.
+  # Babraham publish no release API, and no GitHub release assets either -- all six
+  # of their GitHub releases carry none -- so upstream the URL is constructed from
+  # the version and cannot be discovered. Because of that, and only because of that,
+  # the archive is VENDORED: see docs/compliance/vendored-archives.md.
+  #
+  # MEASURED 2026-09-22: CI went red on a commit that touched nothing near FastQC
+  # because www.bioinformatics.babraham.ac.uk served an expired TLS certificate.
+  # With no upstream release asset to fall back on, the pin could only point at that
+  # one host, so a third party's certificate renewal was able to stop our builds.
+  #
+  # The vendored asset is the SAME BYTE-FOR-BYTE ARTEFACT: the sha256 below is
+  # unchanged from the upstream pin, and it was established while upstream was
+  # healthy. Integrity comes from that checksum -- the retrieval itself used
+  # `curl --insecure` (recorded in the release notes) because upstream's certificate
+  # was already invalid when the file was captured. Nothing changed but who serves it.
+  #
+  # Bump the version, the URL and the checksum together.
   fastqc:
     version: "0.12.1"
     source: archive
     archives:
       any:
-        url: "https://www.bioinformatics.babraham.ac.uk/projects/fastqc/fastqc_v0.12.1.zip"
+        url: "https://github.com/hyperpolymath/MetaManifold-WebUI/releases/download/vendored/fastqc-v0.12.1/fastqc_v0.12.1.zip"
         sha256: "5f4dba8780231a25a6b8e11ab2c238601920c9704caa5458d9de559575d58aa7"
 
   # No precompiled cd-hit binary is published for Linux, so the installer prefers
