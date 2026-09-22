@@ -457,31 +457,102 @@ canned(out::String, err::String = "", code::Int = 0) =
             end
         end
 
-        r_ready = try
-            PV.probe_r(; packages = String[], timeout = 30)
-            true
-        catch err
-            @info "Provenance: skipping live R probe" reason=sprint(showerror, err)
-            false
-        end
+        ## The R probe (#43). ONE probe answers both questions -- is R reachable, and are
+        # the packages the pipeline requires installed -- and its record is reused
+        # rather than asked for twice. Asking twice was the defect: the guard probed an
+        # empty package list, its consumer probed the four in R_PACKAGES, so on a
+        # checkout with R and no packages the guard said "ready" and the consumer threw
+        # outside any try, erroring the testset before its first @test.
+        r_status = PV.r_probe_status(; timeout = 120)
 
-        if r_ready
-            record = PV.probe_r(; timeout = 120)
-            @test occursin("R version", record.version)
+        if PV.r_probe_ok(r_status)
+            @testset "r" begin
+                record = r_status.record
 
-            ## The bug this exists to prevent. renv.lock is the pin and DESCRIPTION is
-            # what is loaded; they agree, and both keep R's major.minor-patch
-            # convention that packageVersion() would flatten. vegan is the witness:
-            # 2.7-3, never 2.7.3.
-            lock = read(joinpath(@__DIR__, "..", "..", "renv.lock"), String)
-            for (pkg, version) in record.packages
-                @test occursin("\"$pkg\"", lock)
-                @test occursin("\"Version\": \"$version\"", lock)
+                # The invariant the split guard could not state: the record the suite
+                # asserts on covers every package the pipeline requires. A narrowed
+                # probe cannot produce a record that satisfies this.
+                @test collect(keys(record.packages)) == PV.R_PACKAGES
+
+                @test occursin("R version", record.version)
+
+                ## The bug this exists to prevent. renv.lock is the pin and DESCRIPTION
+                # is what is loaded; they agree, and both keep R's major.minor-patch
+                # convention that packageVersion() would flatten. vegan is the witness:
+                # 2.7-3, never 2.7.3.
+                lock = read(joinpath(@__DIR__, "..", "..", "renv.lock"), String)
+                for (pkg, version) in record.packages
+                    @test occursin("\"$pkg\"", lock)
+                    @test occursin("\"Version\": \"$version\"", lock)
+                end
+                if haskey(record.packages, "vegan")
+                    @test occursin('-', record.packages["vegan"])
+                end
             end
-            if haskey(record.packages, "vegan")
-                @test occursin('-', record.packages["vegan"])
+        else
+            ## Loud, named, and broken rather than passed. The testset title carries
+            # which world this is and what was missing, so the summary reads
+            # "packages_missing: dada2, Biostrings, ShortRead, vegan" instead of
+            # airing an @info that scrolls past (#43 criteria 2 and 3).
+            @testset "r — not probed ($(r_status.status)): $(r_status.reason)" begin
+                # ci.yml installs R and restores all 79 packages from renv.lock, so on
+                # CI a skip here is a provisioning regression, not a bare checkout. The
+                # failure names the missing packages via this testset's title.
+                if get(ENV, "CI", "false") == "true"
+                    @test r_status.status === :ok
+                end
+                @test_skip PV.probe_r()
             end
         end
+    end
+
+    ## One probe, not two that can drift (#43, criterion 1). This is a source check
+    # because the machine it has to hold on is the machine with no R: a skipped
+    # assertion asserts nothing, and the regression it guards against is a second
+    # call site, which a runtime check can only observe on a box that has R.
+    @testset "the R guard and the record it guards are one probe" begin
+        source = read(joinpath(@__DIR__, "test_provenance.jl"), String)
+        # Built by concatenation on purpose: written whole, this assertion's own
+        # source would contain the pattern it forbids and fail on itself.
+        narrowed = "packages = " * "String[]"
+        @test !occursin(narrowed, source)
+        @test occursin("PV.r_probe_status(", source)
+    end
+
+    ## The negative control (#43, criterion 4): "R is not reachable" and "R is
+    # reachable but the packages are absent" are different worlds with different
+    # fixes, and the suite must say which one it is looking at. Pure, so it runs
+    # wherever the suite runs -- including everywhere the live probe above skips.
+    @testset "an unreachable R is told apart from a missing package" begin
+        unreachable = PV.ProbeFailure("r", "RCall: could not find R")
+        absent_pkgs = PV.ProbeFailure("r",
+            "R is reachable but these required packages are not installed: dada2, vegan",
+            ["dada2", "vegan"])
+
+        unreachable_status = PV.classify_r_probe_failure(unreachable)
+        @test unreachable_status.status === :r_unreachable
+        @test isempty(unreachable_status.missing)
+        @test !PV.r_probe_ok(unreachable_status)
+        @test occursin("could not find R", unreachable_status.reason)
+
+        absent_status = PV.classify_r_probe_failure(absent_pkgs)
+        @test absent_status.status === :packages_missing
+        @test absent_status.missing == ["dada2", "vegan"]
+        @test !PV.r_probe_ok(absent_status)
+        # Distinguishable means distinguishable in the text a human reads, not only
+        # in a symbol a programmer compares.
+        @test !occursin("could not find R", absent_status.reason)
+        @test occursin("dada2", absent_status.reason)
+        @test absent_status.reason != unreachable_status.reason
+
+        # And the third world, which needs no R at all: a probe is answered about the
+        # checkout before it is answered about the interpreter, so a missing pin file
+        # is reported as a missing pin file rather than as an unreachable R.
+        no_lock = PV.r_probe_status(renv_lock = "/nonexistent/renv.lock")
+        @test no_lock.status === :no_lockfile
+        @test !PV.r_probe_ok(no_lock)
+        @test isempty(no_lock.missing)
+        @test occursin("no renv.lock", no_lock.reason)
     end
 
 end
