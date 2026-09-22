@@ -93,6 +93,33 @@ end
         end
     end
 
+    @testset "the FastQC archive is vendored, and stays vendored" begin
+        # Guarded as a decision rather than described as a fact, because the failure
+        # mode is silent: a URL that quietly points back at a third party still
+        # downloads, still verifies against the checksum, and gives no sign that CI is
+        # once again dependent on someone else's certificate renewal.
+        #
+        # MEASURED 2026-09-22: CI went red on a commit that touched nothing near FastQC
+        # because www.bioinformatics.babraham.ac.uk served an expired TLS certificate.
+        # FastQC publishes no release assets upstream -- all six of its GitHub releases
+        # carry none -- so the pin had nowhere else to point. The archive is now served
+        # from this repository's own releases (see docs/compliance/vendored-archives.md):
+        # the same bytes, kept against the checksum that was already pinned, so only the
+        # serving host changed.
+        #
+        # Repointing this at a third-party host again is a decision somebody should make
+        # deliberately, so it fails here by name instead of drifting back in silence.
+        fastqc_url = pins["tools"]["fastqc"]["archives"]["any"]["url"]
+        @test startswith(fastqc_url,
+                         "https://github.com/hyperpolymath/MetaManifold-WebUI/releases/download/")
+        @test !occursin("babraham.ac.uk", fastqc_url)
+
+        # The vendored copy is only defensible while it is provably the upstream
+        # artefact. This is that checksum, unchanged from the original upstream pin.
+        @test pins["tools"]["fastqc"]["archives"]["any"]["sha256"] ==
+              "5f4dba8780231a25a6b8e11ab2c238601920c9704caa5458d9de559575d58aa7"
+    end
+
     @testset "install.jl holds no versions of its own" begin
         src = read(INSTALL_JL, String)
 
