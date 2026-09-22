@@ -88,15 +88,88 @@ const RR = MetaManifold.RRuntime
         previous = MetaManifold.Analysis.R_WAIT_SECONDS[]
         MetaManifold.Analysis.R_WAIT_SECONDS[] = 0.1
         try
-            p, pairs = MetaManifold.Analysis._alpha_significance(
+            result = MetaManifold.Analysis._alpha_significance(
                 [1.0, 2.0, 3.0, 4.0], ["a", "a", "b", "b"], ["s1", "s2", "s3", "s4"])
-            @test isnothing(p)
-            @test nrow(pairs) == 0
+
+            # Degrading rather than throwing is still the wanted behaviour: the
+            # boxplot is worth drawing without its annotation.
+            @test result isa MetaManifold.Analysis.AlphaSignificance
+            @test nrow(result.pairwise) == 0
+            @test isnothing(result.omnibus)
+
+            # But it must not be mistakable for a test that ran.
+            @test !MetaManifold.Analysis.was_computed(result)
+            @test result.status === :r_busy
+            @test !isempty(result.reason)
+
+            ## The assertion issue #31 exists for.
+            # A test that never ran must not compare equal to a test that ran and
+            # found nothing. Until this change both were `(nothing, 0-row
+            # DataFrame)`, so this assertion could not be written at all - and the
+            # test that stood here asserted exactly the ambiguous shape, which is
+            # why the defect survived review.
+            genuine_null = MetaManifold.Analysis._computed(
+                0.87, MetaManifold.Analysis._empty_pairwise())
+            @test MetaManifold.Analysis.was_computed(genuine_null)
+            @test result.status !== genuine_null.status
+            @test result != genuine_null
         finally
             MetaManifold.Analysis.R_WAIT_SECONDS[] = previous
             put!(release, true)
         end
         @test fetch(holder) == :done
+    end
+
+    ## Issue #31 criterion 3: the surface must say the test was not run.
+    # Drawing nothing is how "no pair reached significance" looks. A run that was
+    # never performed must therefore add something to the chart, not stay silent
+    # and borrow that appearance.
+    @testset "a chart states that pairwise tests were not run" begin
+        AN = MetaManifold.Analysis
+        groups = ["a", "b"]
+        vals   = Dict("a" => [1.0, 2.0, 3.0], "b" => [4.0, 5.0, 6.0])
+
+        not_run = AN._not_computed(:r_busy, "the R runtime was busy with a pipeline run")
+        layout_not_run = Dict{String,Any}()
+        AN._add_pairwise_annotations!(layout_not_run, "x", "y", "yaxis",
+                                      groups, vals, not_run)
+        notices = [a for a in get(layout_not_run, "annotations", Any[])
+                   if occursin("not run", String(a["text"]))]
+        @test length(notices) == 1
+        @test occursin("busy", String(notices[1]["text"]))
+
+        ## The positive control that makes the assertion above mean something.
+        # A genuine result in which no pair reached significance must NOT gain the
+        # notice, or the notice would be noise rather than a signal.
+        genuine_null = AN._computed(0.87, AN._empty_pairwise())
+        layout_null = Dict{String,Any}()
+        AN._add_pairwise_annotations!(layout_null, "x", "y", "yaxis",
+                                      groups, vals, genuine_null)
+        @test isempty([a for a in get(layout_null, "annotations", Any[])
+                       if occursin("not run", String(a["text"]))])
+    end
+
+    ## Each reason gets its own wording, because they call for different actions:
+    # a busy runtime is transient and worth retrying, an absent one is a
+    # deployment fault, and unpairable groups are a property of the data.
+    @testset "the caption distinguishes the reasons a test did not run" begin
+        AN = MetaManifold.Analysis
+        busy    = AN._not_computed(:r_busy, "the R runtime was busy with a pipeline run")
+        absent  = AN._not_computed(:r_unavailable, "R/vegan is not available")
+        unpaired = AN._not_computed(:no_paired_samples, "the groups share no sample IDs")
+
+        for r in (busy, absent, unpaired)
+            @test occursin("not run", AN._significance_caption(r, "KW"))
+            @test !occursin("n/a", AN._significance_caption(r, "KW"))
+        end
+        @test AN._significance_caption(busy, "KW") != AN._significance_caption(absent, "KW")
+        @test AN._significance_caption(absent, "KW") != AN._significance_caption(unpaired, "KW")
+
+        # A computed result still reads as a result.
+        computed = AN._computed(0.02, AN._empty_pairwise())
+        caption  = AN._significance_caption(computed, "KW")
+        @test occursin("p = 0.02", caption)
+        @test !occursin("not run", caption)
     end
 
 end
