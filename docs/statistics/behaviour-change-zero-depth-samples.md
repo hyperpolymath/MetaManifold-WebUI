@@ -35,19 +35,21 @@ face, and no downstream check can catch it, because `0.0` is an ordinary number.
 
 ## Who is affected
 
-**Only runs whose input contains a zero-depth sample, and only under
-`drop_policy=impute`.** The matrix below is the whole of it:
+Runs whose input contains a zero-depth sample can have different prepared
+results when healing moves before the transform:
 
 | `drop_policy` | Behaviour before | Behaviour now |
 | --- | --- | --- |
-| `drop` | sample dropped (after the damage was computed) | sample dropped (before) — **same visible result** |
+| `drop` | `rarefy` included the zero-depth sample, so retained columns were scaled to zero before the sample was dropped | sample dropped before `rarefy` — **prepared result changes for `rarefy`** |
 | `refuse` | refused | refused, earlier — **same refusal** |
-| `impute` | counts imputed to `epsilon`, but `prepared` kept a column of `0.0` | counts imputed, transform sees the imputed counts — **relative abundances are now uniform** |
+| `impute` | counts were transformed before healing, so `prepared` could retain values for the unhealed zero-depth column | counts imputed, transform sees the imputed counts — **prepared output can change** |
 
-So a saved analysis is affected if, and only if, **all** of the following hold: it used
-`normalization.method` of `relative`, `rarefy`, or `clr`, its input contained at least
-one sample whose counts were all zero, and its `drop_policy` was `impute`. Analyses whose
-inputs had no zero-depth sample are unchanged — the healing step returns immediately when
+For a zero-depth input, `drop_policy=impute` can change prepared output for
+`none`, `relative`, `tss`, `css`, `rss`, `size_factors`, `presence_absence`, or
+`rarefy`. `drop_policy=drop` changes prepared output for `rarefy`. Successful
+`clr` and `ilr` runs using pseudocount replacement retain equal log-ratio values
+for the zero-depth column. Analyses whose inputs had no zero-depth sample are
+unchanged — the healing step returns immediately when
 there is nothing to heal.
 
 ## What to do
