@@ -903,6 +903,55 @@ function prepare_analysis_table(
     effective_pseudocount = config.normalization.method in ("clr", "ilr") ? pseudocount : adv_pseudocount
     effective_epsilon = epsilon # could also use adv_epsilon, but use normalization epsilon for now
 
+    # ----------------------------------------------------------------------
+    # All-zero SAMPLES are healed here — before the transform, not after
+    # ----------------------------------------------------------------------
+    # This was the defect. Healing used to run after the transform, so `prepared`
+    # was computed from counts that still contained zero-depth samples, and every
+    # transform below divides by a sample total:
+    #
+    #   * relative  wrote `0.0` into each feature — the statement "this feature's
+    #               relative abundance is exactly 0" about a sample whose relative
+    #               abundances do not exist at all. 0/0 is undefined; 0 is a value.
+    #   * rarefy    took `min_lib = minimum(lib_sizes)`, which is 0 when any sample
+    #               is empty, and then scaled EVERY sample by 0/lib — emptying the
+    #               whole prepared table while reporting success.
+    #   * clr       took log(0) = -Inf, which centring turns into NaN, which the
+    #               NaN/Inf healing later replaced with epsilon: a wrong number
+    #               presented as a healed one.
+    #
+    # Healing afterwards could not repair any of this. Under drop_policy=drop the
+    # affected columns were discarded, but only after the damage was computed;
+    # under drop_policy=impute the imputed counts were assigned while `prepared`
+    # kept the values computed from the empty column, so `prepared` and
+    # `filtered_counts` described different data — the exact inconsistency a
+    # pipeline must never have.
+    #
+    # Healing first removes the class rather than the instance: past this point no
+    # zero-depth column can reach a transform, under any policy.
+    #
+    # Visible results change only where they were wrong. Under drop_policy=drop the
+    # sample is still dropped; under refuse the same refusal is raised, earlier;
+    # under impute the sample is imputed and the transform now sees the imputed
+    # counts, so its relative abundances are a uniform distribution rather than a
+    # column of 0.0.
+    #
+    # All-zero TAXA are deliberately still healed after the transform, and the
+    # asymmetry is intentional. A zero-count taxon in a sample that has reads has a
+    # relative abundance of exactly 0.0 — that value is true — so there is no lie
+    # to remove, while moving the drop earlier would change the geometric mean CLR
+    # centres on and therefore change results for analyses that were already
+    # correct. Fixing a defect is not licence to change the numbers around it.
+    healings = String[]
+    is_dangerous_diag = false
+    zero_depth = check_all_zero_samples(filtered_counts)
+    if zero_depth["has_all_zero_samples"]
+        (filtered_counts, filtered_sample_ids, sample_healings, _) =
+            heal_all_zero_samples(filtered_counts, filtered_sample_ids, dp, effective_epsilon)
+        append!(healings, sample_healings)
+        is_dangerous_diag = true
+    end
+
     # Apply zero policy
     counts_after_zero = copy(filtered_counts)
 
@@ -1003,7 +1052,18 @@ function prepare_analysis_table(
             if lib_sizes[j] > 0
                 prepared[:, j] = counts_after_zero[:, j] ./ lib_sizes[j]
             else
-                prepared[:, j] .= 0.0
+                # Unreachable since all-zero samples are healed before the transform,
+                # and deliberately a refusal rather than an assignment. This branch
+                # used to write `prepared[:, j] .= 0.0`, which states that every
+                # feature has a relative abundance of exactly 0 -- a value -- for a
+                # sample whose relative abundances do not exist. 0/0 is undefined,
+                # and "0" and "undefined" are different claims; the old value was
+                # wrong in a way no downstream check could detect, because 0.0 is a
+                # perfectly ordinary number. If a future path reintroduces a
+                # zero-depth column here, that is a bug to surface, not to paper
+                # over with a plausible-looking number.
+                sample_name = j <= length(filtered_sample_ids) ? filtered_sample_ids[j] : string(j)
+                throw(ArgumentError("INTERNAL: sample '$sample_name' (column $j) has zero total counts at the relative-abundance transform. All-zero samples are healed before this point, so reaching here means the healing was bypassed — the relative abundances of an empty sample are undefined and must not be reported as 0. Please report this with the config id $(config.id)."))
             end
         end
         # Offset for NB_GLM if needed? For relative, no offset, but for TSS offset we would use log(lib_sizes)
@@ -1099,6 +1159,12 @@ function prepare_analysis_table(
         # Rarefy to min library size
         lib_sizes = vec(sum(counts_after_zero, dims=1))
         min_lib = minimum(lib_sizes)
+        # A single zero-depth sample would make min_lib 0, and every sample would then
+        # be scaled by 0/lib — emptying the entire prepared table while reporting
+        # success. All-zero samples are healed before this point; this refusal exists
+        # so that if that guarantee is ever broken the failure is loud rather than a
+        # matrix of zeros that still passes every shape check downstream.
+        min_lib <= 0 && throw(ArgumentError("INTERNAL: rarefaction target is $(min_lib) — at least one sample has zero total counts. All-zero samples are healed before this point, so reaching here means the healing was bypassed. Rarefying to an empty sample would set every value to 0. Please report this with the config id $(config.id)."))
         # For stub, rarefy by subsampling proportionally to min_lib (not exact, just scaling)
         for j in 1:size(counts_after_zero, 2)
             if lib_sizes[j] > 0
@@ -1115,8 +1181,9 @@ function prepare_analysis_table(
 
     (checks, warnings, errors) = self_diagnostics(filtered_counts, prepared, config; sample_metadata=sample_metadata, raw_counts=counts)
 
-    healings = String[]
-    is_dangerous_diag = false
+    # `healings` and `is_dangerous_diag` are initialised earlier, before the
+    # all-zero sample healing that happens before the transform; re-initialising
+    # them here would silently discard those entries.
     banner = nothing
 
     # If errors present, hard-stop with DANGER banner
@@ -1152,31 +1219,14 @@ function prepare_analysis_table(
         is_dangerous_diag = true
     end
 
-    # Heal all-zero samples/taxa based on drop_policy
-    # For counts (not prepared), check all-zero
-    if checks["all_zero_samples"]["has_all_zero_samples"]
-        try
-            (healed_counts, healed_sample_ids, heal_s, _) = heal_all_zero_samples(filtered_counts, filtered_sample_ids, dp, effective_epsilon)
-            # Need to also heal prepared table accordingly — for simplicity, we re-apply transform after healing counts?
-            # For stub, we just record healing and drop corresponding columns from prepared if DROP
-            if dp == DROP
-                # Drop columns from prepared
-                keep_cols = [j for j in 1:size(prepared,2) if !(j in checks["all_zero_samples"]["all_zero_samples_indices"])]
-                prepared = prepared[:, keep_cols]
-                filtered_sample_ids = healed_sample_ids
-                filtered_counts = healed_counts
-            else
-                # Impute: keep prepared but healing already applied to counts, need to re-prepare? For stub, just keep
-                filtered_counts = healed_counts
-            end
-            append!(healings, heal_s)
-            is_dangerous_diag = true
-        catch e
-            # REFUSE policy throws
-            throw(e)
-        end
-    end
-
+    # All-zero SAMPLES were healed before the transform, above. The block that used to
+    # stand here healed them afterwards, and in doing so had to guess how to reconcile
+    # `prepared` with the healed counts -- the code said so: "for simplicity, we
+    # re-apply transform after healing counts?" and, for the impute case, "for stub,
+    # just keep". That guess is why a zero-depth sample could keep a column of 0.0
+    # while its counts were imputed. Nothing is removed by deleting it: the guard
+    # below cannot fire, because after healing there are no all-zero samples left for
+    # `check_all_zero_samples` to find.
     if checks["all_zero_taxa"]["has_all_zero_taxa"]
         try
             (healed_counts, healed_taxa_ids, heal_t, _) = heal_all_zero_taxa(filtered_counts, filtered_taxa_ids, dp, effective_epsilon)

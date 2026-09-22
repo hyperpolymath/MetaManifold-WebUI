@@ -233,6 +233,121 @@
         @test !any(isnan, prepared_simple)
     end
 
+    @testset "zero-depth samples are healed before the transform, not after" begin
+        # The defect these tests pin, in the owner's words: "Execution.jl still writes
+        # a zero-depth sample's relative abundance as 0.0 — the exact thing item 1's
+        # conditions forbid." A sample with no reads at all has NO relative
+        # abundances: 0/0 is undefined, while 0.0 is a value, and reporting the second
+        # as the first is a claim the data does not support. No downstream check could
+        # catch it, because 0.0 is a perfectly ordinary number.
+        #
+        # The cause was ordering. `prepared` was computed from counts that still
+        # contained such samples, and every transform divides by a sample total, so
+        # one empty sample poisoned whichever transform ran: relative wrote 0.0 into
+        # every feature; rarefy took min_lib = minimum(lib_sizes) = 0 and scaled EVERY
+        # sample by 0, emptying the whole prepared table while reporting success; clr
+        # took log(0) = -Inf, which centring turns into NaN, which the later NaN/Inf
+        # healing then replaced with epsilon — a wrong number presented as a healed
+        # one. Healing afterwards could not repair any of it: under drop_policy=impute
+        # the imputed counts were assigned while `prepared` kept the values computed
+        # from the empty column, so `prepared` and `filtered_counts` described
+        # different data.
+        #
+        # Only drop_policy=impute changes its visible result, and only where it was
+        # wrong: the sample is imputed and the transform now sees the imputed counts,
+        # so its proportions are uniform rather than a column of 0.0. The drop and
+        # refuse results are unchanged, which is why the assertion that carries the
+        # weight here is the impute one.
+        norm = AnalysisConfig.NormalizationConfig(method="relative", pseudocount=1.0,
+                                                  epsilon=1e-6, zero_policy="pseudocount")
+        adv = AnalysisConfig.AdvancedConfig(pseudocount=1.0, epsilon=1e-6,
+                                            min_prevalence=0.0, min_abundance=0.0,
+                                            min_samples_per_group=2)
+        config = AnalysisConfig.AnalysisConfig(
+            method="nb_glm",
+            formula="~ group",
+            metadata_columns=["group"],
+            normalization=norm,
+            advanced=adv,
+            created_by="test_zero_depth"
+        )
+
+        # s3 has no reads at all; the other four samples do.
+        counts_zero_depth = [10.0 20.0 0.0 30.0 25.0;
+                             30.0 20.0 0.0 10.0 15.0]
+        sids_zd = ["s1", "s2", "s3", "s4", "s5"]
+        tids_zd = ["t1", "t2"]
+
+        @testset "impute — the imputed sample's proportions are uniform, not 0.0" begin
+            (prepared_zd, diag_zd, _, kept_zd, _) = Execution.prepare_analysis_table(
+                config, counts_zero_depth;
+                sample_ids=sids_zd, taxa_ids=tids_zd,
+                drop_policy="impute", impute_policy="epsilon"
+            )
+            @test size(prepared_zd, 2) == 5
+            @test "s3" in kept_zd
+            @test any(h -> occursin("Imputed", h), diag_zd.healings)
+
+            # The assertion the old code fails. An equal epsilon in every feature is
+            # an equal share, so this column is uniform and sums to one; the old code
+            # left it at 0.0 while claiming the counts had been imputed.
+            col = prepared_zd[:, 3]
+            @test all(col .≈ 1 / length(tids_zd))
+            @test !all(col .== 0.0)
+            @test sum(col) ≈ 1.0
+        end
+
+        @testset "drop — the empty sample is still dropped" begin
+            (prepared_dz, diag_dz, _, kept_dz, _) = Execution.prepare_analysis_table(
+                config, counts_zero_depth;
+                sample_ids=sids_zd, taxa_ids=tids_zd,
+                drop_policy="drop", impute_policy="epsilon"
+            )
+            @test size(prepared_dz, 2) == 4
+            @test "s3" ∉ kept_dz
+            @test any(h -> occursin("Dropped", h), diag_dz.healings)
+            # The property, whatever the policy: no column of the prepared table
+            # stands for a sample with no reads.
+            @test !any(all(c .== 0.0) for c in eachcol(prepared_dz))
+        end
+
+        @testset "refuse — the same refusal, raised earlier" begin
+            @test_throws ArgumentError Execution.prepare_analysis_table(
+                config, counts_zero_depth;
+                sample_ids=sids_zd, taxa_ids=tids_zd,
+                drop_policy="refuse", impute_policy="epsilon"
+            )
+        end
+    end
+
+    @testset "rarefy does not empty the matrix when a sample is empty" begin
+        # min_lib = minimum(lib_sizes) is 0 whenever any sample is empty, and every
+        # sample was then scaled by 0/lib. Measured before the fix: four correctly
+        # kept samples and a 2x4 matrix of zeros, reported as success.
+        norm_rar = AnalysisConfig.NormalizationConfig(method="rarefy", epsilon=1e-6,
+                                                      zero_policy="pseudocount")
+        adv_rar = AnalysisConfig.AdvancedConfig(min_samples_per_group=2)
+        config_rar = AnalysisConfig.AnalysisConfig(
+            method="nb_glm",
+            formula="~ group",
+            metadata_columns=["group"],
+            normalization=norm_rar,
+            advanced=adv_rar,
+            created_by="test_zero_depth_rarefy"
+        )
+        counts_zero_depth = [10.0 20.0 0.0 30.0 25.0;
+                             30.0 20.0 0.0 10.0 15.0]
+        (prepared_rar, _, _, kept_rar, _) = Execution.prepare_analysis_table(
+            config_rar, counts_zero_depth;
+            sample_ids=["s1", "s2", "s3", "s4", "s5"], taxa_ids=["t1", "t2"],
+            drop_policy="drop", impute_policy="epsilon"
+        )
+        @test size(prepared_rar, 2) == 4        # s3 dropped
+        @test "s3" ∉ kept_rar
+        @test !all(prepared_rar .== 0.0)        # the old code produced all zeros
+        @test any(prepared_rar .> 0)
+    end
+
     @testset "run_analysis — stub with manifest and diagnostics, hard-stop DANGER banner" begin
         norm = AnalysisConfig.NormalizationConfig(method="size_factors", epsilon=1e-6)
         adv = AnalysisConfig.AdvancedConfig(min_samples_per_group=2)
