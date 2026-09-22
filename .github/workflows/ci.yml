@@ -47,9 +47,12 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
-          # On pull_request the checkout is GitHub's synthetic merge commit;
-          # depth 2 keeps its parents so the PR head commit is reachable.
-          fetch-depth: 2
+          # Full history, deliberately: the commit convention check below grades
+          # the whole base..head range a PR proposes (#37), and a shallow clone
+          # would make that range unresolvable. The check treats an unresolvable
+          # range as a hard failure rather than grading zero commits, so the
+          # depth it depends on is pinned here instead of left to a default.
+          fetch-depth: 0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2
@@ -77,8 +80,8 @@ jobs:
       # allowed -- a CI check that re-implements a hook drifts from it, and the
       # drift is invisible because both keep passing.
       #
-      # --tree, not a commit range: the checkout above is depth 2, and a whole-
-      # tree check also catches anything that landed before the guard existed.
+      # --tree, not a commit range: a whole-tree check also catches anything
+      # that landed before the guard existed.
       - name: Blob hygiene check
         continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
         run: scripts/check-blob-hygiene.sh --tree HEAD
@@ -86,19 +89,69 @@ jobs:
       # Commit convention mirror of .githooks/commit-msg (available locally via
       # the hooksPath setting documented in CONTRIBUTING.md). Advisory only when
       # this runs under upstream, whose commit subjects need not match.
-      # Judge the PR head commit, not the synthetic "Merge X into Y" commit
-      # that pull_request checkouts produce (it can never match the pattern).
+      #
+      # Grades EVERY commit a change proposes, not the tip (#37). The tip can be
+      # a merge commit that GitHub's own "Update branch" button created; grading
+      # it fails a conforming PR, while grading ONLY it lets a branch of nine
+      # non-conforming commits pass because the tenth is clean. Hence:
+      #   - pull_request: the base..head range; push: the before..head range
+      #   - merge commits excluded (--no-merges): nobody typed their subjects,
+      #     and they cannot be rewritten without a force-push
+      #   - every offender named by its sha
+      #   - an unresolvable range, or one with zero non-merge commits, is a
+      #     hard failure: a pass must mean the gate examined something, never
+      #     that it declined to run
       - name: Commit convention check
         continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
         env:
+          EVENT: ${{ github.event_name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          subject="$(git log -1 --pretty=%s "$HEAD_SHA")"
-          if ! printf '%s' "$subject" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_/-]+\))?!?: .{1,72}$'; then
-            echo "::error::commit subject fails the conventional pattern: $subject"
+          set -euo pipefail
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_/-]+\))?!?: .{1,72}$'
+
+          if [ "$EVENT" = pull_request ]; then
+            range="$BASE_SHA..$HEAD_SHA"
+          elif [ -n "$BEFORE_SHA" ] && ! printf '%s' "$BEFORE_SHA" | grep -qE '^0+$'; then
+            range="$BEFORE_SHA..$HEAD_SHA"
+          else
+            # A new ref has no recorded before-sha: grade the tip alone.
+            range="$HEAD_SHA^..$HEAD_SHA"
+          fi
+
+          # Resolve both ends explicitly. If either is absent from this clone
+          # the gate cannot see the commits it was asked to grade, and must say
+          # so loudly rather than print a vacuous pass.
+          for sha in "${range%..*}" "${range#*..}"; do
+            if ! git rev-parse --verify --quiet "$sha^{commit}" >/dev/null; then
+              echo "::error::commit convention check: cannot resolve $sha in range $range; refusing to grade zero commits"
+              exit 1
+            fi
+          done
+
+          count="$(git rev-list --no-merges --count "$range")"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::commit convention check: range $range contains no non-merge commits; refusing a vacuous pass"
             exit 1
           fi
-          echo "commit subject ok: $subject"
+
+          commits="$(git log --no-merges --pretty=format:'%H%x09%s' "$range")"
+          fail=0
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            sha="${line:0:40}"
+            subject="${line:41}"
+            if ! printf '%s' "$subject" | grep -qE "$pattern"; then
+              echo "::error::commit $sha fails the conventional pattern: $subject"
+              fail=1
+            fi
+          done <<< "$commits"
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "commit convention ok: $count non-merge commit(s) graded in $range"
 
   test:
     # The name is a fixed string, it carries no version, and the job has NO matrix.
