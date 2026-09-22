@@ -29,6 +29,8 @@ include("pipeline/swarm.jl")
 
 # Analysis
 include("analysis/numeric_policy.jl")
+# Exact summaries are catalogue item 1 and are built on the numeric policy, so they follow it.
+include("analysis/exact_summaries.jl")
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
 include("analysis/AnalysisConfig.jl")
