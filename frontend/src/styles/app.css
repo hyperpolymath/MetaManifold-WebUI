@@ -279,3 +279,39 @@ a:hover  { text-decoration: underline; }
   color:       inherit;
   text-align:  inherit;
 }
+
+/* Native modal dialogs (#32). showModal() places the element in the top layer,
+   which brings the dialog role, aria-modal, focus containment and
+   Escape-to-cancel for free -- the behaviour the old presentational backdrop
+   divs hand-rolled badly or not at all.
+
+   The dialog itself is stretched to fill the viewport with a transparent
+   background so the click target OUTSIDE the visible panel IS the dialog
+   element: the backdrop-click-to-dismiss handler tests
+   `event.target === dialog`, and the visible chrome stays on the inner panel.
+   The dimmed overlay moves to the ::backdrop pseudo-element, which replaces
+   the hand-painted rgba(0,0,0,.45) the old fixed divs carried.
+
+   The user agent's closed-state rule `dialog:not([open]) { display: none }`
+   outranks this class, so the flex centre applies only while the dialog is
+   open. The UA default margin, border and padding are reset so the panel
+   renders exactly as the old hand-rolled overlays did. */
+.mm-modal {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mm-modal::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
