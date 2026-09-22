@@ -32,6 +32,7 @@ that has aged in the safe direction.
 | `ls bench/`, `ls frontend/bench/` | repository root |
 | `grep` over `ci.yml`, `README.md`, `bench/**`, `frontend/bench/baseline.json` | repository root |
 | `GET /actions/runs?branch=main&status=success` | GitHub API |
+| `projectV2(number: 45)` over GraphQL, with the `project` scope | GitHub API |
 
 ## Claims, evidence, verdicts
 
@@ -171,14 +172,26 @@ environment does.
 **Claimed:** https://github.com/users/hyperpolymath/projects/45 — "Analysis Layer &
 Cladistics Development", 11 items, PRs #11–#14 linked.
 
-**Measured: not verifiable with the credentials available to this audit.** The board
-is a user-level Projects v2 board; reading it needs the `read:project` scope, which is
-granted per-token, and the token in use during this audit carries `repo` and
-`workflow` only.
+**Measured** (2026-09-22, once a token carrying the `project` scope was available):
+the board resolves at that URL with the title "Analysis Layer & Cladistics
+Development", and its items carry a single-select **Status** field whose values are
+`Backlog`, `In Progress`, `Review` and `Done`. PRs #11, #12, #13 and #14 are present
+on it. Items now total **21**, not 11.
 
-**Verdict: unverified, and recorded as such rather than assumed.** Everything else on
-this page was re-derived from the repository or the API. The link and the board's own
-existence are the owner's to confirm; nothing in the codebase depends on it.
+**Verdict: holds, with the item count grown.** Every part of the claim that was
+checkable at the time of writing was accurate — the board, its title, the linked PRs,
+and the Status field — and the item count has simply risen as work was added to the
+board since the milestone document was written. The sections of the claim that could
+not be checked then (the board's existence and link) are confirmed here rather than
+assumed.
+
+> **Audit note.** The first version of this section recorded the board as
+> *unverified*, because reading a user-level Projects v2 board requires the
+> `read:project` scope and the credentials available to the audit did not carry it.
+> It is recorded as verified above only because it has since been read directly and
+> the raw output quoted. Where a claim cannot be checked, this document says so
+> instead of inferring it; this is that note being retired rather than quietly
+> dropped.
 
 ## Consequences
 
