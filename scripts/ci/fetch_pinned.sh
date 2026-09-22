@@ -62,14 +62,14 @@ fetch_pinned() {
          --connect-timeout 20 --max-time 600 \
          -o "$out" "$url" || rc=$?
 
-    if [ "$rc" -eq 0 ]; then
+    if [[ "$rc" -eq 0 ]]; then
         # A 200 with an empty body is a success to curl and a broken artifact to
         # everyone else. The checksum check would catch it, but naming it here says
         # which of the two happened.
-        if [ -s "$out" ]; then
+        if [[ -s "$out" ]]; then
             return 0
         fi
-        echo "::error::fetched $url but it is empty; the checksum check would fail next"
+        echo >&2 "::error::fetched $url but it is empty; the checksum check would fail next"
         return 1
     fi
 
@@ -84,27 +84,27 @@ fetch_pinned() {
 
     case "$rc" in
         35|51|58|60|77|83|90)
-            echo "::error::TLS verification failed (curl exit $rc) fetching $url"
-            echo "::error::The certificate is the problem, not this commit. Confirm with:"
-            echo "::error::  openssl s_client -connect $host:443 </dev/null 2>/dev/null | openssl x509 -noout -dates -subject"
-            echo "::error::If it has expired, the host has to renew it: re-run then, or repoint"
-            echo "::error::the URL and sha256 in config/defaults/tool_versions.yml if the"
-            echo "::error::artifact has moved. Do NOT skip the tool — CI installs it because"
-            echo "::error::the pipeline shells out to it (issue #30)."
+            echo >&2 "::error::TLS verification failed (curl exit $rc) fetching $url"
+            echo >&2 "::error::The certificate is the problem, not this commit. Confirm with:"
+            echo >&2 "::error::  openssl s_client -connect $host:443 </dev/null 2>/dev/null | openssl x509 -noout -dates -subject"
+            echo >&2 "::error::If it has expired, the host has to renew it: re-run then, or repoint"
+            echo >&2 "::error::the URL and sha256 in config/defaults/tool_versions.yml if the"
+            echo >&2 "::error::artifact has moved. Do NOT skip the tool — CI installs it because"
+            echo >&2 "::error::the pipeline shells out to it (issue #30)."
             ;;
         22)
-            echo "::error::the server answered with an HTTP error status fetching $url"
-            echo "::error::(curl --fail, exit 22). The pinned URL is wrong or the artifact"
-            echo "::error::was withdrawn; check config/defaults/tool_versions.yml against"
-            echo "::error::whatever the project is serving now."
+            echo >&2 "::error::the server answered with an HTTP error status fetching $url"
+            echo >&2 "::error::(curl --fail, exit 22). The pinned URL is wrong or the artifact"
+            echo >&2 "::error::was withdrawn; check config/defaults/tool_versions.yml against"
+            echo >&2 "::error::whatever the project is serving now."
             ;;
         6|7|28|56)
-            echo "::error::network failure (curl exit $rc) fetching $url after 4 retries;"
-            echo "::error::host unreachable or slow rather than refusing TLS. Re-run, or check"
-            echo "::error::the host is still the right place for this pin."
+            echo >&2 "::error::network failure (curl exit $rc) fetching $url after 4 retries;"
+            echo >&2 "::error::host unreachable or slow rather than refusing TLS. Re-run, or check"
+            echo >&2 "::error::the host is still the right place for this pin."
             ;;
         *)
-            echo "::error::download failed (curl exit $rc) fetching $url"
+            echo >&2 "::error::download failed (curl exit $rc) fetching $url"
             ;;
     esac
     return "$rc"
