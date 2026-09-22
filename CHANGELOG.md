@@ -45,6 +45,21 @@ types, tests, infrastructure, and alignment.
 - CI: pipeline extended to licence-header, formatting, lint, and commit
   convention checks ahead of typecheck/test/bench/build.
 
+### Fixed
+
+- **Zero-depth samples poisoned the transform stage.** A sample with no reads
+  reached the transform, where every transform divides by a sample total:
+  `relative` wrote `0.0` for every feature (a value where the answer is
+  *undefined*), `rarefy` took `min_lib = minimum(lib_sizes) = 0` and scaled
+  **every** sample by zero, and `clr` took `log(0) = -Inf` that the NaN/Inf
+  healing later replaced with `epsilon`. All-zero samples are now healed
+  *before* the transform rather than after, which also removes the
+  inconsistency where `prepared` and `filtered_counts` described different
+  data under `drop_policy=impute`. Visible results change only for `impute`
+  runs over inputs containing a zero-depth sample; `drop` and `refuse` are
+  unchanged. Owner-authorised behaviour change, recorded in
+  `docs/statistics/behaviour-change-zero-depth-samples.md`.
+
 ## [0.1.0] — 2026-05-21 (upstream baseline)
 
 Initial public state of the application as inherited from upstream
