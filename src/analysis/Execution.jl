@@ -981,48 +981,54 @@ function prepare_analysis_table(
             end
         end
     elseif zero_policy == AnalysisConfig.MULTIPLICATIVE_REPLACEMENT
-        # Multiplicative replacement: replace zeros with delta * geometric mean of non-zeros, then adjust non-zeros multiplicatively
-        # Stub implementation
-        delta_val = isnothing(delta) ? 0.65 : delta
+        # Multiplicative replacement per Martín-Fernández et al. (2003):
+        # Replaces zeros with delta * detection_limit (here delta, as count floor is 1.0),
+        # then multiplicatively scales non-zeros to preserve total sample depth and
+        # subcompositional ratios.
+        delta_val = something(delta, 0.65)
         for j in 1:size(counts_after_zero, 2)
             col = counts_after_zero[:, j]
-            non_zero = filter(x -> x > 0, col)
-            if isempty(non_zero)
-                # All zeros in sample — will be handled by self-healing later
+            sample_total = sum(col)
+            if sample_total <= 0.0
                 continue
             end
-            # Geometric mean of non-zeros
-            geo_mean = exp(mean(log.(non_zero)))
-            zero_replacement = delta_val * geo_mean
-            # Count zeros
-            n_zeros = count(x -> x == 0, col)
-            if n_zeros > 0
-                # Replace zeros
+            zero_indices = findall(x -> x == 0.0, col)
+            n_zeros = length(zero_indices)
+            if 0 < n_zeros < length(col)
+                r = delta_val
+                total_imputed = n_zeros * r
+                # If total_imputed exceeds sample_total, bound r to preserve positivity
+                if total_imputed >= sample_total
+                    r = (sample_total * delta_val) / (n_zeros + delta_val * (length(col) - n_zeros))
+                    total_imputed = n_zeros * r
+                end
+                scale_factor = (sample_total - total_imputed) / sample_total
                 for i in 1:size(col, 1)
                     if counts_after_zero[i, j] == 0.0
-                        counts_after_zero[i, j] = zero_replacement
+                        counts_after_zero[i, j] = r
+                    else
+                        counts_after_zero[i, j] *= scale_factor
                     end
                 end
-                # Adjust non-zeros multiplicatively to preserve total (optional, for stub we don't adjust)
-                # Real implementation would multiply non-zeros by (1 - n_zeros*zero_replacement/sum(col)) etc.
             end
         end
     elseif zero_policy == AnalysisConfig.BAYESIAN_MULTIPLICATIVE
-        # Bayesian multiplicative: similar to multiplicative but with Dirichlet prior
-        # Stub: use same as multiplicative for now, with Bayesian note
-        delta_val = isnothing(delta) ? 0.65 : delta
+        # Bayesian multiplicative replacement per Martín-Fernández et al. (2015):
+        # Uses Dirichlet prior (concentration alpha = delta_val, default 0.65).
+        # Posterior expectation preserves total sample depth:
+        # x_ij* = (S_j / (S_j + D * alpha)) * (x_ij + alpha)
+        delta_val = something(delta, 0.65)
+        D = size(counts_after_zero, 1)
         for j in 1:size(counts_after_zero, 2)
             col = counts_after_zero[:, j]
-            non_zero = filter(x -> x > 0, col)
-            if isempty(non_zero)
+            sample_total = sum(col)
+            if sample_total <= 0.0
                 continue
             end
-            geo_mean = exp(mean(log.(non_zero)))
-            zero_replacement = delta_val * geo_mean * 0.5 # Bayesian shrinks a bit
-            for i in 1:size(col, 1)
-                if counts_after_zero[i, j] == 0.0
-                    counts_after_zero[i, j] = zero_replacement
-                end
+            alpha = delta_val
+            scale = sample_total / (sample_total + D * alpha)
+            for i in 1:D
+                counts_after_zero[i, j] = scale * (col[i] + alpha)
             end
         end
     elseif zero_policy == AnalysisConfig.REFUSE
@@ -1057,27 +1063,20 @@ function prepare_analysis_table(
             @warn "TSS/CSS/RSS are deferred features (see GitHub issues 01-tss-css-rss-offsets). Currently aliased to relative with warning. For exact TSS/CSS/RSS offsets, see deferred issue."
         end
         lib_sizes = vec(sum(counts_after_zero, dims=1))
-        for j in 1:size(counts_after_zero, 2)
-            if lib_sizes[j] > 0
-                prepared[:, j] = counts_after_zero[:, j] ./ lib_sizes[j]
-            else
-                # Unreachable since all-zero samples are healed before the transform,
-                # and deliberately a refusal rather than an assignment. This branch
-                # used to write `prepared[:, j] .= 0.0`, which states that every
-                # feature has a relative abundance of exactly 0 -- a value -- for a
-                # sample whose relative abundances do not exist. 0/0 is undefined,
-                # and "0" and "undefined" are different claims; the old value was
-                # wrong in a way no downstream check could detect, because 0.0 is a
-                # perfectly ordinary number. If a future path reintroduces a
-                # zero-depth column here, that is a bug to surface, not to paper
-                # over with a plausible-looking number.
-                sample_name = j <= length(filtered_sample_ids) ? filtered_sample_ids[j] : string(j)
-                throw(ArgumentError("INTERNAL: sample '$sample_name' (column $j) has zero total counts at the relative-abundance transform. All-zero samples are healed before this point, so reaching here means the healing was bypassed — the relative abundances of an empty sample are undefined and must not be reported as 0. Please report this with the config id $(config.id)."))
-            end
-        end
-        # Offset for NB_GLM if needed? For relative, no offset, but for TSS offset we would use log(lib_sizes)
+        # For NB_GLM with TSS, preserve raw counts as response and supply log(lib_sizes) as offset,
+        # preserving count distribution (McMurdie & Holmes 2014) instead of converting to proportions.
         if config.method == AnalysisConfig.NB_GLM && transform_method in ("tss", "TSS")
+            prepared = copy(counts_after_zero)
             offset = log.(lib_sizes .+ effective_epsilon)
+        else
+            for j in 1:size(counts_after_zero, 2)
+                if lib_sizes[j] > 0
+                    prepared[:, j] = counts_after_zero[:, j] ./ lib_sizes[j]
+                else
+                    sample_name = j <= length(filtered_sample_ids) ? filtered_sample_ids[j] : string(j)
+                    throw(ArgumentError("INTERNAL: sample '$sample_name' (column $j) has zero total counts at the relative-abundance transform. All-zero samples are healed before this point, so reaching here means the healing was bypassed — the relative abundances of an empty sample are undefined and must not be reported as 0. Please report this with the config id $(config.id)."))
+                end
+            end
         end
     elseif transform_method == "size_factors"
         # Size factors: DESeq2 median-of-ratios (stub: use median ratio or simple)
