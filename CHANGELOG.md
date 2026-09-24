@@ -14,6 +14,25 @@ types, tests, infrastructure, and alignment.
 
 ### Added — Type-system engineering series (2026-09)
 
+- **Epistemic claims with receipts**: added `Standpoint`, `TaxonWarrant`,
+  `ProjectionY`, `Receipt`, and SHA-256 signing/verification (`make_receipt`,
+  `verify_receipt`) in `src/core/epistemic.jl`, with compact `echo:v1?...`
+  encoding/parsing for the `avec_fibre` column. Aligned directly with
+  `EpistemicTypes.jl` and `echo-types`.
+- **Zero observation disambiguation**: added `disambiguate_zero`
+  (`Val(:true_absence)` vs `Val(:undetected)`), grounding presence/absence
+  claims in sequencing depth and formalizing the boundary between biological
+  absence and observation limits (`absolute-zero` and Issue #18).
+- **Exact Multiplicative and Bayesian Zero Replacement**: implemented exact
+  Martín-Fernández (2003) multiplicative replacement and Martín-Fernández (2015)
+  Bayesian Dirichlet prior replacement in `Execution.prepare_analysis_table`,
+  strictly preserving total sample depth and subcompositional ratios between all
+  non-zero components (Issue #21).
+- **Exact TSS offsets for count models**: implemented exact Total Sum Scaling
+  offsets for `NB_GLM` in `Execution.prepare_analysis_table`, preserving the
+  count nature of response tables and providing `log(lib_sizes)` offsets to
+  prevent double-normalization and retain negative binomial model
+  interpretability (Issue #16).
 - **bun migration**: `package.json`/`bun.lock` replace the mixed npm+Deno
   tooling; bun 1.3.10 pinned via `.bun-version`; CI installs bun.
   `docs/migration/npm-deno-to-bun.md`.

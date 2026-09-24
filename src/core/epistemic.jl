@@ -21,13 +21,19 @@ For Julia, we provide finite, executable shadows of those types.
 module Epistemic
 
 using OrderedCollections
+using SHA: sha256, bytes2hex
 
 export EchoFiber, Warrant, SoundWarrant, Candidate, Case,
        avec_fibre, sans_fibre,
        present_in_every_admissible_world, present_in_some_admissible_world,
        absent_in_every_admissible_world,
        EPISTEMIC_STATUSES, AVEC_FIBRE_COLUMN,
-       epistemic_colour, cloud_size_by_residual
+       epistemic_colour, cloud_size_by_residual,
+       Standpoint, TaxonWarrant, ProjectionY, Receipt,
+       ThresholdPolicy, ResidualInfo, ZeroKind,
+       disambiguate_zero, make_receipt, verify_receipt,
+       encode_avec_fibre, parse_avec_fibre,
+       highest_warranted_rank, epi_status
 
 const AVEC_FIBRE_COLUMN = "avec_fibre"
 const EPISTEMIC_STATUSES = ("present_in_every_admissible_world",
@@ -347,6 +353,241 @@ function epistemic_status_for_row(row::Dict{String,Any}, evidence::Dict{String,A
     else
         return "absent_in_every_admissible_world"
     end
+end
+
+# --------------------------------------------------------------------------
+# Standpoint, TaxonWarrant, Projection, Receipt (Epistemic claims with receipts)
+# --------------------------------------------------------------------------
+
+"""
+    Standpoint
+
+The methodological perspective: which classifier, version, database, and parameters
+produced a taxonomic claim.
+From `EpistemicTypes.jl`: binds authority to the provenance that generated it.
+"""
+struct Standpoint
+    tool::String               # "dada2", "vsearch", etc.
+    version::String            # tool version string
+    db::String                 # reference database name (e.g., "silva", "pr2")
+    db_release::String         # database release/version
+    params::OrderedDict{String,Any}  # algorithm parameters (e.g. minBoot, id floor)
+    locus::String              # amplicon locus (e.g., "16S_V4", "18S_V9")
+
+    function Standpoint(tool::String, version::String="", db::String="", db_release::String="",
+                        params::OrderedDict{String,Any}=OrderedDict{String,Any}(), locus::String="")
+        new(tool, version, db, db_release, params, locus)
+    end
+end
+
+"""
+    TaxonWarrant
+
+The classifier evidence metrics and sample quality gates supporting a taxonomic claim.
+Separates warrant strength (classifier metrics) from warrant validity (sample gates).
+"""
+struct TaxonWarrant
+    boot_by_rank::OrderedDict{String,Float64}  # e.g., "Species" => 0.99, "Genus" => 0.95
+    identity::Union{Float64,Nothing}           # vsearch % identity (0-100) or nothing
+    evalue::Union{Float64,Nothing}             # alignment e-value
+    query_cov::Union{Float64,Nothing}          # % query coverage
+    depth::Union{Int,Nothing}                  # sequencing read depth for this sample
+    neg_ctrl_frac::Union{Float64,Nothing}      # fraction of reads in negative control
+    chimera_flag::Bool                         # true if flagged as potential chimera
+
+    function TaxonWarrant(; boot_by_rank=OrderedDict{String,Float64}(),
+                            identity=nothing,
+                            evalue=nothing,
+                            query_cov=nothing,
+                            depth=nothing,
+                            neg_ctrl_frac=nothing,
+                            chimera_flag=false)
+        new(boot_by_rank, identity, evalue, query_cov, depth, neg_ctrl_frac, chimera_flag)
+    end
+end
+
+"""
+    ProjectionY
+
+The target claim: which feature in which sample at which rank is classified as which taxon.
+"""
+struct ProjectionY
+    feature_id::String  # ASV or OTU identifier
+    sample_id::String   # sample name
+    rank::String        # e.g., "Genus", "Species"
+    taxon::String       # taxonomic name claimed
+end
+
+"""
+    Receipt
+
+Cryptographically signed claim: binds (Standpoint, TaxonWarrant, ProjectionY) with a SHA-256 signature.
+From `EpistemicTypes.jl` and `echo-types`.
+"""
+struct Receipt
+    k::Standpoint
+    w::TaxonWarrant
+    y::ProjectionY
+    sig::String
+end
+
+"""
+    ThresholdPolicy
+
+Rank thresholds and sample gate cutoffs.
+"""
+struct ThresholdPolicy
+    dada2_by_rank::Dict{String,Float64}
+    depth_min::Int
+    neg_ctrl_max::Float64
+
+    function ThresholdPolicy(;
+        dada2_by_rank=Dict("Species"=>0.98, "Genus"=>0.88, "Family"=>0.80, "Order"=>0.75, "Class"=>0.75, "Phylum"=>0.70),
+        depth_min=1000,
+        neg_ctrl_max=0.05
+    )
+        new(dada2_by_rank, depth_min, neg_ctrl_max)
+    end
+end
+
+"""
+    ResidualInfo
+
+Residual summary at the next finer rank:
+- warranted_rank: highest rank cleared by classifier
+- status: :Factive, :Warranted, :Belief, :SansFibre
+- residual_named_count: how many named candidates are plausible
+"""
+struct ResidualInfo
+    warranted_rank::Union{Nothing,String}
+    status::Symbol
+    residual_named_count::Int
+    residual_has_novel::Bool
+    contam_flag::Bool
+end
+
+"""
+    ZeroKind
+
+Formal classification of zero observations (from `EpistemicTypes.jl` and `absolute-zero`):
+- `:true_absence`: sample has adequate sequencing depth (>= depth_min) to support absence
+- `:undetected`: sample has inadequate sequencing depth (< depth_min); absence is unprovable
+"""
+const ZeroKind = Union{Val{:true_absence}, Val{:undetected}}
+
+"""
+    disambiguate_zero(w::TaxonWarrant, pol::ThresholdPolicy) -> ZeroKind
+    disambiguate_zero(depth::Union{Int,Nothing}, depth_min::Int=1000) -> ZeroKind
+
+Distinguishes certified biological absence from observational nondetection:
+- If depth >= depth_min: Val(:true_absence)
+- Otherwise: Val(:undetected)
+"""
+function disambiguate_zero(w::TaxonWarrant, pol::ThresholdPolicy=ThresholdPolicy())::ZeroKind
+    return disambiguate_zero(w.depth, pol.depth_min)
+end
+
+function disambiguate_zero(depth::Union{Int,Nothing}, depth_min::Int=1000)::ZeroKind
+    if depth !== nothing && depth >= depth_min
+        return Val(:true_absence)
+    else
+        return Val(:undetected)
+    end
+end
+
+const RANK_HIERARCHY = ["Domain", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
+
+"""
+    highest_warranted_rank(k::Standpoint, w::TaxonWarrant, pol::ThresholdPolicy) -> Union{String,Nothing}
+
+Computes the finest taxonomic rank warranted by classifier metrics under the policy.
+"""
+function highest_warranted_rank(k::Standpoint, w::TaxonWarrant, pol::ThresholdPolicy=ThresholdPolicy())::Union{String,Nothing}
+    warranted = nothing
+    for r in RANK_HIERARCHY
+        min_b = get(pol.dada2_by_rank, r, 0.80)
+        actual_b = get(w.boot_by_rank, r, 0.0)
+        if actual_b >= min_b
+            warranted = r
+        end
+    end
+    return warranted
+end
+
+"""
+    epi_status(r::Receipt, pol::ThresholdPolicy) -> Symbol
+
+Computes epistemic modality for a receipt:
+- `:Factive`: warranted rank >= claimed rank AND all sample gates pass
+- `:Warranted`: classifier meets threshold, but sample gates (depth/neg control) fail
+- `:Belief`: classifier below threshold
+- `:SansFibre`: missing evidence
+"""
+function epi_status(r::Receipt, pol::ThresholdPolicy=ThresholdPolicy())::Symbol
+    wr = highest_warranted_rank(r.k, r.w, pol)
+    wr === nothing && return :Belief
+
+    # Check if wr is at or below (finer than) y.rank
+    idx_wr = findfirst(==(wr), RANK_HIERARCHY)
+    idx_y = findfirst(==(r.y.rank), RANK_HIERARCHY)
+    (idx_wr === nothing || idx_y === nothing || idx_wr < idx_y) && return :Belief
+
+    # Check sample gates
+    depth_ok = r.w.depth === nothing || r.w.depth >= pol.depth_min
+    neg_ok = r.w.neg_ctrl_frac === nothing || r.w.neg_ctrl_frac <= pol.neg_ctrl_max
+    gates_pass = depth_ok && neg_ok && !r.w.chimera_flag
+
+    return gates_pass ? :Factive : :Warranted
+end
+
+"""
+    make_receipt(k::Standpoint, w::TaxonWarrant, y::ProjectionY; secret::String="") -> String
+
+Generates SHA-256 signature for a claim with receipts.
+"""
+function make_receipt(k::Standpoint, w::TaxonWarrant, y::ProjectionY; secret::String="")::String
+    payload = string(k.tool, "|", k.db, "|", k.db_release, "|", y.feature_id, "|", y.sample_id, "|", y.rank, "|", y.taxon, "|", secret)
+    return bytes2hex(sha256(payload))
+end
+
+"""
+    verify_receipt(r::Receipt; secret::String="") -> Bool
+
+Verifies that receipt signature matches (Standpoint, TaxonWarrant, ProjectionY).
+"""
+function verify_receipt(r::Receipt; secret::String="")::Bool
+    expected = make_receipt(r.k, r.w, r.y; secret=secret)
+    return r.sig == expected
+end
+
+"""
+    encode_avec_fibre(r::Receipt) -> String
+
+Serializes a receipt into compact URI form for the `avec_fibre` column.
+"""
+function encode_avec_fibre(r::Receipt)::String
+    return string("echo:v1?tool=", r.k.tool, "&db=", r.k.db, "&feat=", r.y.feature_id, "&rank=", r.y.rank, "&taxon=", r.y.taxon, "&sig=", r.sig)
+end
+
+"""
+    parse_avec_fibre(str::AbstractString) -> Receipt
+
+Parses a compact `avec_fibre` string back into a Receipt structure.
+"""
+function parse_avec_fibre(str::AbstractString)::Receipt
+    startswith(str, "echo:v1?") || throw(ArgumentError("Invalid avec_fibre prefix: missing 'echo:v1?'"))
+    query = str[9:end]
+    kv = Dict{String,String}()
+    for part in split(query, '&')
+        idx = findfirst(==('='), part)
+        idx === nothing && continue
+        kv[part[1:idx-1]] = part[idx+1:end]
+    end
+    k = Standpoint(get(kv, "tool", "unknown"), "", get(kv, "db", "unknown"), "")
+    y = ProjectionY(get(kv, "feat", ""), "", get(kv, "rank", ""), get(kv, "taxon", ""))
+    w = TaxonWarrant()
+    sig = get(kv, "sig", "")
+    return Receipt(k, w, y, sig)
 end
 
 end # module Epistemic

@@ -392,6 +392,67 @@ end
         @test s1 < s2 < s3
         @test s1 >= 5.0
     end
+
+    @testset "Epistemic claims with receipts and zero disambiguation" begin
+        # Standpoint
+        k = Epistemic.Standpoint("dada2", "1.28.0", "silva", "138.1", OrderedDict{String,Any}("minBoot" => 80), "16S_V4")
+        @test k.tool == "dada2"
+        @test k.db == "silva"
+
+        # TaxonWarrant
+        w_strong = Epistemic.TaxonWarrant(
+            boot_by_rank=OrderedDict("Phylum"=>0.99, "Class"=>0.95, "Order"=>0.92, "Family"=>0.90, "Genus"=>0.89, "Species"=>0.85),
+            depth=5000,
+            neg_ctrl_frac=0.01,
+            chimera_flag=false
+        )
+        @test w_strong.depth == 5000
+        @test !w_strong.chimera_flag
+
+        # ProjectionY
+        y = Epistemic.ProjectionY("ASV_001", "sample_01", "Genus", "Lactobacillus")
+        @test y.feature_id == "ASV_001"
+        @test y.taxon == "Lactobacillus"
+
+        # Make and verify receipt
+        sig = Epistemic.make_receipt(k, w_strong, y)
+        @test length(sig) == 64 # SHA-256 hex
+        r = Epistemic.Receipt(k, w_strong, y, sig)
+        @test Epistemic.verify_receipt(r)
+        # Tampered receipt
+        r_tampered = Epistemic.Receipt(k, w_strong, y, "bad" * sig[4:end])
+        @test !Epistemic.verify_receipt(r_tampered)
+
+        # encode_avec_fibre and parse_avec_fibre
+        encoded = Epistemic.encode_avec_fibre(r)
+        @test startswith(encoded, "echo:v1?")
+        @test occursin("tool=dada2", encoded)
+        @test occursin("feat=ASV_001", encoded)
+        parsed = Epistemic.parse_avec_fibre(encoded)
+        @test parsed.k.tool == "dada2"
+        @test parsed.y.feature_id == "ASV_001"
+        @test parsed.sig == sig
+
+        # epi_status
+        pol = Epistemic.ThresholdPolicy()
+        @test Epistemic.epi_status(r, pol) == :Factive
+
+        # Low depth fails sample gates -> Warranted but not Factive
+        w_low_depth = Epistemic.TaxonWarrant(
+            boot_by_rank=OrderedDict("Genus"=>0.95),
+            depth=200,
+            neg_ctrl_frac=0.01,
+            chimera_flag=false
+        )
+        r_low = Epistemic.Receipt(k, w_low_depth, y, Epistemic.make_receipt(k, w_low_depth, y))
+        @test Epistemic.epi_status(r_low, pol) == :Warranted
+
+        # Zero disambiguation (absolute-zero / EpistemicTypes)
+        @test Epistemic.disambiguate_zero(5000, 1000) == Val(:true_absence)
+        @test Epistemic.disambiguate_zero(200, 1000) == Val(:undetected)
+        @test Epistemic.disambiguate_zero(w_strong, pol) == Val(:true_absence)
+        @test Epistemic.disambiguate_zero(w_low_depth, pol) == Val(:undetected)
+    end
 end
 
 @testset "CladeCumulus" begin

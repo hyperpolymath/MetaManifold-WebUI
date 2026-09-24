@@ -483,4 +483,112 @@
         @test diagnostics.checks["prevalence_abundance"]["low_prevalence_count"] == 1
         @test diagnostics.checks["prevalence_abundance"]["low_abundance_count"] == 1
     end
+
+    @testset "Multiplicative and Bayesian zero replacement (Martín-Fernández)" begin
+        # 4 taxa, 4 samples with zeros
+        counts = [
+            10.0  0.0 30.0 40.0;
+            20.0 50.0  0.0 30.0;
+            30.0 20.0 40.0  0.0;
+            40.0 30.0 30.0 30.0
+        ]
+        sample_ids = ["s1", "s2", "s3", "s4"]
+        taxa_ids = ["t1", "t2", "t3", "t4"]
+
+        # Multiplicative replacement
+        norm_mult = AnalysisConfig.NormalizationConfig(
+            method="none",
+            zero_policy="multiplicative_replacement",
+            multiplicative_replacement_delta=0.65
+        )
+        adv = AnalysisConfig.AdvancedConfig(min_prevalence=0.0, min_abundance=0.0, min_samples_per_group=2)
+        config_mult = AnalysisConfig.AnalysisConfig(
+            method="nb_glm",
+            formula="~ group",
+            metadata_columns=["group"],
+            normalization=norm_mult,
+            advanced=adv,
+            created_by="test_mult"
+        )
+
+        (prepared_mult, _, _, _, _) = Execution.prepare_analysis_table(
+            config_mult, counts;
+            sample_ids=sample_ids,
+            taxa_ids=taxa_ids,
+            drop_policy="drop"
+        )
+
+        # Check total preservation for every sample
+        for j in 1:4
+            @test sum(prepared_mult[:, j]) ≈ sum(counts[:, j]) atol=1e-10
+        end
+
+        # Check subcompositional ratio preservation for non-zeros
+        # In sample 1, taxa 2 and 3 are 20 and 30 -> ratio 2/3
+        @test prepared_mult[2, 1] / prepared_mult[3, 1] ≈ counts[2, 1] / counts[3, 1] atol=1e-10
+        # In sample 2, taxa 2 and 4 are 50 and 30 -> ratio 5/3
+        @test prepared_mult[2, 2] / prepared_mult[4, 2] ≈ counts[2, 2] / counts[4, 2] atol=1e-10
+
+        # Bayesian multiplicative replacement
+        norm_bayes = AnalysisConfig.NormalizationConfig(
+            method="none",
+            zero_policy="bayesian_multiplicative",
+            multiplicative_replacement_delta=0.65
+        )
+        config_bayes = AnalysisConfig.AnalysisConfig(
+            method="nb_glm",
+            formula="~ group",
+            metadata_columns=["group"],
+            normalization=norm_bayes,
+            advanced=adv,
+            created_by="test_bayes"
+        )
+        (prepared_bayes, _, _, _, _) = Execution.prepare_analysis_table(
+            config_bayes, counts;
+            sample_ids=sample_ids,
+            taxa_ids=taxa_ids,
+            drop_policy="drop"
+        )
+
+        # Check total preservation for Bayesian replacement
+        for j in 1:4
+            @test sum(prepared_bayes[:, j]) ≈ sum(counts[:, j]) atol=1e-10
+        end
+    end
+
+    @testset "TSS offset for NB_GLM" begin
+        counts = [
+            10.0 20.0 30.0 40.0;
+            20.0 30.0 40.0 50.0;
+            30.0 40.0 50.0 60.0
+        ]
+        sample_ids = ["s1", "s2", "s3", "s4"]
+        taxa_ids = ["t1", "t2", "t3"]
+
+        norm_tss = AnalysisConfig.NormalizationConfig(method="TSS", zero_policy="pseudocount")
+        adv = AnalysisConfig.AdvancedConfig(min_prevalence=0.0, min_abundance=0.0, min_samples_per_group=2)
+        config_tss = AnalysisConfig.AnalysisConfig(
+            method="nb_glm",
+            formula="~ group",
+            metadata_columns=["group"],
+            normalization=norm_tss,
+            advanced=adv,
+            created_by="test_tss"
+        )
+
+        (prepared_tss, _, manifest_tss, _, _) = Execution.prepare_analysis_table(
+            config_tss, counts;
+            sample_ids=sample_ids,
+            taxa_ids=taxa_ids,
+            drop_policy="drop"
+        )
+
+        # Response table keeps count nature (does NOT divide into fractions 0.16..)
+        @test prepared_tss[1, 1] >= 10.0
+        # Adapter run verifies offset presence
+        adapter = Execution.JuliaAdapter(method="nb_glm")
+        diag_clean = Execution.ExecutionDiagnostics(warnings=String[], errors=String[], healings=String[], checks=OrderedDict{String,Any}(), is_dangerous=false, banner=nothing)
+        res = Execution.run_analysis(adapter, config_tss, prepared_tss; diagnostics=diag_clean, manifest=manifest_tss, sample_ids=sample_ids, taxa_ids=taxa_ids)
+        @test res isa Execution.ExecutionResult
+    end
 end
