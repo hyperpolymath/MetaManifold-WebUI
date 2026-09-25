@@ -103,6 +103,8 @@ jobs:
   test:
     name: Julia ${{ matrix.julia-version }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     # The repository's root .Rprofile sources renv/activate.R, so R started from
     # the checkout auto-activates renv and rewrites the library paths. renv is a
     # local-development convenience; CI installs into the system library and
