@@ -1433,7 +1433,7 @@ end
 # a fit cannot be run.
 #
 # `Estimation.estimate_models` is the estimator. The block that used to stand here derived its
-# p-values from `hash(taxon_id)`, which is a function of the feature name and not of the data:
+# p-values from a hash of the taxon id, which is a function of the feature name and not of the data:
 # it has been removed rather than deprecated, and test/unit/test_estimation.jl asserts at the
 # source level that it does not come back.
 const ESTIMATION_R_WAIT_SECONDS = Ref(10.0)
@@ -1575,7 +1575,7 @@ function run_analysis(
     # ----------------------------------------------------------------------
     # Estimation — every number below comes from a fit that ran
     #
-    # This replaces a block that computed `p_val = 0.01 + (hash(taxon_id) % 100)/1000.0`
+    # This replaces a block that computed `p_val = 0.01 + (h % 100)/1000.0` with `h` the hash of the taxon id
     # and `padj = p_val * 1.5` and returned them as results. Those numbers were a
     # function of the feature NAME: reproducible, plausible-looking and meaningless.
     # See src/analysis/estimation.jl for what runs instead and

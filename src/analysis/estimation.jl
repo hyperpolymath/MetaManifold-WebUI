@@ -9,7 +9,7 @@
 #
 # This module exists because the layer it replaces did not compute anything. The block
 # it replaces in Execution.run_analysis derived its p-values from
-# `p_val = 0.01 + (h % 100) / 1000.0` where `h = hash(taxon_id)` — a deterministic
+# `p_val = 0.01 + (h % 100) / 1000.0` where `h` was the hash of the taxon id — a deterministic
 # function of the feature NAME, carrying no information about the counts. The source
 # called it a stub; the caller received it as a result. A stub that is returned as a
 # result is a wrong answer, so it is gone rather than deprecated.
@@ -76,6 +76,28 @@ const REFUSED_DISPERSION = Dict{String,String}(
 )
 
 const SUPPORTED_DISPERSION = ("parametric",)
+
+"""
+The strings R's `write.csv(..., na = "NA")` uses for a missing value. CSV.jl's default
+`missingstring` is only `""`, so without this a numeric column holding one `NA` is read as a
+string column and every later `isfinite` throws — which turned every fit into `not_run`.
+"""
+const R_NA_STRINGS = ["NA", ""]
+
+"""
+    _refused_dispersion(name) -> Union{Nothing,Pair{String,String}}
+
+Look a dispersion name up in `REFUSED_DISPERSION` without regard to case: the configuration
+layer lower-cases what it stores, and a `glmgampoi` has to meet the same refusal, with the
+same reason, as `glmGamPoi`.
+"""
+function _refused_dispersion(name::AbstractString)
+    key = lowercase(strip(name))
+    for (k, v) in REFUSED_DISPERSION
+        lowercase(k) == key && return k => v
+    end
+    return nothing
+end
 
 """
     ESTIMATE_SCALE
@@ -385,8 +407,9 @@ function estimate_models(config::AnalysisConfig.AnalysisConfig,
     # -- method preconditions (configuration errors: hard refusals) -------
     if method == AnalysisConfig.NB_GLM
         dispersion = lowercase(strip(config.advanced.dispersion_method))
-        haskey(REFUSED_DISPERSION, dispersion) &&
-            throw(ArgumentError("dispersion_method '$dispersion' is $(REFUSED_DISPERSION[dispersion]) See issue #21 and docs/statistics/method-conditions/parametric-fits.md."))
+        refused = _refused_dispersion(dispersion)
+        isnothing(refused) ||
+            throw(ArgumentError("dispersion_method '$(first(refused))' is $(last(refused)) See issue #21 and docs/statistics/method-conditions/parametric-fits.md."))
         dispersion in SUPPORTED_DISPERSION ||
             throw(ArgumentError("dispersion_method '$dispersion' is not one of $(join(SUPPORTED_DISPERSION, ", ")). Refusing."))
 
@@ -450,8 +473,8 @@ function estimate_models(config::AnalysisConfig.AnalysisConfig,
                 "mass"           => RCall.rcopy(String, RCall.reval("est_mass_version")),
                 "primary_levels" => RCall.rcopy(String, RCall.reval("est_primary_levels_text")),
             )
-            fit_rows[] = collect(CSV.File(fits_path))
-            coef_rows[] = collect(CSV.File(coefs_path))
+            fit_rows[] = collect(CSV.File(fits_path; missingstring = R_NA_STRINGS))
+            coef_rows[] = collect(CSV.File(coefs_path; missingstring = R_NA_STRINGS))
             RCall.reval("rm(list = ls(pattern = \"^est_\")); gc()")
             return nothing
         end

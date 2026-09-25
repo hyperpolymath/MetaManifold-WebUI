@@ -12,6 +12,27 @@ types, tests, infrastructure, and alignment.
 
 ## [Unreleased]
 
+### Fixed — every parametric fit returned `not_run`; CI failures are now readable (2026-09-26)
+
+- **R's `NA` is read as missing.** The estimator writes its fits with
+  `write.csv(..., na = "NA")` and read them back with CSV.jl's default
+  `missingstring = ""`. One `NA` in a numeric column made the whole column a string
+  column, `isfinite` threw, and every NB/logistic/Gaussian fit came back as `not_run`
+  with no statistics. The Julia side now reads `"NA"` as missing (`R_NA_STRINGS`).
+  Julia tests on `main` had been red since #60 for this reason.
+- **`glmGamPoi` reaches its by-name refusal.** The configuration lower-cases
+  `dispersion_method` but compared it against a table spelling `glmGamPoi`, so the name
+  was turned away as unknown and the issue #21 explanation was never shown. The compare
+  is now lower-case against lower-case, and the estimator looks its refusals up
+  case-insensitively. A test covers three spellings.
+- **Source-scan tests no longer trip on comments.** Comments quoting the removed
+  hash-derived p-value code were reworded so the "no placeholder statistics" scan stays
+  strict without flagging its own history.
+- **CI names the failing assertion.** The "Run tests" step posts one annotation per
+  `Test Failed` / `Error During Test` block and one with only the failing summary rows.
+  The old single annotation was cut to 4096 bytes by the checks API, which removed the
+  failing testset, and the job log is served from a host some environments cannot reach.
+
 ### Fixed — the ILR path stops substituting a basis it was not asked for (2026-09-25)
 
 - **Unimplemented ILR bases are refused rather than substituted.** The configuration
