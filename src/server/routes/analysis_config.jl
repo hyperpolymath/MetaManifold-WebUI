@@ -71,6 +71,13 @@ end
             pseudocount=Float64(get(norm_body, "pseudocount", 0.5)),
             ilr_basis=get(norm_body, "ilr_basis", nothing) isa Nothing ? nothing : String(get(norm_body, "ilr_basis", nothing)),
             multiplicative_replacement_delta=get(norm_body, "multiplicative_replacement_delta", nothing) isa Nothing ? nothing : Float64(get(norm_body, "multiplicative_replacement_delta", nothing)),
+            # The declared scaling parameters travel with the request, are validated by the
+            # same constructor the rest of the configuration uses, and end up in the config
+            # hash — a run that asked for a different CSS quantile is a different run.
+            css_quantile=Float64(get(norm_body, "css_quantile", 0.75)),
+            tmm_ref_column=get(norm_body, "tmm_ref_column", nothing) isa Nothing ? nothing : String(get(norm_body, "tmm_ref_column", nothing)),
+            tmm_log_ratio_trim=Float64(get(norm_body, "tmm_log_ratio_trim", 0.3)),
+            tmm_sum_trim=Float64(get(norm_body, "tmm_sum_trim", 0.05)),
         )
 
         corr_body = get(body, "correction", Dict{String,Any}())

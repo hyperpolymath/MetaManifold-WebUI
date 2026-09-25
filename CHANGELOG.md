@@ -12,6 +12,55 @@ types, tests, infrastructure, and alignment.
 
 ## [Unreleased]
 
+### Fixed — `method = "TSS"` was refused by the layer that claimed to have shipped it (2026-09-25)
+
+- **The allowed-normalisation table held the three names in a different case from the
+  one the configuration stored.** `NormalizationConfig` canonicalises its method to
+  lower case (`"TSS"` becomes `"tss"`), while `VALID_NORMALIZATION_FOR_METHOD` listed
+  `"TSS"`, `"CSS"`, `"RSS"`. The membership test therefore failed for every one of those
+  spellings, and `AnalysisConfig` raised
+  `normalization.method 'tss' incompatible with method 'nb_glm'` — including for
+  `test/unit/test_execution.jl`'s `TSS offset for NB_GLM` testset, which constructed
+  `method="TSS"` exactly as the documentation instructs. That failure is what reddened
+  the CI run for the merged TSS-offsets commit; it was not a flaky test.
+- Both the table and the two comparisons (`AnalysisConfig` constructor, `validate_config`)
+  are lower case now, `test/unit/test_scaling.jl` asserts that every admissible spelling
+  of every method name is accepted, and the JSON schema enum still accepts the upper-case
+  spellings for existing documents.
+
+### Added — TSS/CSS/RSS are computed as offsets and recorded as such (2026-09-25)
+
+- **`src/analysis/scaling.jl` is wired into the execution path** (issue #16). Under
+  `nb_glm` the response stays the counts and the offset is the declared scaling factor's
+  logarithm: `tss` = log library size, `css` = log cumulative sum at the declared
+  `css_quantile` (Paulson et al. 2013), `rss` = log of the trimmed weighted mean of
+  log-ratios to a reference sample (TMM, Robinson & Oshlack 2010), `size_factors` =
+  median-of-ratios (DESeq2/RLE) — the estimator the name claimed all along and the code
+  did not compute. `none` keeps the plain log library size it has always meant.
+- **The declared parameters travel with the configuration**: `css_quantile` (default
+  0.75), `tmm_ref_column` (default: chosen the way edgeR chooses it, and recorded),
+  `tmm_log_ratio_trim` (0.3) and `tmm_sum_trim` (0.05) are validated in the constructor,
+  included in the config hash and canonical JSON, round-tripped through `to_json`/
+  `from_json`/Nickel/DEED, mirrored in the JSON schema and the Nickel contracts, exposed
+  through the server's configuration route, and documented in `context_help` and the
+  frontend help. A run that asked for a different quantile is a different run.
+- **What was computed is recorded**: `diagnostics.checks["scaling"]` and the manifest
+  provenance carry the kind, the definition sentence, the parameters, the raw quantities
+  before centring and a SHA-256 of the offset vector, so two runs can be shown to agree
+  and a run whose offset changed is detectable from the manifest alone.
+- **Refusals instead of substitutions**: `css` and `rss` are refused for a response with
+  no counts to offset (a non-count response is what the old alias silently produced),
+  a zero or non-finite sample total is refused by name, a CSS cumulative sum of zero is
+  refused as `log(0)` rather than replaced, and an unknown `tmm_ref_column` is refused
+  with the real sample names instead of falling back to the data-driven choice.
+- Evidence: `test/unit/test_scaling.jl` (known answers with the arithmetic written
+  beside them, properties a wrong implementation fails, the CSS robustness property,
+  negative controls, the integration path through `prepare_analysis_table`, and a
+  base-R transcription of the same conditions), plus the conditions document
+  `docs/statistics/method-conditions/scaling-and-offsets.md`. Parity with
+  `metagenomeSeq::cumNorm` and `edgeR::calcNormFactors` is **not** claimed: neither
+  package is in `renv.lock`, and the outstanding condition is recorded in issue #16.
+
 ### Fixed — the analysis path no longer returns placeholder statistics (2026-09-25)
 
 - **`run_analysis` computed nothing and returned numbers anyway.** It derived
