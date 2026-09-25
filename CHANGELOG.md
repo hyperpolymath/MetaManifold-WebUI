@@ -12,6 +12,21 @@ types, tests, infrastructure, and alignment.
 
 ## [Unreleased]
 
+### Fixed — the ILR path stops substituting a basis it was not asked for (2026-09-25)
+
+- **Unimplemented ILR bases are refused rather than substituted.** The configuration
+  accepted `phylogenetic`, `sequential_binary_partition` and `balance_dendrogram`, and
+  the execution path warned and computed the default Helmert basis instead. An ILR
+  balance is only interpretable under the basis that defined it, so substituting a
+  basis computes numbers that mean something other than what the analyst asked for.
+  The three deferred bases (`DEFERRED_ILR_BASIS`) are refused at construction and in
+  `prepare_analysis_table`.
+- **Balances are labelled as balances.** An ILR table of $n$ taxa has $n-1$ balances,
+  not $n$ features. The rows are relabelled `balance_1`..`balance_n-1`,
+  `diagnostics.checks["ilr"]` records the basis, definition, input taxa count and
+  taxa order, and the all-zero-taxa healing block no longer restores taxon labels onto
+  balance rows.
+
 ### Fixed — `method = "TSS"` was refused by the layer that claimed to have shipped it (2026-09-25)
 
 - **The allowed-normalisation table held the three names in a different case from the

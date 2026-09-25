@@ -1056,6 +1056,7 @@ function prepare_analysis_table(
     # decides only what the response is and which offset it gets.
     transform_method = lowercase(strip(config.normalization.method))
     prepared = copy(counts_after_zero)
+    filtered_taxa_ids_before_ilr = copy(filtered_taxa_ids)
     offset = nothing
     scaling = nothing
     count_response = config.method == AnalysisConfig.NB_GLM
@@ -1169,8 +1170,8 @@ function prepare_analysis_table(
         # For simplicity, we return CLR for now with warning that exact ILR basis deferred, and set prepared to clr_table
         # Real implementation would use `compositions::ilr` or `philr` or custom
 
-        if config.normalization.ilr_basis in ("phylogenetic", "sequential_binary_partition", "balance_dendrogram")
-            @warn "ILR basis $(config.normalization.ilr_basis) is deferred (see GitHub issue 05-ilr-basis-phylogenetic-sbp). Currently using default basis with warning."
+        if !isnothing(config.normalization.ilr_basis) && (config.normalization.ilr_basis in AnalysisConfig.DEFERRED_ILR_BASIS)
+            throw(ArgumentError("ILR basis '$(config.normalization.ilr_basis)' is not implemented (deferred, see GitHub issue #20). Refusing to substitute default Helmert basis."))
         end
 
         # For default basis, we can compute ILR as: ilr = V^T * clr where V is n x (n-1) orthonormal basis
@@ -1194,9 +1195,7 @@ function prepare_analysis_table(
         end
 
         prepared = ilr_table
-        # Note: prepared now has n_taxa-1 rows, not n_taxa — for ILR, number of balances = n_taxa-1
-        # For consistency, we keep taxa_ids as balances? For stub, we create new taxa_ids for balances
-        # But for simplicity, we keep prepared as ilr_table and adjust taxa_ids later
+        filtered_taxa_ids = ["balance_$i" for i in 1:(n_taxa - 1)]
 
     elseif transform_method == "presence_absence"
         prepared = Float64.(counts_after_zero .> 0)
@@ -1235,6 +1234,14 @@ function prepare_analysis_table(
     if !isnothing(scaling)
         checks["scaling"] = Scaling.factor_checks(scaling)
         append!(warnings, scaling.warnings)
+    end
+    if transform_method == "ilr"
+        checks["ilr"] = OrderedDict{String,Any}(
+            "basis" => something(config.normalization.ilr_basis, "default"),
+            "definition" => "Helmert-style sequential binary partition (balance_i = sqrt(i/(i+1)) * (mean(log(x_1..x_i)) - log(x_{i+1})))",
+            "taxa_in" => length(filtered_taxa_ids_before_ilr),
+            "taxa_order" => filtered_taxa_ids_before_ilr
+        )
     end
     checks["all_zero_taxa"] = OrderedDict{String,Any}(
         "all_zero_taxa_indices" => all_zero_taxa_indices,
@@ -1292,7 +1299,7 @@ function prepare_analysis_table(
         try
             (healed_counts, healed_taxa_ids, heal_t, _) = heal_all_zero_taxa(
                 filtered_counts,
-                filtered_taxa_ids,
+                transform_method == "ilr" ? filtered_taxa_ids_before_ilr : filtered_taxa_ids,
                 dp,
                 effective_epsilon;
                 indices=all_zero_taxa_indices
@@ -1302,10 +1309,13 @@ function prepare_analysis_table(
                 # For ILR, prepared has n-1 rows, so need to handle differently — for stub, skip if ILR
                 if transform_method != "ilr"
                     prepared = prepared[keep_rows, :]
+                    filtered_taxa_ids = healed_taxa_ids
                 end
-                filtered_taxa_ids = healed_taxa_ids
                 filtered_counts = healed_counts
             else
+                if transform_method != "ilr"
+                    filtered_taxa_ids = healed_taxa_ids
+                end
                 filtered_counts = healed_counts
             end
             append!(healings, heal_t)
