@@ -12,6 +12,35 @@ types, tests, infrastructure, and alignment.
 
 ## [Unreleased]
 
+### Fixed — the analysis path no longer returns placeholder statistics (2026-09-25)
+
+- **`run_analysis` computed nothing and returned numbers anyway.** It derived
+  `pvalue` from `0.01 + (hash(taxon_id) % 100) / 1000.0`, `padj` from
+  `pvalue * 1.5` and `log2FoldChange` from `(hash % 20) / 10 - 1`: every one of
+  those is a deterministic function of the feature's *name*, carrying no
+  information about the counts, and they were returned to callers as results. The
+  placeholder is deleted, not deprecated, and `test/unit/test_estimation.jl`
+  reads `Execution.jl` as source and asserts it does not come back.
+- **Real estimation** (`src/analysis/estimation.jl`, catalogue item 2): per-feature
+  `MASS::glm.nb` for `nb_glm` (with a required offset), `stats::lm` for
+  `clr_lm`/`ilr_lm`, and `stats::glm(family = binomial)` for `logistic` on a 0/1
+  response — all through the shared R runtime lock, all with R and MASS versions,
+  offset hash and result-table hashes in the provenance.
+- **Unsuccessful states are states.** A feature whose fit fails gets
+  `status = "failed"`, a note naming the cause, and `null` for every statistic; it
+  is excluded from the BH family and counted. A run that cannot happen at all —
+  no design, R unreachable, R busy past the timeout — returns `status =
+  "not_run"` with a reason and an empty result set, never an empty table that
+  reads as "nothing was significant".
+- **Refusals instead of substitutions**: unsupported formula syntax
+  (interactions, transformations, random effects, nesting), a `glmGamPoi`/
+  `local`/`mean`/`pooled` dispersion method that has no implementation here, an
+  offset on a non-count model, a count model without one, and a binomial fit on
+  proportions all raise with the reason attached.
+- BH is implemented in Julia and compared against R's `p.adjust(method = "BH")`
+  in the tests; conditions are published in
+  `docs/statistics/method-conditions/parametric-fits.md`.
+
 ### Added — Type-system engineering series (2026-09)
 
 - **Epistemic claims with receipts**: added `Standpoint`, `TaxonWarrant`,
