@@ -335,7 +335,10 @@ struct AdvancedConfig
         zero_policy_clean = lowercase(strip(zero_policy))
 
         # Dispersion method validation
-        if !(dispersion_method_clean in VALID_DISPERSION_METHODS)
+        # Lower-case against lower-case: the table spells `glmGamPoi` the way the package
+        # does, and comparing a lower-cased input against it refused the name at the door, so
+        # the estimator's by-name refusal (issue #21) was never reached.
+        if !(dispersion_method_clean in lowercase.(VALID_DISPERSION_METHODS))
             throw(ArgumentError("dispersion_method must be one of $(join(VALID_DISPERSION_METHODS, ", ")) — got '$dispersion_method_clean'. See context_help('advanced.dispersion_method')"))
         end
 

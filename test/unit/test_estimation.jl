@@ -182,6 +182,21 @@
         @test occursin("glmGamPoi", err.msg)
         @test occursin("#21", err.msg)
 
+        # The configuration layer lower-cases what it stores; every spelling has to reach the
+        # same by-name refusal instead of being turned away as an unknown method at the door.
+        for spelling in ("glmgampoi", "GLMGAMPOI", " glmGamPoi ")
+            spelled = try
+                Estimation.estimate_models(nb_config(dispersion = spelling), counts_effect;
+                                           sample_metadata = meta_effect, offset = offsets_effect,
+                                           taxa_ids = taxa_effect)
+                nothing
+            catch e
+                e
+            end
+            @test spelled isa ArgumentError
+            @test occursin("glmGamPoi", spelled.msg) && occursin("#21", spelled.msg)
+        end
+
         # Counting without an offset would compare library sizes instead of groups.
         @test_throws ArgumentError Estimation.estimate_models(
             nb_config(), counts_effect; sample_metadata = meta_effect, taxa_ids = taxa_effect)
