@@ -43,6 +43,12 @@ means something specific.
    maximum likelihood where the model justifies it, with identifiability,
    boundary-estimate and convergence checks that produce *unsuccessful states* rather
    than plausible parameters.
+   **Implemented 2026-09-25** in `src/analysis/estimation.jl`, reached through
+   `Execution.run_analysis`; conditions published in
+   [`method-conditions/parametric-fits.md`](method-conditions/parametric-fits.md).
+   It replaces a placeholder that derived p-values from `hash(taxon_id)`. What it does
+   *not* yet have is issue #1's independent statistical review, which is why the
+   catalogue's other items remain gated.
 3. **Nonparametric tests** — permutation/bootstrap, with resampling units and
    exchangeability stated, seeds recorded, and Monte Carlo limits reported alongside
    the estimate.

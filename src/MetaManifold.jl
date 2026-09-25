@@ -35,6 +35,8 @@ include("analysis/diversity.jl")
 include("analysis/analysis.jl")
 include("analysis/AnalysisConfig.jl")
 include("analysis/clade_cumulus.jl")
+# Estimation fits what AnalysisConfig declares and Execution runs it, so it sits between them.
+include("analysis/estimation.jl")
 include("analysis/Execution.jl")
 
 end

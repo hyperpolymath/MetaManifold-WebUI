@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 """
-    Execution — execution harness with abstract AnalysisAdapter and concrete stubs (RAdapter, JuliaAdapter)
+    Execution — execution harness with abstract AnalysisAdapter and concrete adapters (RAdapter, JuliaAdapter)
 
 Implements Milestone 4:
 
-- abstract AnalysisAdapter and concrete stubs RAdapter, JuliaAdapter
+- abstract AnalysisAdapter and concrete adapters RAdapter, JuliaAdapter
 - prepare_analysis_table: applies declared transform, offset, zero_policy, epistemic filtering with Advanced section validation
-- run_analysis: stub that records full manifest and diagnostics, hard-stop with DANGER banner on failures
+- run_analysis: runs the declared model through `Estimation` and records what it did; hard-stops with a DANGER banner on failures, and reports an unsuccessful state rather than a number when a fit cannot be run
 - self-diagnostics and safe self-healing
 - Tests for prepare_analysis_table (CLR with pseudocount=1, epsilon=1e-6, drop vs impute)
 
@@ -28,7 +28,7 @@ Design:
 - Epistemic filtering: avec_fibre true, epistemic_status present_in_every_admissible_world, min_prevalence, min_abundance, max_features
 - Self-diagnostics: NaN/Inf, zero variance, all-zero samples/taxa, library size outliers, batch confounding, prevalence/abundance, etc.
 - Safe self-healing: heal NaN/Inf with epsilon, drop all-zero samples/taxa with warning, record healing in diagnostics, never silent
-- run_analysis: stub records full manifest and diagnostics, hard-stop with DANGER banner on failures
+- run_analysis: runs the declared model (src/analysis/estimation.jl) and records full manifest and diagnostics; a fit that cannot be run is an unsuccessful state with a reason, never a placeholder number
 """
 module Execution
 
@@ -43,6 +43,7 @@ using Statistics
 # Use AnalysisConfig from parent module
 import ..AnalysisConfig
 using ..Epistemic
+using ..Estimation
 using ..Provenance: probe_metamanifold, probe_host
 
 export AnalysisAdapter, RAdapter, JuliaAdapter,
@@ -87,7 +88,7 @@ const IMPUTE_POLICY_STRINGS = Dict{String,ImputePolicy}(
 )
 
 # --------------------------------------------------------------------------
-# Abstract adapter and concrete stubs
+# Abstract adapter and concrete adapters
 # --------------------------------------------------------------------------
 
 """
@@ -99,12 +100,12 @@ Concrete implementations:
 
 Every adapter must implement:
 - prepare_analysis_table (via Execution module, not adapter-specific, but adapter may provide custom transform)
-- run_analysis (adapter-specific stub that records manifest and diagnostics)
+- run_analysis (adapter-specific; runs the model and records manifest and diagnostics)
 """
 abstract type AnalysisAdapter end
 
 """
-    RAdapter — stub for R-based execution (DESeq2, edgeR, vegan, metagenomeSeq, etc.)
+    RAdapter — R-based execution (DESeq2, edgeR, vegan, metagenomeSeq, etc.)
 
 Fields:
 - r_binary: path to R binary (from config/tools.yml)
@@ -140,7 +141,7 @@ struct RAdapter <: AnalysisAdapter
 end
 
 """
-    JuliaAdapter — stub for pure Julia execution (GLM, MultivariateStats, etc.)
+    JuliaAdapter — pure Julia execution (GLM, MultivariateStats, etc.)
 
 Fields:
 - method: analysis method (must match AnalysisConfig)
@@ -314,7 +315,7 @@ struct ExecutionManifest
 end
 
 """
-    ExecutionResult — stub result from run_analysis, records full manifest and diagnostics
+    ExecutionResult — result of run_analysis: the fit's output, full manifest and diagnostics
 
 Fields:
 - id: UUID4
@@ -322,7 +323,7 @@ Fields:
 - config_id: UUID4
 - config_hash: SHA256
 - method: AnalysisMethod
-- results: OrderedDict{String,Any} — taxon -> stats (mock for stub)
+- results: OrderedDict{String,Any} — feature -> statistics from the fitted model. Empty when nothing could be fitted, never filled with placeholders.
 - diagnostics: ExecutionDiagnostics
 - manifest: ExecutionManifest
 - provenance: OrderedDict
@@ -1369,7 +1370,15 @@ function prepare_analysis_table(
 end
 
 # --------------------------------------------------------------------------
-# run_analysis — stub that records full manifest and diagnostics, hard-stop with DANGER banner on failures
+# run_analysis — runs the declared model, records full manifest and diagnostics, hard-stop with
+# DANGER banner on failures, and reports an unsuccessful state (never a placeholder number) when
+# a fit cannot be run.
+#
+# `Estimation.estimate_models` is the estimator. The block that used to stand here derived its
+# p-values from `hash(taxon_id)`, which is a function of the feature name and not of the data:
+# it has been removed rather than deprecated, and test/unit/test_estimation.jl asserts at the
+# source level that it does not come back.
+const ESTIMATION_R_WAIT_SECONDS = Ref(10.0)
 # --------------------------------------------------------------------------
 
 function is_dangerous_execution(diagnostics::ExecutionDiagnostics)
@@ -1414,20 +1423,36 @@ function log_danger_banner_execution(diagnostics::ExecutionDiagnostics, config::
 end
 
 """
-    run_analysis(adapter, config, prepared_table, sample_metadata; diagnostics, manifest) -> ExecutionResult
+    run_analysis(adapter, config, prepared_table; sample_metadata, diagnostics, manifest,
+                 sample_ids, taxa_ids) -> ExecutionResult
 
-Stub that records full manifest and diagnostics, hard-stop with DANGER banner on failures.
+Run the model named by `config` and return its per-feature estimates with the full manifest,
+diagnostics, provenance and hash chain.
 
-- adapter: AnalysisAdapter (RAdapter or JuliaAdapter stub)
-- config: AnalysisConfig.AnalysisConfig
-- prepared_table: Matrix{Float64} from prepare_analysis_table
-- sample_metadata: OrderedDict or nothing
-- diagnostics: ExecutionDiagnostics from prepare_analysis_table
-- manifest: ExecutionManifest from prepare_analysis_table
+- adapter: AnalysisAdapter (RAdapter or JuliaAdapter). Its `method` must equal the config's.
+- config: AnalysisConfig.AnalysisConfig — the declared method, formula and correction.
+- prepared_table: Matrix{Float64} from `prepare_analysis_table`.
+- sample_metadata: per-sample metadata for the design named by `config.formula`, as
+  column => per-sample vector. Without it no test is run and the result says so; the method
+  catalogue is explicit that a missing design means a descriptive summary, not a guess.
+- diagnostics, manifest: from `prepare_analysis_table`.
+- sample_ids, taxa_ids: labels, in the prepared table's order.
 
-Returns ExecutionResult stub with mock results, full manifest, diagnostics, provenance, hash chain.
+Three outcomes, all explicit:
 
-Hard-stop with DANGER banner on failures: if diagnostics has errors (should have been hard-stopped earlier in prepare_analysis_table) or if adapter method mismatches config method, or if prepared table has NaN/Inf after healing, throws ArgumentError with DANGER banner.
+- the fit ran: `results` holds one entry per feature, with `pvalue`/`padj` from the model and
+  `status` in {"ok", "boundary", "failed"} per feature;
+- some features failed: those rows carry `status = "failed"`, a `note`, and `nothing` for
+  every statistic. They are excluded from the BH family and counted in
+  `diagnostics.checks["estimation"]["n_failed"]`;
+- nothing ran (no design, R unavailable or busy): `results` is empty, the reason is in
+  `provenance["estimation"]["reason"]` and in a warning on the diagnostics. An empty table of
+  results is a statement about the run, and this function never dresses one up as a statement
+  about the data.
+
+Hard-stop with DANGER banner on failures: if diagnostics has errors, if the adapter method
+mismatches the config method, if the prepared table still has NaN/Inf after healing, or if the
+requested dispersion method has no implementation (refusing to substitute another one).
 """
 function run_analysis(
     adapter::AnalysisAdapter,
@@ -1489,37 +1514,43 @@ function run_analysis(
     # Log DANGER banner if dangerous
     log_danger_banner_execution(diagnostics, config)
 
-    # Mock results: for each taxon, create mock stats (p-value, log2FoldChange, etc.)
-    # Real implementation would call R via RCall or Julia via GLM, etc.
-    results = OrderedDict{String,Any}()
-    for (i, taxon_id) in enumerate(taxa_ids)
-        # Mock p-value and log2FoldChange
-        # For deterministic testing, use hash of taxon_id
-        h = hash(taxon_id)
-        p_val = 0.01 + (h % 100) / 1000.0 # 0.01..0.11
-        log2fc = (h % 20) / 10.0 - 1.0 # -1..1
-        results[taxon_id] = OrderedDict{String,Any}(
-            "pvalue" => p_val,
-            "padj" => p_val * 1.5, # mock BH
-            "log2FoldChange" => log2fc,
-            "baseMean" => 100.0 + (h % 1000),
-            "method" => config_method_str,
-            "adapter" => string(typeof(adapter))
-        )
-    end
+    # ----------------------------------------------------------------------
+    # Estimation — every number below comes from a fit that ran
+    #
+    # This replaces a block that computed `p_val = 0.01 + (hash(taxon_id) % 100)/1000.0`
+    # and `padj = p_val * 1.5` and returned them as results. Those numbers were a
+    # function of the feature NAME: reproducible, plausible-looking and meaningless.
+    # See src/analysis/estimation.jl for what runs instead and
+    # docs/statistics/method-conditions/parametric-fits.md for what it supports.
+    # ----------------------------------------------------------------------
+    outcome = Estimation.estimate_models(
+        config, prepared_table;
+        sample_metadata = sample_metadata,
+        offset = manifest.offset,
+        taxa_ids = taxa_ids,
+        sample_ids = sample_ids,
+        seed = adapter.seed,
+        r_wait_seconds = ESTIMATION_R_WAIT_SECONDS[]
+    )
 
-    # If no taxa_ids provided, use generic
-    if isempty(results)
-        for i in 1:size(prepared_table, 1)
-            taxon_id = isempty(taxa_ids) ? "taxon_$i" : taxa_ids[i]
-            results[taxon_id] = OrderedDict{String,Any}(
-                "pvalue" => 0.05,
-                "padj" => 0.1,
-                "log2FoldChange" => 0.0,
-                "method" => config_method_str
-            )
-        end
+    results = outcome.results
+
+    # The estimation diagnostics travel with the execution diagnostics, and a run that did
+    # not happen is a warning on the record rather than an empty table of results.
+    checks = OrderedDict{String,Any}(diagnostics.checks)
+    checks["estimation"] = outcome.diagnostics
+    warnings = copy(diagnostics.warnings)
+    if outcome.status == :not_run
+        push!(warnings, "Estimation not run: $(outcome.reason)")
     end
+    exec_diagnostics = ExecutionDiagnostics(
+        warnings = warnings,
+        errors = diagnostics.errors,
+        healings = diagnostics.healings,
+        checks = checks,
+        is_dangerous = diagnostics.is_dangerous,
+        banner = diagnostics.banner
+    )
 
     # Create ExecutionResult with full manifest and diagnostics
     exec_result = ExecutionResult(
@@ -1528,7 +1559,7 @@ function run_analysis(
         config_hash=config.hash,
         method=config.method,
         results=results,
-        diagnostics=diagnostics,
+        diagnostics=exec_diagnostics,
         manifest=manifest,
         provenance=OrderedDict{String,Any}(
             "config_id" => config.id,
@@ -1537,16 +1568,17 @@ function run_analysis(
             "manifest_hash" => manifest.hash,
             "adapter_type" => string(typeof(adapter)),
             "prepared_table_hash" => manifest.prepared_table_hash,
+            "estimation" => outcome.provenance,
             "diagnostics" => OrderedDict(
-                "warnings" => diagnostics.warnings,
-                "healings" => diagnostics.healings,
-                "checks" => diagnostics.checks,
-                "is_dangerous" => diagnostics.is_dangerous
+                "warnings" => exec_diagnostics.warnings,
+                "healings" => exec_diagnostics.healings,
+                "checks" => exec_diagnostics.checks,
+                "is_dangerous" => exec_diagnostics.is_dangerous
             )
         )
     )
 
-    @info "run_analysis stub completed" result_id=exec_result.id config_id=config.id method=config_method_str taxa_count=length(results) dangerous=diagnostics.is_dangerous
+    @info "run_analysis finished" result_id=exec_result.id config_id=config.id method=config_method_str features=length(results) estimation_status=string(outcome.status) dangerous=exec_diagnostics.is_dangerous
 
     return exec_result
 end

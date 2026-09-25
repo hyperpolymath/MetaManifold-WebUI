@@ -365,7 +365,7 @@
         @test any(prepared_rar .> 0)
     end
 
-    @testset "run_analysis — stub with manifest and diagnostics, hard-stop DANGER banner" begin
+    @testset "run_analysis — real estimator or an explicit unsuccessful state, hard-stop DANGER banner" begin
         norm = AnalysisConfig.NormalizationConfig(method="size_factors", epsilon=1e-6)
         adv = AnalysisConfig.AdvancedConfig(min_samples_per_group=2)
         config = AnalysisConfig.AnalysisConfig(
@@ -388,18 +388,25 @@
             drop_policy="drop"
         )
 
-        # RAdapter stub
+        # No sample metadata means no design, and no design means no test. What must NOT
+        # happen is what used to happen here: three rows of statistics whose p-values came
+        # from `hash(taxon_id)`. An empty result carrying a stated reason is the honest
+        # answer, and these assertions are the guard that the placeholder stays gone.
         r_adapter = Execution.RAdapter(method="nb_glm")
         result_r = Execution.run_analysis(r_adapter, config, prepared; diagnostics=diagnostics, manifest=manifest, sample_ids=sids, taxa_ids=tids)
         @test result_r isa Execution.ExecutionResult
         @test result_r.config_id == config.id
-        @test length(result_r.results) == 3
+        @test isempty(result_r.results)
+        @test result_r.provenance["estimation"]["status"] == "not_run"
+        @test occursin("descriptive summary", result_r.provenance["estimation"]["reason"])
+        @test any(w -> occursin("Estimation not run", w), result_r.diagnostics.warnings)
         @test result_r.manifest.id == manifest.id
 
-        # JuliaAdapter stub
+        # Same for the Julia adapter: the adapter does not decide whether a design exists.
         jl_adapter = Execution.JuliaAdapter(method="nb_glm")
         result_jl = Execution.run_analysis(jl_adapter, config, prepared; diagnostics=diagnostics, manifest=manifest, sample_ids=sids, taxa_ids=tids)
         @test result_jl isa Execution.ExecutionResult
+        @test isempty(result_jl.results)
 
         # Adapter method mismatch should hard-stop with DANGER banner
         wrong_adapter = Execution.JuliaAdapter(method="clr_lm") # config is nb_glm
