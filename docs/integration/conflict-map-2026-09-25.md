@@ -3,96 +3,90 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 -->
 # Fork↔upstream conflict map — measured 2026-09-25
 
-This is the measured state that makes a naive merge of
+This is the measured state behind "a naive merge of
 `hyperpolymath/MetaManifold-WebUI` (this fork) into
-`JoshuaJewell/MetaManifold-WebUI` (upstream) explode into "hundreds of files
-with conflicts". It is reproduced by `scripts/integrate.sh` and the commands in
-[`README.md`](./README.md); the numbers below are exact for the trees compared.
+`JoshuaJewell/MetaManifold-WebUI` (upstream) is hundreds of files with
+conflicts", and how the re‑anchor collapses it. Numbers are exact for the trees
+compared and reproducible with `scripts/reanchor.sh plan` and the commands below.
 
-## Headline: the two histories are unrelated
+## The histories: shared root, early divergence, long parallel development
 
 ```
-git merge-base HEAD upstream/main   →  (empty)
+git merge-base origin/main upstream/main
+→ 7884553  "Initial commit"  (2026-01-30)
 ```
 
-There is **no common ancestor**. The fork is represented here as a single
-squashed snapshot commit (`5a67f85`, 2026-09-25); upstream is a 90-commit
-history last touched 2026-07-21. With no merge base, git cannot three-way-merge
-anything, so **every shared-but-different path is a conflict**.
+They **do** share the root commit, but they split at the *second* commit and then
+developed in parallel for months:
 
-## The numbers
+- fork (`origin/main`): **221** commits since the base (last: `17d8c0d`)
+- upstream (`upstream/main`): **89** commits since the base (last push 2026-07-21)
+
+Because both sides changed almost everything from a near‑empty base, the
+three‑way merge base (the "Initial commit") is nearly useless — almost every file
+differs on both sides — so a single `git merge` conflicts on all of them at once.
+
+> Note: an earlier revision of this document claimed the histories were
+> *unrelated* (empty merge base). That was an artifact of a **depth‑1 shallow
+> clone** hiding the shared root. With full history the root is `7884553`. The
+> conflict *count* below is unchanged; only the mechanism (and therefore the fix)
+> is different: this is ordinary divergence, so it is fixable by **rebase**, not
+> by unrelated‑history surgery.
+
+## The numbers (one‑shot merge)
 
 | | count |
-|---|---|
+|---|---:|
 | Files in fork | 357 |
 | Files in upstream | 195 |
 | Shared paths (exist in both) | 186 |
 | **Conflicting shared paths (same path, different content)** | **159** |
-| Fork-only paths (clean additions — no conflict) | 171 |
+| Fork-only paths (clean additions) | 171 |
 | Upstream-only paths (carried in by a merge) | 9 |
+| Files upstream changed since the base | 196 |
 
 ## The 159 conflicts, by area
 
-| area | files | nature |
-|---|---:|---|
-| `frontend/` | 59 | TypeScript/React source — the bulk; genuine divergence from the UI work |
-| `src/` | 40 | Julia backend (analysis/estimation/scaling, server, core) |
-| `test/` | 30 | Julia test battery |
-| `config/` | 11 | defaults / schemas / ci |
-| `bench/` | 5 | benchmark harness |
-| root + misc (`start.sh`, `install.sh`, `install.jl`, `precompile_exec.jl`, `README.md`, `Project.toml`, `Manifest.toml`, `.gitignore`, `.github/`, `docs/`, `data/`, `R/`, `renv/`, `scripts/`) | 14 | mixed |
+| area | files |
+|---|---:|
+| `frontend/` (TS/React) | 59 |
+| `src/` (Julia) | 40 |
+| `test/` | 30 |
+| `config/` · `bench/` · root files | 32 |
 
-## Of those 159, most are NOT lockfiles
+Only **3** are lockfiles (`Manifest.toml`, `frontend/bun.lock`, `renv/activate.R`)
+— handled automatically by merge hygiene (see `README.md`). `renv.lock` is
+byte‑identical in both. The rest is genuine source divergence that needs a
+*decision*.
 
-Only **3** of the 159 conflicts are generated/lockfile files that should never
-be hand-merged:
+## The fix: re‑anchor into a granular history (measured)
 
-- `Manifest.toml`
-- `frontend/bun.lock`
-- `renv/activate.R`
-
-(`renv.lock` is **byte-identical** in both trees — `d0c9e123…` — so it is not
-even a conflict.) These three, plus upstream's committed build output, are what
-the `.gitattributes` merge-hygiene rules and `just merge-drivers` remove from the
-conflict set automatically (see [`README.md`](./README.md#1-merge-hygiene-never-hand-merge-a-generated-file)).
-
-The remaining ~156 conflicts are **real source divergence** and must be resolved
-by a *decision*, not a tool. That is exactly what the component/profile system is
-for: it converts "review 159 files" into "make ~7 ordered trust decisions".
-
-## Structural divergence to be aware of
-
-- **Upstream committed a built frontend** under `web/dist/` (7 files: hashed JS/
-  CSS bundles, `index.html`, `config.json`). These are build artefacts that
-  should never have been tracked. The fork removed `web/` entirely and builds
-  `frontend/dist/` instead (gitignored). A merge would try to re-add `web/dist/*`.
-  **Recommendation: drop `web/dist/**` on integration** (they are regenerated by
-  `just build`).
-- **Upstream carries `codecov.yml`**; the fork removed Codecov (see CI: "Codecov
-  removed per Milestone 2"). Decide explicitly whether to keep it.
-- The fork adds a second UI surface, `ui/` (Julia/Stipple), alongside the
-  migrated `frontend/`.
-
-## Upstream-only paths (9) — what a merge would newly introduce
+`git rebase --onto upstream/main 7884553 origin/main` replays the fork's commits
+one at a time onto upstream. Git auto‑applies every commit that doesn't collide
+and surfaces only the genuine overlaps, per commit. `scripts/reanchor.sh run`
+automates it (fork‑wins on content; respect upstream's deletions). **Measured
+result:**
 
 ```
-codecov.yml
-frontend/src/types/react-chart-editor.d.ts
-web/dist/assets/ChartEditorInner-CG_IsOTj.css
-web/dist/assets/ChartEditorInner-Chg4qnDh.js
-web/dist/assets/index-BcmFFCWY.js
-web/dist/assets/index-Cg7gdjoW.css
-web/dist/assets/plotly-DWplcs0H.js
-web/dist/config.json
-web/dist/index.html
+granular commits on top of upstream : 206
+residual conflicts                  : 0
+decisions the policy had to make    : 3
+  DELETE (upstream): pipelinesteps.txt   [06d85ba Create run_cutadapt.jl.]
+  DELETE (upstream): pipelinesteps.txt   [252299e Merge tables logic.]
+  DELETE (upstream): pipelinesteps.txt   [fed106b Added dada2 R module.]
+files the re-anchored tree keeps that the fork dropped (review) : 7  (all web/dist/* build output)
 ```
 
-Seven of the nine are `web/dist/**` build output. Reproduce this table any time
-with:
+So the "hundreds of files, load of conflicts" becomes: **auto‑apply 55 clean
+commits, make 3 trivial decisions (all the same deleted file), review 7 stray
+committed build artefacts, and land ~206 reviewable commits.** The resulting
+branch also shares a real merge base with upstream, so *future* upstream changes
+merge cleanly too.
+
+Reproduce:
 
 ```bash
-git fetch upstream   # JoshuaJewell/MetaManifold-WebUI as `upstream`
-scripts/integrate.sh triage --from-file <(comm -12 \
-  <(git ls-tree -r --name-only HEAD | sort) \
-  <(git ls-tree -r --name-only upstream/main | sort))
+git fetch upstream origin
+scripts/reanchor.sh plan      # per-commit classification
+scripts/reanchor.sh run       # or: just reanchor  (leaves branch reanchor/onto-upstream)
 ```

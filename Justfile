@@ -36,6 +36,9 @@ FRONTEND := justfile_directory() / "frontend"
 # Integration helper (fork↔upstream profiles, triage, component toggles).
 INTEGRATE := justfile_directory() / "scripts/integrate.sh"
 
+# Re-anchor helper (turn the divergent histories into a granular, mergeable one).
+REANCHOR := justfile_directory() / "scripts/reanchor.sh"
+
 # Free-RAM floor (KB) for the heavy Julia lanes: cold JIT-compilation of the
 # server dependency closure needs several GB; below this the lane fails
 # loudly instead of thrashing the box into an OOM kill.
@@ -517,3 +520,27 @@ suspend component:
 # Augment a component: it becomes active for this checkout.
 augment component:
     @{{INTEGRATE}} enable "{{component}}"
+
+# ----------------------------------------------------------------------- #
+# Re-anchoring — collapse the one-shot merge into granular per-commit work
+#
+# The fork and upstream share the root commit but diverged early and developed
+# in parallel, so a single merge shows ~159 conflicts at once. `reanchor` replays
+# the fork's commits one-by-one onto upstream (git auto-applies the clean ones),
+# turning that wall into a handful of small decisions. Measured: the whole fork
+# re-anchors with 3 decisions and 0 residual conflicts, producing ~206 granular
+# commits the maintainer can review/merge incrementally. Runs in an isolated
+# worktree — it never touches your current branch. Engine: scripts/reanchor.sh.
+# ----------------------------------------------------------------------- #
+
+# Read-only plan: classify each fork commit (auto-apply / overlap / delete-risk).
+reanchor-plan:
+    @{{REANCHOR}} plan
+
+# Perform the re-anchor; leave a reviewable branch `reanchor/onto-upstream`.
+reanchor:
+    @{{REANCHOR}} run --branch reanchor/onto-upstream --keep
+
+# Re-anchor but STOP at every conflict for hands-on resolution.
+reanchor-manual:
+    @{{REANCHOR}} run --policy manual --keep

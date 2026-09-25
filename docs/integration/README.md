@@ -10,24 +10,48 @@ conflicts" review, and without either side ever being unable to run.
 
 The measured problem and the exact file counts are in
 [`conflict-map-2026-09-25.md`](./conflict-map-2026-09-25.md). In one sentence:
-**the two repositories share no git ancestor, so a normal merge cannot
-three-way-merge anything and surfaces all 159 shared-but-different files at
-once.** Nothing in this guide changes upstream's operational behaviour unless you
-choose it to; the default is "behave exactly like upstream".
+**the fork and upstream share only the root commit, diverged at the second
+commit, and then developed in parallel for months — so the merge base is nearly
+empty and a normal merge surfaces all 159 shared‑but‑different files at once.**
+Nothing in this guide changes upstream's operational behaviour unless you choose
+it to; the default is "behave exactly like upstream".
 
-## The idea in three layers
+## The idea, in layers
 
-1. **Merge hygiene** — stop git from ever producing a line-conflict inside a
+0. **Re‑anchor** — replay the fork's commits one‑by‑one onto upstream so git
+   auto‑applies the clean ones and only the genuine overlaps surface, per commit.
+   Measured: the whole fork re‑anchors with **3 decisions** and **0 residual
+   conflicts**, producing ~206 granular, reviewable commits. (`just reanchor`.)
+1. **Merge hygiene** — stop git from ever producing a line‑conflict inside a
    lockfile or a build artefact. (`.gitattributes` + `just merge-drivers`.)
 2. **Profiles & components** — turn "review 159 files" into "make ~7 ordered
    trust decisions", switchable from *pure upstream* to *partially transitional*
    to *everything*. (`config/integration.toml` + `scripts/integrate.sh` + the
    `just integrate …` recipes.)
 3. **A staging plan** — land the safe infrastructure first, let CI go green, then
-   take the risk-bearing pieces one tier at a time. (`just integrate-plan`.)
+   take the risk‑bearing pieces one tier at a time. (`just integrate-plan`.)
 
-Everything below is additive and default-off. A fresh clone behaves as
+Everything below is additive and default‑off. A fresh clone behaves as
 `base` — i.e. exactly like upstream — until someone runs a command to change it.
+
+---
+
+## 0. Re‑anchor — from one 159‑file wall to ~206 granular commits
+
+This is the deepest fix and the reason the fork *looks* unmergeable. Instead of
+one giant three‑way merge, re‑anchor replays the fork's history onto upstream:
+
+```bash
+just reanchor-plan      # read-only: classify every fork commit (auto / overlap / delete-risk)
+just reanchor           # do it; leaves branch reanchor/onto-upstream for review
+just reanchor-manual    # same, but stop at every conflict for hands-on resolution
+```
+
+It runs in an isolated worktree and never touches your current branch. The result
+is upstream's history with the fork's ~206 commits cleanly on top — reviewable and
+mergeable incrementally, and sharing a real base so future upstream work merges
+cleanly. See `scripts/reanchor.sh` and the measured numbers in
+[`conflict-map-2026-09-25.md`](./conflict-map-2026-09-25.md).
 
 ---
 
@@ -186,6 +210,7 @@ out by `just doctor` rather than silently skipped.
 | `just heal` | repair the environment to a known-good state |
 | `just bootstrap` / `just setup-full` | clone-to-runnable on a bare machine |
 | `just merge-drivers` | opt-in lockfile auto-resolution (local, safe) |
+| `just reanchor-plan` / `just reanchor` | re‑anchor the fork onto upstream as granular commits |
 | `just integrate status` / `profiles` / `profile <p>` | the transitional dial |
 | `just integrate plan` / `triage` / `verify` | staging order / conflict classes / gates |
 | `just augment <id>` / `just suspend <id>` | flip one component |

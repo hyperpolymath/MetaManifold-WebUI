@@ -25,6 +25,8 @@ without ever breaking a running system — see:
 
 - **`docs/integration/README.md`** — the guide (profiles, merge hygiene, staging).
 - **`docs/integration/conflict-map-2026-09-25.md`** — the measured conflict set.
+- **`docs/integration/HANDOFF-granular-reanchor.md`** — the brief to actually land it.
+- `just reanchor-plan` / `just reanchor` — replay the fork onto upstream as ~206 granular commits (3 decisions, 0 conflicts).
 - `just integrate status | profiles | plan | triage` and `just augment`/`just suspend <component>`.
 - `just bootstrap` / `just setup-full` / `just heal` / `just doctor` — the turnkey environment.
 
