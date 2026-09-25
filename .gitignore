@@ -262,6 +262,7 @@ docs/*
 !docs/type-system/
 !docs/types/
 !docs/reproducibility.md
+!docs/owner-review-2026-09-25.md
 
 # Test + benchmark run artifacts (not the committed fixtures/baselines)
 frontend/tests/results/

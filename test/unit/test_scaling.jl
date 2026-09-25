@@ -289,13 +289,18 @@
     end
 
     @testset "prepare_analysis_table keeps counts and hands over the offset" begin
+        # 4 samples: prepare_analysis_table requires >= 2*min_samples_per_group samples
+        table_4 = [10.0 20.0 40.0 20.0;
+                   20.0 20.0 10.0 30.0;
+                   30.0 60.0 50.0 40.0]
+        ids_4 = ["s1", "s2", "s3", "s4"]
         adv = AnalysisConfig.AdvancedConfig(min_prevalence = 0.0, min_abundance = 0.0,
                                             min_samples_per_group = 2)
         expectations = [
-            ("TSS", "tss", tss_factors(table_a).factors),
-            ("CSS", "css", css_factors(table_a; quantile = 0.75).factors),
-            ("RSS", "rss", tmm_factors(table_a).factors),
-            ("size_factors", "size_factors", rle_factors(table_a).factors),
+            ("TSS", "tss", tss_factors(table_4).factors),
+            ("CSS", "css", css_factors(table_4; quantile = 0.75).factors),
+            ("RSS", "rss", tmm_factors(table_4).factors),
+            ("size_factors", "size_factors", rle_factors(table_4).factors),
         ]
         for (method_name, kind, expected) in expectations
             config = AnalysisConfig.AnalysisConfig(
@@ -303,17 +308,17 @@
                 normalization = AnalysisConfig.NormalizationConfig(method = method_name),
                 advanced = adv, created_by = "test_scaling")
             (prepared, diagnostics, manifest, sample_ids, _) =
-                Execution.prepare_analysis_table(config, table_a;
-                                                 sample_ids = ids_a,
+                Execution.prepare_analysis_table(config, table_4;
+                                                 sample_ids = ids_4,
                                                  taxa_ids = ["t1", "t2", "t3"],
                                                  drop_policy = "drop")
-            @test prepared == table_a                       # the count response is untouched
+            @test prepared == table_4                       # the count response is untouched
             @test manifest.offset ≈ log.(expected) atol = 1e-10
             @test diagnostics.checks["scaling"]["kind"] == kind
             @test manifest.provenance["scaling"]["kind"] == kind
             @test manifest.provenance["scaling"]["offset_sha256"] isa String
             @test length(manifest.provenance["scaling"]["offset_sha256"]) == 64
-            @test sample_ids == ids_a
+            @test sample_ids == ids_4
         end
 
         # `none` is not "no offset": for a count model it is the plain log library size,
@@ -323,10 +328,10 @@
             normalization = AnalysisConfig.NormalizationConfig(method = "none"),
             advanced = adv, created_by = "test_scaling")
         (_, diag_none, manifest_none, _, _) = Execution.prepare_analysis_table(
-            config_none, table_a; sample_ids = ids_a, taxa_ids = ["t1", "t2", "t3"],
+            config_none, table_4; sample_ids = ids_4, taxa_ids = ["t1", "t2", "t3"],
             drop_policy = "drop")
         @test diag_none.checks["scaling"]["kind"] == "tss"
-        @test manifest_none.offset ≈ log.(tss_factors(table_a).factors) atol = 1e-10
+        @test manifest_none.offset ≈ log.(tss_factors(table_4).factors) atol = 1e-10
 
         # A run that declares `relative` has no offset, and does not get one by accident.
         config_rel = AnalysisConfig.AnalysisConfig(
@@ -334,10 +339,57 @@
             normalization = AnalysisConfig.NormalizationConfig(method = "relative"),
             advanced = adv, created_by = "test_scaling")
         (_, diag_rel, manifest_rel, _, _) = Execution.prepare_analysis_table(
-            config_rel, table_a; sample_ids = ids_a, taxa_ids = ["t1", "t2", "t3"],
+            config_rel, table_4; sample_ids = ids_4, taxa_ids = ["t1", "t2", "t3"],
             drop_policy = "drop")
         @test isnothing(manifest_rel.offset)
         @test !haskey(diag_rel.checks, "scaling")
+    end
+
+    @testset "deferred ILR bases are refused at construction and in prepare_analysis_table" begin
+        for basis in AnalysisConfig.DEFERRED_ILR_BASIS
+            @test_throws ArgumentError AnalysisConfig.NormalizationConfig(
+                method = "ilr", ilr_basis = basis)
+        end
+        # "default" basis is accepted
+        norm_ok = AnalysisConfig.NormalizationConfig(method = "ilr", ilr_basis = "default")
+        @test norm_ok.ilr_basis == "default"
+    end
+
+    @testset "ILR relabels rows to balance_1..n-1 with diagnostics" begin
+        table_ilr = [
+            10.0 20.0 30.0 40.0;
+            20.0 30.0 40.0 50.0;
+            30.0 40.0 50.0 60.0;
+            40.0 50.0 60.0 70.0
+        ]
+        sample_ids_ilr = ["s1", "s2", "s3", "s4"]
+        taxa_ids_ilr = ["t1", "t2", "t3", "t4"]
+
+        norm_ilr = AnalysisConfig.NormalizationConfig(method = "ilr", pseudocount = 0.5)
+        adv = AnalysisConfig.AdvancedConfig(min_prevalence = 0.0, min_abundance = 0.0, min_samples_per_group = 2)
+        config_ilr = AnalysisConfig.AnalysisConfig(
+            method = "ilr_lm",
+            formula = "~ group",
+            metadata_columns = ["group"],
+            normalization = norm_ilr,
+            advanced = adv,
+            created_by = "test_ilr"
+        )
+
+        (prep_ilr, diag_ilr, manifest_ilr, sids_ilr, tids_ilr) = Execution.prepare_analysis_table(
+            config_ilr, table_ilr;
+            sample_ids = sample_ids_ilr,
+            taxa_ids = taxa_ids_ilr,
+            drop_policy = "drop"
+        )
+
+        @test size(prep_ilr, 1) == 3
+        @test tids_ilr == ["balance_1", "balance_2", "balance_3"]
+        @test haskey(diag_ilr.checks, "ilr")
+        @test diag_ilr.checks["ilr"]["basis"] == "default"
+        @test diag_ilr.checks["ilr"]["taxa_in"] == 4
+        @test diag_ilr.checks["ilr"]["taxa_order"] == taxa_ids_ilr
+        @test occursin("Helmert", diag_ilr.checks["ilr"]["definition"])
     end
 
     # ------------------------------------------------------------------
@@ -391,10 +443,10 @@
             RCall.globalEnv[:scaling_A] = table_a
             RCall.reval(r_reference_script)
             (
-                tss = convert(Vector{Float64}, RCall.reval("r_tss")),
-                css = convert(Vector{Float64}, RCall.reval("r_css")),
-                tmm = convert(Vector{Float64}, RCall.reval("r_tmm")),
-                rle = convert(Vector{Float64}, RCall.reval("r_rle")),
+                tss = RCall.rcopy(RCall.reval("r_tss")),
+                css = RCall.rcopy(RCall.reval("r_css")),
+                tmm = RCall.rcopy(RCall.reval("r_tmm")),
+                rle = RCall.rcopy(RCall.reval("r_rle")),
                 reference = RCall.rcopy(RCall.reval("r_ref")),
             )
         end

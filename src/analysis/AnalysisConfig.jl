@@ -98,6 +98,7 @@ const ZERO_POLICY_STRINGS = Dict{String,ZeroPolicy}(
 const VALID_DISPERSION_METHODS = ("parametric", "local", "mean", "pooled", "glmGamPoi")
 const VALID_ZERO_HANDLING = ("pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse")
 const VALID_ILR_BASIS = ("default", "phylogenetic", "sequential_binary_partition", "balance_dendrogram")
+const DEFERRED_ILR_BASIS = ("phylogenetic", "sequential_binary_partition", "balance_dendrogram")
 # Method names are canonicalised to lower case by `NormalizationConfig`, so the allowed
 # names are held in the same case and compared in it. They were not always: the entries
 # for TSS/CSS/RSS arrived upper case while the constructor stored `"tss"`, so every one of
@@ -172,7 +173,9 @@ struct NormalizationConfig
                 throw(ArgumentError("zero_policy='refuse' is mathematically invalid for CLR/ILR (log(0) undefined). Refusing even with DANGER token. Use pseudocount or multiplicative_replacement."))
             end
             if method_clean == "ilr"
-                if !isnothing(ilr_basis) && !(ilr_basis in VALID_ILR_BASIS)
+                if !isnothing(ilr_basis) && (ilr_basis in DEFERRED_ILR_BASIS)
+                    throw(ArgumentError("ilr_basis '$ilr_basis' is not implemented (deferred, see GitHub issue #20). Only 'default' (Helmert sequential binary partition) is implemented. Refusing meaningless substitution."))
+                elseif !isnothing(ilr_basis) && !(ilr_basis in VALID_ILR_BASIS)
                     throw(ArgumentError("ilr_basis must be one of $(join(VALID_ILR_BASIS, ", ")) (got '$ilr_basis')"))
                 end
             else # clr
@@ -960,12 +963,12 @@ function context_help(field_path::String)
         "normalization.ilr_basis" => """
         ILR basis (only for ILR, meaningless otherwise)
 
-        - default: default ILR basis from compositions package
-        - phylogenetic: phylogenetic tree based balances (requires tree, deferred)
-        - sequential_binary_partition: SBP from user-provided partition (deferred)
-        - balance_dendrogram: balance dendrogram
+        - default: Helmert-style sequential binary partition (first taxon vs rest, second vs rest, etc., creating n-1 balances)
+        - phylogenetic: NOT IMPLEMENTED (deferred, see GitHub issue #20)
+        - sequential_binary_partition: NOT IMPLEMENTED (deferred, see GitHub issue #20)
+        - balance_dendrogram: NOT IMPLEMENTED (deferred, see GitHub issue #20)
 
-        Refuses meaningless use for non-ILR methods. See JSON schema enum and Nickel.
+        Refuses unimplemented bases and meaningless use for non-ILR methods. See JSON schema enum and Nickel.
         """,
         "correction.method" => """
         Multiple testing correction — BH mandatory in v1, hard-stop DANGER banner on overrides
