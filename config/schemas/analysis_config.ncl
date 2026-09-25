@@ -3,7 +3,7 @@
 # AnalysisConfig Nickel contract — hyperpolymath/standards style Milestone 3
 # From 1-formats/k9/*.ncl and .machine_readable/contractiles/_base.ncl
 # Implements BH mandatory, DANGER banner, advanced validation for pseudocount/epsilon/zero_policy/etc.
-# TSS/CSS/RSS deferred as alias to relative with warning, see GitHub issues
+# tss/css/rss are exact offsets since 2026-09-25 (issue #16), see docs/statistics/method-conditions/scaling-and-offsets.md
 
 let AnalysisMethod = std.enum.TagOrString & [| 'nb_glm, 'clr_lm, 'ilr_lm, 'logistic |] in
 let NormalizationMethod = std.enum.TagOrString & [| 'none, 'rarefy, 'relative, 'size_factors, 'clr, 'ilr, 'presence_absence, 'TSS, 'CSS, 'RSS, 'tss, 'css, 'rss |] in
@@ -36,6 +36,20 @@ let PseudocountContract = fun label value =>
   else if value >= 1 then
     # Warn but allow — typical is 0.5
     'Ok value
+  else
+    'Ok value
+in
+
+let CssQuantileContract = fun label value =>
+  if value <= 0 || value >= 1 then
+    'Error { message = "css_quantile must be in (0,1), got %{std.to_string value}. It is the per-sample quantile of the count distribution whose cumulative sum becomes the CSS scaling factor. See context_help('normalization.css_quantile')" }
+  else
+    'Ok value
+in
+
+let TmmTrimContract = fun label value =>
+  if value < 0 || value >= 0.5 then
+    'Error { message = "a TMM trim must be in [0,0.5), got %{std.to_string value}. See context_help('normalization.tmm_log_ratio_trim')" }
   else
     'Ok value
 in
@@ -94,7 +108,7 @@ let MethodNormalizationCompatibility = fun label value =>
   let norm = value.normalization.method in
   if method == 'nb_glm then
     if norm == 'clr || norm == 'ilr then
-      'Error { message = "NB_GLM expects count data, not CLR/ILR transforms. Use clr_lm/ilr_lm for compositional, or change normalization to none/size_factors/relative/TSS/CSS/RSS. Refusing meaningless combination. See context_help('normalization.method')" }
+      'Error { message = "NB_GLM expects count data, not CLR/ILR transforms. Use clr_lm/ilr_lm for compositional, or change normalization to none/size_factors/relative/tss/css/rss. Refusing meaningless combination. See context_help('normalization.method')" }
     else
       'Ok value
   else if method == 'clr_lm then
@@ -182,7 +196,7 @@ in
     | {
         method
           | NormalizationMethod
-          | doc "Normalization / transform, must be compatible with method. TSS/CSS/RSS deferred alias to relative with warning, see GitHub issue 01.",
+          | doc "Normalization / transform, must be compatible with method. tss/css/rss are exact offsets (issue #16), not aliases to relative; see docs/statistics/method-conditions/scaling-and-offsets.md.",
 
         pseudocount
           | Number
@@ -211,7 +225,29 @@ in
 
         tss_css_rss_note
           | std.option.String
-          | doc "Note for TSS/CSS/RSS deferred features — currently aliased to relative with warning. See GitHub issue 01.",
+          | doc "Free-form note recorded with the configuration. Historical name: TSS/CSS/RSS are not deferred any more (issue #16), and this field is kept so existing documents keep parsing.",
+
+        css_quantile
+          | Number
+          | CssQuantileContract
+          | default = 0.75
+          | doc "CSS: per-sample quantile whose cumulative sum is the scaling factor. Used only by method='css'. Paulson et al. 2013 use 0.5-0.75. See docs/statistics/method-conditions/scaling-and-offsets.md.",
+
+        tmm_ref_column
+          | std.option.String
+          | doc "RSS/TMM: reference sample, or omitted to choose it the way edgeR chooses it (recorded either way). Used only by method='rss'.",
+
+        tmm_log_ratio_trim
+          | Number
+          | TmmTrimContract
+          | default = 0.3
+          | doc "RSS/TMM: fraction trimmed from each log-ratio tail before the weighted mean; edgeR default 0.3.",
+
+        tmm_sum_trim
+          | Number
+          | TmmTrimContract
+          | default = 0.05
+          | doc "RSS/TMM: fraction trimmed from each mean-abundance tail; edgeR default 0.05.",
       },
 
   correction

@@ -19,6 +19,16 @@ export interface NormalizationConfig {
   ilr_basis?: string | null
   multiplicative_replacement_delta?: number | null
   tss_css_rss_note?: string | null
+  // CSS: quantile of each sample's count distribution whose cumulative sum is the
+  // scaling factor. Only used by method='css'. Default 0.75 (Paulson et al. 2013).
+  css_quantile?: number
+  // RSS/TMM: reference sample every other sample's log-ratios are taken against.
+  // Omitted means "chosen the way edgeR chooses it", and the choice is recorded.
+  tmm_ref_column?: string | null
+  // RSS/TMM: fraction trimmed from each log-ratio tail before the weighted mean (0.3).
+  tmm_log_ratio_trim?: number
+  // RSS/TMM: fraction trimmed from each mean-abundance tail (0.05).
+  tmm_sum_trim?: number
 }
 
 export interface CorrectionConfig {
@@ -163,15 +173,55 @@ See JSON schema pattern ^[^;\`$]+$ and Nickel ValidFormula.
 `,
     'normalization.method': `Normalization / Transform (method-dependent) — must be compatible with method
 
-- For NB_GLM: none, size_factors (DESeq2 default, preferred), relative, rarefy (discouraged, use with caution), TSS (alias for relative, deferred exact TSS), CSS (deferred), RSS (deferred)
+- For NB_GLM: none, size_factors (median-of-ratios), relative, rarefy (discouraged), tss, css, rss
 - For CLR_LM: must be clr — Centered Log-Ratio, requires pseudocount >0
 - For ILR_LM: must be ilr — Isometric Log-Ratio, requires pseudocount >0 and ilr_basis
-- For LOGISTIC: presence_absence, none, relative, rarefy, TSS
+- For LOGISTIC: presence_absence, none, relative, rarefy, tss
 
-TSS/CSS/RSS offsets are deferred features (see GitHub issues) — currently aliased to relative. For exact TSS/CSS/RSS offsets, see deferred issue with value/difficulty/risk.
+How the count-model choices differ (each is an offset, not a transform; counts stay counts):
 
-Refuses meaningless: NB_GLM + clr/ilr (counts vs compositional), CLR_LM + none, etc. See Nickel MethodNormalizationCompatibility contract.
-See JSON schema enum and DEED (normalization :method).
+- tss (total sum scaling): offset = log(library size). The McMurdie & Holmes (2014) answer to rarefaction: model depth, do not divide by it.
+- css (cumulative sum scaling, Paulson et al. 2013): offset = log of the sum of counts at or below each sample's own quantile, set by css_quantile (default 0.75). Robust to a few dominant taxa. Refused when that sum is zero for any sample.
+- rss (TMM, Robinson & Oshlack 2010): offset = log of a trimmed weighted mean of log-ratios against a reference sample; set by tmm_log_ratio_trim (0.3), tmm_sum_trim (0.05) and tmm_ref_column. Assumes most features are not differentially abundant.
+- size_factors: median-of-ratios (DESeq2/RLE), in the offset form.
+- relative: proportions. A transform, not an offset: it discards the count nature of the data.
+- none: no scaling; for a count model the offset is the plain log library size.
+
+None of these removes the compositional constraint. They correct for sequencing depth; a log fold change from a model with these offsets is still relative to the sampled community. css and rss are refused for a response with no counts to offset.
+
+Refuses meaningless: NB_GLM + clr/ilr (counts vs compositional), CLR_LM + none, css/rss on a non-count response, etc. See Nickel MethodNormalizationCompatibility contract.
+See docs/statistics/method-conditions/scaling-and-offsets.md, JSON schema enum and DEED (normalization :method).
+`,
+    'normalization.css_quantile': `CSS quantile (normalization.method = css only)
+
+- The per-sample quantile of the count distribution whose cumulative sum becomes the scaling factor. Paulson et al. (2013) use 0.5-0.75; the default here is 0.75.
+- Must be in (0,1). Below 0.5 the cumulative sum covers less than half of a sample's counts and is dominated by how many features are zero — a warning is issued.
+- Refused at run time when that cumulative sum is zero for any sample (log(0) is not a small number). Raise the quantile or exclude the sample.
+- metagenomeSeq's data-driven choice of this quantile (cumNormStatFast) is deliberately not implemented: a parameter chosen from the data is a decision the run has to record.
+
+Recorded in the config hash and in the manifest provenance.
+`,
+    'normalization.tmm_ref_column': `TMM reference sample (normalization.method = rss only)
+
+- Names the sample every other sample's log-ratios are taken against.
+- Omitted (the default): the reference is chosen the way edgeR chooses it — the sample whose upper-quartile-scaled counts are closest to the mean of those values. Which sample was chosen is recorded in the provenance.
+- The name is not checked until the run has the sample list; an unknown name is refused there, by name, rather than silently falling back to the data-driven choice.
+
+Recorded in the config hash.
+`,
+    'normalization.tmm_log_ratio_trim': `TMM log-ratio trimming (normalization.method = rss only)
+
+- Fraction trimmed from each tail of the log-ratios before the weighted mean: 0.3 by default, as in edgeR.
+- Must be in [0,0.5). Zero means no trimming, which removes the robustness TMM is used for; both values are recorded, so an untrimmed run is visible rather than assumed.
+
+Recorded in the config hash.
+`,
+    'normalization.tmm_sum_trim': `TMM abundance trimming (normalization.method = rss only)
+
+- Fraction trimmed from each tail of the mean abundances before the weighted mean: 0.05 by default, as in edgeR.
+- Must be in [0,0.5). Zero means no trimming of the abundance tails.
+
+Recorded in the config hash.
 `,
     'normalization.pseudocount': `Pseudocount for zero replacement (CLR/ILR mandatory, NB_GLM optional but warned)
 

@@ -37,6 +37,11 @@ include("analysis/AnalysisConfig.jl")
 include("analysis/clade_cumulus.jl")
 # Estimation fits what AnalysisConfig declares and Execution runs it, so it sits between them.
 include("analysis/estimation.jl")
+# Library-size scaling factors and the offsets count models are fitted with. Included
+# before Execution, which is the only consumer: prepare_analysis_table decides what the
+# response is and which offset it gets, and Scaling computes both under the conditions
+# published in docs/statistics/method-conditions/scaling-and-offsets.md.
+include("analysis/scaling.jl")
 include("analysis/Execution.jl")
 
 end

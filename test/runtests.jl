@@ -65,6 +65,7 @@ using MetaManifold: AnalysisConfig
     include("unit/test_migrate_composition.jl")
     include("unit/test_analysis_config.jl")
     include("unit/test_execution.jl")
+    include("unit/test_scaling.jl")
     include("unit/test_estimation.jl")
 
     ## Integration tests (opt-in)

@@ -24,7 +24,11 @@
     :zero-policy "pseudocount"
     :ilr-basis ""
     :multiplicative-replacement-delta 0
-    :tss-css-rss-note "TSS/CSS/RSS deferred alias to relative, see GitHub issue 01")
+    :tss-css-rss-note ""
+    :css-quantile 0.75
+    :tmm-ref-column ""
+    :tmm-log-ratio-trim 0.3
+    :tmm-sum-trim 0.05)
 
   (correction
     :method "BH"
@@ -69,7 +73,7 @@
     :method "Analysis method — explicit, no auto-selection v1 nb_glm clr_lm ilr_lm logistic. See JSON schema for scientific context and GitHub issues for deferred multinomial/occupancy/ordination."
     :formula "R-style formula, e.g. '~ group' or 'disease ~ group + batch'. Must reference only metadata_columns. Forbidden ; backtick dollar. See ValidFormula Nickel contract."
     :correction "BH mandatory in v1. Any override triggers DANGER banner and requires acknowledgment token I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH. Scary banner for paper writers."
-    :normalization "Normalization must be compatible with method: nb_glm allows none/rarefy/size_factors/relative/TSS/CSS/RSS (TSS/CSS/RSS deferred alias), clr_lm requires clr, ilr_lm requires ilr. Pseudocount/epsilon/zero_policy heavy validation."
+    :normalization "Normalization must be compatible with method: nb_glm allows none/rarefy/size_factors/relative/tss/css/rss, clr_lm requires clr, ilr_lm requires ilr. tss/css/rss are exact offsets (tss = log library size, css = cumulative sum at css-quantile, rss = trimmed mean of log-ratios to a reference sample) and are refused for non-count responses; see docs/statistics/method-conditions/scaling-and-offsets.md. None of them removes the compositional constraint. Pseudocount/epsilon/zero_policy heavy validation."
     :advanced "All advanced options behind Advanced Analysis expander, hidden unless Evidence Mode enabled. Heavy validation, refusal of meaningless inputs, warnings for custom pseudocount/epsilon/zero_policy/min_prevalence/max_features/min_samples_per_group."))
 
 ;; SPDX-License-Identifier: AGPL-3.0-only
@@ -81,4 +85,5 @@
 ;; ;; ║  Config ID: 00000000-0000-0000-0000-000000000000                         ║
 ;; ;; ║  If you are writing a paper, you MUST disclose these overrides in Methods║
 ;; ;; ╚════════════════════════════════════════════════════════════════════════════╝
-;; Deferred features: TSS/CSS/RSS offsets, multinomial/DM, occupancy, constrained ordinations, ILR basis phylogenetic/SBP, glmGamPoi/Bayesian multiplicative — see docs/issues/milestone3/
+;; Deferred features: multinomial/DM, occupancy, constrained ordinations, ILR basis phylogenetic/SBP, glmGamPoi/Bayesian multiplicative — see docs/issues/milestone3/
+;; Implemented since this template was written: TSS/CSS/RSS offsets (issue #16), src/analysis/scaling.jl.

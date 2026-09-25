@@ -22,9 +22,14 @@ Design:
 - Counts: Matrix{Float64} where rows=taxa, cols=samples (or transposed? We use rows=taxa, cols=samples as per DESeq2 style)
 - Sample metadata: Dict or DataFrame-like (we use OrderedDict and DataFrames if available)
 - Taxa metadata: optional with avec_fibre, epistemic_status, residual_count
-- Transforms: none, relative, size_factors, clr, ilr, presence_absence, rarefy (discouraged), TSS/CSS/RSS deferred alias to relative
+- Transforms: none, relative, clr, ilr, presence_absence, rarefy (discouraged)
+- Offsets (counts stay counts): tss = log library size, css = cumulative sum at the declared
+  quantile, rss (TMM) = trimmed mean of log-ratios to a reference sample, size_factors =
+  median-of-ratios. See src/analysis/scaling.jl and
+  docs/statistics/method-conditions/scaling-and-offsets.md
 - Zero policies: pseudocount (default safe), multiplicative_replacement, bayesian_multiplicative, refuse (DANGEROUS)
-- Offsets: log library size or size_factors for NB_GLM
+- Offsets: log library size or size factors for count responses; scaling factors and
+  their provenance are recorded in `diagnostics.checks["scaling"]` and the manifest
 - Epistemic filtering: avec_fibre true, epistemic_status present_in_every_admissible_world, min_prevalence, min_abundance, max_features
 - Self-diagnostics: NaN/Inf, zero variance, all-zero samples/taxa, library size outliers, batch confounding, prevalence/abundance, etc.
 - Safe self-healing: heal NaN/Inf with epsilon, drop all-zero samples/taxa with warning, record healing in diagnostics, never silent
@@ -38,6 +43,7 @@ using UUIDs
 using JSON3
 using OrderedCollections
 using Logging
+import ..Scaling
 using Statistics
 
 # Use AnalysisConfig from parent module
@@ -1045,52 +1051,83 @@ function prepare_analysis_table(
     # Transform and offset
     # ----------------------------------------------------------------------
 
-    transform_method = config.normalization.method
+    # The scaling factors and offsets are computed in Scaling, held to the conditions
+    # published in docs/statistics/method-conditions/scaling-and-offsets.md. This block
+    # decides only what the response is and which offset it gets.
+    transform_method = lowercase(strip(config.normalization.method))
     prepared = copy(counts_after_zero)
     offset = nothing
+    scaling = nothing
+    count_response = config.method == AnalysisConfig.NB_GLM
 
-    if transform_method == "none"
-        # No transform, keep counts as is
-        prepared = counts_after_zero
-        # For NB_GLM, offset is log library size or size_factors
-        if config.method == AnalysisConfig.NB_GLM
-            lib_sizes = vec(sum(counts_after_zero, dims=1))
-            offset = log.(lib_sizes .+ effective_epsilon)
-        end
-    elseif transform_method in ("relative", "tss", "css", "rss", "TSS", "CSS", "RSS")
-        # Relative abundance: counts / sum per sample
-        # TSS/CSS/RSS currently alias to relative with warning (deferred exact)
-        if transform_method in ("tss", "TSS", "css", "CSS", "rss", "RSS")
-            @warn "TSS/CSS/RSS are deferred features (see GitHub issues 01-tss-css-rss-offsets). Currently aliased to relative with warning. For exact TSS/CSS/RSS offsets, see deferred issue."
-        end
-        lib_sizes = vec(sum(counts_after_zero, dims=1))
-        # For NB_GLM with TSS, preserve raw counts as response and supply log(lib_sizes) as offset,
-        # preserving count distribution (McMurdie & Holmes 2014) instead of converting to proportions.
-        if config.method == AnalysisConfig.NB_GLM && transform_method in ("tss", "TSS")
-            prepared = copy(counts_after_zero)
-            offset = log.(lib_sizes .+ effective_epsilon)
-        else
-            for j in 1:size(counts_after_zero, 2)
-                if lib_sizes[j] > 0
-                    prepared[:, j] = counts_after_zero[:, j] ./ lib_sizes[j]
-                else
-                    sample_name = j <= length(filtered_sample_ids) ? filtered_sample_ids[j] : string(j)
-                    throw(ArgumentError("INTERNAL: sample '$sample_name' (column $j) has zero total counts at the relative-abundance transform. All-zero samples are healed before this point, so reaching here means the healing was bypassed — the relative abundances of an empty sample are undefined and must not be reported as 0. Please report this with the config id $(config.id)."))
-                end
+    # Proportions of each sample. Used by `relative`, and by `tss` on a non-count
+    # response, where the total-sum transform and the proportional transform are the same
+    # operation and the analyst's declared depth handling is recorded in the provenance.
+    function _proportions_of(counts_matrix, sample_ids_local, config_local)
+        lib = vec(sum(counts_matrix, dims=1))
+        out = zeros(Float64, size(counts_matrix))
+        for j in 1:size(counts_matrix, 2)
+            if lib[j] > 0
+                out[:, j] = counts_matrix[:, j] ./ lib[j]
+            else
+                sample_name = j <= length(sample_ids_local) ? sample_ids_local[j] : string(j)
+                throw(ArgumentError("INTERNAL: sample '$sample_name' (column $j) has zero total counts at the relative-abundance transform. All-zero samples are healed before this point, so reaching here means the healing was bypassed — the relative abundances of an empty sample are undefined and must not be reported as 0. Please report this with the config id $(config_local.id)."))
             end
         end
+        return out
+    end
+
+    if transform_method == "none"
+        # No transform: the response stays the counts. For a count model the offset is the
+        # log library size, which is what `none` has always meant in offset form; for
+        # anything else there is no offset at all.
+        prepared = counts_after_zero
+        if count_response
+            scaling = Scaling.tss_factors(counts_after_zero; sample_ids = filtered_sample_ids)
+            offset = scaling.offset
+        end
+    elseif transform_method == "tss"
+        if count_response
+            # Total sum scaling as an offset: counts stay counts, depth is modelled
+            # (McMurdie & Holmes 2014) instead of divided out.
+            prepared = counts_after_zero
+            scaling = Scaling.tss_factors(counts_after_zero; sample_ids = filtered_sample_ids)
+            offset = scaling.offset
+        else
+            prepared = _proportions_of(counts_after_zero, filtered_sample_ids, config)
+        end
+    elseif transform_method in ("css", "rss")
+        # Offsets for a count model. A non-count response has nothing to offset, and
+        # silently handing it proportions under the name `css` is exactly the substitution
+        # this work removed; the configuration layer refuses the pair as well, and this is
+        # the second door.
+        count_response || throw(ArgumentError(
+            "normalization.method='$transform_method' is an offset for a count model, and " *
+            "method '$(AnalysisConfig.METHOD_TO_STRING[config.method])' has no counts to offset. " *
+            "Use 'relative' for proportions, or 'clr'/'ilr' for a compositional transform. " *
+            "Nothing was computed."))
+        prepared = counts_after_zero
+        scaling = if transform_method == "css"
+            Scaling.css_factors(counts_after_zero;
+                                quantile = config.normalization.css_quantile,
+                                sample_ids = filtered_sample_ids)
+        else
+            Scaling.tmm_factors(counts_after_zero;
+                                ref_column = config.normalization.tmm_ref_column,
+                                log_ratio_trim = config.normalization.tmm_log_ratio_trim,
+                                sum_trim = config.normalization.tmm_sum_trim,
+                                sample_ids = filtered_sample_ids)
+        end
+        offset = scaling.offset
+    elseif transform_method == "relative"
+        prepared = _proportions_of(counts_after_zero, filtered_sample_ids, config)
     elseif transform_method == "size_factors"
-        # Size factors: DESeq2 median-of-ratios (stub: use median ratio or simple)
-        # For stub, compute size_factors as median of counts / geometric mean per taxon
-        # Simplified: size_factors = colSums / mean(colSums) or median ratio
-        lib_sizes = vec(sum(counts_after_zero, dims=1))
-        # Geometric mean per taxon (row) across samples, ignoring zeros
-        # For stub, use lib_sizes / exp(mean(log(lib_sizes)))
-        geo_mean_lib = exp(mean(log.(lib_sizes .+ effective_epsilon)))
-        size_factors = lib_sizes ./ geo_mean_lib
-        # For NB_GLM, we keep counts but store size_factors as offset? Actually DESeq2 uses size_factors as normalization, not offset, but for GLM we can use log(size_factors) as offset
-        offset = log.(size_factors .+ effective_epsilon)
-        prepared = counts_after_zero # keep counts, offset stored separately
+        # Median-of-ratios (RLE), in the offset form. This used to compute library size
+        # divided by its own geometric mean -- that is `tss`, and calling it DESeq2's
+        # size factor was the kind of substitution this repository refuses.
+        scaling = Scaling.rle_factors(counts_after_zero; sample_ids = filtered_sample_ids)
+        offset = scaling.offset
+        prepared = counts_after_zero # counts stay counts, offset stored separately
     elseif transform_method == "clr"
         # Centered Log-Ratio: log(x) - mean(log(x)) per sample
         # Requires pseudocount>0 already applied
@@ -1189,6 +1226,16 @@ function prepare_analysis_table(
     # ----------------------------------------------------------------------
 
     (checks, warnings, errors) = self_diagnostics(filtered_counts, prepared, config; sample_metadata=sample_metadata, raw_counts=counts)
+
+    # Record what was computed, and only what was computed: a run that declared `css` gets
+    # a `scaling` entry with the quantile, the thresholds and the cumulative sums; a run
+    # that declared `none` gets the plain log library size, labelled as such. This is
+    # written *after* self_diagnostics, which rebuilds `checks` and `warnings` from
+    # scratch — put before it, the entry would have been silently overwritten.
+    if !isnothing(scaling)
+        checks["scaling"] = Scaling.factor_checks(scaling)
+        append!(warnings, scaling.warnings)
+    end
     checks["all_zero_taxa"] = OrderedDict{String,Any}(
         "all_zero_taxa_indices" => all_zero_taxa_indices,
         "all_zero_taxa_count" => length(all_zero_taxa_indices),
@@ -1352,7 +1399,8 @@ function prepare_analysis_table(
             "transform" => transform_method,
             "zero_policy" => string(zero_policy),
             "pseudocount" => effective_pseudocount,
-            "epsilon" => effective_epsilon
+            "epsilon" => effective_epsilon,
+            "scaling" => isnothing(scaling) ? nothing : Scaling.factor_provenance(scaling)
         )
     )
 

@@ -98,11 +98,18 @@ const ZERO_POLICY_STRINGS = Dict{String,ZeroPolicy}(
 const VALID_DISPERSION_METHODS = ("parametric", "local", "mean", "pooled", "glmGamPoi")
 const VALID_ZERO_HANDLING = ("pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse")
 const VALID_ILR_BASIS = ("default", "phylogenetic", "sequential_binary_partition", "balance_dendrogram")
+# Method names are canonicalised to lower case by `NormalizationConfig`, so the allowed
+# names are held in the same case and compared in it. They were not always: the entries
+# for TSS/CSS/RSS arrived upper case while the constructor stored `"tss"`, so every one of
+# those combinations raised "normalization.method ... incompatible" from `AnalysisConfig`
+# -- including the exact TSS offset the CHANGELOG claimed had shipped. The comparison is
+# now case-insensitive in both directions so neither side can drift again, and the tests
+# assert that each admissible spelling of every method name is accepted.
 const VALID_NORMALIZATION_FOR_METHOD = Dict{AnalysisMethod, Vector{String}}(
-    NB_GLM => ["none", "rarefy", "size_factors", "relative", "TSS", "CSS", "RSS"], # TSS/CSS/RSS deferred but allowed as alias for relative
+    NB_GLM => ["none", "rarefy", "size_factors", "relative", "tss", "css", "rss"],
     CLR_LM => ["clr"],
     ILR_LM => ["ilr"],
-    LOGISTIC => ["none", "relative", "rarefy", "presence_absence", "TSS"],
+    LOGISTIC => ["none", "relative", "rarefy", "presence_absence", "tss"],
 )
 
 # --------------------------------------------------------------------------
@@ -125,7 +132,11 @@ struct NormalizationConfig
     zero_policy::ZeroPolicy
     ilr_basis::Union{String,Nothing}
     multiplicative_replacement_delta::Union{Float64,Nothing}
-    tss_css_rss_note::Union{String,Nothing}  # deferred feature note
+    tss_css_rss_note::Union{String,Nothing}  # free-form note, recorded with the config
+    css_quantile::Float64                    # CSS: quantile of each sample's counts
+    tmm_ref_column::Union{String,Nothing}    # RSS/TMM: reference sample, or nothing
+    tmm_log_ratio_trim::Float64              # RSS/TMM: trim of the log-ratio tail
+    tmm_sum_trim::Float64                    # RSS/TMM: trim of the abundance tail
 
     function NormalizationConfig(;
         method::String,
@@ -134,7 +145,11 @@ struct NormalizationConfig
         zero_policy::String="pseudocount",
         ilr_basis::Union{String,Nothing}=nothing,
         multiplicative_replacement_delta::Union{Float64,Nothing}=nothing,
-        tss_css_rss_note::Union{String,Nothing}=nothing
+        tss_css_rss_note::Union{String,Nothing}=nothing,
+        css_quantile::Real=0.75,
+        tmm_ref_column::Union{String,Nothing}=nothing,
+        tmm_log_ratio_trim::Real=0.3,
+        tmm_sum_trim::Real=0.05
     )
         method_clean = lowercase(strip(method))
         isempty(method_clean) && throw(ArgumentError("normalization.method must be non-empty (e.g. 'clr', 'size_factors', 'TSS') — see context_help('normalization.method')"))
@@ -189,14 +204,43 @@ struct NormalizationConfig
             (delta <= 0 || delta >= 1) && throw(ArgumentError("multiplicative_replacement_delta must be in (0,1), got $delta — see context_help('advanced.zero_policy')"))
         end
 
-        # TSS/CSS/RSS note — deferred feature
-        if method_clean in ("tss", "css", "rss")
-            if isnothing(tss_css_rss_note)
-                @warn "TSS/CSS/RSS are deferred features (see GitHub issues). Currently aliased to relative/TSS. For exact TSS/CSS/RSS offsets, see deferred issue with value/difficulty/risk."
+        # TSS/CSS/RSS are exact offsets as of 2026-09-25 (issue #16), implemented in
+        # src/analysis/scaling.jl. Their parameters are validated here and recorded in the
+        # config hash, because each one changes the numbers a count model reports.
+        css_q = Float64(css_quantile)
+        if !(0 < css_q < 1)
+            throw(ArgumentError("css_quantile must be in (0,1), got $css_q — it is the quantile of each sample's counts that the cumulative sum is taken up to. See context_help('normalization.css_quantile') and docs/statistics/method-conditions/scaling-and-offsets.md"))
+        end
+        if css_q < 0.5
+            @warn "css_quantile=$css_q is below the median: the cumulative sum then covers less than half of each sample's counts and is dominated by how many features are zero. Paulson et al. (2013) use 0.5-0.75 on real data." css_quantile
+        end
+        lrt = Float64(tmm_log_ratio_trim)
+        if !(0 <= lrt < 0.5)
+            throw(ArgumentError("tmm_log_ratio_trim must be in [0,0.5), got $lrt — a trim of 0.5 or more removes at least half of the log-ratios in each tail. See context_help('normalization.tmm_log_ratio_trim')"))
+        end
+        st = Float64(tmm_sum_trim)
+        if !(0 <= st < 0.5)
+            throw(ArgumentError("tmm_sum_trim must be in [0,0.5), got $st — see context_help('normalization.tmm_sum_trim')"))
+        end
+        if lrt == 0.0 && st == 0.0
+            @warn "tmm_log_ratio_trim=0 and tmm_sum_trim=0: the trimmed mean becomes an untrimmed mean over every feature, which is the robustness the TMM estimator is used for. Proceeding, and recording both values." tmm_log_ratio_trim tmm_sum_trim
+        end
+        ref_col = isnothing(tmm_ref_column) ? nothing : strip(tmm_ref_column)
+        if !isnothing(ref_col)
+            isempty(ref_col) && throw(ArgumentError("tmm_ref_column must name a sample, or be omitted — got an empty string. See context_help('normalization.tmm_ref_column')"))
+            occursin(r"[;`$]", ref_col) && throw(ArgumentError("tmm_ref_column contains a forbidden ; ` \$ — got '$ref_col'"))
+        end
+        if !(method_clean in ("css", "rss"))
+            if css_q != 0.75
+                @warn "css_quantile is only used by normalization.method='css'; it is recorded but has no effect for '$method_clean'."
+            end
+            if !isnothing(ref_col) || lrt != 0.3 || st != 0.05
+                @warn "tmm_ref_column/tmm_log_ratio_trim/tmm_sum_trim are only used by normalization.method='rss'; they are recorded but have no effect for '$method_clean'."
             end
         end
 
-        new(method_clean, pseudocount, epsilon, zp, ilr_basis, multiplicative_replacement_delta, tss_css_rss_note)
+        new(method_clean, pseudocount, epsilon, zp, ilr_basis, multiplicative_replacement_delta,
+            tss_css_rss_note, css_q, ref_col, lrt, st)
     end
 end
 
@@ -479,8 +523,11 @@ struct AnalysisConfig
             end
         end
 
-        # Normalization compatibility with method
-        norm_method = normalization.method
+        # Normalization compatibility with method. Both sides are lowercased here: the
+        # table is the canonical list and the config has already canonicalised its own
+        # name, and a comparison that depends on which side was canonicalised is how the
+        # "tss" vs "TSS" mismatch shipped.
+        norm_method = lowercase(strip(normalization.method))
         allowed_norms = get(VALID_NORMALIZATION_FOR_METHOD, method_enum, String[])
         if !(norm_method in allowed_norms)
             throw(ArgumentError("normalization.method '$norm_method' incompatible with method '$(METHOD_TO_STRING[method_enum])'. Allowed for $(METHOD_TO_STRING[method_enum]): $(join(allowed_norms, ", ")). See context_help('normalization.method') and MethodNormalizationCompatibility contract in Nickel. Refusing meaningless combination."))
@@ -537,7 +584,11 @@ struct AnalysisConfig
                     "epsilon" => normalization.epsilon,
                     "zero_policy" => string(normalization.zero_policy),
                     "ilr_basis" => normalization.ilr_basis,
-                    "multiplicative_replacement_delta" => normalization.multiplicative_replacement_delta
+                    "multiplicative_replacement_delta" => normalization.multiplicative_replacement_delta,
+                    "css_quantile" => normalization.css_quantile,
+                    "tmm_ref_column" => normalization.tmm_ref_column,
+                    "tmm_log_ratio_trim" => normalization.tmm_log_ratio_trim,
+                    "tmm_sum_trim" => normalization.tmm_sum_trim
                 ),
                 "correction" => OrderedDict(
                     "method" => correction.method,
@@ -684,7 +735,7 @@ function validate_config(config::AnalysisConfig, available_columns::Vector{Strin
 
     # Check normalization compatibility already done in constructor, but re-check for strict
     if strict
-        norm_method = config.normalization.method
+        norm_method = lowercase(strip(config.normalization.method))
         allowed = get(VALID_NORMALIZATION_FOR_METHOD, config.method, String[])
         if !(norm_method in allowed)
             push!(errors, "Incompatible normalization.method '$norm_method' for method '$(METHOD_TO_STRING[config.method])' — allowed $(join(allowed, ", "))")
@@ -726,7 +777,11 @@ function canonical_json(config::AnalysisConfig)
             "pseudocount" => config.normalization.pseudocount,
             "epsilon" => config.normalization.epsilon,
             "zero_policy" => string(config.normalization.zero_policy),
-            "ilr_basis" => config.normalization.ilr_basis
+            "ilr_basis" => config.normalization.ilr_basis,
+            "css_quantile" => config.normalization.css_quantile,
+            "tmm_ref_column" => config.normalization.tmm_ref_column,
+            "tmm_log_ratio_trim" => config.normalization.tmm_log_ratio_trim,
+            "tmm_sum_trim" => config.normalization.tmm_sum_trim
         ),
         "correction" => OrderedDict(
             "method" => config.correction.method,
@@ -805,15 +860,69 @@ function context_help(field_path::String)
         "normalization.method" => """
         Normalization / Transform (method-dependent) — must be compatible with method
 
-        - For NB_GLM: none, size_factors (DESeq2 default, preferred), relative, rarefy (discouraged, use with caution), TSS (alias for relative, deferred exact TSS), CSS (deferred), RSS (deferred)
+        - For NB_GLM: none, size_factors (DESeq2/RLE median-of-ratios), relative, rarefy (discouraged), tss, css, rss
         - For CLR_LM: must be clr — Centered Log-Ratio, requires pseudocount >0
         - For ILR_LM: must be ilr — Isometric Log-Ratio, requires pseudocount >0 and ilr_basis
-        - For LOGISTIC: presence_absence, none, relative, rarefy, TSS
+        - For LOGISTIC: presence_absence, none, relative, rarefy, tss
 
-        TSS/CSS/RSS offsets are deferred features (see GitHub issues) — currently aliased to relative. For exact TSS/CSS/RSS offsets, see deferred issue with value/difficulty/risk.
+        How the count-model choices differ (each is an offset, not a transform; counts stay counts):
 
-        Refuses meaningless: NB_GLM + clr/ilr (counts vs compositional), CLR_LM + none, etc. See Nickel MethodNormalizationCompatibility contract.
-        See JSON schema enum and DEED (normalization :method).
+        - tss (total sum scaling): offset = log(library size). The McMurdie & Holmes (2014) answer to rarefaction: model depth, do not divide by it.
+        - css (cumulative sum scaling, Paulson et al. 2013): offset = log of the sum of counts at or below each sample's own quantile, set by css_quantile (default 0.75). Robust to a few dominant taxa. Refused when that sum is zero for any sample.
+        - rss (TMM, Robinson & Oshlack 2010): offset = log of a trimmed weighted mean of log-ratios against a reference sample; set by tmm_log_ratio_trim (0.3), tmm_sum_trim (0.05) and tmm_ref_column. Assumes most features are not differentially abundant.
+        - size_factors: median-of-ratios (DESeq2/RLE) as a size factor, in the offset form.
+        - relative: proportions. A transform, not an offset: it discards the count nature of the data.
+        - none: no scaling; the offset is the plain log library size.
+
+        None of these removes the compositional constraint. They correct for sequencing depth; a log fold change from a model with these offsets is still relative to the sampled community.
+
+        Refuses meaningless: NB_GLM + clr/ilr (counts vs compositional), CLR_LM + none, css/rss on a non-count response (an offset needs something to offset), etc. See Nickel MethodNormalizationCompatibility contract.
+        See docs/statistics/method-conditions/scaling-and-offsets.md and JSON schema enum.
+        """,
+        "normalization.css_quantile" => """
+        CSS quantile (normalization.method = css only)
+
+        - The per-sample quantile of the count distribution whose cumulative sum becomes the
+          scaling factor. Paulson et al. (2013) use 0.5-0.75; the default here is 0.75.
+        - Must be in (0,1). Below 0.5 the cumulative sum covers less than half of a sample's
+          counts and is dominated by how many features are zero — a warning is issued.
+        - Refused at run time when the cumulative sum is zero for any sample (log(0) is not a
+          small number). Raise the quantile or exclude the sample.
+        - metagenomeSeq's data-driven choice of this quantile (cumNormStatFast) is deliberately
+          not implemented: a parameter chosen from the data is a decision the run must record.
+
+        Recorded in the config hash and in the manifest provenance.
+        """,
+        "normalization.tmm_ref_column" => """
+        TMM reference sample (normalization.method = rss only)
+
+        - Names the sample every other sample's log-ratios are taken against.
+        - Omitted (the default): the reference is chosen the way edgeR chooses it — the sample
+          whose upper-quartile-scaled counts are closest to the mean of those values. Which
+          sample was chosen is recorded in the provenance.
+        - The name is not checked until the run has the sample list; an unknown name is refused
+          there, by name, rather than silently falling back to the data-driven choice.
+
+        Recorded in the config hash.
+        """,
+        "normalization.tmm_log_ratio_trim" => """
+        TMM log-ratio trimming (normalization.method = rss only)
+
+        - Fraction trimmed from each tail of the log-ratios before the weighted mean: 0.3 by
+          default, as in edgeR.
+        - Must be in [0,0.5). Zero means no trimming, which removes the robustness TMM is used
+          for; both values are recorded, so an untrimmed run is visible rather than assumed.
+
+        Recorded in the config hash.
+        """,
+        "normalization.tmm_sum_trim" => """
+        TMM abundance trimming (normalization.method = rss only)
+
+        - Fraction trimmed from each tail of the mean abundances before the weighted mean: 0.05
+          by default, as in edgeR.
+        - Must be in [0,0.5). Zero means no trimming of the abundance tails.
+
+        Recorded in the config hash.
         """,
         "normalization.pseudocount" => """
         Pseudocount for zero replacement (CLR/ILR mandatory, NB_GLM optional but warned)
@@ -1077,7 +1186,11 @@ function to_json(config::AnalysisConfig)
             "epsilon" => config.normalization.epsilon,
             "zero_policy" => string(config.normalization.zero_policy),
             "ilr_basis" => config.normalization.ilr_basis,
-            "multiplicative_replacement_delta" => config.normalization.multiplicative_replacement_delta
+            "multiplicative_replacement_delta" => config.normalization.multiplicative_replacement_delta,
+            "css_quantile" => config.normalization.css_quantile,
+            "tmm_ref_column" => config.normalization.tmm_ref_column,
+            "tmm_log_ratio_trim" => config.normalization.tmm_log_ratio_trim,
+            "tmm_sum_trim" => config.normalization.tmm_sum_trim
         ),
         "correction" => OrderedDict(
             "method" => config.correction.method,
@@ -1121,7 +1234,11 @@ function from_json(json_str::String)
         epsilon=get(norm_data, :epsilon, 1e-6),
         zero_policy=get(norm_data, :zero_policy, "pseudocount"),
         ilr_basis=get(norm_data, :ilr_basis, nothing),
-        multiplicative_replacement_delta=get(norm_data, :multiplicative_replacement_delta, nothing)
+        multiplicative_replacement_delta=get(norm_data, :multiplicative_replacement_delta, nothing),
+        css_quantile=Float64(get(norm_data, :css_quantile, 0.75)),
+        tmm_ref_column=get(norm_data, :tmm_ref_column, nothing),
+        tmm_log_ratio_trim=Float64(get(norm_data, :tmm_log_ratio_trim, 0.3)),
+        tmm_sum_trim=Float64(get(norm_data, :tmm_sum_trim, 0.05))
     )
 
     corr_data = data.correction
@@ -1206,6 +1323,10 @@ function to_nickel(config::AnalysisConfig)
         epsilon = $(config.normalization.epsilon),
         zero_policy = '$(string(config.normalization.zero_policy))',
         ilr_basis = $(isnothing(config.normalization.ilr_basis) ? "null" : "'$(config.normalization.ilr_basis)'"),
+        css_quantile = $(config.normalization.css_quantile) | CssQuantileContract,
+        tmm_ref_column = $(isnothing(config.normalization.tmm_ref_column) ? "null" : "\"$(config.normalization.tmm_ref_column)\""),
+        tmm_log_ratio_trim = $(config.normalization.tmm_log_ratio_trim) | TmmTrimContract,
+        tmm_sum_trim = $(config.normalization.tmm_sum_trim) | TmmTrimContract,
       } | MethodNormalizationCompatibility,
 
       correction = {
@@ -1327,7 +1448,11 @@ function to_deed(config::AnalysisConfig)
         :epsilon $(config.normalization.epsilon)
         :zero-policy "$(string(config.normalization.zero_policy))"
         :ilr-basis "$(isnothing(config.normalization.ilr_basis) ? "" : config.normalization.ilr_basis)"
-        :multiplicative-replacement-delta $(isnothing(config.normalization.multiplicative_replacement_delta) ? "0" : string(config.normalization.multiplicative_replacement_delta)))
+        :multiplicative-replacement-delta $(isnothing(config.normalization.multiplicative_replacement_delta) ? "0" : string(config.normalization.multiplicative_replacement_delta))
+        :css-quantile $(config.normalization.css_quantile)
+        :tmm-ref-column "$(isnothing(config.normalization.tmm_ref_column) ? "" : config.normalization.tmm_ref_column)"
+        :tmm-log-ratio-trim $(config.normalization.tmm_log_ratio_trim)
+        :tmm-sum-trim $(config.normalization.tmm_sum_trim))
 
       (correction
         :method "$(config.correction.method)"
@@ -1372,7 +1497,7 @@ function to_deed(config::AnalysisConfig)
         :method "Analysis method explicit no auto-selection v1 nb_glm clr_lm ilr_lm logistic"
         :formula "R-style formula e.g. ~ group must reference only metadata_columns forbids ; backtick dollar"
         :correction "BH mandatory in v1 any override triggers DANGER banner requires acknowledgment token $(DANGER_ACK_TOKEN)"
-        :normalization "Normalization must be compatible with method nb_glm allows none/rarefy/size_factors/relative/TSS/CLR/ILR"
+        :normalization "Normalization must be compatible with method: nb_glm allows none/rarefy/size_factors/relative/tss/css/rss (tss/css/rss are exact offsets, see docs/statistics/method-conditions/scaling-and-offsets.md), clr_lm requires clr, ilr_lm requires ilr"
         :advanced "All advanced options behind Advanced Analysis expander hidden unless Evidence Mode heavy validation refusal meaningless"))
     """
 end
