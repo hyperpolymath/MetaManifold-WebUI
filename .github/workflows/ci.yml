@@ -548,12 +548,36 @@ jobs:
           status="${PIPESTATUS[0]}"
           if [ "$status" -ne 0 ]; then
             # A failing test's message is the entire point of running it, and the job log
-            # is served from a storage host that not every environment can reach. The tail
-            # of the output is therefore also posted as an annotation, which the checks
-            # API serves as data. 6000 bytes of tail is enough for the failing testset and
-            # the last few assertions, which is what a reader needs first.
-            tail -c 6000 /tmp/julia-tests.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}' > /tmp/julia-tests-annotation.txt
-            echo "::error title=Julia tests failed::$(cat /tmp/julia-tests-annotation.txt)"
+            # is served from a storage host that not every environment can reach. The
+            # checks API serves annotations as data, but caps each message at 4096 bytes,
+            # so one annotation of the tail only ever showed the passing half of the
+            # summary. Instead: one annotation per failing assertion (the Test.jl block
+            # from "Test Failed at" / "Error During Test at" onward, 60 lines, 3500
+            # bytes), then the summary rows that report a failure or an error.
+            enc() { head -c 3500 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+            awk '
+              /Test Summary:/ { left = 0 }
+              /(Test Failed at|Error During Test at)/ || (left == 0 && /Got exception outside of a @test/) { n++; left = 60 }
+              left > 0 { print > ("/tmp/julia-failure-" n ".txt"); left-- }
+            ' /tmp/julia-tests.log
+            shown=0
+            for f in $(ls /tmp/julia-failure-*.txt 2>/dev/null | sort -t- -k3 -n); do
+              shown=$((shown + 1))
+              [ "$shown" -gt 8 ] && break
+              echo "::error title=Julia test failure ${shown}::$(enc < "$f")"
+            done
+            # Summary rows whose Fail or Error column is non-empty. Test.jl right-aligns
+            # counts under the "Test Summary: | Pass  Fail  Error  Total  Time" header, so
+            # a digit between the end of "Pass" and the start of "Total" is a failure.
+            awk '
+              /Test Summary:/ { print; p = index($0, "Pass"); pe = (p ? p + 3 : 0); t = index($0, "Total"); next }
+              pe && t && index($0, "|") && substr($0, pe + 1, t - pe - 1) ~ /[0-9]/ { print; next }
+              /ERROR:|Some tests did not pass/ { print }
+            ' /tmp/julia-tests.log | tail -n 60 > /tmp/julia-tests-summary.txt
+            echo "::error title=Julia tests failed (summary)::$(enc < /tmp/julia-tests-summary.txt)"
+            if [ "$shown" -eq 0 ]; then
+              echo "::error title=Julia tests failed (tail)::$(tail -c 3500 /tmp/julia-tests.log | enc)"
+            fi
           fi
           exit "$status"
 
