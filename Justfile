@@ -33,6 +33,9 @@ export METAMANIFOLD_REPO_DIR := justfile_directory()
 
 FRONTEND := justfile_directory() / "frontend"
 
+# Integration helper (fork↔upstream profiles, triage, component toggles).
+INTEGRATE := justfile_directory() / "scripts/integrate.sh"
+
 # Free-RAM floor (KB) for the heavy Julia lanes: cold JIT-compilation of the
 # server dependency closure needs several GB; below this the lane fails
 # loudly instead of thrashing the box into an OOM kill.
@@ -77,18 +80,42 @@ info:
 doctor:
     #!/usr/bin/env bash
     rc=0
+    # Hard requirement: absent => FAIL and non-zero exit.
     need() {
-        if command -v "$1" >/dev/null 2>&1; then printf 'PASS  %-10s %s\n' "$1" "$($1 --version 2>&1 | head -1)";
-        else printf 'FAIL  %-10s %s\n' "$1" "$2"; rc=1; fi
+        if command -v "$1" >/dev/null 2>&1; then printf 'PASS  %-12s %s\n' "$1" "$($1 --version 2>&1 | head -1)";
+        else printf 'FAIL  %-12s %s\n' "$1" "$2"; rc=1; fi
     }
-    need bun  "install: curl -fsSL https://bun.sh/install | bash"
+    # Soft requirement: absent => WARN, exit stays 0 (a documented lane is just unavailable).
+    soft() {
+        if command -v "$1" >/dev/null 2>&1; then printf 'PASS  %-12s %s\n' "$1" "$($1 --version 2>&1 | head -1)";
+        else printf 'WARN  %-12s %s\n' "$1" "$2"; fi
+    }
+    need bun  "install: curl -fsSL https://bun.sh/install | bash  (or: just setup-tools)"
     need git  "install via package manager"
+    soft bunx "ships with bun; if absent reinstall bun"
+    soft node "needed by vite's production build: just setup-tools"
+    soft mise "toolchain pins (mise.toml): curl https://mise.run | sh  (Guix lane is the alternative)"
     if $JULIA_CMD --version >/dev/null 2>&1; then
-        printf 'PASS  %-10s %s\n' "julia" "$($JULIA_CMD --version)"
+        printf 'PASS  %-12s %s\n' "julia" "$($JULIA_CMD --version)"
     else
-        printf 'WARN  %-10s %s\n' "julia" "Julia lanes unavailable — install via juliaup (install.sh)"
+        printf 'WARN  %-12s %s\n' "julia" "Julia lanes unavailable — install via juliaup (install.sh) or just setup-tools"
     fi
-    [[ -x "{{LAUNCHER}}" ]] && echo "PASS  launcher   {{LAUNCHER}}" || { echo "WARN  launcher   not executable: {{LAUNCHER}}"; }
+    if command -v Rscript >/dev/null 2>&1; then
+        printf 'PASS  %-12s %s\n' "R" "$(Rscript --version 2>&1 | head -1)"
+        [ -f renv/activate.R ] && echo "PASS  renv        renv/activate.R present (restore with: just renv-restore)" \
+            || echo "WARN  renv        renv/activate.R missing — R lane cannot restore"
+    else
+        printf 'WARN  %-12s %s\n' "R" "system R >= 4.5 not found (documented exception; not in mise registry)"
+    fi
+    # Merge drivers make lockfiles auto-resolve on the next fork↔upstream merge.
+    if git config --get merge.lockfile.driver >/dev/null 2>&1; then
+        echo "PASS  merge-drv   merge.lockfile wired (just merge-drivers)"
+    else
+        echo "WARN  merge-drv   not wired — run: just merge-drivers"
+    fi
+    [[ -x "{{LAUNCHER}}" ]] && echo "PASS  launcher    {{LAUNCHER}}" || { echo "WARN  launcher    not executable: {{LAUNCHER}}"; }
+    echo "-----"
+    echo "Integration profile: $({{INTEGRATE}} profile 2>/dev/null || echo base)"
     exit $rc
 
 # Quick repo statistics.
@@ -112,8 +139,8 @@ setup: install
 # mise.toml (julia 1.12.5, bun 1.3.10, node 20.20.2, just 1.43.1), then
 # install frontend dependencies. R is a documented exception: system R +
 # renv.lock (R is not in the mise registry — verified 2026-09-18).
-bootstrap: setup-tools install codegen-tools hooks
-    @echo "bootstrap: toolchain + deps + machine tool map ready — next: just ci"
+bootstrap: setup-tools install codegen-tools hooks merge-drivers
+    @echo "bootstrap: toolchain + deps + hooks + merge drivers + machine tool map ready — next: just ci"
 
 # Point git at .githooks so the commit-msg gate actually runs. core.hooksPath is
 # per-clone local config -- it cannot be committed -- so documenting it in
@@ -123,6 +150,26 @@ bootstrap: setup-tools install codegen-tools hooks
 hooks:
     @git config core.hooksPath .githooks
     @echo "hooks: core.hooksPath -> .githooks (commit-msg gate live)"
+
+# Wire a git merge driver that keeps lockfiles / generated files out of the
+# fork↔upstream conflict set. merge.lockfile auto-resolves such a path to the
+# branch being merged INTO (ours) and reminds you to regenerate — never a
+# line-merged lockfile. Applied via .git/info/attributes (local, overrides the
+# tree, never committed) so it is fully opt-in and cannot break a merge on a
+# clone that has not run it. The committed .gitattributes already stops git from
+# line-merging these (merge: unset); this just makes the choice automatic.
+# Local git config, like core.hooksPath — hence a command, not a committed file.
+# Idempotent; safe to re-run.
+merge-drivers:
+    #!/usr/bin/env bash
+    git config merge.lockfile.name "keep target-branch lockfile, then regenerate (just heal)"
+    git config merge.lockfile.driver 'echo "merge-drivers: kept target-branch copy of %P — regenerate with: just heal" >&2'
+    attrs="{{justfile_directory()}}/.git/info/attributes"
+    mkdir -p "$(dirname "$attrs")"; touch "$attrs"
+    for p in Manifest.toml renv.lock frontend/bun.lock bun.lockb package-lock.json pnpm-lock.yaml renv/activate.R; do
+        grep -qxF "$p merge=lockfile" "$attrs" 2>/dev/null || printf '%s merge=lockfile\n' "$p" >> "$attrs"
+    done
+    echo "merge-drivers: merge.lockfile wired for lockfiles via .git/info/attributes (opt-in, local)"
 
 # Provision the pinned toolchain via mise (fail-loud with the installer
 # one-liner when mise is absent; the Guix lane in guix.scm is the
@@ -167,11 +214,12 @@ codegen-tools:
     ./scripts/gen-tools-yml.sh
 
 # Complete first-run on a bare machine, clone-to-launchable in one recipe:
-# toolchain + JS deps + machine tool map (bootstrap), Julia package
-# instantiate, then install.sh's sha256-pinned external pipeline tools.
-# After this: just start. (install-tools downloads several hundred MB by
-# design — skip it when you only develop the frontend.)
-setup-full: bootstrap julia-instantiate install-tools
+# toolchain + JS deps + machine tool map + hooks + merge drivers (bootstrap),
+# Julia package instantiate, R package restore (renv), then install.sh's
+# sha256-pinned external pipeline tools. After this: just start.
+# (install-tools downloads several hundred MB by design — skip it when you only
+# develop the frontend.)
+setup-full: bootstrap julia-instantiate renv-restore install-tools
     @echo "setup-full: complete — launch with: just start"
 
 # Pipeline tools via the byte-exact lane: install.sh fetches the archives
@@ -190,6 +238,18 @@ outdated:
 # Instantiate the Julia project (downloads + precompiles; heavy first run).
 julia-instantiate:
     $JULIA_CMD --project=. -e 'using Pkg; Pkg.instantiate(); println("instantiate OK")'
+
+# Restore the R package set from renv.lock (byte-exact; the R lane). Requires
+# system R >= 4.5 (documented exception — R is not in the mise registry). Fails
+# loudly if R is absent rather than silently skipping the lane.
+renv-restore:
+    #!/usr/bin/env bash
+    if ! command -v Rscript >/dev/null 2>&1; then
+        echo "R LANE UNAVAILABLE: system R (>= 4.5) not found." >&2
+        echo "Install R for your OS, then re-run: just renv-restore" >&2
+        exit 1
+    fi
+    Rscript --no-init-file -e 'if (!requireNamespace("renv", quietly=TRUE)) { message("installing renv..."); install.packages("renv", repos="https://cloud.r-project.org") }; renv::restore(prompt=FALSE)'
 
 # ----------------------------------------------------------------------- #
 # Hygiene gates (scripts/check-*.sh — the canonical bash lanes)
@@ -389,3 +449,71 @@ clean:
 # Remove generated outputs AND installed dependencies.
 clean-all: clean
     rm -rf frontend/node_modules
+
+# ----------------------------------------------------------------------- #
+# Integration & environment healing (fork↔upstream)
+#
+# The fork and upstream share no git ancestor, so a naive merge conflicts on
+# every shared path. These recipes expose config/integration.toml as a set of
+# trust decisions the maintainer can make incrementally — from "behave exactly
+# like upstream" (base) to "everything verified" (full) — without ever
+# compromising a running system: the default profile changes no behaviour.
+# Engine: scripts/integrate.sh. Guide: docs/integration/README.md.
+# ----------------------------------------------------------------------- #
+
+# Repair the local environment to a known-good state: re-sync repo pins, re-wire
+# hooks + merge drivers, regenerate the machine tool map, reinstall frontend
+# deps, and (where present) re-instantiate Julia and restore the R lockfile.
+# Resilient by design — each lane is attempted and a failure is reported, not
+# fatal. Idempotent. The "fix my box" one-shot.
+heal:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "heal: re-syncing repo pins...";            just sync-pins            || echo "heal: sync-pins skipped"
+    echo "heal: re-wiring hooks + merge drivers...";  just hooks merge-drivers
+    echo "heal: regenerating machine tool map...";    just codegen-tools        || echo "heal: codegen-tools skipped"
+    echo "heal: reinstalling frontend deps...";       just install              || echo "heal: install skipped"
+    if timeout 15 $JULIA_CMD --version >/dev/null 2>&1; then
+        echo "heal: re-instantiating Julia...";       just julia-instantiate    || echo "heal: julia-instantiate skipped"
+    else
+        echo "heal: Julia absent — provision the pinned toolchain with: just setup-tools"
+    fi
+    if command -v Rscript >/dev/null 2>&1; then
+        echo "heal: restoring R lockfile...";         just renv-restore         || echo "heal: renv-restore skipped"
+    else
+        echo "heal: R absent — R lane left untouched (documented exception)"
+    fi
+    echo "heal: done. Verify with: just doctor"
+
+# Integration profiles & component toggles (thin wrappers over scripts/integrate.sh).
+integrate: integrate-status
+
+integrate-status:
+    @{{INTEGRATE}} status
+
+integrate-profiles:
+    @{{INTEGRATE}} profiles
+
+# Switch the active profile: just integrate-profile <base|transitional|full>.
+integrate-profile profile="base":
+    @{{INTEGRATE}} profile "{{profile}}"
+
+# Recommended staging order (safest → riskiest).
+integrate-plan:
+    @{{INTEGRATE}} plan
+
+# Classify in-progress merge conflicts (auto / component / human).
+integrate-triage:
+    @{{INTEGRATE}} triage
+
+# Gates for the active selection; add strict="--strict" to require the tools be present.
+integrate-verify strict="":
+    @{{INTEGRATE}} verify {{strict}}
+
+# Suspend a component: it stops being active (if runtime-gated, it will refuse).
+suspend component:
+    @{{INTEGRATE}} disable "{{component}}"
+
+# Augment a component: it becomes active for this checkout.
+augment component:
+    @{{INTEGRATE}} enable "{{component}}"

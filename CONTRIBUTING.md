@@ -15,6 +15,19 @@ Pull requests against this fork must use base
 `hyperpolymath/MetaManifold-WebUI:main`. GitHub's fork PR page defaults the
 base to the upstream parent — change it before clicking *Create*.
 
+## Landing fork work on upstream (low-friction integration)
+
+This fork and upstream (`JoshuaJewell/MetaManifold-WebUI`) share no git
+ancestor, so a naive merge conflicts on every shared-but-different file. To
+integrate without a wall of conflicts — and to let the maintainer adopt the work
+incrementally, from "pure upstream" to "partially transitional" to "everything",
+without ever breaking a running system — see:
+
+- **`docs/integration/README.md`** — the guide (profiles, merge hygiene, staging).
+- **`docs/integration/conflict-map-2026-09-25.md`** — the measured conflict set.
+- `just integrate status | profiles | plan | triage` and `just augment`/`just suspend <component>`.
+- `just bootstrap` / `just setup-full` / `just heal` / `just doctor` — the turnkey environment.
+
 ## Development setup
 
 ```bash

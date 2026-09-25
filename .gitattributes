@@ -133,3 +133,44 @@ package-lock.json text eol=lf -diff linguist-generated=true
 **/*.res   linguist-detectable=false
 *.nix      text eol=lf
 flake.lock text eol=lf -diff linguist-generated=true
+
+# --- Integration / merge hygiene (fork↔upstream) --------------------------- #
+# This fork and upstream share NO git ancestor, so a naive merge conflicts on
+# every shared-but-different path. These rules keep the classes of file that
+# must NEVER be hand-merged out of the line-conflict set: git will not produce
+# conflict markers inside them, so a maintainer resolves them by regenerating
+# (`just heal`) or by an explicit `--ours`/`--theirs` pick, never by editing.
+#
+# `-merge` treats the path as binary for merge purposes (built-in driver; needs
+# no per-clone config, so it is safe the moment this file lands). For those who
+# want lockfiles to auto-resolve to the target branch and then be regenerated,
+# `just merge-drivers` wires the stronger `merge.lockfile` custom driver.
+
+# Generated lockfiles — regenerate, never line-merge.
+Manifest.toml        text eol=lf -diff -merge linguist-generated=true
+renv.lock            text eol=lf -diff -merge linguist-generated=true
+frontend/bun.lock    text eol=lf -diff -merge linguist-generated=true
+bun.lockb            binary      -diff -merge linguist-generated=true
+package-lock.json    text eol=lf -diff -merge linguist-generated=true
+pnpm-lock.yaml       text eol=lf -diff -merge linguist-generated=true
+# renv scaffold / generated dependency scan (produced by renv, not authored).
+renv/activate.R      text eol=lf -diff -merge linguist-generated=true
+R/_renv_dependencies.R text eol=lf -diff linguist-generated=true
+renv/library/**      binary -diff linguist-generated=true
+# Machine-local tool-path map (written by scripts/gen-tools-yml.sh).
+config/tools.yml     text eol=lf -diff linguist-generated=true
+config/ci/tools.yml  text eol=lf -diff linguist-generated=true
+
+# Build output — never source, never hand-merged. (Upstream committed web/dist;
+# the fork builds frontend/dist instead. Neither belongs in a diff.)
+web/dist/**          binary -diff linguist-generated=true
+frontend/dist/**     binary -diff linguist-generated=true
+**/dist/**           binary -diff linguist-generated=true
+
+# Test / coverage / benchmark artefacts.
+**/coverage/**       binary -diff linguist-generated=true
+lcov.info            text eol=lf -diff linguist-generated=true
+*.cov                text eol=lf -diff linguist-generated=true
+**/test-results/**   binary -diff linguist-generated=true
+**/*junit.xml        text eol=lf -diff linguist-generated=true
+**/bench/results/*.json text eol=lf -diff linguist-generated=true
