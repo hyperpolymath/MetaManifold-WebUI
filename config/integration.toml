@@ -1,0 +1,129 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Hyperpolymath engineering series
+#
+# config/integration.toml — fork↔upstream integration registry & transitional
+# profiles.  Consumed by scripts/integrate.sh (see `just integrate`).
+#
+# WHY THIS EXISTS
+# ---------------
+# This repository (hyperpolymath fork) and its upstream
+# (JoshuaJewell/MetaManifold-WebUI, last touched 2026-07-21) share NO common
+# git ancestor.  A naive `git merge` therefore cannot three-way-merge anything
+# and surfaces every shared-but-different path as a conflict — measured at 159
+# files on 2026-09-25 (see docs/integration/conflict-map-2026-09-25.md).  The
+# point of this file is to turn that wall of conflicts into a small, ordered set
+# of trust decisions the maintainer can make incrementally.
+#
+# The two ideas, kept deliberately separable:
+#
+#   1. PROFILES  — a named bundle of components, from "base" (behave exactly
+#                  like upstream; nothing risk-bearing from the fork is active)
+#                  through "transitional" (safe infrastructure only) to "full".
+#                  The maintainer switches profile to choose how much of the
+#                  fork is live.  Default is `base`: it changes no behaviour.
+#
+#   2. COMPONENTS — the individual contributions, each tagged with the area it
+#                  touches, a risk level, the path globs that identify its
+#                  files (used to classify merge conflicts automatically), the
+#                  upstream PRs that carry it, and — where the code supports it
+#                  — the runtime gate that keeps it safe while transitional.
+#
+# The registry is COMMITTED and shared.  The ACTIVE selection is machine-local
+# (env METAMANIFOLD_INTEGRATION_PROFILE, or the git-excluded file
+# config/integration.active) so the maintainer's choices never become a merge
+# conflict of their own.
+#
+# FORMAT NOTE (for scripts/integrate.sh's awk parser): `paths` is a single
+# quoted, space-separated list of path prefixes.  Keep it that way.
+
+# The profile a fresh checkout behaves as.  `base` == pure upstream behaviour.
+default_profile = "base"
+
+# --------------------------------------------------------------------------- #
+# Profiles — bundles of components, ordered base → transitional → full.
+# --------------------------------------------------------------------------- #
+
+[profiles.base]
+description = "Pure upstream behaviour. No risk-bearing fork component is active."
+components = ""
+
+[profiles.transitional]
+description = "Safe, non-behavioural infrastructure only (retries, an edge-case fix, benchmarks/CI, tooling, exact offsets). Statistical models and the UI migration stay out until trusted."
+components = "estate-tooling install-retry matrix-1x1-fix benchmarks-ci exact-offsets"
+
+[profiles.full]
+description = "Everything the fork has verified, including the real-statistics engine and the UI migration."
+components = "estate-tooling install-retry matrix-1x1-fix benchmarks-ci exact-offsets real-statistics ui-migration"
+
+# --------------------------------------------------------------------------- #
+# Components — the individual contributions.
+#   id    : stable key (used by `just suspend/augment`, triage classification)
+#   area  : tooling | build | src | frontend | test | data | docs
+#   risk  : none | low | medium | high   (ordering key for the staging plan)
+#   paths : space-separated path prefixes that identify the component's files
+#   prs   : upstream pull-request numbers that carry it (informational)
+#   gate  : "none" | a short description of the runtime safety gate
+# --------------------------------------------------------------------------- #
+
+[component.estate-tooling]
+name = "Estate tooling & merge hygiene (Justfile, mise.toml, .gitattributes, hooks, check scripts)"
+area = "tooling"
+risk = "none"
+paths = "Justfile mise.toml .gitattributes .githooks .editorconfig .envrc .gitmessage scripts/check- scripts/gen-tools-yml.sh config/ci config/tools.yml"
+prs = ""
+gate = "none"
+notes = "Pure additions — upstream has none of these files, so they land with zero conflict. This is the safest possible first step."
+
+[component.install-retry]
+name = "Pinned-download retries (network-glitch resilience in setup/CI)"
+area = "build"
+risk = "low"
+paths = "scripts/ci/fetch_pinned.sh install.sh install.jl .github/workflows/ci.yml"
+prs = "11"
+gate = "none"
+notes = "Adds retry/TLS handling around byte-exact downloads. Does not change what is installed, only that transient failures no longer redden a build."
+
+[component.matrix-1x1-fix]
+name = "1x1 matrix edge-case fix"
+area = "src"
+risk = "low"
+paths = "src/analysis/analysis.jl src/analysis/diversity.jl test/"
+prs = "8"
+gate = "covered by unit test"
+notes = "Prevents single-element matrices from crashing array operations. Small, surgical, test-covered."
+
+[component.benchmarks-ci]
+name = "Baseline benchmarks + CI setup"
+area = "build"
+risk = "low"
+paths = "frontend/bench bench/ .github/workflows/ci.yml"
+prs = "10"
+gate = "checksum-verified, timing informational"
+notes = "Records runtimes and adds the CI matrix. Benchmark deltas are reported, never gated, so this cannot block on noise."
+
+[component.exact-offsets]
+name = "Exact normalisation offsets (TSS/CSS/TMM/RLE) + lowercase method matching"
+area = "src"
+risk = "medium"
+paths = "src/analysis/scaling.jl src/analysis/numeric_policy.jl config/defaults config/schemas"
+prs = ""
+gate = "numeric-contract tests (docs/statistics/numeric-contracts.md)"
+notes = "Real offset maths and the tss/TSS case fix. Behaviour-visible but fully test-covered by the numeric-contract battery."
+
+[component.real-statistics]
+name = "Real statistical models + refusals (no invented numbers)"
+area = "src"
+risk = "high"
+paths = "src/analysis/estimation.jl src/analysis/exact_summaries.jl src/analysis/analysis.jl src/analysis/Execution.jl src/analysis/AnalysisConfig.jl test/ docs/statistics"
+prs = ""
+gate = "SUPPORTED_DISPERSION vs REFUSED_DISPERSION (a method either runs a real model or refuses)"
+notes = "Replaces placeholder p-values (previously derived from hash(taxon_id)) with real MASS::glm.nb / linear models, and makes every unsupported method refuse loudly rather than guess. The refusal set IS the transitional dial: a method can stay refused until it is trusted, with no risk of a false result."
+
+[component.ui-migration]
+name = "UI modernisation / reactive-component migration"
+area = "frontend"
+risk = "high"
+paths = "frontend/ ui/ web/"
+prs = "7"
+gate = "bun run check (typecheck + tests + bench) must be green"
+notes = "The largest surface. Modernises the reactive UI and brings frontend dependencies into lockfile compliance. Validate with `bun run check` before trusting."
