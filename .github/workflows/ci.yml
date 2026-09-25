@@ -542,7 +542,20 @@ jobs:
         env:
           CI_SKIP_TAXONOMY: "1"
           R_LIBS_SITE: /usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library
-        run: julia --project=. -t 2 --code-coverage=user --compiled-modules=no test/runtests.jl --integration --server
+        run: |
+          set +e
+          julia --project=. -t 2 --code-coverage=user --compiled-modules=no test/runtests.jl --integration --server 2>&1 | tee /tmp/julia-tests.log
+          status="${PIPESTATUS[0]}"
+          if [ "$status" -ne 0 ]; then
+            # A failing test's message is the entire point of running it, and the job log
+            # is served from a storage host that not every environment can reach. The tail
+            # of the output is therefore also posted as an annotation, which the checks
+            # API serves as data. 6000 bytes of tail is enough for the failing testset and
+            # the last few assertions, which is what a reader needs first.
+            tail -c 6000 /tmp/julia-tests.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}' > /tmp/julia-tests-annotation.txt
+            echo "::error title=Julia tests failed::$(cat /tmp/julia-tests-annotation.txt)"
+          fi
+          exit "$status"
 
       - name: Process coverage
         uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38  # v1
