@@ -12,6 +12,16 @@ types, tests, infrastructure, and alignment.
 
 ## [Unreleased]
 
+### Fixed — the NB test fixture is data a negative binomial describes (2026-09-26)
+
+- The estimation tests' synthetic table was **under-dispersed** (variance below the mean,
+  e.g. 10.2 vs 3.1). The negative binomial maximum-likelihood dispersion is then infinite,
+  `MASS::theta.ml` stops at its iteration limit, and the estimator — correctly — reported
+  two of the three fits as failed. The tests asserted `status == ok` on those fits. The
+  fixture now keeps the same group means with variance near mu + mu^2/6 (theta ~ 6),
+  checked outside R with two independent NB2 likelihood fits under both offsets the tests
+  use. The estimator's handling of an infinite theta is unchanged.
+
 ### Fixed — every parametric fit returned `not_run`; CI failures are now readable (2026-09-26)
 
 - **R's `NA` is read as missing.** The estimator writes its fits with

@@ -30,10 +30,20 @@
     # taxon 1: mean 10 vs 40 (four-fold up)  -> log2FC ~ +2
     # taxon 2: mean 30 vs 30 (no effect)     -> log2FC ~ 0
     # taxon 3: mean 50 vs 5  (ten-fold down) -> log2FC ~ -3.3
+    #
+    # Each group block has exactly the stated mean and a variance near mu + mu^2/6, i.e.
+    # negative binomial with theta ~ 6. The table this replaces had variance BELOW the mean
+    # (10.2 vs 3.1 for taxon 1, group A): under-dispersed, so the NB maximum-likelihood theta
+    # is infinite, MASS::theta.ml stops at its iteration limit, and the estimator correctly
+    # reported those fits as failed. A fixture for a negative binomial fit has to be data a
+    # negative binomial describes. Checked outside R with two independent NB2 maximum-
+    # likelihood fits (a direct scipy likelihood and statsmodels), under both offsets used
+    # below (log library size and RLE size factors): theta is finite for every taxon
+    # (3.0 to 14.9), and the slopes are +1.50/+1.55, +0.16/+0.24 and -2.05/-2.05.
     counts_effect = [
-        8.0 12 9 11 10 13 7 10 12 9 11 10   38 42 40 36 45 41 39 44 37 43 40 41;
-        30.0 28 32 31 29 33 30 27 31 29 32 30   31 29 30 32 28 31 30 32 29 31 30 30;
-        50.0 52 48 51 49 53 50 47 51 49 52 50   5 6 4 5 7 5 6 4 5 6 5 5
+        7.0 17 1 12 10 3 15 14 6 11 15 9   52 18 40 57 25 58 8 43 65 31 47 36;
+        32.0 18 44 6 43 27 39 14 30 49 23 35   14 35 27 49 6 32 44 23 43 30 18 39;
+        81.0 50 22 65 39 71 59 10 45 73 54 31   4 8 8 2 6 1 5 9 1 7 3 6
     ]
     taxa_effect = ["t_up", "t_flat", "t_down"]
     offsets_effect = log.(vec(sum(counts_effect, dims = 1)))
