@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-24.04
     continue-on-error: ${{ github.repository != 'hyperpolymath/MetaManifold-WebUI' }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # Full history, deliberately: the commit convention check below grades
           # the whole base..head range a PR proposes (#37), and a shallow clone
@@ -192,10 +192,10 @@ jobs:
       RENV_CONFIG_AUTOLOADER_ENABLED: "FALSE"
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up Julia
-        uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
+        uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
         with:
           # Pinned rather than tracking latest stable, because a pinned Manifest.toml
           # resolved by an unpinned Julia is not a reproducible build. This must equal
@@ -205,7 +205,7 @@ jobs:
           version: "1.12.5"
 
       - name: Cache Julia packages
-        uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+        uses: julia-actions/cache@a7bed9df697e5d7309d68afe7542a87621a8b6c8  # v3.3.0
 
       # Static source lint, deliberately dependency-free (`--project=no`) so it can
       # run before instantiation and fail in seconds rather than after the ~26
@@ -306,7 +306,7 @@ jobs:
       # because the restore runs under sudo where ~ is root's home, not the runner's.
       - name: Restore the renv cache
         id: renv-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: /opt/renv-cache
           # The run id keeps every key unique so each attempt writes a NEW entry and
@@ -351,7 +351,7 @@ jobs:
 
       - name: Save the renv cache
         if: always()
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: /opt/renv-cache
           key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
@@ -508,7 +508,7 @@ jobs:
 
       - name: Upload frontend test & benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: frontend-tests-benchmarks
           path: |
@@ -586,7 +586,7 @@ jobs:
 
       - name: Upload coverage artifact (local, Codecov removed per Milestone 2)
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: julia-coverage-lcov
           path: lcov.info
@@ -624,7 +624,7 @@ jobs:
 
       - name: Upload Julia benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: julia-benchmarks-comprehensive
           path: |
@@ -699,7 +699,7 @@ jobs:
       SQUABBLER_SHA: 9846169c1dc8e549edd72fa20efc6680d324d484
       SQUABBLE: /tmp/squabbler/target/release/squabble
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Build squabble at the pinned revision
         run: |
@@ -788,7 +788,7 @@ jobs:
 
       - name: Upload triage report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: cicd-squabbler-report
           path: |
