@@ -1,0 +1,16 @@
+frontend/bun.lock
+frontend/package.json
+frontend/playwright.config.ts
+frontend/tsconfig.build.json
+frontend/tsconfig.json
+frontend/vite.config.ts
+frontend/src/App.tsx
+frontend/src/main.tsx
+frontend/src/layout/
+frontend/src/styles/
+frontend/src/vite-env.d.ts
+frontend/src/api/
+frontend/src/types/
+frontend/src/hooks/
+frontend/src/utils/
+web/dist/

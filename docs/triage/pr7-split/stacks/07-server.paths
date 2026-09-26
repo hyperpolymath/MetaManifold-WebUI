@@ -1,0 +1,17 @@
+src/server/jobs.jl
+src/server/server.jl
+src/server/routes/annotations.jl
+src/server/routes/composition.jl
+src/server/routes/config.jl
+src/server/routes/databases.jl
+src/server/routes/duckdb_helpers.jl
+src/server/routes/events.jl
+src/server/routes/jobs.jl
+src/server/routes/pipeline.jl
+src/server/routes/results.jl
+src/server/routes/runs.jl
+src/server/routes/studies.jl
+test/unit/test_routes.jl
+test/unit/test_jobs.jl
+test/integration/
+test/runtests.jl
