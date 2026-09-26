@@ -256,6 +256,10 @@ docs/*
 !docs/milestones/**
 !docs/statistics/
 !docs/statistics/**
+# Pilots: repository-scoped experiments with an owner ruling behind them
+# (docs/pilots/kyaml-pilot.md is the first one).
+!docs/pilots/
+!docs/pilots/**
 !docs/issues/
 !docs/issues/**
 !docs/testing/
@@ -329,6 +333,8 @@ databases/
 # Machine-level config: generated from config/defaults/ on first run
 # (new_project) and edited in place; never committed.
 config/tools.yml
+# Agda interface files: build output of `just prove-agda`, rebuilt from source.
+*.agdai
 config/pipeline.yml
 config/databases.yml
 config/primers.yml
