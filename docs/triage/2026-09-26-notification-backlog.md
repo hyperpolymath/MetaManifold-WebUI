@@ -29,7 +29,7 @@ the report was updated to match. Fork open PRs are now **zero**.
 | Parent PR #7 (319 files, clean) | **Keep.** Split into 14 verified stacks: `pr7-split/` (`STACKS.md`, `RUNBOOK.md`, `make-stacks.sh`) |
 | CI on the fork | **Broken repo-wide since 2026-09-25 22:19 UTC** — every file-based workflow `startup_failure`s with zero jobs, including the #75 merge commit. Settings/platform-side; owner action required (runbook appendix 2) |
 | Fork issues (12 open; #20 closed by the #75 merge) | **All remaining stay open** — verified one by one (epic gate, recorded deferrals). Closing any of them now would contradict recorded owner decisions |
-| Branch `arena/01a0db67` (no PR) | **Flagged: deletes the entire DOI subsystem.** Needs an owner decision (delete vs rework) |
+| Branch `arena/01a0db67` (no PR) | **Deleted at owner's request** — content preserved in `docs/triage/db67-rescue/` (stale docs branch, not DOI-deleting — see report) |
 | Parent issue #12 (owner memo) | Awaits the addressee's eyes; summarised below, not closed |
 | Dependabot Updates on fork `main` | **Two consecutive failures** (`36210545146`, `36233872771`); re-run once CI is fixed |
 
@@ -140,17 +140,27 @@ this**: any #7 stack PRs, Dependabot, and post-merge verification of #75.
 Closed during this triage: **#20** (by the #75 merge). Previously
 closed issues (#9–#16, e.g. #9 AnalysisConfig v1) stay closed.
 
-## Flag: branch `arena/01a0db67-metamanifold-webui` (no PR)
+## Flag (resolved): branch `arena/01a0db67-metamanifold-webui`
 
-Three docs commits on top of current `main` that **delete the entire
-DOI subsystem** (39 files: `src/doi/*`, `src/server/routes/doi.jl`,
-`test/doi/*`, `test/unit/test_doi*.jl`, `doi.yml`, `scripts/link-doi.sh`,
-DOI docs/schemas/templates, `LICENSES/CC-BY-4.0.txt`) while adding
-`README.adoc`/`EXPLAINME.adoc` + a `docs/wikis/` dump (91 files changed,
-+4,239/−7,547). No PR is open, so it is dormant — but if it ever merges
-it silently reverts PR #74. Owner decision needed: delete the branch, or
-rescue the wiki docs onto a branch without the deletions. The bot will
-not delete another session's branch unasked.
+**Update: deleted on 2026-09-26 at the owner's request; content preserved
+in `docs/triage/db67-rescue/`** (`deleted-branch.patch` recreates the
+branch tree byte-for-byte; restore commands in that directory's
+`README.md`). Branch head at deletion: `d94ecd4e99dbda819fdc0fe1913d5caaabca414a`.
+
+Correction to the first triage note: this branch did **not** actively
+delete the DOI subsystem. It was three docs commits on the pre-DOI base
+`e33e10f`, so diffed against current `main` it merely *appeared* to
+delete `src/doi/*` and the ILR work (base-difference noise — a GitHub
+3-way merge would not have reverted PR #74/#75). Its genuine content was
+a BerryWiki wiki (`docs/wikis/`, 33 pages), `README.adoc`/`EXPLAINME.adoc`,
+the autolink spec, and prose updates to `CHANGELOG`/`CONTRIBUTING`/`NOTICE`
+— plus a `README.md` deletion and 32 wiki pages missing SPDX headers,
+which were the real landmines and the reason for closing it.
+
+Also already gone: the merged PR #75 branch (`arena/01a0db2e`) was
+auto-deleted on merge. Still open and deliberately untouched: the CI
+probe branch `arena/01a0db23` (unmerged, no PR — needs its own decision)
+and `feat/stipple-typed-studies-ui` (live as parent PR #7).
 
 ## Parent issue #12 (owner memo, 0 comments)
 
@@ -166,7 +176,9 @@ needs the *addressee's* eyes before closing — left open deliberately.
 2. Close parent #8/#10/#11 (one command each, runbook appendix 1).
 3. Decide parent #7: Option A merge-as-is (review via `STACKS.md`) or
    Option B stacked PRs (`RUNBOOK.md`).
-4. Decide `arena/01a0db67` (delete vs rescue-docs).
+4. ~~Decide `arena/01a0db67`~~ — done: branch deleted, content preserved
+   in `docs/triage/db67-rescue/`. Remaining: decide the CI probe branch
+   `arena/01a0db23` (unmerged, no PR).
 5. Read parent #12, then close it.
 6. Post-merge verification of #75 once CI runs (Julia tests, CodeFactor
    findings, Dependabot re-run).
