@@ -599,6 +599,27 @@ function skip_flow_trivia!(f::FlowParser)
     end
 end
 
+# Consumes whitespace and own-line comments before the root node, returning the comments.
+function consume_leading_comments!(f::FlowParser)::Vector{String}
+    comments = String[]
+    while true
+        while f.i <= length(f.chars) && (f.chars[f.i] == ' ' || f.chars[f.i] == '\t' || f.chars[f.i] == '\n')
+            f.chars[f.i] == '\n' && (f.lineno += 1)
+            f.i += 1
+        end
+        if f.i <= length(f.chars) && f.chars[f.i] == '#'
+            start = f.i + 1
+            while f.i <= length(f.chars) && f.chars[f.i] != '\n'
+                f.i += 1
+            end
+            push!(comments, strip(String(f.chars[start:f.i - 1])))
+            f.stats.comments_read += 1
+        else
+            return comments
+        end
+    end
+end
+
 function flow_peek!(f::FlowParser)::Char
     skip_flow_trivia!(f)
     f.i > length(f.chars) &&
@@ -1105,7 +1126,20 @@ function parse_document(path::String, source::String; stats::Stats = Stats())::N
             push!(chars, '\n')
         end
         f = FlowParser(path, chars, 1, first_significant + 1, stats)
+        # Comments above the root node belong to the document, not to nothing. They are
+        # attached to the first entry (or item) so that they survive the round trip; the
+        # emitter places them there, and the placement is stable from the first conversion on.
+        leading = consume_leading_comments!(f)
         doc = parse_flow_node!(f)
+        if !isempty(leading)
+            if doc isa Mapping && !isempty(doc.entries)
+                prepend!(doc.entries[1].comments, leading)
+            elseif doc isa Sequence && !isempty(doc.items)
+                prepend!(doc.items[1].comments, leading)
+            else
+                append!(doc.comments, leading)
+            end
+        end
         skip_flow_trivia!(f)
         if f.i <= length(f.chars)
             c = f.chars[f.i]

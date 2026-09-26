@@ -73,6 +73,77 @@ types, tests, infrastructure, and alignment.
 - **Removed** the Python fixture generator: Python is not permitted by the estate language
   policy; the Julia reference replaces it (`docs/compliance/standards-alignment.md`).
 
+### Added — advanced zero handling and the glmGamPoi dispersion port (issue #21, 2026-09-26)
+
+- **`src/analysis/zero_replacement.jl`** — the two operators the issue names, implemented
+  rather than aliased:
+  - *multiplicative replacement* (Martín-Fernández et al. 2003), the operator of
+    `zCompositions::multRepl`: zeros become `delta x detection limit`, observed parts are
+    scaled by `1 - Delta`, and the sample total and the ratios among observed parts are
+    preserved **exactly**;
+  - *Bayesian multiplicative replacement* (Martín-Fernández et al. 2015), the GBM of
+    `cmultRepl`: the inserted value is the posterior mean of a Dirichlet-multinomial whose
+    prior mean is the leave-one-out profile and whose concentration is `1/gmean(t)` unless the
+    caller supplies `alpha`, with the reference's `frac x colmins` cap and its `adjust`
+    switch.
+  Both refuse what they cannot do (a delta outside (0,1); an imputed mass that would consume
+  the sample, naming the largest admissible delta; all-zero samples; never-observed parts;
+  parts seen in fewer than two samples) and both record a full provenance block, including
+  the sentence that matters: **all replacement is biased**.
+- **`src/analysis/dispersion.jl`** — a pure-Julia port of glmGamPoi's dispersion pipeline
+  (Ahlmann-Eltze & Huber 2020): Cox-Reid adjusted NB maximum likelihood with the reference's
+  `0.99` factor and its early returns, the `dnorm`-weighted local-median trend, the
+  quasi-likelihood conversion, and the inverse-chisquare prior by Nelder-Mead. The reference's
+  **natural-spline abundance trend is not ported and is refused by name** rather than being
+  silently replaced by the non-trended prior; `glmgampoi_abundance_trend = false` runs the
+  reference's own non-trended form and records the deviation.
+- **`dispersion_method = "glmGamPoi"` in `estimation.jl`** — the by-name refusal is replaced
+  by the real two-pass path: pass 1 fits the mean sweep in R, the port estimates the
+  dispersions on those means, pass 2 refits at the fixed dispersion (`theta = 1/alpha`, with
+  `stats::glm(poisson())` where alpha is 0).
+- **Configuration** — `normalization.bayesian_multiplicative_alpha`, and
+  `advanced.{zero_replacement_method, multiplicative_delta, bayesian_alpha,
+  glmgampoi_abundance_trend}` in the Julia model, the Nickel contract, the JSON schema and the
+  frontend types; validation at the door (`delta` in (0,1), `alpha` > 0), warnings for
+  `delta < 0.01` and `delta >= 0.9`, a DEED echo of every value, and the DANGER banner when
+  three or more deltas have been tried — the p-hacking case the issue names. The Advanced
+  expander gains the delta slider **with a replacement preview**, the alpha field, and the
+  trend selector.
+- **Proofs** — `proofs/agda/` (Agda 2.7.0.1, stdlib 2.1.1, `--safe`, no postulates):
+  `ZeroReplacement.agda` (totals and observed-part ratios preserved, imputed values strictly
+  positive and below their detection limit), `NoRigidReplacement.agda` (no rule determined by
+  the observed data can be faithful — the theorem behind "all replacement is biased"), and
+  `DispersionShrinkage.agda` (the shrinkage lies between the prior and the sample estimate and
+  is exact when they coincide). `proofs/agda/README.md` says what each proves, what is
+  deliberately *not* proved, and what would falsify them.
+- **Tests and benchmarks** — `test/unit/test_zero_replacement.jl` and
+  `test/unit/test_dispersion.jl` against the pinned fixture `test/fixtures/issue21/golden.json`
+  (with direct comparisons against `zCompositions` and `glmGamPoi` wherever R has them, and
+  explicit "this comparison did not run" notices where it does not);
+  `bench/zero_replacement/benchmark.jl` at 100/1000/10000 taxa with the issue's 5-minute
+  warning and a 10% regression report behind `METAMANIFOLD_BENCH_STRICT`.
+- **Docs** — `docs/statistics/zero-handling.md` (what each policy does, its cost, the exact
+  relation to the two reference packages, and the alternatives that insert nothing) and
+  `docs/statistics/method-conditions/dispersion-glmGamPoi.md` (the conditions of use and the
+  residues).
+
+### Added — the KYAML pilot (2026-09-26)
+
+- **`scripts/kyaml/KYAML.jl`** — `just use-kyaml`, `just use-yaml`, `just check-kyaml`: the
+  switch between block-style YAML and KYAML (the KEP-5295 strict subset), with comments kept
+  and associated with their entries, canonical-form checking that is idempotent by
+  construction, and refusals (anchors, aliases, tags, multi-document files, duplicate keys,
+  multi-line plain scalars) that name the file and line and write nothing.
+- **`docs/pilots/kyaml-pilot.md`** — the operating manual for this repository being the
+  estate's KYAML pilot: the owner ruling of 2026-09-26, what the switch guarantees, what it
+  refuses, the decisions it takes and prints, the proof obligations from
+  `standards :: 3-practice/YAML-POLICY.adoc`, and how to revert.
+- **`config/kyaml/drift.txt`** — the two workflow files Dependabot and `gh actions-lock`
+  rewrite: converted, not gated, accepted in writing as the policy's §5 step 6 requires.
+- **`stapeln.toml` + `Containerfile` + the `proofs` CI job** — the proof lane as a standalone
+  deployment (Guix environment, mise pins, Agda from the channels pin) rather than a local
+  convenience.
+
 ### Fixed — the NB test fixture is data a negative binomial describes (2026-09-26)
 
 - The estimation tests' synthetic table was **under-dispersed** (variance below the mean,

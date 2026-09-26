@@ -70,6 +70,8 @@ using MetaManifold: AnalysisConfig
     include("unit/test_scaling.jl")
     include("unit/test_ilr_basis.jl")
     include("unit/test_estimation.jl")
+    include("unit/test_zero_replacement.jl")
+    include("unit/test_dispersion.jl")
     include("unit/test_kyaml.jl")
 
     ## Integration tests (opt-in)

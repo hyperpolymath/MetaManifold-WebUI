@@ -394,4 +394,48 @@
         errors = AnalysisConfig.validate_config(cfg_tss, ["group"]; strict=false)
         @test isempty(errors)
     end
+
+    @testset "issue #21: zero-replacement and dispersion configuration surface" begin
+        # delta is validated at the door, exactly as the operator validates it: (0,1) strict.
+        @test_throws ArgumentError AnalysisConfig.NormalizationConfig(
+            method="none", zero_policy="multiplicative_replacement",
+            multiplicative_replacement_delta=0.0)
+        @test_throws ArgumentError AnalysisConfig.NormalizationConfig(
+            method="none", zero_policy="multiplicative_replacement",
+            multiplicative_replacement_delta=1.0)
+        ok = AnalysisConfig.NormalizationConfig(
+            method="none", zero_policy="multiplicative_replacement",
+            multiplicative_replacement_delta=0.65)
+        @test ok.multiplicative_replacement_delta == 0.65
+
+        # alpha > 0: a non-positive Dirichlet concentration is an improper prior.
+        @test_throws ArgumentError AnalysisConfig.NormalizationConfig(
+            method="none", zero_policy="bayesian_multiplicative",
+            bayesian_multiplicative_alpha=0.0)
+        alpha_ok = AnalysisConfig.NormalizationConfig(
+            method="none", zero_policy="bayesian_multiplicative",
+            bayesian_multiplicative_alpha=1.5)
+        @test alpha_ok.bayesian_multiplicative_alpha == 1.5
+
+        # The advanced overrides carry the same parameters and are echoed into the
+        # configuration's canonical JSON, so a run cannot use a delta nobody can see.
+        adv = AnalysisConfig.AdvancedConfig(
+            min_prevalence=0.0, min_abundance=0.0, min_samples_per_group=2,
+            zero_replacement_method="multiplicative_replacement",
+            multiplicative_delta=0.5, bayesian_alpha=2.0,
+            glmgampoi_abundance_trend=false)
+        cfg = AnalysisConfig.AnalysisConfig(
+            method="nb_glm", formula="~ group", metadata_columns=["group"],
+            normalization=ok, advanced=adv, created_by="test_issue21")
+        json = AnalysisConfig.to_json(cfg)
+        @test occursin("multiplicative_delta", json)
+        @test occursin("glmgampoi_abundance_trend", json)
+
+        # glmGamPoi is a real option now, and the spline trend is not: asking for the spline
+        # is refused at the operator, not silently downgraded.
+        @test "glmGamPoi" in AnalysisConfig.VALID_DISPERSION_METHODS
+        # (The trend being *true* is refused by the dispersion operator rather than by the
+        # configuration constructor: the config records the request, and the operator refuses
+        # it by name. test/unit/test_dispersion.jl asserts that refusal.)
+    end
 end

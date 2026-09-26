@@ -144,6 +144,7 @@ struct NormalizationConfig
     zero_policy::ZeroPolicy
     ilr_basis::Union{String,Nothing}
     multiplicative_replacement_delta::Union{Float64,Nothing}
+    bayesian_multiplicative_alpha::Union{Float64,Nothing}  # Dirichlet prior concentration (issue #21)
     tss_css_rss_note::Union{String,Nothing}  # free-form note, recorded with the config
     css_quantile::Float64                    # CSS: quantile of each sample's counts
     tmm_ref_column::Union{String,Nothing}    # RSS/TMM: reference sample, or nothing
@@ -157,6 +158,7 @@ struct NormalizationConfig
         zero_policy::String="pseudocount",
         ilr_basis::Union{String,Nothing}=nothing,
         multiplicative_replacement_delta::Union{Float64,Nothing}=nothing,
+        bayesian_multiplicative_alpha::Union{Float64,Nothing}=nothing,
         tss_css_rss_note::Union{String,Nothing}=nothing,
         css_quantile::Real=0.75,
         tmm_ref_column::Union{String,Nothing}=nothing,
@@ -216,6 +218,18 @@ struct NormalizationConfig
         if !isnothing(multiplicative_replacement_delta)
             delta = multiplicative_replacement_delta
             (delta <= 0 || delta >= 1) && throw(ArgumentError("multiplicative_replacement_delta must be in (0,1), got $delta — see context_help('advanced.zero_policy')"))
+            # Issue #21: warnings for the values that are admissible on paper and unwise in
+            # practice. The refusal is in ZeroReplacement (and raises on the actual sample, where
+            # the largest admissible delta can be named); these are the configuration-layer
+            # warnings a user sees before any data is touched.
+            delta < 0.01 && @warn "multiplicative_replacement_delta <0.01 is very small (got $delta): replaced values sit more than two orders of magnitude below the detection limit, exaggerating every log-ratio that involves them. 0.65 is the published default." delta
+            delta >= 0.9 && @warn "multiplicative_replacement_delta >=0.9 is very large (got $delta): a replaced zero sits within 10% of the smallest observed value, so the two are hard to tell apart. 0.65 is the published default." delta
+        end
+
+        if !isnothing(bayesian_multiplicative_alpha)
+            alpha = bayesian_multiplicative_alpha
+            (!isfinite(alpha) || alpha <= 0) && throw(ArgumentError("bayesian_multiplicative_alpha must be a finite value >0, got $alpha — it is the concentration of the Dirichlet prior; a concentration of zero is not a prior. Omit it to let ZeroReplacement estimate s = 1/gmean(t) from the data, as zCompositions::cmultRepl(method=\"GBM\") does. See context_help('advanced.bayesian_multiplicative_alpha')"))
+            alpha < 0.01 && @warn "bayesian_multiplicative_alpha <0.01 is very small (got $alpha): the prior carries almost no mass and replaced values collapse toward zero. Omit it to estimate the concentration from the data." alpha
         end
 
         # TSS/CSS/RSS are exact offsets as of 2026-09-25 (issue #16), implemented in
@@ -254,6 +268,7 @@ struct NormalizationConfig
         end
 
         new(method_clean, pseudocount, epsilon, zp, ilr_basis, multiplicative_replacement_delta,
+            bayesian_multiplicative_alpha,
             tss_css_rss_note, css_q, ref_col, lrt, st)
     end
 end
@@ -335,6 +350,16 @@ struct AdvancedConfig
     dispersion_method::String
     zero_handling::String
     zero_policy::ZeroPolicy
+    # Issue #21. `zero_replacement_method` is the policy under its issue name; the two
+    # parameters override the Normalization section's values when set, and both are recorded
+    # in the manifest so an override is never mistaken for a declared default.
+    zero_replacement_method::String
+    multiplicative_delta::Union{Float64,Nothing}
+    bayesian_alpha::Union{Float64,Nothing}
+    # The reference's natural-spline abundance trend of the variance prior is not ported; a
+    # large table refuses unless this is explicitly set to false, in which case the run records
+    # the reference's own non-trended form.
+    glmgampoi_abundance_trend::Union{Bool,Nothing}
     pseudocount::Float64
     epsilon::Float64
     min_prevalence::Float64
@@ -357,6 +382,10 @@ struct AdvancedConfig
         dispersion_method::String="parametric",
         zero_handling::String="pseudocount",
         zero_policy::String="pseudocount",
+        zero_replacement_method::Union{String,Nothing}=nothing,
+        multiplicative_delta::Union{Float64,Nothing}=nothing,
+        bayesian_alpha::Union{Float64,Nothing}=nothing,
+        glmgampoi_abundance_trend::Union{Bool,Nothing}=nothing,
         pseudocount::Float64=0.5,
         epsilon::Float64=1e-6,
         min_prevalence::Float64=0.1,
@@ -382,6 +411,28 @@ struct AdvancedConfig
         # the estimator's by-name refusal (issue #21) was never reached.
         if !(dispersion_method_clean in lowercase.(VALID_DISPERSION_METHODS))
             throw(ArgumentError("dispersion_method must be one of $(join(VALID_DISPERSION_METHODS, ", ")) — got '$dispersion_method_clean'. See context_help('advanced.dispersion_method')"))
+        end
+
+        # Issue #21: the replacement method under its issue name. When supplied it must be
+        # the same policy as zero_policy, or the run would silently do something other than
+        # what the declared method says.
+        zrm = isnothing(zero_replacement_method) ? zero_policy_clean : lowercase(strip(zero_replacement_method))
+        if !(zrm in VALID_ZERO_HANDLING)
+            throw(ArgumentError("zero_replacement_method must be one of $(join(VALID_ZERO_HANDLING, ", ")) — got '$zrm'. See context_help('advanced.zero_policy')"))
+        end
+        if !isnothing(zero_replacement_method) && zrm != zero_policy_clean
+            throw(ArgumentError("zero_replacement_method = '$zrm' and zero_policy = '$zero_policy_clean' disagree. They name the same choice; declare one value. Refusing rather than picking either."))
+        end
+
+        if !isnothing(multiplicative_delta)
+            (multiplicative_delta <= 0 || multiplicative_delta >= 1) && throw(ArgumentError("advanced.multiplicative_delta must be in (0,1), got $multiplicative_delta. 0.65 is the published default. See context_help('advanced.zero_policy')"))
+            multiplicative_delta < 0.01 && @warn "advanced.multiplicative_delta <0.01 is very small (got $multiplicative_delta): extreme log-ratios for replaced values." multiplicative_delta
+            multiplicative_delta >= 0.9 && @warn "advanced.multiplicative_delta >=0.9 is very large (got $multiplicative_delta): replaced zeros sit within 10% of the smallest observed value." multiplicative_delta
+        end
+
+        if !isnothing(bayesian_alpha)
+            (!isfinite(bayesian_alpha) || bayesian_alpha <= 0) && throw(ArgumentError("advanced.bayesian_alpha must be a finite value >0, got $bayesian_alpha. It is the Dirichlet prior concentration; omit it to estimate s = 1/gmean(t) from the data. See context_help('advanced.bayesian_multiplicative_alpha')"))
+            bayesian_alpha < 0.01 && @warn "advanced.bayesian_alpha <0.01 is very small (got $bayesian_alpha): replaced values collapse toward zero." bayesian_alpha
         end
 
         # Zero handling validation
@@ -453,10 +504,9 @@ struct AdvancedConfig
             end
         end
 
-        # ILR basis inputs. Paths are carried into the JSON, Nickel and DEED renderings as
-        # quoted strings; a quote, a newline or a bracket would break those documents (DEED
-        # allows only round brackets anywhere), so such paths are refused rather than escaped
-        # into something the user did not write.
+        # ILR basis inputs, then the zero-replacement fields in declaration order. The two
+        # issue families (#20 ILR bases, #21 zero handling) share this constructor, so the
+        # call below carries both and must match the struct field order exactly.
         tree_path = _ilr_path(ilr_phylo_tree_path, "advanced.ilr_phylo_tree_path")
         sbp_path = _ilr_path(ilr_sbp_matrix_path, "advanced.ilr_sbp_matrix_path")
         dendro = isnothing(ilr_balance_dendrogram_method) ? nothing : lowercase(strip(ilr_balance_dendrogram_method))
@@ -474,7 +524,9 @@ struct AdvancedConfig
             hl in history || push!(history, hl)
         end
 
-        new(dispersion_method_clean, zero_handling_clean, zp, pseudocount, epsilon, min_prevalence, min_abundance, max_features, min_samples_per_group, robust, acknowledgment_token,
+        new(dispersion_method_clean, zero_handling_clean, zp, zrm, multiplicative_delta,
+            bayesian_alpha, glmgampoi_abundance_trend, pseudocount, epsilon, min_prevalence,
+            min_abundance, max_features, min_samples_per_group, robust, acknowledgment_token,
             tree_path, sbp_path, dendro, part_w, bal_w, history)
     end
 end
@@ -681,6 +733,14 @@ struct AnalysisConfig
         if advanced.min_samples_per_group < 3
             is_dang = true
         end
+        # Issue #21: trying deltas until one is significant is the failure mode the issue names.
+        # The count of deltas a session has tried is recorded by the caller in provenance
+        # (`zero_replacement_delta_trials`); at three or more the configuration is marked
+        # dangerous, so the DANGER banner travels with the result and into the DOI bundle.
+        delta_trials = get(provenance, "zero_replacement_delta_trials", 0)
+        if isa(delta_trials, Integer) && delta_trials >= 3
+            is_dang = true
+        end
         if !isnothing(dangerous)
             is_dang = dangerous || is_dang
         end
@@ -722,6 +782,7 @@ struct AnalysisConfig
                     "zero_policy" => string(normalization.zero_policy),
                     "ilr_basis" => normalization.ilr_basis,
                     "multiplicative_replacement_delta" => normalization.multiplicative_replacement_delta,
+                    "bayesian_multiplicative_alpha" => normalization.bayesian_multiplicative_alpha,
                     "css_quantile" => normalization.css_quantile,
                     "tmm_ref_column" => normalization.tmm_ref_column,
                     "tmm_log_ratio_trim" => normalization.tmm_log_ratio_trim,
@@ -736,6 +797,10 @@ struct AnalysisConfig
                     "dispersion_method" => advanced.dispersion_method,
                     "zero_handling" => advanced.zero_handling,
                     "zero_policy" => string(advanced.zero_policy),
+                    "zero_replacement_method" => advanced.zero_replacement_method,
+                    "multiplicative_delta" => advanced.multiplicative_delta,
+                    "bayesian_alpha" => advanced.bayesian_alpha,
+                    "glmgampoi_abundance_trend" => advanced.glmgampoi_abundance_trend,
                     "pseudocount" => advanced.pseudocount,
                     "epsilon" => advanced.epsilon,
                     "min_prevalence" => advanced.min_prevalence,
@@ -936,9 +1001,18 @@ function canonical_json(config::AnalysisConfig)
         "advanced" => OrderedDict(
             "dispersion_method" => config.advanced.dispersion_method,
             "zero_handling" => config.advanced.zero_handling,
+            "zero_policy" => string(config.advanced.zero_policy),
+            "zero_replacement_method" => config.advanced.zero_replacement_method,
+            "multiplicative_delta" => config.advanced.multiplicative_delta,
+            "bayesian_alpha" => config.advanced.bayesian_alpha,
+            "glmgampoi_abundance_trend" => config.advanced.glmgampoi_abundance_trend,
             "pseudocount" => config.advanced.pseudocount,
             "epsilon" => config.advanced.epsilon,
             "min_prevalence" => config.advanced.min_prevalence,
+            "min_abundance" => config.advanced.min_abundance,
+            "max_features" => config.advanced.max_features,
+            "min_samples_per_group" => config.advanced.min_samples_per_group,
+            "robust" => config.advanced.robust,
             # Only when set, as in the hash: canonical JSON of a configuration without ILR
             # basis inputs is unchanged by issue #20.
             (_ilr_inputs_set(config.advanced) ? ("ilr" => _ilr_inputs_dict(config.advanced),) : ())...
@@ -1129,12 +1203,30 @@ function context_help(field_path::String)
         "normalization.zero_policy" => """
         Zero handling policy (advanced)
 
-        - pseudocount: add pseudocount to zeros (default, safe)
-        - multiplicative_replacement: replace zeros via multiplicative replacement (Martín-Fernández et al.), requires multiplicative_replacement_delta in (0,1)
-        - bayesian_multiplicative: Bayesian multiplicative replacement
-        - refuse: refuse to handle zeros — DANGEROUS, requires DANGER token, mathematically invalid for CLR/ILR (log(0) undefined), will be refused at runtime even with token
+        - pseudocount: add a constant to every entry, zeros included (default, safe). It does
+          not preserve the ratios between observed parts: adding c moves the ratio of two parts
+          by exactly c(y - x)/(y(y + c)) unless they were equal
+        - multiplicative_replacement: the exact operator of Martín-Fernández, Barceló-Vidal &
+          Pawlowsky-Glahn 2003 (Multivariate Behavioral Research 38(3); the `multRepl` of
+          zCompositions): a replaced zero receives delta x that taxon's detection limit, every
+          observed part is scaled by one common factor, so the sample total and the ratios among
+          observed parts are preserved. Requires multiplicative_replacement_delta in (0,1)
+        - bayesian_multiplicative: the Bayesian-multiplicative treatment of Martín-Fernández,
+          Hron, Templ, Filzmoser & Palarea-Albaladejo 2015 (Statistical Modelling 15(2); the
+          `cmultRepl(method="GBM")` of zCompositions): the replacement for a zero is a
+          posterior mean under a Dirichlet prior whose concentration is estimated from the
+          observed table, capped at the reference's threshold x detection limit
+        - refuse: refuse to handle zeros — DANGEROUS, requires DANGER token, mathematically
+          invalid for CLR/ILR (log(0) undefined), will be refused at runtime even with token
 
-        See context_help('advanced.zero_policy') and Nickel ZeroHandlingContract.
+        Every replacement is an assumption, not a measurement: a replaced zero is a small
+        positive number the data did not contain, and every log-ratio that involves it inherits
+        that assumption. Both operators are biased by construction (Bayesian multiplicative
+        smoothing included); the alternative is a model for the zeros (occupancy, zero-inflated),
+        which is a different analysis, not a setting.
+
+        See docs/statistics/zero-handling.md, context_help('advanced.zero_policy') and Nickel
+        ZeroHandlingContract.
         """,
         "normalization.ilr_basis" => """
         ILR basis (only for ILR, meaningless otherwise). Conditions, refusals and evidence:
@@ -1229,35 +1321,57 @@ function context_help(field_path::String)
         "advanced.dispersion_method" => """
         Dispersion estimation (NB_GLM advanced, behind Advanced Analysis)
 
-        - parametric: fit dispersion ~ mean trend (DESeq2 default, recommended)
-        - local: local regression fit (when parametric fails)
-        - mean: use mean dispersion (when n small)
-        - pooled: pool across genes (when n very small)
-        - glmGamPoi: fast estimator from glmGamPoi package (deferred, fast)
+        - parametric: MASS::glm.nb fits theta per feature by maximum likelihood (this
+          repository's pre-issue-21 default; recommended unless n is small)
+        - glmGamPoi: the quasi-likelihood estimator of Ahlmann-Eltze & Huber 2020, implemented
+          for issue #21 as a pure-Julia port (Dispersion.estimate_dispersions): per-feature
+          Cox-Reid adjusted maximum likelihood, a local weighted-median dispersion trend, and
+          an inverse-chisquare variance prior fitted by Nelder-Mead. The fit is two-pass: pass 1
+          fits nb_glm per feature for the mean matrix, the dispersion is estimated from that
+          matrix, and pass 2 refits with theta held fixed at the trend. The reference's
+          natural-spline abundance trend is not ported: at 100 or more features the estimator
+          refuses unless advanced.glmgampoi_abundance_trend=false, which records the deviation
+          rather than hiding it. The quasi-likelihood F-test of glmGamPoi's test_de is not
+          ported; p-values remain the Wald tests this layer reports elsewhere.
+        - local, mean, pooled: NOT IMPLEMENTED. Refused by name; the refusal is in
+          REFUSED_DISPERSION and says what the substitution would have been.
 
-        Heavy validation, only meaningful for NB_GLM, warning if used for other methods.
+        Only meaningful for NB_GLM: a dispersion is the parameter that sets every standard error
+        in a negative binomial fit, so any other method treats it as not applicable rather than
+        tolerating a meaningless value.
 
-        See Love et al. 2014 and context_help('method').
+        See docs/statistics/method-conditions/dispersion-glmGamPoi.md, Love et al. 2014, and
+        context_help('method').
         """,
         "advanced.zero_handling" => """
         Zero handling (advanced, behind Advanced Analysis, hidden unless Evidence Mode)
 
-        - pseudocount: add pseudocount (default, safe)
-        - multiplicative_replacement: multiplicative replacement (Martín-Fernández)
-        - bayesian_multiplicative: Bayesian multiplicative
-        - refuse: refuse to handle zeros — DANGEROUS, requires DANGER token, mathematically invalid for CLR/ILR
+        Same choice as advanced.zero_policy and normalization.zero_policy, kept as the string the
+        advanced section has always carried. The exact operators and their citations are in
+        context_help('normalization.zero_policy'):
+
+        - pseudocount: add pseudocount (default; does not preserve observed-part ratios)
+        - multiplicative_replacement: exact Martín-Fernández et al. 2003 operator, parameterised
+          by advanced.multiplicative_delta / normalization.multiplicative_replacement_delta
+        - bayesian_multiplicative: Martín-Fernández et al. 2015 GBM posterior mean, parameterised
+          by advanced.bayesian_alpha / normalization.bayesian_multiplicative_alpha
+        - refuse: refuse to handle zeros — DANGEROUS, requires DANGER token, mathematically
+          invalid for CLR/ILR
 
         See context_help('normalization.zero_policy') and Nickel ZeroHandlingContract.
-        Heavy validation, refusal of meaningless, DANGER banner if refuse.
+        Heavy validation, refusal of meaningless combinations, DANGER banner if refuse.
         """,
         "advanced.zero_policy" => """
         Zero policy (advanced, same as zero_handling but enum)
 
         See advanced.zero_handling — pseudocount, multiplicative_replacement, bayesian_multiplicative, refuse.
+        The replacement operators are exact and are documented in context_help('normalization.zero_policy'):
+        multiplicative_replacement is Martín-Fernández et al. 2003, bayesian_multiplicative is the
+        GBM posterior mean of Martín-Fernández et al. 2015.
 
         Refuse is DANGEROUS and requires token, but still refused at runtime for CLR/ILR because log(0) undefined.
 
-        See Nickel ZeroHandlingContract.
+        See docs/statistics/zero-handling.md and Nickel ZeroHandlingContract.
         """,
         "advanced.pseudocount" => """
         Custom pseudocount (advanced, behind Advanced Analysis, hidden unless Evidence Mode)
@@ -1306,6 +1420,65 @@ function context_help(field_path::String)
         - <10 very small — warning will test only N features may miss biology
         - Used to limit to top N abundant/prevalent features for speed
         """,
+        "advanced.multiplicative_delta" => """
+        Multiplicative replacement delta (advanced, issue #21)
+
+        - Must be in (0,1); 0.65 is the published default (Martín-Fernández et al. 2003, and the
+          `frac` argument of zCompositions::multRepl)
+        - The value inserted for a zero is delta x that taxon's detection limit, the smallest
+          observed value of the taxon unless detection limits are supplied with the table
+        - <0.01 warns: replaced values sit far below the detection limit and every log-ratio
+          involving them is exaggerated
+        - >=0.9 warns: a replaced zero sits within 10% of the smallest observed value, so the
+          two are hard to tell apart
+        - A sample where delta x (sum of detection limits) would meet or exceed the sample total
+          is refused, and the refusal names the largest delta that sample admits
+        - Changing delta to reach significance is a research degree of freedom: the value is
+          stored in provenance and in the DOI bundle, and three or more deltas tried in one
+          session triggers the DANGER banner
+
+        See docs/statistics/zero-handling.md and context_help('advanced.zero_policy').
+        """,
+        "advanced.bayesian_alpha" => """
+        Bayesian multiplicative alpha (advanced, issue #21)
+
+        - Must be finite and >0: it is the concentration of the Dirichlet prior, and a
+          concentration of zero is not a prior
+        - Omit it to estimate the concentration from the data as s = 1/gmean(t), which is what
+          the reference does (zCompositions::cmultRepl method="GBM")
+        - Supplying it is a documented deviation from the reference; the run records both the
+          supplied value and the fact that it was supplied
+        - <0.01 warns: the prior carries almost no mass and replaced values collapse toward zero
+        - At or above the largest sample total the prior outweighs every sample, which
+          ZeroReplacement notes at run time
+
+        See docs/statistics/zero-handling.md.
+        """,
+        "advanced.bayesian_multiplicative_alpha" => """
+        Bayesian multiplicative alpha (normalization, issue #21)
+
+        The same parameter as advanced.bayesian_alpha, carried by the normalization section so a
+        configuration can express it without touching the advanced overrides. Both are validated
+        to be finite and >0 and both are recorded in provenance; declaring both with different
+        values is refused rather than silently preferring one.
+
+        See context_help('advanced.bayesian_alpha') and docs/statistics/zero-handling.md.
+        """,
+        "advanced.glmgampoi_abundance_trend" => """
+        glmGamPoi abundance trend (advanced, issue #21)
+
+        - The reference (Ahlmann-Eltze & Huber 2020) fits a natural-spline trend of the variance
+          prior when a table has 100 or more features
+        - That spline is not ported here, so a table at or above 100 features refuses with
+          dispersion_method="glmGamPoi" unless this is set to false
+        - false runs the reference's own non-trended prior form; the run records the choice.
+          Silently substituting it would change every standard error under a label that says
+          glmGamPoi
+        - A per-run table below 100 features runs the reference's non-trended prior automatically,
+          because that is what the reference itself does at that size
+
+        See docs/statistics/method-conditions/dispersion-glmGamPoi.md.
+        """,
         "advanced.min_samples_per_group" => """
         Minimum samples per group (advanced)
 
@@ -1352,6 +1525,17 @@ function danger_banner(config::AnalysisConfig)
     end
     if config.normalization.method == "rarefy" && config.method == NB_GLM
         push!(reasons, "rarefy + NB_GLM — rarefy discards data and NB_GLM already handles library size via size_factors — combining is questionable")
+    end
+    # Issue #21: the delta-tuning failure mode. The count of deltas a session has tried is
+    # recorded by the caller in provenance; three or more marks the configuration dangerous and
+    # puts the reason in front of the reader, because a delta chosen after seeing p-values is a
+    # research degree of freedom, not a pipeline setting.
+    delta_trials = get(config.provenance, "zero_replacement_delta_trials", 0)
+    if isa(delta_trials, Integer) && delta_trials >= 3
+        push!(reasons, "multiplicative-replacement delta tried $delta_trials times — the delta in this configuration was chosen from more than three candidates. Report every delta tried in Methods and disclose the selection; a delta chosen after seeing results is a research degree of freedom, not a setting.")
+    end
+    if !isnothing(config.advanced.bayesian_alpha) || !isnothing(config.normalization.bayesian_multiplicative_alpha)
+        push!(reasons, "bayesian_multiplicative alpha supplied by hand — the reference (zCompositions::cmultRepl method=\"GBM\") estimates the Dirichlet concentration from the data as s = 1/gmean(t); a supplied concentration is a deviation and is recorded as one in provenance.")
     end
 
     banner = """
@@ -1427,6 +1611,7 @@ function to_json(config::AnalysisConfig)
             "zero_policy" => string(config.normalization.zero_policy),
             "ilr_basis" => config.normalization.ilr_basis,
             "multiplicative_replacement_delta" => config.normalization.multiplicative_replacement_delta,
+            "bayesian_multiplicative_alpha" => config.normalization.bayesian_multiplicative_alpha,
             "css_quantile" => config.normalization.css_quantile,
             "tmm_ref_column" => config.normalization.tmm_ref_column,
             "tmm_log_ratio_trim" => config.normalization.tmm_log_ratio_trim,
@@ -1474,6 +1659,11 @@ function from_json(json_str::String)
     data = JSON3.read(json_str)
     _str_or_nothing(v) = isnothing(v) ? nothing : String(v)
 
+    # JSON has no int/float distinction, so `1` round-trips as Int64 and a bare
+    # `min_abundance=1` used to raise TypeError against the Float64 keyword.
+    # Coerce every numeric field explicitly; `nothing` stays `nothing`.
+    _f64(v) = isnothing(v) ? nothing : Float64(v)
+
     norm_data = data.normalization
     norm = NormalizationConfig(
         method=norm_data.method,
@@ -1481,7 +1671,8 @@ function from_json(json_str::String)
         epsilon=get(norm_data, :epsilon, 1e-6),
         zero_policy=get(norm_data, :zero_policy, "pseudocount"),
         ilr_basis=get(norm_data, :ilr_basis, nothing),
-        multiplicative_replacement_delta=get(norm_data, :multiplicative_replacement_delta, nothing),
+        multiplicative_replacement_delta=_f64(get(norm_data, :multiplicative_replacement_delta, nothing)),
+        bayesian_multiplicative_alpha=_f64(get(norm_data, :bayesian_multiplicative_alpha, nothing)),
         css_quantile=Float64(get(norm_data, :css_quantile, 0.75)),
         tmm_ref_column=get(norm_data, :tmm_ref_column, nothing),
         tmm_log_ratio_trim=Float64(get(norm_data, :tmm_log_ratio_trim, 0.3)),
@@ -1497,14 +1688,14 @@ function from_json(json_str::String)
     )
 
     adv_data = data.advanced
-    # JSON has no int/float distinction, so `1` round-trips as Int64 and a bare
-    # `min_abundance=1` used to raise TypeError against the Float64 keyword.
-    # Coerce every numeric field explicitly; `nothing` stays `nothing`.
-    _f64(v) = isnothing(v) ? nothing : Float64(v)
     adv = AdvancedConfig(
         dispersion_method=get(adv_data, :dispersion_method, "parametric"),
         zero_handling=get(adv_data, :zero_handling, "pseudocount"),
         zero_policy=get(adv_data, :zero_policy, "pseudocount"),
+        zero_replacement_method=get(adv_data, :zero_replacement_method, nothing),
+        multiplicative_delta=_f64(get(adv_data, :multiplicative_delta, nothing)),
+        bayesian_alpha=_f64(get(adv_data, :bayesian_alpha, nothing)),
+        glmgampoi_abundance_trend=get(adv_data, :glmgampoi_abundance_trend, nothing),
         pseudocount=Float64(get(adv_data, :pseudocount, 0.5)),
         epsilon=Float64(get(adv_data, :epsilon, 1e-6)),
         min_prevalence=Float64(get(adv_data, :min_prevalence, 0.1)),
@@ -1711,6 +1902,7 @@ function to_deed(config::AnalysisConfig)
         :zero-policy "$(string(config.normalization.zero_policy))"
         :ilr-basis "$(isnothing(config.normalization.ilr_basis) ? "" : config.normalization.ilr_basis)"
         :multiplicative-replacement-delta $(isnothing(config.normalization.multiplicative_replacement_delta) ? "0" : string(config.normalization.multiplicative_replacement_delta))
+        :bayesian-multiplicative-alpha $(isnothing(config.normalization.bayesian_multiplicative_alpha) ? "0" : string(config.normalization.bayesian_multiplicative_alpha))
         :css-quantile $(config.normalization.css_quantile)
         :tmm-ref-column "$(isnothing(config.normalization.tmm_ref_column) ? "" : config.normalization.tmm_ref_column)"
         :tmm-log-ratio-trim $(config.normalization.tmm_log_ratio_trim)
@@ -1726,6 +1918,10 @@ function to_deed(config::AnalysisConfig)
         :dispersion-method "$(config.advanced.dispersion_method)"
         :zero-handling "$(config.advanced.zero_handling)"
         :zero-policy "$(string(config.advanced.zero_policy))"
+        :zero-replacement-method "$(config.advanced.zero_replacement_method)"
+        :multiplicative-delta $(isnothing(config.advanced.multiplicative_delta) ? "0" : string(config.advanced.multiplicative_delta))
+        :bayesian-alpha $(isnothing(config.advanced.bayesian_alpha) ? "0" : string(config.advanced.bayesian_alpha))
+        :glmgampoi-abundance-trend $(isnothing(config.advanced.glmgampoi_abundance_trend) ? "unset" : string(config.advanced.glmgampoi_abundance_trend))
         :pseudocount $(config.advanced.pseudocount)
         :epsilon $(config.advanced.epsilon)
         :min-prevalence $(config.advanced.min_prevalence)
