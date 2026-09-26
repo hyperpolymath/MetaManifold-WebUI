@@ -76,12 +76,15 @@ proofs/agda/
   MetaManifold/ILR/
     SBP.agda                        sign codes; each balance has a + and a − part
     Contrast.agda                   contrasts; sum-zero; orthogonality; norm identity
+    Orthonormal.agda                normalised basis: basis-unit, basis-orthogonal (Normaliser seam)
     Kernel.agda                     trivial kernel under a named cancellation hypothesis
     Invariance.agda                 linearity; shift (scale) invariance; LogHom seam
     Comb.agda                       the comb tree reproduces the Helmert default
     Integer.agda                    ℤ instance; uniform weights discharge the hypothesis;
                                     a counterexample showing the hypothesis is needed
-  reject/                           files that MUST fail to type-check
+  reject/                           files that MUST fail to type-check, each for the reason
+                                    in its `-- EXPECT: <regex>` line (an incidental failure
+                                    proves nothing)
 scripts/check-proofs.sh             guard + type-check + expected-rejection check
 ```
 
@@ -103,32 +106,42 @@ Natural #21 statements that compose with the ILR results:
 
 ## 4. Mapping the proof objects to the implementation
 
-| Proof object | Julia | Notes |
+| Proof object | Julia (`src/analysis/ilr_basis.jl`, module `ILRBasis`) | Notes |
 |---|---|---|
-| `Tree` (`leaf`, `node l r`) | `ILRBasis.PhyloTree` after validation | Julia refuses multifurcations and unrooted (trifurcating-root) trees instead of resolving them: the proof object *is* bifurcating, and silently resolving a polytomy would invent a hypothesis. |
-| `code` (SBP of a tree) | `sbp_from_tree` | Row = balance, `+` = first child, `−` = second child (philr's `phylo2sbp` convention). |
-| SBP validity | `validate_sbp` | Julia checks the Egozcue & Pawlowsky-Glahn (2005) conditions by reconstructing the tree; a matrix that reconstructs is exactly one in the image of `code`. |
-| `contrast` / weights `w` | `balance_coefficients`, `part_weights` | Unnormalised in Agda, normalised in Julia by `1/sqrt(rs(r+s))`. |
-| preorder `toFin` | balance order | Julia emits balances in preorder (root first), the same order as philr's node numbering. |
-| `Comb` theorem | `helmert_balance_matrix` equivalence test | The comb tree's root contrast is Helmert's *last* balance, i.e. the order is reversed; the test maps indices explicitly. |
+| `Tree` (`leaf`, `node l r`) | `BalanceTree` | Arrays in preorder (node 1 = root, children after parents). Every basis is reduced to one: `phylo_balance_tree`, `sbp_balance_tree`, `dendrogram_balance_tree`, `comb_tree`. Julia refuses multifurcations and unrooted (trifurcating-root) trees instead of resolving them: the proof object *is* bifurcating, and silently resolving a polytomy would invent a hypothesis. |
+| `code` (SBP of a tree) | `sbp_matrix` | Column = balance, `+1` = left (first) child, `−1` = right child (philr's `phylo2sbp` convention). Dense, for export and tests only. |
+| SBP validity (`code-has-plus/-minus`, `code-nested-inl/-inr`) | `sbp_balance_tree` | Checks the Egozcue & Pawlowsky-Glahn (2005) conditions by reconstructing the tree; a matrix that reconstructs is exactly one in the image of `code`. |
+| `contrast` / weights `w` (`plus-mass`, `minus-mass`) | `tree_balances`, `part_weights` | Unnormalised in Agda, normalised in Julia by `sqrt(rs/(r+s))` applied to the difference of weighted *means* (equivalently `1/sqrt(rs(r+s))` on the unnormalised contrast). Computed from clade sums; no dense basis. |
+| `basis` (`Orthonormal`) | `tree_balances` coefficients, `checks["ilr"]["balances"]` | The recorded `coefficient` of each balance is the normaliser `κ n`. |
+| preorder `toFin` | balance order | Balances are emitted in preorder (root first), philr's node numbering, except SBP (the user's column order) — a relabelling, which `fromFin-toFin` makes harmless. |
+| `LogHom` | `log` in `tree_balances` | The only analytic fact used; floating-point `log` satisfies it to rounding. |
+| `Comb` theorem | `comb_tree` | The comb tree's root contrast is Helmert's *last* balance, so `comb_tree` assigns balance rows by `julia-index` (`D − k`) and its rows line up with the Helmert loop in `Execution` directly. |
 
 ## 5. Theorem ↔ test traceability
 
-Every L1 theorem has a Julia property test with the same name in its description
-(`test/unit/test_ilr_basis.jl`). If a theorem is added, a test is added.
+Every L1 theorem has a Julia test whose description starts with the theorem's name
+(`test/unit/test_ilr_basis.jl`). If a theorem is added, a test is added. Tolerances are
+absolute on balances of order 1–100 unless marked relative.
 
-| Agda theorem | Julia test (tolerance) |
+| Agda theorem(s) | Julia test (tolerance) |
 |---|---|
-| `internal-count` | "D taxa give D-1 balances" (exact) |
-| `code-has-plus`, `code-has-minus` | "every SBP row has a + and a - part" (exact) |
-| `contrast-sum-zero` | "balances of a constant composition are zero" (1e-12) |
-| `contrast-orthogonal` | "basis columns are orthonormal under part weights" (1e-12) |
-| `contrast-norm` | "normalisation constant equals sqrt(rs/(r+s))" (1e-12) |
-| `balance-kernel` | "distinct CLR vectors give distinct balances" (sampled; 1e-9) |
-| `balance-shift-invariant` | "scaling a sample leaves balances unchanged" (1e-12) |
-| `balance-linear` | "perturbation adds balance vectors" (1e-12) |
-| `comb-is-helmert` | "comb tree reproduces the Helmert default" (1e-12) |
-| `nondegeneracy-needs-hypothesis` (counterexample) | "signed part weights are refused" (exact) |
+| `internal-count`, `fromFin-toFin`, `toFin-fromFin` | "internal-count: D taxa give D-1 balances with unique ids" (exact) |
+| `code`, `code-has-plus`, `code-has-minus`, `code-nested-inl`, `code-nested-inr` | "code: tree -> SBP -> tree is the identity and every column has a + and a - part" (exact) |
+| `contrast-from-code`, `plus-mass-from-code`, `minus-mass-from-code` | "contrast-from-code: clade sums equal the SBP matrix formula" (1e-12) |
+| `contrast-sum-zero`, `balance-constant` | "contrast-sum-zero: balances of a constant composition are zero" (1e-12) |
+| `contrast-orthogonal`, `contrast-norm`, `basis-unit`, `basis-orthogonal` | "basis-orthogonal: basis columns are orthonormal under part weights" (1e-12) |
+| `contrast-norm` | "contrast-norm: recorded coefficient equals sqrt(rs/(r+s))" (1e-12) |
+| `balance-kernel`, `balance-injective`, `balance-injective-positive` | "balance-injective: balances are an isometry of centred log vectors" (sampled; 1e-9) |
+| `balance-scale-invariant`, `balance-shift-invariant` | "balance-scale-invariant: scaling a sample leaves balances unchanged" (1e-12 relative) |
+| `balance-perturb` | "balance-perturb: perturbation adds balance vectors" (1e-12) |
+| `comb-is-helmert`, `comb-masses` | "comb-is-helmert: comb tree reproduces the Helmert default" (1e-12, against `Execution`'s own output) |
+| `kernel-needs-hypothesis`, `signed-weights-not-cancellable` (counterexample) | "kernel-needs-hypothesis: signed weights lose injectivity, so non-positive weights are refused" (exact) |
+
+Beyond the theorems, the same file holds the reference agreements (PhILR against the
+Julia `philr` reference `test/fixtures/ilr/ilr_reference.jl` on three datasets, SBP against
+`compositions::ilr` semantics, the dendrogram against the reference's generic Lance–Williams
+clustering and hand-computed tie cases from R's `hclust.f`) and a negative
+control for every refusal in the conditions document.
 
 ## 6. Residue — stated, not hidden
 
@@ -142,7 +155,8 @@ Not proved, by design, and listed so no one mistakes the suite's scope:
    statistics depends on: no two distinct CLR vectors share balances.
 3. Correctness of the Newick/CSV parsers (tested; parsers are not in scope for proof).
 4. Hierarchical clustering optimality (the dendrogram basis is *defined* by the Lance–
-   Williams recurrence; tests pin it to scipy and to hand-computed cases).
+   Williams recurrence; tests pin it to an independent generic implementation and to
+   hand-computed cases).
 5. Statistical validity of any downstream test. Proofs here are about the transform.
 
 ## 7. When Lean would be justified
