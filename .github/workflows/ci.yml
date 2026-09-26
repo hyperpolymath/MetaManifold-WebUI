@@ -162,6 +162,40 @@ jobs:
           fi
           echo "commit convention ok: $count non-merge commit(s) graded in $range"
 
+  # Agda proof gate for the compositional transforms (issues #20, #21); scope,
+  # layering and residue are in docs/formal/verification-plan.md. The toolchain
+  # is the estate's pin (epistemic-types, residual-evidence-types): Debian 13
+  # packages agda-bin 2.6.4.3-1+b2 and agda-stdlib 2.1-4, installed from the
+  # signed Debian archive rather than a downloaded binary. The same script runs
+  # locally with AGDA=... AGDA_STDLIB_LIB=... overrides.
+  proofs:
+    name: Proofs (Agda)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container: debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+    permissions:
+      contents: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - name: Install the pinned Agda toolchain (Debian archive)
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y ca-certificates git \
+            agda-bin=2.6.4.3-1+b2 agda-stdlib=2.1-4
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Guard, type-check, negative controls
+        run: |
+          test "$(agda --version)" = 'Agda version 2.6.4.3'
+          AGDA_STDLIB_LIB=$(dpkg -L agda-stdlib | grep 'standard-library\.agda-lib$' | head -1)
+          export AGDA_STDLIB_LIB
+          bash scripts/check-proofs.sh
+
   test:
     # The name is a fixed string, it carries no version, and the job has NO matrix.
     # Both are required, and the first without the second is a trap that has already
@@ -616,6 +650,11 @@ jobs:
           # over the same shadowing. Running it means the next AnalysisConfig API
           # change breaks this step immediately instead of at test time.
           julia --project=. bench/analysis_config/benchmark.jl
+          # ILR bases (issue #20): CLR, default ILR and the three new bases at 100,
+          # 1 000 and 10 000 taxa. Emits ::warning:: for any workload over 5 minutes
+          # or over 1 GiB (allocation or peak-RSS growth); never fails the job — the
+          # hard CLR/ILR gate is the same-runner base-vs-head step below.
+          julia --project=. bench/ilr_bases/benchmark.jl
           julia --project=. bench/comprehensive_benchmark.jl
 
       - name: Summarise Julia benchmark deltas (informational)
@@ -632,6 +671,34 @@ jobs:
           if [ -f bench/results/comprehensive_results.json ]; then
             echo "Comprehensive results: $(cat bench/results/comprehensive_results.json | head -c 500)"
           fi
+          if [ -f bench/results/ilr_bases_results.json ]; then
+            echo "ILR bases results: $(head -c 500 bench/results/ilr_bases_results.json)"
+          fi
+
+      # Issue #20: "fail CI if CLR/ILR performance regresses more than 10%". A committed
+      # baseline cannot carry that (cross-host noise, as above), so this measures the PR's
+      # base commit and its head on this runner, interleaved base/head/base/head, and fails
+      # if head allocates >10% more or its minimum time is >10% slower. Rationale and the
+      # statistic are documented in bench/ilr_bases/regression_gate.jl. Pull requests only:
+      # a push to main has no base to compare against.
+      - name: CLR/ILR regression gate (same runner, base vs head)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          R_LIBS_SITE: /usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          julia --project="$RUNNER_TEMP/base" -e 'using Pkg; Pkg.instantiate()'
+          gate=bench/ilr_bases/regression_gate.jl
+          out="$RUNNER_TEMP/ilr_gate"
+          mkdir -p "$out"
+          for round in 1 2; do
+            julia --project="$RUNNER_TEMP/base" "$gate" measure base "$out/base_$round.json"
+            julia --project=. "$gate" measure head "$out/head_$round.json"
+          done
+          julia --project=. "$gate" compare --base "$out"/base_*.json --head "$out"/head_*.json
 
       - name: Upload Julia benchmark artifacts
         if: always()
@@ -641,6 +708,7 @@ jobs:
           path: |
             bench/*/baseline.json
             bench/results/comprehensive_results.json
+            bench/results/ilr_bases_results.json
             bench/**/baseline.json
           if-no-files-found: warn
 

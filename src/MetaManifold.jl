@@ -27,6 +27,13 @@ include("pipeline/merge_taxa.jl")
 include("pipeline/dada2.jl")
 include("pipeline/swarm.jl")
 
+# DOI infrastructure is independent of the scientific/R runtime.
+include("doi/Storage.jl")
+include("doi/Zenodo.jl")
+include("doi/Bundles.jl")
+include("doi/Publications.jl")
+include("doi/Web.jl")
+
 # Analysis
 include("analysis/numeric_policy.jl")
 # Exact summaries are catalogue item 1 and are built on the numeric policy, so they follow it.
@@ -34,6 +41,7 @@ include("analysis/exact_summaries.jl")
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
 include("analysis/AnalysisConfig.jl")
+include("doi/AnalysisStore.jl")
 include("analysis/clade_cumulus.jl")
 # Estimation fits what AnalysisConfig declares and Execution runs it, so it sits between them.
 include("analysis/estimation.jl")
@@ -42,6 +50,8 @@ include("analysis/estimation.jl")
 # response is and which offset it gets, and Scaling computes both under the conditions
 # published in docs/statistics/method-conditions/scaling-and-offsets.md.
 include("analysis/scaling.jl")
+# ILR bases (issue #20): phylogenetic, SBP, balance dendrogram. Before Execution, which uses it.
+include("analysis/ilr_basis.jl")
 include("analysis/Execution.jl")
 
 end

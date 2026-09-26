@@ -32,6 +32,7 @@ using UUIDs
 using JSON3
 using OrderedCollections
 using Logging
+using ..DOIBundles: write_checksums!
 
 # Re-use provenance from core
 using ..Provenance: CapturedEnvironment, probe_metamanifold, probe_host
@@ -98,7 +99,17 @@ const ZERO_POLICY_STRINGS = Dict{String,ZeroPolicy}(
 const VALID_DISPERSION_METHODS = ("parametric", "local", "mean", "pooled", "glmGamPoi")
 const VALID_ZERO_HANDLING = ("pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse")
 const VALID_ILR_BASIS = ("default", "phylogenetic", "sequential_binary_partition", "balance_dendrogram")
-const DEFERRED_ILR_BASIS = ("phylogenetic", "sequential_binary_partition", "balance_dendrogram")
+# Issue #20 implemented the three bases that used to be listed here (src/analysis/ilr_basis.jl,
+# held to docs/statistics/method-conditions/ilr-bases.md). The name is kept, empty, so code
+# that iterates it keeps compiling and so a future deferral has an obvious home.
+const DEFERRED_ILR_BASIS = ()
+# The inputs each non-default basis needs. Held here, not in ILRBasis, because the
+# configuration is validated before any data or module that computes balances exists; the
+# test suite asserts both copies agree.
+const VALID_ILR_PART_WEIGHTS = ("uniform", "gm_counts", "anorm", "enorm", "anorm_x_gm_counts", "enorm_x_gm_counts")
+const VALID_ILR_BALANCE_WEIGHTS = ("uniform", "blw", "blw_sqrt", "mean_descendants")
+const VALID_ILR_DENDROGRAM_METHODS = ("ward", "complete", "average")
+const ILR_SBP_ATTEMPT_DANGER_THRESHOLD = 3
 # Method names are canonicalised to lower case by `NormalizationConfig`, so the allowed
 # names are held in the same case and compared in it. They were not always: the entries
 # for TSS/CSS/RSS arrived upper case while the constructor stored `"tss"`, so every one of
@@ -174,7 +185,7 @@ struct NormalizationConfig
             end
             if method_clean == "ilr"
                 if !isnothing(ilr_basis) && (ilr_basis in DEFERRED_ILR_BASIS)
-                    throw(ArgumentError("ilr_basis '$ilr_basis' is not implemented (deferred, see GitHub issue #20). Only 'default' (Helmert sequential binary partition) is implemented. Refusing meaningless substitution."))
+                    throw(ArgumentError("ilr_basis '$ilr_basis' is not implemented (deferred). Refusing meaningless substitution."))
                 elseif !isnothing(ilr_basis) && !(ilr_basis in VALID_ILR_BASIS)
                     throw(ArgumentError("ilr_basis must be one of $(join(VALID_ILR_BASIS, ", ")) (got '$ilr_basis')"))
                 end
@@ -297,6 +308,22 @@ struct CorrectionConfig
 end
 
 """
+    _ilr_path(value, field) -> Union{String,Nothing}
+
+Check an ILR input path on its own: `nothing` stays `nothing`; otherwise the path must be
+non-empty and free of characters that would corrupt the JSON/Nickel/DEED renderings. Whether
+the file exists is checked when the run reads it, not here: a configuration is written on
+one machine and may be run on another.
+"""
+function _ilr_path(value::Union{AbstractString,Nothing}, field::String)
+    isnothing(value) && return nothing
+    p = String(strip(value))
+    isempty(p) && throw(ArgumentError("$field is empty — give the path of the file, or leave the field unset. See context_help('$field')"))
+    occursin(r"[\"\n\r\0\[\]{}`;\$]", p) && throw(ArgumentError("$field contains a character that is not allowed in a path here (quote, newline, NUL, brackets, backtick, ';' or '\$': they would corrupt the JSON/Nickel/DEED renderings or look like injection) — got '$p'. Rename the file."))
+    return p
+end
+
+"""
     AdvancedConfig(; ...)
 
 Create the advanced analysis settings. Invalid categorical choices and values
@@ -316,6 +343,15 @@ struct AdvancedConfig
     min_samples_per_group::Int
     robust::Bool
     acknowledgment_token::Union{String,Nothing}
+    # ILR bases (issue #20; docs/statistics/method-conditions/ilr-bases.md). Which of these
+    # a basis requires, and which it forbids, depends on `normalization.ilr_basis`, so that
+    # cross-check is made by `AnalysisConfig`; here each value is checked on its own.
+    ilr_phylo_tree_path::Union{String,Nothing}
+    ilr_sbp_matrix_path::Union{String,Nothing}
+    ilr_balance_dendrogram_method::Union{String,Nothing}
+    ilr_part_weights::String
+    ilr_balance_weights::String
+    ilr_sbp_history::Vector{String}
 
     function AdvancedConfig(;
         dispersion_method::String="parametric",
@@ -328,7 +364,13 @@ struct AdvancedConfig
         max_features::Union{Int,Nothing}=nothing,
         min_samples_per_group::Int=3,
         robust::Bool=false,
-        acknowledgment_token::Union{String,Nothing}=nothing
+        acknowledgment_token::Union{String,Nothing}=nothing,
+        ilr_phylo_tree_path::Union{AbstractString,Nothing}=nothing,
+        ilr_sbp_matrix_path::Union{AbstractString,Nothing}=nothing,
+        ilr_balance_dendrogram_method::Union{AbstractString,Nothing}=nothing,
+        ilr_part_weights::AbstractString="uniform",
+        ilr_balance_weights::AbstractString="uniform",
+        ilr_sbp_history::AbstractVector{<:AbstractString}=String[]
     )
         dispersion_method_clean = lowercase(strip(dispersion_method))
         zero_handling_clean = lowercase(strip(zero_handling))
@@ -411,13 +453,94 @@ struct AdvancedConfig
             end
         end
 
-        new(dispersion_method_clean, zero_handling_clean, zp, pseudocount, epsilon, min_prevalence, min_abundance, max_features, min_samples_per_group, robust, acknowledgment_token)
+        # ILR basis inputs. Paths are carried into the JSON, Nickel and DEED renderings as
+        # quoted strings; a quote, a newline or a bracket would break those documents (DEED
+        # allows only round brackets anywhere), so such paths are refused rather than escaped
+        # into something the user did not write.
+        tree_path = _ilr_path(ilr_phylo_tree_path, "advanced.ilr_phylo_tree_path")
+        sbp_path = _ilr_path(ilr_sbp_matrix_path, "advanced.ilr_sbp_matrix_path")
+        dendro = isnothing(ilr_balance_dendrogram_method) ? nothing : lowercase(strip(ilr_balance_dendrogram_method))
+        if !isnothing(dendro) && !(dendro in VALID_ILR_DENDROGRAM_METHODS)
+            throw(ArgumentError("advanced.ilr_balance_dendrogram_method must be one of $(join(VALID_ILR_DENDROGRAM_METHODS, ", ")) (ward is R's ward.D2) — got '$ilr_balance_dendrogram_method'. See context_help('advanced.ilr_balance_dendrogram_method')"))
+        end
+        part_w = lowercase(strip(ilr_part_weights))
+        part_w in VALID_ILR_PART_WEIGHTS || throw(ArgumentError("advanced.ilr_part_weights must be one of $(join(VALID_ILR_PART_WEIGHTS, ", ")) — got '$ilr_part_weights'. See context_help('advanced.ilr_part_weights')"))
+        bal_w = lowercase(strip(ilr_balance_weights))
+        bal_w in VALID_ILR_BALANCE_WEIGHTS || throw(ArgumentError("advanced.ilr_balance_weights must be one of $(join(VALID_ILR_BALANCE_WEIGHTS, ", ")) — got '$ilr_balance_weights'. See context_help('advanced.ilr_balance_weights')"))
+        history = String[]
+        for h in ilr_sbp_history
+            hl = lowercase(strip(h))
+            occursin(r"^[0-9a-f]{64}$", hl) || throw(ArgumentError("advanced.ilr_sbp_history entries must be SHA-256 hex digests of SBP files tried earlier (64 hex characters) — got '$h'. See context_help('advanced.ilr_sbp_history')"))
+            hl in history || push!(history, hl)
+        end
+
+        new(dispersion_method_clean, zero_handling_clean, zp, pseudocount, epsilon, min_prevalence, min_abundance, max_features, min_samples_per_group, robust, acknowledgment_token,
+            tree_path, sbp_path, dendro, part_w, bal_w, history)
     end
 end
 
 # --------------------------------------------------------------------------
 # Main immutable AnalysisConfig struct — exactly user's answers
 # --------------------------------------------------------------------------
+
+"""
+    _ilr_inputs_set(advanced) -> Bool
+
+True when any ILR basis input differs from its default.
+"""
+_ilr_inputs_set(a::AdvancedConfig) =
+    !isnothing(a.ilr_phylo_tree_path) || !isnothing(a.ilr_sbp_matrix_path) ||
+    !isnothing(a.ilr_balance_dendrogram_method) || a.ilr_part_weights != "uniform" ||
+    a.ilr_balance_weights != "uniform" || !isempty(a.ilr_sbp_history)
+
+"""The ILR basis inputs as an ordered dictionary (hash, JSON, provenance)."""
+_ilr_inputs_dict(a::AdvancedConfig) = OrderedDict{String,Any}(
+    "ilr_phylo_tree_path" => a.ilr_phylo_tree_path,
+    "ilr_sbp_matrix_path" => a.ilr_sbp_matrix_path,
+    "ilr_balance_dendrogram_method" => a.ilr_balance_dendrogram_method,
+    "ilr_part_weights" => a.ilr_part_weights,
+    "ilr_balance_weights" => a.ilr_balance_weights,
+    "ilr_sbp_history" => a.ilr_sbp_history
+)
+
+"""
+    _validate_ilr_inputs(norm_method, ilr_basis, advanced)
+
+The configuration contract of docs/statistics/method-conditions/ilr-bases.md: the ILR basis
+inputs are meaningless outside ILR; `phylogenetic` requires a tree path, `sequential_binary_partition`
+an SBP path and `balance_dendrogram` a clustering method, and each forbids the others' inputs;
+part weights need a non-default basis (the Helmert loop is unweighted and stays unchanged);
+balance weights need branch lengths, so the phylogenetic basis; an SBP history needs an SBP.
+Refuses rather than ignores: an input that would be silently unused is a misunderstanding.
+"""
+function _validate_ilr_inputs(norm_method::AbstractString, ilr_basis::Union{String,Nothing}, a::AdvancedConfig)
+    if norm_method != "ilr"
+        if _ilr_inputs_set(a)
+            set = [k for (k, v) in _ilr_inputs_dict(a) if !(isnothing(v) || v == "uniform" || (v isa Vector && isempty(v)))]
+            throw(ArgumentError("$(join(("advanced." * k for k in set), ", ")) only meaningful for the ILR transform (normalization.method = 'ilr'), not for '$norm_method'. Refusing. See context_help('normalization.ilr_basis')"))
+        end
+        return nothing
+    end
+    basis = something(ilr_basis, "default")
+    need(field, value, wanted) = if basis == wanted && isnothing(value)
+        throw(ArgumentError("normalization.ilr_basis = '$basis' requires advanced.$field. See context_help('advanced.$field')"))
+    elseif basis != wanted && !isnothing(value)
+        throw(ArgumentError("advanced.$field is only used by ilr_basis = '$wanted', but ilr_basis is '$basis'. Refusing an input that would be silently ignored. See context_help('advanced.$field')"))
+    end
+    need("ilr_phylo_tree_path", a.ilr_phylo_tree_path, "phylogenetic")
+    need("ilr_sbp_matrix_path", a.ilr_sbp_matrix_path, "sequential_binary_partition")
+    need("ilr_balance_dendrogram_method", a.ilr_balance_dendrogram_method, "balance_dendrogram")
+    if basis == "default" && a.ilr_part_weights != "uniform"
+        throw(ArgumentError("advanced.ilr_part_weights = '$(a.ilr_part_weights)' needs a phylogenetic, sequential_binary_partition or balance_dendrogram basis: the default Helmert basis is unweighted. See context_help('advanced.ilr_part_weights')"))
+    end
+    if basis != "phylogenetic" && a.ilr_balance_weights != "uniform"
+        throw(ArgumentError("advanced.ilr_balance_weights = '$(a.ilr_balance_weights)' needs branch lengths, which only ilr_basis = 'phylogenetic' has. See context_help('advanced.ilr_balance_weights')"))
+    end
+    if basis != "sequential_binary_partition" && !isempty(a.ilr_sbp_history)
+        throw(ArgumentError("advanced.ilr_sbp_history records SBP matrices tried earlier and is only used by ilr_basis = 'sequential_binary_partition'. See context_help('advanced.ilr_sbp_history')"))
+    end
+    return nothing
+end
 
 """
     AnalysisConfig(; method, formula, metadata_columns, ...)
@@ -539,9 +662,17 @@ struct AnalysisConfig
             throw(ArgumentError("normalization.method '$norm_method' incompatible with method '$(METHOD_TO_STRING[method_enum])'. Allowed for $(METHOD_TO_STRING[method_enum]): $(join(allowed_norms, ", ")). See context_help('normalization.method') and MethodNormalizationCompatibility contract in Nickel. Refusing meaningless combination."))
         end
 
+        # ILR basis inputs: each basis requires its own input and forbids the others'.
+        _validate_ilr_inputs(norm_method, normalization.ilr_basis, advanced)
+
         # Dangerous computed
         is_dang = false
         if correction.allow_no_correction
+            is_dang = true
+        end
+        # SBP p-hacking guard, the part knowable before the run: more distinct SBPs already
+        # recorded than the threshold. The run adds the current SBP's digest and re-counts.
+        if length(advanced.ilr_sbp_history) > ILR_SBP_ATTEMPT_DANGER_THRESHOLD
             is_dang = true
         end
         if advanced.zero_handling == "refuse" || advanced.zero_policy == REFUSE
@@ -614,6 +745,14 @@ struct AnalysisConfig
                     "robust" => advanced.robust
                 )
             )
+            # The ILR basis inputs enter the hash whenever any is set. When none is, the
+            # canonical form is exactly what it was before issue #20, so every configuration
+            # hashed before these fields existed keeps its hash.
+            if _ilr_inputs_set(advanced)
+                adv_canonical = OrderedDict{String,Any}(canonical["advanced"])
+                adv_canonical["ilr"] = _ilr_inputs_dict(advanced)
+                canonical["advanced"] = adv_canonical
+            end
             bytes2hex(sha256(JSON3.write(canonical)))
         else
             hash
@@ -799,7 +938,10 @@ function canonical_json(config::AnalysisConfig)
             "zero_handling" => config.advanced.zero_handling,
             "pseudocount" => config.advanced.pseudocount,
             "epsilon" => config.advanced.epsilon,
-            "min_prevalence" => config.advanced.min_prevalence
+            "min_prevalence" => config.advanced.min_prevalence,
+            # Only when set, as in the hash: canonical JSON of a configuration without ILR
+            # basis inputs is unchanged by issue #20.
+            (_ilr_inputs_set(config.advanced) ? ("ilr" => _ilr_inputs_dict(config.advanced),) : ())...
         ),
         "hash" => config.hash,
         "dangerous" => config.dangerous
@@ -818,6 +960,37 @@ return a fallback message that includes the requested path.
 """
 function context_help(field_path::String)
     help_db = Dict{String,String}(
+        "doi" => """
+        DOI publication is opt-in and behind Evidence Mode. Prepare a private Zenodo draft,
+        download and review its frozen ZIP, then separately confirm irreversible publication.
+        Configuration-only bundles are explicitly labelled; mock/empty results are not citable results.
+        A reserved DOI or HTTP 202 is not publication. Only a verified published record has a badge.
+        See docs/doi-publication.md for setup, privacy review and recovery.
+        """,
+        "doi.environment" => """
+        Sandbox is the default test environment (10.5072); production (10.5281) registers permanent DOIs.
+        The operator sets METAMANIFOLD_ZENODO_ENABLED and METAMANIFOLD_ZENODO_ENVIRONMENT,
+        with a separate server-side ZENODO_SANDBOX_TOKEN or ZENODO_TOKEN. Never enter tokens in the browser.
+        CSRF protection is not authentication: use a local single-user server or an authenticated reverse proxy.
+        """,
+        "doi.confirmation" => """
+        DANGER: publication makes the entire reviewed archive public and the DOI cannot be unminted.
+        Check privacy, creator consent, licence, provenance paths, results and scientific override warnings.
+        Acknowledge this review, type PUBLISH followed by the environment and deposition ID,
+        and submit the exact reviewed bundle SHA-256. Preparing/uploading is not this confirmation.
+        """,
+        "doi.recovery" => """
+        Reload saved publications after a restart or lost response. Resume draft preparation against
+        the same journal. If creation is uncertain, find the marked draft on Zenodo and recover its ID.
+        If publication is uncertain, refresh the existing deposition; publication is never blindly retried.
+        Back up .analysis and .doi together. Never delete a journal or mint a replacement to fix a timeout.
+        """,
+        "doi.github" => """
+        Download the verified production receipt and run scripts/link-doi.sh --receipt PATH for
+        an offline dry run. Explicit --apply updates the existing release and optional Projects v2 item
+        using gh authentication. No GitHub credential enters the web server and no second DOI is minted.
+        A partial linking failure is safe to resume with the same receipt; check the GitHub connection.
+        """,
         "method" => """
         Analysis Method (required, explicit, no auto-selection) — v1: NB GLM, CLR/ILR+Gaussian, logistic
 
@@ -964,14 +1137,72 @@ function context_help(field_path::String)
         See context_help('advanced.zero_policy') and Nickel ZeroHandlingContract.
         """,
         "normalization.ilr_basis" => """
-        ILR basis (only for ILR, meaningless otherwise)
+        ILR basis (only for ILR, meaningless otherwise). Conditions, refusals and evidence:
+        docs/statistics/method-conditions/ilr-bases.md. Every basis gives D-1 orthonormal balances;
+        the model reports one test per balance and Benjamini-Hochberg across balances is mandatory.
 
-        - default: Helmert-style sequential binary partition (first taxon vs rest, second vs rest, etc., creating n-1 balances)
-        - phylogenetic: NOT IMPLEMENTED (deferred, see GitHub issue #20)
-        - sequential_binary_partition: NOT IMPLEMENTED (deferred, see GitHub issue #20)
-        - balance_dendrogram: NOT IMPLEMENTED (deferred, see GitHub issue #20)
+        - default: Helmert sequential binary partition (balance i = taxa 1..i against taxon i+1).
+          Unchanged; the new engine reproduces it exactly (Agda: comb-is-helmert).
+        - phylogenetic: PhILR (Silverman et al. 2017, eLife 6:e21887). Needs
+          advanced.ilr_phylo_tree_path, a ROOTED, strictly BIFURCATING Newick tree whose tips are the
+          taxon ids. Unrooted trees and polytomies are refused, never resolved; tips that are not
+          retained taxa are pruned (ape::keep.tip). Optional advanced.ilr_part_weights and
+          advanced.ilr_balance_weights reproduce philr's part.weights and ilr.weights.
+        - sequential_binary_partition: a user-defined SBP (Egozcue & Pawlowsky-Glahn 2005, Math. Geol.
+          37:795-828). Needs advanced.ilr_sbp_matrix_path, a CSV with taxa as rows, balances as
+          columns and entries 1 / -1 / 0; validity is checked by reconstructing the partition tree.
+          Trying several SBPs is a forking-paths risk: more than 3 distinct SBPs (see
+          advanced.ilr_sbp_history) raises the DANGER banner.
+        - balance_dendrogram: clusters parts on the variation matrix Var(log(x_i/x_j)) and uses the
+          dendrogram as the SBP (Pawlowsky-Glahn, Egozcue & Tolosana-Delgado 2015, Modeling and
+          Analysis of Compositional Data, Wiley). Needs advanced.ilr_balance_dendrogram_method.
+          Data-derived basis: recorded as such.
 
-        Refuses unimplemented bases and meaningless use for non-ILR methods. See JSON schema enum and Nickel.
+        Refuses meaningless use for non-ILR methods. See JSON schema enum and Nickel IlrBasisInputsContract.
+        """,
+        "advanced.ilr_phylo_tree_path" => """
+        Newick tree for ilr_basis = 'phylogenetic' (required then, refused otherwise).
+
+        Tip labels must equal taxon ids exactly (no case folding, no underscore/space rewriting;
+        quote labels with spaces). The tree must be rooted (a basal trifurcation is how FastTree,
+        IQ-TREE and RAxML write UNROOTED trees — root it in a phylogenetics tool first) and strictly
+        bifurcating. Extra tips are pruned; retained taxa missing from the tree are refused. The
+        file's SHA-256 is recorded in the provenance. Relative paths resolve against the working
+        directory of the run. Silverman et al. (2017) eLife 6:e21887.
+        """,
+        "advanced.ilr_sbp_matrix_path" => """
+        SBP CSV for ilr_basis = 'sequential_binary_partition' (required then, refused otherwise).
+
+        First column: taxon ids (exactly the retained taxa). Other columns: one per balance, header =
+        balance id, entries 1 (numerator), -1 (denominator), 0 (not involved). D taxa need exactly D-1
+        columns; the first partition involves every taxon and each later one splits a group made by an
+        earlier one (Egozcue & Pawlowsky-Glahn 2005). Each failure names the column and taxa. The file's
+        SHA-256 is recorded; add it to advanced.ilr_sbp_history if you try another SBP.
+        """,
+        "advanced.ilr_balance_dendrogram_method" => """
+        Clustering for ilr_basis = 'balance_dendrogram' (required then, refused otherwise): ward (R's
+        ward.D2), complete or average, applied to the variation matrix by R's hclust algorithm — the same
+        as robCompositions::clustCoDa_qmode with the classical variation. Needs at least 2 samples. The
+        basis is chosen from the data it is then used to test; this is recorded. Pawlowsky-Glahn,
+        Egozcue & Tolosana-Delgado (2015).
+        """,
+        "advanced.ilr_part_weights" => """
+        Part weights for a non-default ILR basis (philr's part.weights): uniform (default), gm_counts,
+        anorm, enorm, anorm_x_gm_counts, enorm_x_gm_counts. Non-uniform weights give the weighted ILR of
+        Silverman et al. (2017) — orthonormal in the weighted Aitchison geometry — and are computed from
+        the zero-handled table itself, which is recorded. Refused for the default basis.
+        """,
+        "advanced.ilr_balance_weights" => """
+        Balance weights for ilr_basis = 'phylogenetic' only (philr's ilr.weights): uniform (default),
+        blw, blw_sqrt, mean_descendants. They need branch lengths. A balance weight multiplies a balance by
+        a constant: effect sizes change, per-balance test statistics do not, and the coordinates stop being
+        isometric (recorded). Zero-length tip edges are replaced by the smallest non-zero edge, as in philr.
+        """,
+        "advanced.ilr_sbp_history" => """
+        SHA-256 digests of SBP files tried earlier in this project (ilr_basis =
+        'sequential_binary_partition' only). The run counts distinct SBPs including the current one;
+        more than 3 raises the DANGER banner. Trying partitions until one 'works' is a forking-paths
+        problem BH cannot correct. The count is disclosed, not refused: pre-register the SBP.
         """,
         "correction.method" => """
         Multiple testing correction — BH mandatory in v1, hard-stop DANGER banner on overrides
@@ -1116,6 +1347,9 @@ function danger_banner(config::AnalysisConfig)
     if config.advanced.min_samples_per_group < 3
         push!(reasons, "min_samples_per_group=$(config.advanced.min_samples_per_group) <3 — statistical power very low, results unreliable")
     end
+    if length(config.advanced.ilr_sbp_history) > ILR_SBP_ATTEMPT_DANGER_THRESHOLD
+        push!(reasons, "SBP p-hacking guard: $(length(config.advanced.ilr_sbp_history)) distinct SBP matrices already tried in this project (more than $ILR_SBP_ATTEMPT_DANGER_THRESHOLD) — trying partitions until one 'works' inflates false discoveries that BH cannot correct; pre-register the SBP and report every partition tried")
+    end
     if config.normalization.method == "rarefy" && config.method == NB_GLM
         push!(reasons, "rarefy + NB_GLM — rarefy discards data and NB_GLM already handles library size via size_factors — combining is questionable")
     end
@@ -1215,7 +1449,13 @@ function to_json(config::AnalysisConfig)
             "max_features" => config.advanced.max_features,
             "min_samples_per_group" => config.advanced.min_samples_per_group,
             "robust" => config.advanced.robust,
-            "acknowledgment_token" => config.advanced.acknowledgment_token
+            "acknowledgment_token" => config.advanced.acknowledgment_token,
+            "ilr_phylo_tree_path" => config.advanced.ilr_phylo_tree_path,
+            "ilr_sbp_matrix_path" => config.advanced.ilr_sbp_matrix_path,
+            "ilr_balance_dendrogram_method" => config.advanced.ilr_balance_dendrogram_method,
+            "ilr_part_weights" => config.advanced.ilr_part_weights,
+            "ilr_balance_weights" => config.advanced.ilr_balance_weights,
+            "ilr_sbp_history" => config.advanced.ilr_sbp_history
         ),
         "provenance" => config.provenance,
         "hash" => config.hash,
@@ -1232,6 +1472,7 @@ defaults. JSON parsing and constructor validation errors are propagated.
 """
 function from_json(json_str::String)
     data = JSON3.read(json_str)
+    _str_or_nothing(v) = isnothing(v) ? nothing : String(v)
 
     norm_data = data.normalization
     norm = NormalizationConfig(
@@ -1271,7 +1512,14 @@ function from_json(json_str::String)
         max_features=_f64(get(adv_data, :max_features, nothing)),
         min_samples_per_group=get(adv_data, :min_samples_per_group, 3),
         robust=get(adv_data, :robust, false),
-        acknowledgment_token=get(adv_data, :acknowledgment_token, nothing)
+        acknowledgment_token=get(adv_data, :acknowledgment_token, nothing),
+        # Absent from JSON written before issue #20: the defaults apply.
+        ilr_phylo_tree_path=_str_or_nothing(get(adv_data, :ilr_phylo_tree_path, nothing)),
+        ilr_sbp_matrix_path=_str_or_nothing(get(adv_data, :ilr_sbp_matrix_path, nothing)),
+        ilr_balance_dendrogram_method=_str_or_nothing(get(adv_data, :ilr_balance_dendrogram_method, nothing)),
+        ilr_part_weights=String(get(adv_data, :ilr_part_weights, "uniform")),
+        ilr_balance_weights=String(get(adv_data, :ilr_balance_weights, "uniform")),
+        ilr_sbp_history=String[String(h) for h in get(adv_data, :ilr_sbp_history, String[])]
     )
 
     prov = OrderedDict{String,Any}()
@@ -1300,6 +1548,8 @@ function from_json(json_str::String)
 
     return cfg
 end
+
+_nickel_str(v::Union{String,Nothing}) = isnothing(v) ? "null" : "\"$v\""
 
 """Render `config` as the module's generated Nickel source text."""
 function to_nickel(config::AnalysisConfig)
@@ -1352,6 +1602,12 @@ function to_nickel(config::AnalysisConfig)
         max_features = $(isnothing(config.advanced.max_features) ? "null" : string(config.advanced.max_features)),
         min_samples_per_group = $(config.advanced.min_samples_per_group),
         robust = $(config.advanced.robust ? "true" : "false"),
+        ilr_phylo_tree_path = $(_nickel_str(config.advanced.ilr_phylo_tree_path)),
+        ilr_sbp_matrix_path = $(_nickel_str(config.advanced.ilr_sbp_matrix_path)),
+        ilr_balance_dendrogram_method = $(isnothing(config.advanced.ilr_balance_dendrogram_method) ? "null" : "'$(config.advanced.ilr_balance_dendrogram_method)'"),
+        ilr_part_weights = '$(config.advanced.ilr_part_weights)',
+        ilr_balance_weights = '$(config.advanced.ilr_balance_weights)',
+        ilr_sbp_history = [$(join(["\"$h\"" for h in config.advanced.ilr_sbp_history], ", "))],
       } | ZeroHandlingContract,
 
       provenance = {
@@ -1361,7 +1617,7 @@ function to_nickel(config::AnalysisConfig)
 
       hash = "$(config.hash)",
       dangerous = $(config.dangerous ? "true" : "false"),
-    }
+    } | IlrBasisInputsContract
     """
 end
 
@@ -1477,7 +1733,13 @@ function to_deed(config::AnalysisConfig)
         :max-features $(isnothing(config.advanced.max_features) ? "0" : string(config.advanced.max_features))
         :min-samples-per-group $(config.advanced.min_samples_per_group)
         :robust $(robust_bool)
-        :acknowledgment-token "$(isnothing(config.advanced.acknowledgment_token) ? "" : config.advanced.acknowledgment_token)")
+        :acknowledgment-token "$(isnothing(config.advanced.acknowledgment_token) ? "" : config.advanced.acknowledgment_token)"
+        :ilr-phylo-tree-path "$(something(config.advanced.ilr_phylo_tree_path, ""))"
+        :ilr-sbp-matrix-path "$(something(config.advanced.ilr_sbp_matrix_path, ""))"
+        :ilr-balance-dendrogram-method "$(something(config.advanced.ilr_balance_dendrogram_method, ""))"
+        :ilr-part-weights "$(config.advanced.ilr_part_weights)"
+        :ilr-balance-weights "$(config.advanced.ilr_balance_weights)"
+        :ilr-sbp-history ($(join(["\"$h\"" for h in config.advanced.ilr_sbp_history], " "))))
 
       (provenance
         :id "$(config.id)"
@@ -1504,6 +1766,7 @@ function to_deed(config::AnalysisConfig)
         :formula "R-style formula e.g. ~ group must reference only metadata_columns forbids ; backtick dollar"
         :correction "BH mandatory in v1 any override triggers DANGER banner requires acknowledgment token $(DANGER_ACK_TOKEN)"
         :normalization "Normalization must be compatible with method: nb_glm allows none/rarefy/size_factors/relative/tss/css/rss (tss/css/rss are exact offsets, see docs/statistics/method-conditions/scaling-and-offsets.md), clr_lm requires clr, ilr_lm requires ilr"
+        :ilr-basis "ILR basis default (Helmert) phylogenetic (PhILR, needs a rooted bifurcating Newick tree) sequential_binary_partition (needs a valid SBP CSV, more than 3 distinct SBPs is DANGER) balance_dendrogram (ward complete average on the variation matrix) see docs/statistics/method-conditions/ilr-bases.md"
         :advanced "All advanced options behind Advanced Analysis expander hidden unless Evidence Mode heavy validation refusal meaningless"))
     """
 end
@@ -1548,13 +1811,19 @@ end
 """
     create_doi_bundle(config, [result]; output_dir, authors, title, license, description)
 
-Create or update `output_dir` with DataCite metadata, JSON, Nickel, DEED,
-provenance, and content-hash files, then return the directory path. An optional
-result is embedded in the DataCite document. Dangerous configurations also write
-`DANGER_BANNER.txt` and emit a warning; existing files with the same names are
-overwritten.
+Create a fresh `output_dir` with DataCite metadata, JSON, Nickel, DEED,
+provenance, and per-file SHA-256 checksums, then return the directory path.
+A supplied result must belong to the exact config. Non-empty destinations are
+refused: stale results or DANGER banners must never enter a new publication.
+Dangerous configurations also write `DANGER_BANNER.txt` and emit a warning.
 """
 function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,Nothing}=nothing; output_dir::String="doi_bundle_$(config.id)", authors::Vector{String}=String[], title::String="MetaManifold Analysis Bundle", license::String="CC-BY-4.0", description::String="Differential abundance analysis")
+    islink(output_dir) && throw(ArgumentError("DOI bundle directory must not be a symlink"))
+    isdir(output_dir) && !isempty(readdir(output_dir)) && throw(ArgumentError("DOI bundle requires an empty destination"))
+    if !isnothing(result)
+        result.config_id == config.id && result.config_hash == config.hash && result.method == config.method ||
+            throw(ArgumentError("DOI bundle result must belong to the exact configuration"))
+    end
     mkpath(output_dir)
 
     # DataCite JSON
@@ -1566,7 +1835,7 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
         "descriptions" => [OrderedDict("description" => description, "descriptionType" => "Abstract")],
         "publicationYear" => year(config.created_at),
         "publisher" => "MetaManifold-WebUI",
-        "resourceType" => OrderedDict("resourceTypeGeneral" => "Dataset", "resourceType" => "AnalysisConfig"),
+        "types" => OrderedDict("resourceTypeGeneral" => "Dataset", "resourceType" => isnothing(result) ? "Analysis configuration (no results)" : "Analysis results"),
         "subjects" => [
             OrderedDict("subject" => "microbiome"),
             OrderedDict("subject" => "differential abundance"),
@@ -1577,8 +1846,8 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
         "version" => config.schema_version,
         "rightsList" => [OrderedDict("rights" => license)],
         "dates" => [OrderedDict("date" => string(config.created_at), "dateType" => "Created")],
-        "relatedIdentifiers" => [
-            OrderedDict("relatedIdentifier" => config.hash, "relatedIdentifierType" => "SHA256", "relationType" => "IsIdenticalTo"),
+        "alternateIdentifiers" => [
+            OrderedDict("alternateIdentifier" => config.hash, "alternateIdentifierType" => "SHA-256"),
         ],
         "schemaVersion" => "http://datacite.org/schema/kernel-4",
         "config" => JSON3.read(to_json(config)),
@@ -1601,9 +1870,8 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
             "method" => METHOD_TO_STRING[result.method],
             "results" => result.results
         )
-        datacite["relatedIdentifiers"] = vcat(datacite["relatedIdentifiers"], [
-            OrderedDict("relatedIdentifier" => result.hash, "relatedIdentifierType" => "SHA256", "relationType" => "HasPart")
-        ])
+        push!(datacite["alternateIdentifiers"],
+            OrderedDict("alternateIdentifier" => result.hash, "alternateIdentifierType" => "SHA-256"))
     end
 
     # Write files
@@ -1675,15 +1943,20 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
         | `analysis_config.json` | Machine-readable analysis configuration |
         | `analysis_config.ncl` | Nickel serialisation of the configuration |
         | `analysis_config_chora.deed` | DEED attestation of the configuration |
-        | `analysis_result.json` | The analysis result this bundle was minted for |
+        | `analysis_result.json` | Selected result, only when explicitly included |
         | `provenance.json` | Captured software and host environment |
         | `content_hash.txt` | Content hash of the configuration |
+        | `checksums.sha256` | SHA-256 of every payload file |
 
         ## Authors
 
         $(isempty(authors) ? "_(none recorded)_" : join("- " .* authors, "\n"))
 
         ## Reproducibility
+
+        **Payload:** $(isnothing(result) ? "Configuration only — no analysis results are included." : "Configuration and the explicitly selected result $(result.id).")
+        No DOI has been minted by this local export. Publication is a separate,
+        explicitly confirmed operation. Raw inputs and reference databases are not included.
 
         The configuration is immutable and content-hashed. Re-running the analysis
         requires the same MetaManifold version and database snapshot recorded in
@@ -1694,6 +1967,8 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
     open(joinpath(output_dir, "content_hash.txt"), "w") do io
         write(io, config.hash)
     end
+
+    write_checksums!(output_dir)
 
     @info "Created DOI-ready bundle" output_dir config_id=config.id hash=config.hash dangerous=config.dangerous
 

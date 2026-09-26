@@ -23,6 +23,21 @@ Reference: `hyperpolymath/standards@main` (in particular
 | Language-native semantic gates | `scripts/check-lint.sh`: `tsc --noEmit` (strict + exactOptional…), `bash -n` on all `*.sh`, advisory `shellcheck` | ✅ CI step |
 | Estate lint dialect for TypeScript | None defined — **TypeScript is fork-exempt** under LANGUAGE-POLICY (banned estate-wide, forks exempt); the strict compiler is declared the lint dialect | ✅ documented deviation |
 
+## Language policy (LANGUAGE-POLICY.adoc)
+
+Owner direction, 2026-09-26: Python is not permitted in this repository; the exceptions below
+are this repository's, each for a stated reason, and are not precedents for other repos.
+
+| Language | Here | Status |
+|---|---|---|
+| Julia | Primary implementation and test language, including test references and fixture tooling | ✅ |
+| Python | Not permitted. The ILR-basis fixture reference (issue #20) is Julia (`test/fixtures/ilr/ilr_reference.jl`, Base only); the Python generator that first produced those fixtures was removed before merge | ✅ |
+| Python (pre-existing, not changed by #20) | `test/unit/test_exact_summaries.jl` calls `python3` `fractions` as an independent reference, skipping when absent; `install.jl` installs the third-party pipeline tools cutadapt and multiqc (Python programs) through pipx | ⚠️ open — owner decision |
+| TypeScript | Frontend. Endured temporarily (banned estate-wide; see Lint above) | ✅ documented temporary exception |
+| R | Via RCall/renv. The industry analysis pipeline is R and is unlikely ever to change, so R stays | ✅ documented permanent exception |
+| Idris2 / Zig | The ABIs and the API/FFI layers are not being replaced: the industry's specific needs make this an exception to the owner's own standards | ✅ documented exception |
+| Agda | Machine-checked proofs (`proofs/agda`, `docs/formal/verification-plan.md`), shared with #21 | ✅ |
+
 ## Formatting
 
 | Expectation | Here | Status |

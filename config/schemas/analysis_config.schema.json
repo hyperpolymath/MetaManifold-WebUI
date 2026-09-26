@@ -83,7 +83,7 @@
         "ilr_basis": {
           "type": ["string", "null"],
           "enum": ["default", "phylogenetic", "sequential_binary_partition", "balance_dendrogram", null],
-          "description": "ILR basis. Only meaningful for ilr method. Refuses meaningless use for other methods. phylogenetic/sequential_binary_partition/balance_dendrogram deferred, see GitHub issues."
+          "description": "ILR basis. Only meaningful for ilr method. default (Helmert); phylogenetic (PhILR) requires advanced.ilr_phylo_tree_path; sequential_binary_partition requires advanced.ilr_sbp_matrix_path; balance_dendrogram requires advanced.ilr_balance_dendrogram_method. Issue #20; see docs/statistics/method-conditions/ilr-bases.md."
         },
         "multiplicative_replacement_delta": {
           "type": ["number", "null"],
@@ -249,6 +249,42 @@
         "acknowledgment_token": {
           "type": ["string", "null"],
           "description": "Required for dangerous zero_handling='refuse' or min_samples_per_group<3"
+        },
+        "ilr_phylo_tree_path": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "pattern": "^[^\"\\n\\r\\u0000\\[\\]{}`;$]+$",
+          "description": "Rooted, strictly bifurcating Newick tree for ilr_basis=phylogenetic (required then, refused otherwise). Tip labels = taxon ids exactly. SHA-256 recorded in provenance; existence checked at run time."
+        },
+        "ilr_sbp_matrix_path": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "pattern": "^[^\"\\n\\r\\u0000\\[\\]{}`;$]+$",
+          "description": "SBP CSV (taxa rows, balance columns, entries 1/-1/0) for ilr_basis=sequential_binary_partition (required then, refused otherwise). Validated per Egozcue & Pawlowsky-Glahn (2005). SHA-256 recorded."
+        },
+        "ilr_balance_dendrogram_method": {
+          "type": ["string", "null"],
+          "enum": ["ward", "complete", "average", null],
+          "description": "Clustering for ilr_basis=balance_dendrogram (required then, refused otherwise) on the variation matrix: ward (R ward.D2), complete, average."
+        },
+        "ilr_part_weights": {
+          "type": "string",
+          "enum": ["uniform", "gm_counts", "anorm", "enorm", "anorm_x_gm_counts", "enorm_x_gm_counts"],
+          "default": "uniform",
+          "description": "philr part.weights for a non-default ILR basis. Must be uniform for the default (Helmert) basis."
+        },
+        "ilr_balance_weights": {
+          "type": "string",
+          "enum": ["uniform", "blw", "blw_sqrt", "mean_descendants"],
+          "default": "uniform",
+          "description": "philr ilr.weights, phylogenetic basis only (needs branch lengths). Non-uniform weights are not isometric; recorded."
+        },
+        "ilr_sbp_history": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "uniqueItems": true,
+          "default": [],
+          "description": "SHA-256 of SBP files tried earlier in the project (SBP basis only). More than 3 distinct SBPs including the current one raises the DANGER banner (p-hacking guard)."
         }
       }
     },
@@ -298,6 +334,260 @@
         "properties": {
           "normalization": {
             "properties": { "method": { "const": "ilr" } }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "ILR basis inputs (issue #20): each non-default basis requires its own input and forbids the others'. Same table as AnalysisConfig._validate_ilr_inputs and Nickel IlrBasisInputsContract; see docs/statistics/method-conditions/ilr-bases.md."
+    },
+    {
+      "if": {
+        "required": [
+          "normalization"
+        ],
+        "properties": {
+          "normalization": {
+            "required": [
+              "ilr_basis"
+            ],
+            "properties": {
+              "ilr_basis": {
+                "enum": [
+                  "phylogenetic"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_phylo_tree_path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ilr_phylo_tree_path"
+            ]
+          }
+        },
+        "required": [
+          "advanced"
+        ]
+      },
+      "else": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_phylo_tree_path": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "normalization"
+        ],
+        "properties": {
+          "normalization": {
+            "required": [
+              "ilr_basis"
+            ],
+            "properties": {
+              "ilr_basis": {
+                "enum": [
+                  "sequential_binary_partition"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_sbp_matrix_path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ilr_sbp_matrix_path"
+            ]
+          }
+        },
+        "required": [
+          "advanced"
+        ]
+      },
+      "else": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_sbp_matrix_path": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "normalization"
+        ],
+        "properties": {
+          "normalization": {
+            "required": [
+              "ilr_basis"
+            ],
+            "properties": {
+              "ilr_basis": {
+                "enum": [
+                  "balance_dendrogram"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_balance_dendrogram_method": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ilr_balance_dendrogram_method"
+            ]
+          }
+        },
+        "required": [
+          "advanced"
+        ]
+      },
+      "else": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_balance_dendrogram_method": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "normalization"
+          ],
+          "properties": {
+            "normalization": {
+              "required": [
+                "ilr_basis"
+              ],
+              "properties": {
+                "ilr_basis": {
+                  "enum": [
+                    "phylogenetic",
+                    "sequential_binary_partition",
+                    "balance_dendrogram"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_part_weights": {
+                "const": "uniform"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "normalization"
+          ],
+          "properties": {
+            "normalization": {
+              "required": [
+                "ilr_basis"
+              ],
+              "properties": {
+                "ilr_basis": {
+                  "enum": [
+                    "phylogenetic"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_balance_weights": {
+                "const": "uniform"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "normalization"
+          ],
+          "properties": {
+            "normalization": {
+              "required": [
+                "ilr_basis"
+              ],
+              "properties": {
+                "ilr_basis": {
+                  "enum": [
+                    "sequential_binary_partition"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_sbp_history": {
+                "maxItems": 0
+              }
+            }
           }
         }
       }

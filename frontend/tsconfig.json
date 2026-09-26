@@ -29,12 +29,11 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax":  true,
-    "baseUrl":               ".",
     "paths": {
-      "@api/*":        ["src/api/*"],
-      "@components/*": ["src/components/*"],
-      "@views/*":      ["src/views/*"],
-      "@hooks/*":      ["src/hooks/*"]
+      "@api/*":        ["./src/api/*"],
+      "@components/*": ["./src/components/*"],
+      "@views/*":      ["./src/views/*"],
+      "@hooks/*":      ["./src/hooks/*"]
     }
   },
   "include": ["src"]

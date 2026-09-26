@@ -1,0 +1,56 @@
+{
+  "reference": "test/fixtures/ilr/ilr_reference.jl",
+  "inputs": "counts.csv, tree.nwk and sbp.csv are seeded synthetic data, committed as data",
+  "expectations": "expected_*.csv, merge_*.csv and variation.csv are recomputed from the inputs by the reference on every test run (test/unit/test_ilr_basis.jl) and must agree to 1e-10; rewrite with: julia --project=. test/fixtures/ilr/ilr_reference.jl --write",
+  "datasets": [
+    {
+      "name": "philr_d8",
+      "kind": "phylogenetic",
+      "taxa": 8,
+      "samples": 6,
+      "unseen_tree_tips": 0,
+      "combos": [
+        "uniform__uniform",
+        "gm_counts__blw",
+        "enorm_x_gm_counts__blw_sqrt"
+      ]
+    },
+    {
+      "name": "philr_d25",
+      "kind": "phylogenetic",
+      "taxa": 25,
+      "samples": 12,
+      "unseen_tree_tips": 0,
+      "combos": [
+        "uniform__uniform",
+        "anorm__blw",
+        "anorm_x_gm_counts__mean_descendants"
+      ]
+    },
+    {
+      "name": "philr_d60_pruned",
+      "kind": "phylogenetic",
+      "taxa": 60,
+      "samples": 20,
+      "unseen_tree_tips": 15,
+      "combos": [
+        "uniform__uniform",
+        "enorm__uniform",
+        "gm_counts__mean_descendants"
+      ]
+    },
+    {
+      "name": "sbp_d12",
+      "kind": "sequential_binary_partition"
+    },
+    {
+      "name": "dendrogram_d30",
+      "kind": "balance_dendrogram",
+      "methods": [
+        "ward",
+        "complete",
+        "average"
+      ]
+    }
+  ]
+}

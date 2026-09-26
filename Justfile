@@ -274,6 +274,11 @@ lint:
 hygiene: spdx format lint
     @echo "hygiene: OK"
 
+# Agda proof gate (docs/formal/verification-plan.md): guard, type-check,
+# negative controls. Honours AGDA=... and AGDA_STDLIB_LIB=... overrides.
+proofs:
+    ./scripts/check-proofs.sh
+
 # Lint a commit message against the canonical format (default: HEAD).
 commit-check msg="":
     #!/usr/bin/env bash
@@ -363,6 +368,25 @@ bench-julia data="":
         exit 1
     fi
     $JULIA_CMD --project=. -t4 bench/layer1_mock_recovery/runner.jl {{data}}
+
+# ILR-basis scaling benchmark (issue #20); taxa="100,1000" for a quick run.
+bench-ilr taxa="100,1000,10000":
+    ILR_BENCH_TAXA={{taxa}} $JULIA_CMD --project=. bench/ilr_bases/benchmark.jl
+
+# The CI CLR/ILR regression gate, locally: this checkout vs `base` (a git ref),
+# interleaved base/head/base/head on this machine; fails on >10% (time or allocation).
+bench-ilr-gate base="origin/main":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp=$(mktemp -d)
+    trap 'git worktree remove --force "$tmp/base" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+    git worktree add --detach "$tmp/base" "{{base}}"
+    $JULIA_CMD --project="$tmp/base" -e 'using Pkg; Pkg.instantiate()'
+    for round in 1 2; do
+        $JULIA_CMD --project="$tmp/base" bench/ilr_bases/regression_gate.jl measure base "$tmp/base_$round.json"
+        $JULIA_CMD --project=. bench/ilr_bases/regression_gate.jl measure head "$tmp/head_$round.json"
+    done
+    $JULIA_CMD --project=. bench/ilr_bases/regression_gate.jl compare --base "$tmp"/base_*.json --head "$tmp"/head_*.json
 
 # ----------------------------------------------------------------------- #
 # Composites
