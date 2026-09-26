@@ -650,6 +650,11 @@ jobs:
           # over the same shadowing. Running it means the next AnalysisConfig API
           # change breaks this step immediately instead of at test time.
           julia --project=. bench/analysis_config/benchmark.jl
+          # ILR bases (issue #20): CLR, default ILR and the three new bases at 100,
+          # 1 000 and 10 000 taxa. Emits ::warning:: for any workload over 5 minutes
+          # or over 1 GiB (allocation or peak-RSS growth); never fails the job — the
+          # hard CLR/ILR gate is the same-runner base-vs-head step below.
+          julia --project=. bench/ilr_bases/benchmark.jl
           julia --project=. bench/comprehensive_benchmark.jl
 
       - name: Summarise Julia benchmark deltas (informational)
@@ -666,6 +671,34 @@ jobs:
           if [ -f bench/results/comprehensive_results.json ]; then
             echo "Comprehensive results: $(cat bench/results/comprehensive_results.json | head -c 500)"
           fi
+          if [ -f bench/results/ilr_bases_results.json ]; then
+            echo "ILR bases results: $(head -c 500 bench/results/ilr_bases_results.json)"
+          fi
+
+      # Issue #20: "fail CI if CLR/ILR performance regresses more than 10%". A committed
+      # baseline cannot carry that (cross-host noise, as above), so this measures the PR's
+      # base commit and its head on this runner, interleaved base/head/base/head, and fails
+      # if head allocates >10% more or its minimum time is >10% slower. Rationale and the
+      # statistic are documented in bench/ilr_bases/regression_gate.jl. Pull requests only:
+      # a push to main has no base to compare against.
+      - name: CLR/ILR regression gate (same runner, base vs head)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          R_LIBS_SITE: /usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          julia --project="$RUNNER_TEMP/base" -e 'using Pkg; Pkg.instantiate()'
+          gate=bench/ilr_bases/regression_gate.jl
+          out="$RUNNER_TEMP/ilr_gate"
+          mkdir -p "$out"
+          for round in 1 2; do
+            julia --project="$RUNNER_TEMP/base" "$gate" measure base "$out/base_$round.json"
+            julia --project=. "$gate" measure head "$out/head_$round.json"
+          done
+          julia --project=. "$gate" compare --base "$out"/base_*.json --head "$out"/head_*.json
 
       - name: Upload Julia benchmark artifacts
         if: always()
@@ -675,6 +708,7 @@ jobs:
           path: |
             bench/*/baseline.json
             bench/results/comprehensive_results.json
+            bench/results/ilr_bases_results.json
             bench/**/baseline.json
           if-no-files-found: warn
 
