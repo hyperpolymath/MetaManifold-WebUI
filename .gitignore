@@ -265,6 +265,8 @@ docs/*
 !docs/owner-review-2026-09-25.md
 !docs/integration/
 !docs/integration/**
+!docs/wikis/
+!docs/wikis/**
 
 # Test + benchmark run artifacts (not the committed fixtures/baselines)
 frontend/tests/results/
