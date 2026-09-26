@@ -60,6 +60,18 @@ Once a run completes, analysis is performed on request through the web UI, both 
 
 Counts may be normalised before analysis (none, rarefaction to a fixed or auto-resolved depth, or relative sum scaling), and contamination-flagged taxa may be included or excluded. All analysis charts are returned as Plotly JSON and rendered interactively in the browser.
 
+## Citable analysis bundles (opt-in)
+
+The study's **Evidence / DOI publication** page can prepare a private Zenodo draft,
+freeze and verify the exact config/result archive, and request DOI publication
+only after a separate DANGER/typed confirmation. Sandbox is the default. Published
+receipts/citations can be linked to an existing GitHub release and Projects v2 board
+with the offline-first `scripts/link-doi.sh` helper.
+
+See [operator and author guidance](docs/doi-publication.md) and the
+[test/acceptance report](docs/testing/doi-publication.md). **Runtime acceptance is
+still pending**; static and adapter checks alone are not production approval.
+
 ## Prerequisites
 
 **One-command toolchain (recommended — the repo is standalone):** the pinned

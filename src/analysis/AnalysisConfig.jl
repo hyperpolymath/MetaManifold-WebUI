@@ -32,6 +32,7 @@ using UUIDs
 using JSON3
 using OrderedCollections
 using Logging
+using ..DOIBundles: write_checksums!
 
 # Re-use provenance from core
 using ..Provenance: CapturedEnvironment, probe_metamanifold, probe_host
@@ -959,6 +960,37 @@ return a fallback message that includes the requested path.
 """
 function context_help(field_path::String)
     help_db = Dict{String,String}(
+        "doi" => """
+        DOI publication is opt-in and behind Evidence Mode. Prepare a private Zenodo draft,
+        download and review its frozen ZIP, then separately confirm irreversible publication.
+        Configuration-only bundles are explicitly labelled; mock/empty results are not citable results.
+        A reserved DOI or HTTP 202 is not publication. Only a verified published record has a badge.
+        See docs/doi-publication.md for setup, privacy review and recovery.
+        """,
+        "doi.environment" => """
+        Sandbox is the default test environment (10.5072); production (10.5281) registers permanent DOIs.
+        The operator sets METAMANIFOLD_ZENODO_ENABLED and METAMANIFOLD_ZENODO_ENVIRONMENT,
+        with a separate server-side ZENODO_SANDBOX_TOKEN or ZENODO_TOKEN. Never enter tokens in the browser.
+        CSRF protection is not authentication: use a local single-user server or an authenticated reverse proxy.
+        """,
+        "doi.confirmation" => """
+        DANGER: publication makes the entire reviewed archive public and the DOI cannot be unminted.
+        Check privacy, creator consent, licence, provenance paths, results and scientific override warnings.
+        Acknowledge this review, type PUBLISH followed by the environment and deposition ID,
+        and submit the exact reviewed bundle SHA-256. Preparing/uploading is not this confirmation.
+        """,
+        "doi.recovery" => """
+        Reload saved publications after a restart or lost response. Resume draft preparation against
+        the same journal. If creation is uncertain, find the marked draft on Zenodo and recover its ID.
+        If publication is uncertain, refresh the existing deposition; publication is never blindly retried.
+        Back up .analysis and .doi together. Never delete a journal or mint a replacement to fix a timeout.
+        """,
+        "doi.github" => """
+        Download the verified production receipt and run scripts/link-doi.sh --receipt PATH for
+        an offline dry run. Explicit --apply updates the existing release and optional Projects v2 item
+        using gh authentication. No GitHub credential enters the web server and no second DOI is minted.
+        A partial linking failure is safe to resume with the same receipt; check the GitHub connection.
+        """,
         "method" => """
         Analysis Method (required, explicit, no auto-selection) — v1: NB GLM, CLR/ILR+Gaussian, logistic
 
@@ -1779,13 +1811,19 @@ end
 """
     create_doi_bundle(config, [result]; output_dir, authors, title, license, description)
 
-Create or update `output_dir` with DataCite metadata, JSON, Nickel, DEED,
-provenance, and content-hash files, then return the directory path. An optional
-result is embedded in the DataCite document. Dangerous configurations also write
-`DANGER_BANNER.txt` and emit a warning; existing files with the same names are
-overwritten.
+Create a fresh `output_dir` with DataCite metadata, JSON, Nickel, DEED,
+provenance, and per-file SHA-256 checksums, then return the directory path.
+A supplied result must belong to the exact config. Non-empty destinations are
+refused: stale results or DANGER banners must never enter a new publication.
+Dangerous configurations also write `DANGER_BANNER.txt` and emit a warning.
 """
 function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,Nothing}=nothing; output_dir::String="doi_bundle_$(config.id)", authors::Vector{String}=String[], title::String="MetaManifold Analysis Bundle", license::String="CC-BY-4.0", description::String="Differential abundance analysis")
+    islink(output_dir) && throw(ArgumentError("DOI bundle directory must not be a symlink"))
+    isdir(output_dir) && !isempty(readdir(output_dir)) && throw(ArgumentError("DOI bundle requires an empty destination"))
+    if !isnothing(result)
+        result.config_id == config.id && result.config_hash == config.hash && result.method == config.method ||
+            throw(ArgumentError("DOI bundle result must belong to the exact configuration"))
+    end
     mkpath(output_dir)
 
     # DataCite JSON
@@ -1797,7 +1835,7 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
         "descriptions" => [OrderedDict("description" => description, "descriptionType" => "Abstract")],
         "publicationYear" => year(config.created_at),
         "publisher" => "MetaManifold-WebUI",
-        "resourceType" => OrderedDict("resourceTypeGeneral" => "Dataset", "resourceType" => "AnalysisConfig"),
+        "types" => OrderedDict("resourceTypeGeneral" => "Dataset", "resourceType" => isnothing(result) ? "Analysis configuration (no results)" : "Analysis results"),
         "subjects" => [
             OrderedDict("subject" => "microbiome"),
             OrderedDict("subject" => "differential abundance"),
@@ -1808,8 +1846,8 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
         "version" => config.schema_version,
         "rightsList" => [OrderedDict("rights" => license)],
         "dates" => [OrderedDict("date" => string(config.created_at), "dateType" => "Created")],
-        "relatedIdentifiers" => [
-            OrderedDict("relatedIdentifier" => config.hash, "relatedIdentifierType" => "SHA256", "relationType" => "IsIdenticalTo"),
+        "alternateIdentifiers" => [
+            OrderedDict("alternateIdentifier" => config.hash, "alternateIdentifierType" => "SHA-256"),
         ],
         "schemaVersion" => "http://datacite.org/schema/kernel-4",
         "config" => JSON3.read(to_json(config)),
@@ -1832,9 +1870,8 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
             "method" => METHOD_TO_STRING[result.method],
             "results" => result.results
         )
-        datacite["relatedIdentifiers"] = vcat(datacite["relatedIdentifiers"], [
-            OrderedDict("relatedIdentifier" => result.hash, "relatedIdentifierType" => "SHA256", "relationType" => "HasPart")
-        ])
+        push!(datacite["alternateIdentifiers"],
+            OrderedDict("alternateIdentifier" => result.hash, "alternateIdentifierType" => "SHA-256"))
     end
 
     # Write files
@@ -1906,15 +1943,20 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
         | `analysis_config.json` | Machine-readable analysis configuration |
         | `analysis_config.ncl` | Nickel serialisation of the configuration |
         | `analysis_config_chora.deed` | DEED attestation of the configuration |
-        | `analysis_result.json` | The analysis result this bundle was minted for |
+        | `analysis_result.json` | Selected result, only when explicitly included |
         | `provenance.json` | Captured software and host environment |
         | `content_hash.txt` | Content hash of the configuration |
+        | `checksums.sha256` | SHA-256 of every payload file |
 
         ## Authors
 
         $(isempty(authors) ? "_(none recorded)_" : join("- " .* authors, "\n"))
 
         ## Reproducibility
+
+        **Payload:** $(isnothing(result) ? "Configuration only — no analysis results are included." : "Configuration and the explicitly selected result $(result.id).")
+        No DOI has been minted by this local export. Publication is a separate,
+        explicitly confirmed operation. Raw inputs and reference databases are not included.
 
         The configuration is immutable and content-hashed. Re-running the analysis
         requires the same MetaManifold version and database snapshot recorded in
@@ -1925,6 +1967,8 @@ function create_doi_bundle(config::AnalysisConfig, result::Union{AnalysisResult,
     open(joinpath(output_dir, "content_hash.txt"), "w") do io
         write(io, config.hash)
     end
+
+    write_checksums!(output_dir)
 
     @info "Created DOI-ready bundle" output_dir config_id=config.id hash=config.hash dangerous=config.dangerous
 

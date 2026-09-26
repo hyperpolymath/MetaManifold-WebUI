@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from 'react'
+import { apiUrl } from '../api/client'
 import type { AnalysisConfig, ValidationError } from '../types/analysis_config'
 import { contextHelp, isDangerous, DANGER_ACK_TOKEN, withoutIlrInputs } from '../types/analysis_config'
 import { DangerBanner } from './DangerBanner'
@@ -8,6 +9,8 @@ import { IlrBasisInputs } from './IlrBasisInputs'
 
 interface AnalysisConfigEditorProps {
   evidenceMode: boolean
+  /** Thin launch link: publication UI and lifecycle remain Julia-owned. */
+  study?: string
   config: AnalysisConfig
   onChange: (config: AnalysisConfig) => void
   onSave: () => void
@@ -15,7 +18,7 @@ interface AnalysisConfigEditorProps {
   validationErrors?: ValidationError[]
 }
 
-export function AnalysisConfigEditor({ evidenceMode, config, onChange, onSave, availableMetadataColumns, validationErrors }: AnalysisConfigEditorProps) {
+export function AnalysisConfigEditor({ evidenceMode, study, config, onChange, onSave, availableMetadataColumns, validationErrors }: AnalysisConfigEditorProps) {
   const [helpField, setHelpField] = useState<string | null>(null)
   const [showJson, setShowJson] = useState(false)
 
@@ -307,6 +310,15 @@ export function AnalysisConfigEditor({ evidenceMode, config, onChange, onSave, a
         <br />
         <strong>DOI-ready:</strong> Bundle includes JSON + Nickel + DEED + DataCite + provenance.
       </div>
+
+      {evidenceMode && study && (
+        <p>
+          <a className="btn" href={apiUrl(`/api/v1/studies/${encodeURIComponent(study)}/doi-ui?config=${encodeURIComponent(config.id)}`)}>
+            Mint DOI / view publication badge…
+          </a>
+          {' '}Opens the Julia publication screen for a saved configuration. Preparing a draft does not publish it.
+        </p>
+      )}
 
       {/* Actions */}
       <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>

@@ -64,6 +64,8 @@ using MetaManifold: AnalysisConfig
     include("unit/test_install_pins.jl")
     include("unit/test_migrate_composition.jl")
     include("unit/test_analysis_config.jl")
+    include("unit/test_doi.jl")
+    include("unit/test_doi_routes.jl")
     include("unit/test_execution.jl")
     include("unit/test_scaling.jl")
     include("unit/test_ilr_basis.jl")

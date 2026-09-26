@@ -9,22 +9,16 @@ using MetaManifold: AnalysisConfig
 using MetaManifold.Epistemic
 using MetaManifold.CladeCumulus
 
-# In-memory store for configs (in production, would be per-study persistent)
-const _ANALYSIS_CONFIG_STORE = Dict{String,Dict{String,AnalysisConfig.AnalysisConfigStruct}}() # study -> id -> config
-const _ANALYSIS_RESULT_STORE = Dict{String,Dict{String,AnalysisConfig.AnalysisResult}}() # study -> id -> result
-const _ANALYSIS_CONFIG_LOCK = ReentrantLock()
-
-function _get_study_configs(study::String)
-    lock(_ANALYSIS_CONFIG_LOCK) do
-        get!(_ANALYSIS_CONFIG_STORE, study, Dict{String,AnalysisConfig.AnalysisConfigStruct}())
-    end
+# Durable per-study records; publication journals retain independent snapshots.
+using MetaManifold: AnalysisStore, DOIBundles, DOIStorage
+function _analysis_store_dir(study::String)
+    _valid_name(study) || throw(DOIStorage.PublicationError(400, "invalid_study", "Invalid study name."))
+    project = joinpath(ServerState.projects_dir(), study)
+    islink(project) && throw(DOIStorage.PublicationError(403, "unsafe_storage", "Analysis storage must not be a symlink."))
+    joinpath(project, ".analysis")
 end
-
-function _get_study_results(study::String)
-    lock(_ANALYSIS_CONFIG_LOCK) do
-        get!(_ANALYSIS_RESULT_STORE, study, Dict{String,AnalysisConfig.AnalysisResult}())
-    end
-end
+_get_study_configs(study::String) = AnalysisStore.configs(_analysis_store_dir(study))
+_get_study_results(study::String) = AnalysisStore.results(_analysis_store_dir(study))
 
 # List available metadata columns for a study (from first run's merged table or from study config)
 function _available_metadata_columns(study::String)::Vector{String}
@@ -69,6 +63,8 @@ end
         normalization = AnalysisConfig.NormalizationConfig(
             method=String(norm_method),
             pseudocount=Float64(get(norm_body, "pseudocount", 0.5)),
+            epsilon=Float64(get(norm_body, "epsilon", 1e-6)),
+            zero_policy=String(get(norm_body, "zero_policy", "pseudocount")),
             ilr_basis=get(norm_body, "ilr_basis", nothing) isa Nothing ? nothing : String(get(norm_body, "ilr_basis", nothing)),
             multiplicative_replacement_delta=get(norm_body, "multiplicative_replacement_delta", nothing) isa Nothing ? nothing : Float64(get(norm_body, "multiplicative_replacement_delta", nothing)),
             # The declared scaling parameters travel with the request, are validated by the
@@ -92,6 +88,9 @@ end
         advanced = AnalysisConfig.AdvancedOverrides(
             dispersion_method=String(get(adv_body, "dispersion_method", "parametric")),
             zero_handling=String(get(adv_body, "zero_handling", "pseudocount")),
+            zero_policy=String(get(adv_body, "zero_policy", get(adv_body, "zero_handling", "pseudocount"))),
+            pseudocount=Float64(get(adv_body, "pseudocount", 0.5)),
+            epsilon=Float64(get(adv_body, "epsilon", 1e-6)),
             min_prevalence=Float64(get(adv_body, "min_prevalence", 0.1)),
             min_abundance=Float64(get(adv_body, "min_abundance", 0.0)),
             max_features=get(adv_body, "max_features", nothing) isa Nothing ? nothing : Int(get(adv_body, "max_features", nothing)),
@@ -123,7 +122,7 @@ end
         available_cols = _available_metadata_columns(study)
         errors = AnalysisConfig.validate_config(cfg, available_cols; strict=false)
         if !isempty(errors)
-            return json_error(400, "validation_failed", "AnalysisConfig validation failed", join(errors, "\n"))
+            return json_error(400, "validation_failed", "AnalysisConfig validation failed"; detail=join(errors, "\n"))
         end
 
         # Check DANGER
@@ -134,10 +133,7 @@ end
         end
 
         # Store
-        lock(_ANALYSIS_CONFIG_LOCK) do
-            study_configs = _get_study_configs(study)
-            study_configs[cfg.id] = cfg
-        end
+        AnalysisStore.save_config!(_analysis_store_dir(study), cfg)
 
         # Return with danger banner if any
         resp = OrderedDict{String,Any}(
@@ -154,7 +150,7 @@ end
 
     catch e
         if e isa ArgumentError
-            return json_error(400, "invalid_config", "Invalid AnalysisConfig: $(e.msg)", sprint(showerror, e))
+            return json_error(400, "invalid_config", "Invalid AnalysisConfig: $(e.msg)"; detail=sprint(showerror, e))
         else
             @error "Failed to create AnalysisConfig" exception=(e, catch_backtrace())
             return json_error(500, "internal_error", "Failed to create AnalysisConfig: $(sprint(showerror, e))")
@@ -203,11 +199,11 @@ end
 @delete "/api/v1/studies/{study}/analysis-config/{id}" function(req, study::String, id::String)
     study in _study_names() || return json_error(404, "study_not_found", "Study '$study' not found")
 
-    lock(_ANALYSIS_CONFIG_LOCK) do
-        study_configs = _get_study_configs(study)
-        haskey(study_configs, id) || return json_error(404, "config_not_found", "AnalysisConfig '$id' not found")
-        delete!(study_configs, id)
-    end
+    haskey(_get_study_configs(study), id) || return json_error(404, "config_not_found", "AnalysisConfig '$id' not found")
+    # Keep reviewed config identities addressable for both drafts and citations.
+    any(p -> p["binding"]["config_id"] == id, MetaManifold.DOIPublications.publications(_doi_store_dir(study))) &&
+        return json_error(409, "config_has_publication", "This configuration has a DOI publication journal and cannot be deleted")
+    AnalysisStore.delete_config!(_analysis_store_dir(study), id)
 
     json(OrderedDict("deleted" => id))
 end
@@ -268,14 +264,12 @@ end
             "config_id" => cfg.id,
             "config_hash" => cfg.hash,
             "method" => AnalysisConfig.METHOD_TO_STRING[cfg.method],
+            "mock" => true,
             "note" => "Mock result — real implementation requires R packages DESeq2, compositions, etc. This is v1 scaffold with provenance chain intact.",
         ),
     )
 
-    lock(_ANALYSIS_CONFIG_LOCK) do
-        study_results = _get_study_results(study)
-        study_results[result.id] = result
-    end
+    AnalysisStore.save_result!(_analysis_store_dir(study), result)
 
     json(OrderedDict(
         "result" => OrderedDict(
@@ -305,48 +299,29 @@ end
     title = String(get(body, "title", "MetaManifold Analysis Bundle for $study"))
     license = String(get(body, "license", "CC-BY-4.0"))
 
-    # Find latest result for this config if any
+    # Explicit selection only: never bind a publication to a moving "latest" result.
+    result_id = get(body, "result_id", nothing)
     study_results = _get_study_results(study)
-    latest_result = nothing
-    for r in values(study_results)
-        if r.config_id == id
-            if isnothing(latest_result) || r.created_at > latest_result.created_at
-                latest_result = r
-            end
+    !isnothing(result_id) && !haskey(study_results, result_id) &&
+        return json_error(404, "result_not_found", "Selected analysis result was not found")
+    selected_result = isnothing(result_id) ? nothing : study_results[result_id]
+    try
+        mktempdir() do tmpdir
+            bundle_dir = joinpath(tmpdir, "bundle")
+            AnalysisConfig.create_doi_bundle(cfg, selected_result, bundle_dir; authors, title, license,
+                description=String(get(body, "description", "Analysis configuration export")))
+            zip_path = joinpath(tmpdir, "bundle.zip")
+            DOIBundles.archive_bundle(bundle_dir, zip_path)
+            HTTP.Response(200, ["Content-Type" => "application/zip", "Cache-Control" => "no-store",
+                "Content-Disposition" => "attachment; filename=\"metamanifold-doi-bundle.zip\""]; body=read(zip_path))
         end
-    end
-
-    mktempdir() do tmpdir
-        bundle_dir = joinpath(tmpdir, "bundle_$(cfg.id)")
-        bundle_path = AnalysisConfig.create_doi_bundle(cfg, latest_result, bundle_dir; authors, title, license)
-
-        # Zip the bundle for download
-        zip_path = bundle_dir * ".zip"
-        try
-            run(`zip -r $zip_path $bundle_dir`)
-        catch
-            # Fallback: just return the directory path if zip fails
-            return json(OrderedDict(
-                "bundle_path" => bundle_path,
-                "config_id" => cfg.id,
-                "config_hash" => cfg.hash,
-                "doi_ready" => true,
-                "files" => readdir(bundle_path),
-                "datacite" => JSON3.read(read(joinpath(bundle_path, "datacite.json"), String)),
-            ))
+    catch e
+        if e isa DOIStorage.PublicationError
+            return json_error(e.status, e.code, e.message)
+        elseif e isa ArgumentError
+            return json_error(422, "invalid_bundle", "The result does not belong to this exact configuration or the bundle is invalid")
         end
-
-        if isfile(zip_path)
-            data = read(zip_path)
-            HTTP.Response(200, ["Content-Type" => "application/zip", "Content-Disposition" => "attachment; filename=\"$(study)_$(id)_doi_bundle.zip\""], body=data)
-        else
-            json(OrderedDict(
-                "bundle_path" => bundle_path,
-                "config_id" => cfg.id,
-                "config_hash" => cfg.hash,
-                "doi_ready" => true,
-            ))
-        end
+        return json_error(500, "bundle_failed", "Could not create the DOI bundle; no temporary path is returned")
     end
 end
 

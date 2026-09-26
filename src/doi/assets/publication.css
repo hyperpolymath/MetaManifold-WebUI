@@ -1,0 +1,45 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+:root { color-scheme: light; font: 16px/1.6 system-ui, sans-serif; color: #243345; background: #f5f7fa; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 980px; padding: 36px 24px 70px; margin: auto; }
+h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); line-height: 1.2; margin: 12px 0; }
+h2 { font-size: 1.3rem; } h3 { margin: 0 0 8px; }
+a { color: #145b80; text-underline-offset: 3px; }
+header { padding: 20px 0; }
+.eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .12em; color: #53677b; }
+section, aside { background: white; padding: 24px; margin: 22px 0; border: 1px solid #dbe2eb; border-radius: 10px; }
+.environment, .evidence { display: block; padding: 12px 16px; border-radius: 6px; font-weight: 650; }
+.sandbox { background: #e9f2fa; color: #214a70; }
+.production { background: #fff0e7; color: #8f3500; border: 1px solid #efb490; }
+.evidence { background: #e7eeeb; border: 1px solid #abc3b7; }
+label { display: block; margin: 15px 0; font-weight: 600; }
+input:not([type=checkbox]), select, textarea { width: 100%; display: block; padding: 10px; border: 1px solid #9faebf; border-radius: 5px; background: white; color: inherit; font: inherit; margin-top: 6px; }
+input[type=checkbox] { width: 18px; height: 18px; margin-right: 7px; vertical-align: middle; }
+textarea { resize: vertical; }
+fieldset { border: 0; padding: 0; min-width: 0; }
+button { background: #1e5963; color: white; padding: 10px 16px; border: 1px solid transparent; border-radius: 5px; font: inherit; font-weight: 650; cursor: pointer; }
+button.secondary { background: white; color: #34495e; border-color: #aebecb; }
+button.danger { background: #a82e34; color: white; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+:focus-visible { outline: 3px solid #118399; outline-offset: 3px; }
+.columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.actions, .section-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.section-heading { justify-content: space-between; }
+.publication, #config-summary { overflow-wrap: anywhere; }
+.publication { border-top: 1px solid #dbe2eb; padding: 22px 0; }
+.publication > a { display: inline-block; margin: 6px 14px 6px 0; }
+.state { text-transform: none; font-weight: 600; color: #445f77; }
+.warning, #error { background: #fff0ee; color: #9b2929; padding: 12px; border-left: 4px solid #b33333; }
+#error { margin: 16px 0; }
+#message:not(:empty) { background: #eaf4ed; padding: 12px; border-left: 4px solid #307e4f; }
+pre, code { font-family: ui-monospace, monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+pre { background: #f0f3f6; padding: 12px; font-size: .8rem; }
+.doi-badge { padding: 6px 12px; border-radius: 4px; background: #e6f2ec; border: 1px solid #729d87; font-weight: 700; }
+.ack { font-weight: 500; font-size: .92rem; }
+details { margin-top: 24px; } summary { cursor: pointer; font-weight: 600; }
+#config-json { font-family: ui-monospace, monospace; font-size: .85rem; }
+dialog { width: min(92vw, 680px); max-height: 90vh; overflow: auto; border: 2px solid #b64040; border-radius: 10px; padding: 26px; }
+dialog h2 { color: #a82e34; } dialog::backdrop { background: rgb(20 30 40 / 65%); }
+[hidden] { display: none !important; }
+@media (max-width: 600px) { main { padding: 20px 14px; } section, aside { padding: 16px; } .columns { grid-template-columns: 1fr; gap: 0; } .actions button { width: 100%; } }
