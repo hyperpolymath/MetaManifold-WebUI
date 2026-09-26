@@ -345,12 +345,14 @@
         @test !haskey(diag_rel.checks, "scaling")
     end
 
-    @testset "deferred ILR bases are refused at construction and in prepare_analysis_table" begin
-        for basis in AnalysisConfig.DEFERRED_ILR_BASIS
-            @test_throws ArgumentError AnalysisConfig.NormalizationConfig(
-                method = "ilr", ilr_basis = basis)
+    @testset "ILR bases: the issue #20 deferral is lifted; the default basis still constructs" begin
+        # The three bases used to be refused here as deferred. Issue #20 implemented them
+        # (test/unit/test_ilr_basis.jl holds their evidence); the deferral list is kept, empty,
+        # so this asserts it stays empty rather than looping over nothing.
+        @test isempty(AnalysisConfig.DEFERRED_ILR_BASIS)
+        for basis in ("phylogenetic", "sequential_binary_partition", "balance_dendrogram")
+            @test AnalysisConfig.NormalizationConfig(method = "ilr", ilr_basis = basis).ilr_basis == basis
         end
-        # "default" basis is accepted
         norm_ok = AnalysisConfig.NormalizationConfig(method = "ilr", ilr_basis = "default")
         @test norm_ok.ilr_basis == "default"
     end

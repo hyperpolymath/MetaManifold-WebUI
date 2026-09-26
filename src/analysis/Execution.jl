@@ -44,6 +44,7 @@ using JSON3
 using OrderedCollections
 using Logging
 import ..Scaling
+import ..ILRBasis
 using Statistics
 
 # Use AnalysisConfig from parent module
@@ -1057,6 +1058,9 @@ function prepare_analysis_table(
     transform_method = lowercase(strip(config.normalization.method))
     prepared = copy(counts_after_zero)
     filtered_taxa_ids_before_ilr = copy(filtered_taxa_ids)
+    # Set by the non-default ILR bases; its checks, warnings, DANGER reasons and provenance
+    # are recorded below.
+    ilr_outcome = nothing
     offset = nothing
     scaling = nothing
     count_response = config.method == AnalysisConfig.NB_GLM
@@ -1143,10 +1147,9 @@ function prepare_analysis_table(
             prepared[:, j] = log_col .- mean_log
         end
     elseif transform_method == "ilr"
-        # Isometric Log-Ratio with default basis (phylogenetic, SBP, balance_dendrogram deferred)
-        # For stub, use CLR then transform via default ILR basis (e.g., Helmert matrix or sequential binary partition default)
-        # Default ILR basis: for n taxa, n-1 balances, each balance is log ratio of geometric mean of first k vs k+1?
-        # Simplified: use CLR then multiply by Helmert submatrix
+        # Isometric log-ratio. The basis is `normalization.ilr_basis`: `default` (Helmert)
+        # below, or phylogenetic / sequential_binary_partition / balance_dendrogram through
+        # ILRBasis (issue #20, docs/statistics/method-conditions/ilr-bases.md).
         # First compute CLR
         clr_table = similar(counts_after_zero)
         for j in 1:size(counts_after_zero, 2)
@@ -1158,44 +1161,58 @@ function prepare_analysis_table(
             clr_table[:, j] = log_col .- mean(log_col)
         end
 
-        # Default ILR basis: create (n-1) x n matrix where each row is a balance
         n_taxa = size(clr_table, 1)
         if n_taxa < 2
             throw(ArgumentError("ILR requires at least 2 taxa — got $n_taxa"))
         end
 
-        # For default basis, we use sequential binary partition: first balance is first taxon vs rest, second is second vs rest, etc.
-        # Or use Helmert: ilr_basis[i,j] = sqrt(j/(j+1)) * (1/j for k<=j, -1 for k=j+1, 0 otherwise) — but need orthonormal
-        # For stub, we use simple: ilr = clr transformed via basis where basis is identity minus 1/n? Actually CLR already centered, ILR is orthonormal version
-        # For simplicity, we return CLR for now with warning that exact ILR basis deferred, and set prepared to clr_table
-        # Real implementation would use `compositions::ilr` or `philr` or custom
-
-        if !isnothing(config.normalization.ilr_basis) && (config.normalization.ilr_basis in AnalysisConfig.DEFERRED_ILR_BASIS)
-            throw(ArgumentError("ILR basis '$(config.normalization.ilr_basis)' is not implemented (deferred, see GitHub issue #20). Refusing to substitute default Helmert basis."))
+        ilr_basis_name = something(config.normalization.ilr_basis, "default")
+        if ilr_basis_name in AnalysisConfig.DEFERRED_ILR_BASIS
+            throw(ArgumentError("ILR basis '$(ilr_basis_name)' is not implemented (deferred). Refusing to substitute the default Helmert basis."))
         end
 
-        # For default basis, we can compute ILR as: ilr = V^T * clr where V is n x (n-1) orthonormal basis
-        # For stub, we use simple basis: first n-1 rows of clr_table (drop last taxon) — not orthonormal but works for testing
-        # Better: use Helmert matrix
-        # Create Helmert matrix of size n x n, then take first n-1 columns as basis for CLR space? Actually Helmert for ILR is n x (n-1)
-        # Let's create simple ILR: for i=1..n-1, ilr_i = sqrt(i/(i+1)) * (mean(log(x_1..x_i)) - log(x_{i+1}))
-
-        ilr_table = zeros(n_taxa - 1, size(clr_table, 2))
-        for j in 1:size(clr_table, 2)
-            # For each sample, compute ILR balances
-            # Use log counts, not CLR, for ILR formula
-            log_col = log.(counts_after_zero[:, j])
-            for i in 1:(n_taxa-1)
-                # Balance i: first i taxa vs taxon i+1
-                # geo_mean_first_i = exp(mean(log_col[1:i]))
-                # ilr_i = sqrt(i/(i+1)) * (mean(log_col[1:i]) - log_col[i+1])
-                mean_first_i = mean(log_col[1:i])
-                ilr_table[i, j] = sqrt(i/(i+1)) * (mean_first_i - log_col[i+1])
+        if ilr_basis_name == "default"
+            # Helmert basis, unchanged byte for byte by issue #20:
+            #   ilr_i = sqrt(i/(i+1)) * (mean(log(x_1..x_i)) - log(x_{i+1})),  i = 1..n-1.
+            # ILRBasis.comb_tree reproduces it (Agda: comb-is-helmert; tested to 1e-12), but
+            # this loop is left exactly as it was so that no default-basis result moves.
+            ilr_table = zeros(n_taxa - 1, size(clr_table, 2))
+            for j in 1:size(clr_table, 2)
+                # For each sample, compute ILR balances
+                # Use log counts, not CLR, for ILR formula
+                log_col = log.(counts_after_zero[:, j])
+                for i in 1:(n_taxa-1)
+                    # Balance i: first i taxa vs taxon i+1
+                    # geo_mean_first_i = exp(mean(log_col[1:i]))
+                    # ilr_i = sqrt(i/(i+1)) * (mean(log_col[1:i]) - log_col[i+1])
+                    mean_first_i = mean(log_col[1:i])
+                    ilr_table[i, j] = sqrt(i/(i+1)) * (mean_first_i - log_col[i+1])
+                end
             end
-        end
 
-        prepared = ilr_table
-        filtered_taxa_ids = ["balance_$i" for i in 1:(n_taxa - 1)]
+            prepared = ilr_table
+            filtered_taxa_ids = ["balance_$i" for i in 1:(n_taxa - 1)]
+        else
+            # Phylogenetic (PhILR), sequential binary partition, balance dendrogram: one
+            # engine, held to docs/statistics/method-conditions/ilr-bases.md. It refuses --
+            # never substitutes -- when a tree, SBP or clustering condition fails. The basis is
+            # built on the retained taxa, after filtering and zero handling.
+            adv = config.advanced
+            retained_set = Set(filtered_taxa_ids_before_ilr)
+            ilr_outcome = ILRBasis.ilr_transform(
+                counts_after_zero, filtered_taxa_ids_before_ilr;
+                basis = ilr_basis_name,
+                tree_path = adv.ilr_phylo_tree_path,
+                sbp_path = adv.ilr_sbp_matrix_path,
+                dendrogram_method = adv.ilr_balance_dendrogram_method,
+                part_weights_kind = adv.ilr_part_weights,
+                balance_weights_kind = adv.ilr_balance_weights,
+                sbp_history = adv.ilr_sbp_history,
+                removed_by_filtering = String[t for t in taxa_ids if !(t in retained_set)]
+            )
+            prepared = ilr_outcome.balances
+            filtered_taxa_ids = copy(ilr_outcome.balance_ids)
+        end
 
     elseif transform_method == "presence_absence"
         prepared = Float64.(counts_after_zero .> 0)
@@ -1235,13 +1252,16 @@ function prepare_analysis_table(
         checks["scaling"] = Scaling.factor_checks(scaling)
         append!(warnings, scaling.warnings)
     end
-    if transform_method == "ilr"
+    if transform_method == "ilr" && isnothing(ilr_outcome)
         checks["ilr"] = OrderedDict{String,Any}(
             "basis" => something(config.normalization.ilr_basis, "default"),
             "definition" => "Helmert-style sequential binary partition (balance_i = sqrt(i/(i+1)) * (mean(log(x_1..x_i)) - log(x_{i+1})))",
             "taxa_in" => length(filtered_taxa_ids_before_ilr),
             "taxa_order" => filtered_taxa_ids_before_ilr
         )
+    elseif !isnothing(ilr_outcome)
+        checks["ilr"] = ilr_outcome.checks
+        append!(warnings, ilr_outcome.warnings)
     end
     checks["all_zero_taxa"] = OrderedDict{String,Any}(
         "all_zero_taxa_indices" => all_zero_taxa_indices,
@@ -1342,6 +1362,26 @@ function prepare_analysis_table(
         @warn "Safe self-healing performed" healings=config.id banner=banner
     end
 
+    # ILR basis selection DANGER (the SBP p-hacking guard, counted with the current SBP's
+    # digest). Its own banner: it is neither a healing nor a failure, and it must not be
+    # folded into either.
+    if !isnothing(ilr_outcome) && !isempty(ilr_outcome.dangers)
+        append!(warnings, ilr_outcome.dangers)
+        ilr_banner = """
+        ╔════════════════════════════════════════════════════════════════════════════╗
+        ║  ⚠️  DANGER — ILR BASIS SELECTION  ⚠️                                     ║
+        ╠════════════════════════════════════════════════════════════════════════════╣
+        $(join(["║  - $d" for d in ilr_outcome.dangers], "\n"))
+        ║                                                                            ║
+        ║  Config ID: $(config.id)                                                   ║
+        ║  Recorded in the manifest and DOI bundle (see checks["ilr"]).              ║
+        ╚════════════════════════════════════════════════════════════════════════════╝
+        """
+        banner = isnothing(banner) ? ilr_banner : banner * "\n" * ilr_banner
+        is_dangerous_diag = true
+        @warn "ILR basis selection flagged DANGER" config_id=config.id banner=ilr_banner
+    end
+
     # Also include config dangerous banner if present
     if AnalysisConfig.is_dangerous(config)
         config_banner = AnalysisConfig.danger_banner(config)
@@ -1410,7 +1450,13 @@ function prepare_analysis_table(
             "zero_policy" => string(zero_policy),
             "pseudocount" => effective_pseudocount,
             "epsilon" => effective_epsilon,
-            "scaling" => isnothing(scaling) ? nothing : Scaling.factor_provenance(scaling)
+            "scaling" => isnothing(scaling) ? nothing : Scaling.factor_provenance(scaling),
+            # ILR basis provenance (issue #20): basis, SHA-256 of the tree or SBP file,
+            # dendrogram method, weights, SBP attempt count, pruned tips, balance-id rule.
+            "ilr" => transform_method != "ilr" ? nothing :
+                     !isnothing(ilr_outcome) ? ilr_outcome.provenance :
+                     OrderedDict{String,Any}("basis" => "default", "source_sha256" => nothing,
+                                             "balance_id_rule" => "balance_1..balance_(D-1), Helmert order")
         )
     )
 
