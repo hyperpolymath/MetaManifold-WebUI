@@ -266,6 +266,11 @@ docs/*
 !docs/owner-review-2026-09-25.md
 !docs/integration/
 !docs/integration/**
+!docs/triage/
+!docs/triage/**
+# …but the generated PR-#7 stack patches are derived artefacts: regenerate
+# with docs/triage/pr7-split/make-stacks.sh instead of committing them.
+docs/triage/pr7-split/patches/*.patch
 
 # Test + benchmark run artifacts (not the committed fixtures/baselines)
 frontend/tests/results/
