@@ -274,6 +274,11 @@ lint:
 hygiene: spdx format lint
     @echo "hygiene: OK"
 
+# Agda proof gate (docs/formal/verification-plan.md): guard, type-check,
+# negative controls. Honours AGDA=... and AGDA_STDLIB_LIB=... overrides.
+proofs:
+    ./scripts/check-proofs.sh
+
 # Lint a commit message against the canonical format (default: HEAD).
 commit-check msg="":
     #!/usr/bin/env bash

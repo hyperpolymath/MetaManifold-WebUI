@@ -162,6 +162,40 @@ jobs:
           fi
           echo "commit convention ok: $count non-merge commit(s) graded in $range"
 
+  # Agda proof gate for the compositional transforms (issues #20, #21); scope,
+  # layering and residue are in docs/formal/verification-plan.md. The toolchain
+  # is the estate's pin (epistemic-types, residual-evidence-types): Debian 13
+  # packages agda-bin 2.6.4.3-1+b2 and agda-stdlib 2.1-4, installed from the
+  # signed Debian archive rather than a downloaded binary. The same script runs
+  # locally with AGDA=... AGDA_STDLIB_LIB=... overrides.
+  proofs:
+    name: Proofs (Agda)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container: debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+    permissions:
+      contents: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - name: Install the pinned Agda toolchain (Debian archive)
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y ca-certificates git \
+            agda-bin=2.6.4.3-1+b2 agda-stdlib=2.1-4
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Guard, type-check, negative controls
+        run: |
+          test "$(agda --version)" = 'Agda version 2.6.4.3'
+          AGDA_STDLIB_LIB=$(dpkg -L agda-stdlib | grep 'standard-library\.agda-lib$' | head -1)
+          export AGDA_STDLIB_LIB
+          bash scripts/check-proofs.sh
+
   test:
     # The name is a fixed string, it carries no version, and the job has NO matrix.
     # Both are required, and the first without the second is a trap that has already

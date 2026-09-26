@@ -1,0 +1,4 @@
+name: metamanifold-proofs
+depend: standard-library
+include: .
+flags: --safe --without-K

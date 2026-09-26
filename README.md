@@ -541,6 +541,7 @@ clean checkout (`frontend/`):
 | Licence headers | `scripts/check-spdx.sh` | gated |
 | Formatting | `scripts/check-format.sh` | gated |
 | Lint (tsc semantics + shell) | `scripts/check-lint.sh` | gated |
+| Agda proofs (ILR bases, compositions) | `scripts/check-proofs.sh` | gated (`proofs` job) |
 
 CI runs the same gates (see `.github/workflows/ci.yml`: repo-hygiene job,
 then the pinned Julia and frontend jobs). Contributor setup, commit and
