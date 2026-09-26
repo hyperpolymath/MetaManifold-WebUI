@@ -41,7 +41,7 @@ bun test                    # unit + integration batteries (no DOM lane)
 bun run bench/              # benchmark harness (informational)
 bun run check               # all three in sequence — must be green
 
-# Full application (requires Julia + R/renv per README.md § Prerequisites)
+# Full application (requires Julia + R/renv per README.adoc § Quick start)
 ./install.sh                # upstream flow
 ./start.sh
 ```

@@ -1,0 +1,268 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Joshua Benjamin Jewell; 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= MetaManifold
+:toc: preamble
+:toc-title: Contents
+:icons: font
+:doctype: article
+
+// ── Licensing ───────────────────────────────────────────────────────────────────────
+image:https://img.shields.io/badge/Code-AGPL--3.0-blue.svg?logo=gnu[Code licence: AGPL-3.0,link="LICENSE"]
+image:https://img.shields.io/badge/Docs-CC--BY--SA--4.0-blue.svg?logo=creativecommons[Docs licence: CC-BY-SA-4.0,link="https://creativecommons.org/licenses/by-sa/4.0/"]
+// ── Toolchain ───────────────────────────────────────────────────────────────────────
+image:https://img.shields.io/badge/Julia-1.12.5-9558B2?logo=julia[Julia 1.12.5,link="https://julialang.org"]
+image:https://img.shields.io/badge/R-%E2%89%A54.0-276DC3?logo=r[R at least 4.0,link="https://www.r-project.org"]
+image:https://img.shields.io/badge/Bun-1.3.10-F9F1E1?logo=bun[Bun 1.3.10,link="https://bun.sh"]
+// ── Continuous integration ──────────────────────────────────────────────────────────
+image:https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/ci.yml/badge.svg[CI,link="https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/ci.yml"]
+
+Amplicon metabarcoding from raw paired-end Illumina reads to filtered,
+taxonomy-annotated ASV/OTU tables — orchestrated by one Julia engine,
+driven from one browser workbench, and increasingly explicit about what its
+statistics can and cannot claim.
+
+For researchers who need reproducible microbiome analysis (clinical
+parasitology, environmental eDNA, teaching datasets) and for the
+professionals who run those analyses as a service.
+
+[NOTE]
+.OpenSSF badges are planned, not claimed
+====
+The estate's README standard asks for OpenSSF Best Practices and Scorecard
+badges on public repositories. MetaManifold is not enrolled yet; the badges
+will appear here on the day enrolment does, not before.
+====
+
+== The design in three layers
+
+MetaManifold is three designs stacked honestly on top of each other. Each
+layer is still visible in the code; none of them pretends to be the whole
+story. (The full lineage, with file-level receipts, is
+link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Design-Progression[in the wiki].)
+
+=== Layer 1 — the base design: R and Python around DADA2
+
+The scientific core is the established open-source pipeline as it is used
+*raw*, without us: DADA2 in R for exact sequence variants, and the
+swarm/vsearch shell tradition (Fred's metabarcoding pipeline) for OTUs.
+Before MetaManifold, a lab ran these as separate scripts and stitched the
+tables by hand.
+
+[source]
+----
+  R scripts (DADA2 tutorial lineage)        Shell / Python (swarm pipeline lineage)
+  ──────────────────────────────────        ────────────────────────────────────────
+  filterAndTrim()                           cutadapt — primer trimming
+  learnErrors()                             vsearch --fastq_mergepairs — merge
+  dada()            ── ASVs ──              swarm -d 1           ── OTU clusters
+  mergePairs()                              vsearch --uchime_denovo — chimera filter
+  makeSequenceTable()                       vsearch --usearch_global — taxonomy
+  removeBimeraDenovo()
+  assignTaxonomy()
+        │                                        │
+        └──────── counts + taxonomy ─────────────┘
+                spreadsheets, ad-hoc glue, no shared provenance
+----
+
+*In place since the beginning:* DADA2 denoising and taxonomy (R, pinned by
+`renv.lock`), swarm clustering, vsearch alignment. *Never ours to change:* the
+science of these tools. This fork tracks application changes; it does not fork
+the science.
+
+=== Layer 2 — the MetaManifold augmentation (JoshuaJewell's design)
+
+The origin design wraps those raw lanes in one configurable Julia
+orchestrator and one web UI. Both lanes run side by side per run; their
+tables merge into a per-run DuckDB store the browser can query.
+
+[source]
+----
+  data/{study}/[{group}/]{run}/*.fastq.gz
+          │
+     cutadapt · primer trimming
+          │
+          ├─── DADA2 ASV lane ────────────────┬─── SWARM OTU lane ──────────────┐
+          │   filter & trim → learn errors →  │   merge pairs → dereplicate →  │
+          │   denoise → merge pairs →         │   cluster (swarm) →            │
+          │   length filter → chimera cull →  │   chimera filter →             │
+          │   taxonomy assign* → cd-hit-est*  │   vsearch taxonomy             │
+          │   → vsearch*                      │                                │
+          └───────────────┬───────────────────┴───────────────┬────────────────┘
+                          │                                   │
+                    merge_taxa; join tables; apply filters    │
+                          │                                   │
+                          └────────► DuckDB results store ◄───┘
+                                           │
+              Oxygen.jl REST + SSE ◄───────┴───────► React SPA workbench
+              (config cascade, runs & jobs, QC, results explorer,
+               annotation & curation, composition views)
+----
+
+*In place (layer 2):* the parallel ASV/OTU pipelines; the configuration
+cascade (instance → study → group → run, merged to `run_config.yml` as
+provenance); primer/database/composition editors in the UI; the results
+explorer with saved filter presets and Excel export; the functional
+annotation layer with dual-classifier consensus, contamination tagging and a
+FuncDB ledger; live job progress over server-sent events; remote (SSH)
+offload of the memory-heavy taxonomy step. *Coming at this layer:* the
+Julia-authored Stipple UI migration and standalone offline release archives
+(link:docs/migration/STATUS.md[migration status]).
+
+=== Layer 3 — the steps this fork adds (hyperpolymath, 2026-09)
+
+The fork's contribution is a discipline of honesty and typing around the
+science layer 2 runs: statistics that compute real estimates or refuse;
+numbers that never claim more precision than they carry; a typed frontend
+estate; and an engineering harness that keeps every claim checkable.
+
+[source]
+----
+  JoshuaJewell's MetaManifold (layer 2)
+          │
+          ├── typed stages & a strict TypeScript estate ──── src/core/types.jl,
+          │                                                  frontend/src/types/
+          ├── tests, benchmarks, CI gates ────────────────── test/, frontend/tests/,
+          │                                                  bench/, .github/workflows/
+          ├── AnalysisConfig v1 ──────────────────────────── src/analysis/AnalysisConfig.jl
+          │       (NB-GLM, CLR/ILR + LM, logistic; BH mandatory; DANGER banner)
+          ├── real estimation or explicit refusal ────────── src/analysis/estimation.jl
+          │       (MASS::glm.nb / lm / glm fits with identifiability,
+          │        convergence and boundary reporting)
+          ├── exact counts & rationals ───────────────────── src/analysis/numeric_policy.jl,
+          │                                                  src/analysis/exact_summaries.jl
+          ├── exact TSS/CSS/RSS offsets, no substitutions ── src/analysis/scaling.jl
+          └── epistemic receipts & refusals as results ───── src/core/epistemic.jl
+          ▼
+  where this is heading (tracked, not promised as present)
+          ├── exact tests (Fisher, exact NB, permutation) ──── issue #3  [COMING]
+          ├── compositional methods (ANCOM-BC, ALDEx2, …) ──── issue #5  [COMING]
+          ├── occupancy · ordination · PhILR/SBP · zeros ───── issues #17–21 [COMING]
+          ├── CladeCumulus & Full Evidence Mode ────────────── issues #6–7 [COMING, scaffolded]
+          ├── Zenodo DOI minting ───────────────────────────── issue #8  [COMING]
+          └── symbolic formula engine ──────────────────────── issue #2  [BLOCKED
+                until the numeric layer has passed independent review]
+----
+
+*In place (layer 3):* placeholder statistics were removed and guarded
+against by test; maximum-likelihood fits (or explicit unsuccessful states)
+published under method conditions written *before* implementation
+(link:docs/statistics[method catalogue]); an exact/approximate/rounded
+numeric policy where higher precision is never sold as exactness; exact
+TSS/CSS/RSS offsets with refusals instead of silent substitutions; zero-depth
+samples healed before transforms; 0 TypeScript errors under strict +
+`exactOptionalPropertyTypes`; pinned toolchains (`mise` + Guix lanes) with
+sha256-pinned pipeline tools. *Coming and blocked items are listed as exactly
+that*, on the
+link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Status-and-Roadmap[Status and Roadmap]
+page of the wiki.
+
+The layers nest — that is the whole picture:
+
+[source]
+----
+┌─ Layer 3 · verified statistics, typed estate, engineering gates ─────────────────┐
+│ ┌─ Layer 2 · Julia orchestrator + WebUI: both lanes, DuckDB, config cascade ──┐ │
+│ │ ┌─ Layer 1 · base design: raw DADA2 (R) + swarm/vsearch (shell) pipelines ─┐│ │
+│ │ │       raw FASTQs → denoise or cluster → taxonomy → count tables          ││ │
+│ │ └──────────────────────────────────────────────────────────────────────────┘│ │
+│ └─────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────┘
+----
+
+== What it does today
+
+* One run takes raw paired-end FASTQs to chimera-filtered, taxonomy-annotated
+  ASV **and** OTU tables, with per-stage read accounting and QC (FastQC/MultiQC
+  plus DADA2 diagnostics) embedded in the UI.
+* Analysis on request, per run and across runs: alpha diversity with
+  significance testing that reports its status rather than degrading quietly,
+  taxonomic composition bars, organism composition categories (protozoa,
+  helminths, fungi, host, …), taxon overlap (Euler/UpSet), NMDS and PERMANOVA
+  via the locked R runtime, pipeline-stage read summaries.
+* Analysis configuration is typed and validated (`AnalysisConfig`): negative
+  binomial GLM, CLR/ILR linear models, logistic models — each with explicit
+  constraints, convergence and boundary reporting, or a refusal. Benjamini–
+  Hochberg correction is mandatory wherever several tests are reported.
+* Normalisation as honest bookkeeping: none, rarefaction, or exact
+  TSS/CSS/RSS size-factor **offsets** (depth modelled, response unchanged) —
+  never silently swapped for relative abundances.
+* Functional annotation with dual-classifier consensus (DADA2 bootstrap ×
+  vsearch identity), contamination curation, manual BLAST override, and an
+  append-only FuncDB ledger that survives re-annotation.
+* Everything at a run's configuration is editable in the browser at every
+  cascade level; stale stages are flagged with the exact keys that changed.
+
+[NOTE]
+.Planned — tracked, not claimed
+====
+Exact statistical tests (issue #3) · compositional methods such as ANCOM-BC
+and ALDEx2 (issue #5) · occupancy and zero-inflated models, constrained
+ordinations, PhILR/SBP ILR bases, advanced zero handling (issues #17–21) ·
+CladeCumulus phylogenetic explorer and Full Evidence Mode (issues #6–7) ·
+Zenodo DOI minting (issue #8) · a symbolic formula engine (issue #2, formally
+**blocked** pending independent statistical validation of the numeric layer).
+The wiki's link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Status-and-Roadmap[Status and Roadmap]
+page carries the complete board.
+====
+
+== Quick start
+
+[source,bash]
+----
+git clone https://github.com/hyperpolymath/MetaManifold-WebUI.git
+cd MetaManifold-WebUI
+bash install.sh          # Julia + R deps, sha256-pinned pipeline tools
+bash start.sh            # builds the frontend on first run, serves on :8080
+----
+
+Put paired-end `.fastq.gz` files under `data/MyProject/run_A/` (Illumina
+naming), open `http://localhost:8080`, create a study and launch a run.
+Bundled sample data: `data/MiSeq_SOP/` (the mothur MiSeq SOP set).
+
+Toolchain of record: `mise.toml` (Julia 1.12.5, Bun 1.3.10, Node 20.20.2,
+just 1.43.1) with a Guix peer lane (`guix.scm` + `channels.scm`); R is a
+documented system exception restored byte-pinned by `renv.lock`. From a clean
+checkout, `just ci` runs every gate that CI runs.
+
+Wondering how this works? See link:EXPLAINME.adoc[].
+
+== Repository layout
+
+[cols="1,3", options="header"]
+|===
+| Path | What lives there
+
+| `src/pipeline/` | Stage implementations: cutadapt, DADA2 (R bridge), swarm, vsearch, cd-hit-est, merge_taxa — typed results, freshness-based skipping.
+| `src/analysis/` | Diversity, estimation, exact summaries, numeric policy, scaling/offsets, AnalysisConfig, chart builders.
+| `src/core/` | Config cascade, DuckDB store, provenance, epistemic statuses, R runtime bridge, validation.
+| `src/server/` | Oxygen.jl REST API + SSE job stream (`routes/`).
+| `frontend/` | TypeScript + React + Vite SPA (strict-typed estate; tests and benches alongside).
+| `ui/` | The opt-in Stipple/Vue UI migration slice (legacy React app remains default).
+| `config/` | Defaults, schemas, primers, databases, composition filters, CI fixtures. Per-study/run overrides live under `data/`, `projects/`.
+| `docs/` | Statistics method catalogue and conditions, type-system notes, compliance and migration records.
+| `docs/wikis/` | Source of the GitHub wiki (BerryWiki page format); synced to `MetaManifold-WebUI.wiki.git`.
+| `test/`, `bench/`, `frontend/tests/` | Julia tests, benchmark lanes with baselines, frontend unit/integration/e2e lanes.
+| `Justfile`, `install.sh`, `start.sh` | Every task is a `just` recipe; the two shell entry points above.
+|===
+
+== Documentation
+
+* link:EXPLAINME.adoc[EXPLAINME] — receipts: every claim here mapped to code, with caveats.
+* link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki[The project wiki] — the long-form documentation, in three audiences: *users* (with separate tracks for academics and lab professionals), *platform maintainers* (operator and repo-steward tracks), and *developers*, plus the deep dives this README deliberately does not attempt.
+* link:docs/statistics/method-catalogue-v1.md[method catalogue] and link:docs/statistics/method-conditions/[method conditions] — what each statistical method accepts, computes, and refuses.
+* link:docs/reproducibility.md[Reproducibility] — toolchain source of truth; link:docs/compliance/[compliance records] — RSR and standards alignment.
+* link:CONTRIBUTING.md[Contributing] · link:SECURITY.md[Security] · link:ROADMAP.md[Roadmap] · link:CHANGELOG.md[Changelog] · link:CITATION.cff[Citing this work]
+
+== Licence
+
+Source code is licensed under the GNU Affero General Public License v3.0 —
+see link:LICENSE[license]; upstream-authored files carry `AGPL-3.0-only`
+headers and fork-authored files `MPL-2.0`/`CC-BY-SA-4.0` per the estate
+licence policy, all summarised in link:NOTICE[notice].
+This documentation (README.adoc) is licensed under CC BY-SA 4.0.
+Pipeline tools are orchestrated, not vendored; each retains its own licence —
+see the third-party note in link:NOTICE[notice].
+
+Copyright © 2026 Joshua Benjamin Jewell (origin design) and the
+hyperpolymath fork authors. Full attribution, including the DADA2 tutorial
+(CC BY 4.0) and Fred's metabarcoding pipeline lineages, is in link:NOTICE[notice].

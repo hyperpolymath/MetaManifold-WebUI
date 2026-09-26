@@ -12,6 +12,34 @@ types, tests, infrastructure, and alignment.
 
 ## [Unreleased]
 
+### Added — the README/EXPLAINME pair, the wiki, and the autolink specification (2026-09-26)
+
+- **`README.adoc` replaces `README.md`**, per the estate README/EXPLAINME authoring
+  standard (`standards:docs/README-EXPLAINME-STANDARD.adoc`). The README is now the
+  three-layer design history — base R/Python design around raw DADA2, the origin
+  MetaManifold augmentation (JoshuaJewell), and the fork's honesty/typing steps — with
+  diagrammatic progression and shipped/planned markers throughout. The configuration
+  chapters moved to the wiki (they made the README unreadable); the third-party tools
+  table and acknowledgements moved into `NOTICE` (their natural home).
+- **`EXPLAINME.adoc`** (new): the receipts file — claim→implementation→caveat map over
+  every README claim, the dogfooding table, known gaps as CAUTION blocks, and an
+  evidence index. The type-theory/enhanced-statistics deep material deliberately lives
+  in the wiki; EXPLAINME cross-references it rather than re-deriving it.
+- **The GitHub wiki is now the full BerryWiki-format documentation**
+  (`metadatastician/berrywiki` page format: hidden metadata blocks, generated
+  `_Sidebar.md`), sourced from `docs/wikis/` and synced to `MetaManifold-WebUI.wiki.git`:
+  three audience sections (users — with academics and lab-professional tracks; platform
+  maintainers — operator and steward tracks; developers), seven deep dives (design
+  progression, type theory meets statistics, exact arithmetic, maximum likelihood and
+  refusals, compositional statistics and offsets, epistemic status, advanced
+  functionality), and a Status-and-Roadmap board marking everything IN PLACE / PARTIAL /
+  COMING / BLOCKED.
+- **`docs/integration/autolink-references.md`** (new): the complete elaboration of the
+  repository's Settings → Autolink references set (lineage/estate, upstream tools,
+  toolchain, registries), paste-ready and machine-readable, with reserved/omitted cases
+  reasoned. Application in Settings needs Administration permission (one human pass);
+  the file is the source of truth for it.
+
 ### Fixed — the NB test fixture is data a negative binomial describes (2026-09-26)
 
 - The estimation tests' synthetic table was **under-dispersed** (variance below the mean,
