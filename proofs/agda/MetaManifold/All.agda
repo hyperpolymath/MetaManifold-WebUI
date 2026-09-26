@@ -20,3 +20,12 @@ import MetaManifold.ILR.Invariance
 import MetaManifold.ILR.Orthonormal
 import MetaManifold.ILR.Comb
 import MetaManifold.ILR.Integer
+
+-- Issue #7: Evidence Mode — candidate semantics, the signed finite model,
+-- and the decision procedures the server routes and residual explorer run.
+import MetaManifold.Evidence.Prelude
+import MetaManifold.Evidence.Residual
+import MetaManifold.Evidence.Echo
+import MetaManifold.Evidence.Warrant
+import MetaManifold.Evidence.Signed
+import MetaManifold.Evidence.Decision
