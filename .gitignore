@@ -266,6 +266,8 @@ docs/*
 !docs/owner-review-2026-09-25.md
 !docs/integration/
 !docs/integration/**
+!docs/wikis/
+!docs/wikis/**
 !docs/formal/
 !docs/formal/**
 !docs/triage/
