@@ -88,6 +88,7 @@ module Server
     include(joinpath(@__DIR__, "routes", "analysis.jl"))
     include(joinpath(@__DIR__, "routes", "composition.jl"))
     include(joinpath(@__DIR__, "routes", "analysis_config.jl"))
+    include(joinpath(@__DIR__, "routes", "doi.jl"))
 
     ## R-runtime busy middleware
     # The embedded R interpreter is shared between the pipeline and the analysis
@@ -115,15 +116,17 @@ module Server
                 # Same-origin request - no CORS headers needed
                 return next(req)
             end
-            # Only allow localhost origins
+            # Same-origin proxy/preview deployments are permitted. Split remote
+            # deployments must name their public origin explicitly; this is not
+            # an authentication mechanism for exposing the local backend.
             origin_url = try HTTP.URIs.URI(origin) catch; nothing end
-            if isnothing(origin_url) || !(lowercase(origin_url.host) in ("localhost", "127.0.0.1", "::1"))
+            if !_doi_same_origin(req) && (isnothing(origin_url) || !(lowercase(origin_url.host) in ("localhost", "127.0.0.1", "::1")))
                 return HTTP.Response(403, "Forbidden: non-localhost origin")
             end
             cors_headers = [
                 "Access-Control-Allow-Origin"  => origin,
                 "Access-Control-Allow-Methods" => "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-                "Access-Control-Allow-Headers" => "Content-Type",
+                "Access-Control-Allow-Headers" => "Content-Type, X-DOI-CSRF",
             ]
             # Handle preflight
             if req.method == "OPTIONS"
@@ -155,6 +158,10 @@ module Server
             # rest may be {run}/... or {group}/{run}/... (group paths have an extra segment)
             m = match(r"^/files/([^/]+)/runs/(.+)$", uri)
             if !isnothing(m)
+                # Private analysis/publication journals are not generic run files.
+                # They are available only through the explicit DOI API allowlist.
+                segments = split(replace(HTTP.URIs.unescapeuri(m[2]), '\\' => '/'), '/')
+                any(segment -> startswith(segment, "."), segments) && return HTTP.Response(403, "Private application state")
                 candidate = abspath(joinpath(ServerState.projects_dir(), HTTP.URIs.unescapeuri(m[1]), HTTP.URIs.unescapeuri(m[2])))
                 isfile(candidate) || return HTTP.Response(404, "File not found")
                 full     = realpath(candidate)
