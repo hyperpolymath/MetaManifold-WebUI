@@ -47,7 +47,16 @@
     :max-features 0
     :min-samples-per-group 3
     :robust #f
-    :acknowledgment-token "")
+    :acknowledgment-token ""
+    ;; ILR basis inputs (issue #20): each non-default ilr-basis requires its own input and
+    ;; forbids the others'; file existence is checked at run time. Provenance records the
+    ;; SHA-256 of the tree / SBP file and the dendrogram method.
+    :ilr-phylo-tree-path ""
+    :ilr-sbp-matrix-path ""
+    :ilr-balance-dendrogram-method ""
+    :ilr-part-weights "uniform"
+    :ilr-balance-weights "uniform"
+    :ilr-sbp-history ())
 
   (provenance
     :id "00000000-0000-0000-0000-000000000000"
@@ -85,5 +94,6 @@
 ;; ;; ║  Config ID: 00000000-0000-0000-0000-000000000000                         ║
 ;; ;; ║  If you are writing a paper, you MUST disclose these overrides in Methods║
 ;; ;; ╚════════════════════════════════════════════════════════════════════════════╝
-;; Deferred features: multinomial/DM, occupancy, constrained ordinations, ILR basis phylogenetic/SBP, glmGamPoi/Bayesian multiplicative — see docs/issues/milestone3/
-;; Implemented since this template was written: TSS/CSS/RSS offsets (issue #16), src/analysis/scaling.jl.
+;; Deferred features: multinomial/DM, occupancy, constrained ordinations, glmGamPoi/Bayesian multiplicative — see docs/issues/milestone3/
+;; Implemented since this template was written: TSS/CSS/RSS offsets (issue #16), src/analysis/scaling.jl;
+;; ILR bases phylogenetic (PhILR) / sequential binary partition / balance dendrogram (issue #20), src/analysis/ilr_basis.jl.

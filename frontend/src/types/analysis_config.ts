@@ -11,6 +11,19 @@ export type ZeroPolicy = 'pseudocount' | 'multiplicative_replacement' | 'bayesia
 
 export type NormalizationMethod = 'none' | 'rarefy' | 'relative' | 'size_factors' | 'clr' | 'ilr' | 'presence_absence' | 'TSS' | 'CSS' | 'RSS' | 'tss' | 'css' | 'rss'
 
+// ILR bases (issue #20). Conditions, refusals and evidence:
+// docs/statistics/method-conditions/ilr-bases.md. Mirrors AnalysisConfig.jl.
+export const ILR_BASES = ['default', 'phylogenetic', 'sequential_binary_partition', 'balance_dendrogram'] as const
+export type IlrBasis = typeof ILR_BASES[number]
+export const ILR_PART_WEIGHTS = ['uniform', 'gm_counts', 'anorm', 'enorm', 'anorm_x_gm_counts', 'enorm_x_gm_counts'] as const
+export type IlrPartWeights = typeof ILR_PART_WEIGHTS[number]
+export const ILR_BALANCE_WEIGHTS = ['uniform', 'blw', 'blw_sqrt', 'mean_descendants'] as const
+export type IlrBalanceWeights = typeof ILR_BALANCE_WEIGHTS[number]
+export const ILR_DENDROGRAM_METHODS = ['ward', 'complete', 'average'] as const
+export type IlrDendrogramMethod = typeof ILR_DENDROGRAM_METHODS[number]
+/** More than this many distinct SBP matrices (history plus the current one) raises the DANGER banner. */
+export const ILR_SBP_ATTEMPT_DANGER_THRESHOLD = 3
+
 export interface NormalizationConfig {
   method: NormalizationMethod
   pseudocount: number
@@ -50,6 +63,14 @@ export interface AdvancedConfig {
   min_samples_per_group: number
   robust: boolean
   acknowledgment_token?: string | null
+  // ILR basis inputs (issue #20). Optional so that configurations written before them
+  // still type-check; absent means unset / 'uniform' / [] exactly as in the backend.
+  ilr_phylo_tree_path?: string | null
+  ilr_sbp_matrix_path?: string | null
+  ilr_balance_dendrogram_method?: IlrDendrogramMethod | null
+  ilr_part_weights?: IlrPartWeights
+  ilr_balance_weights?: IlrBalanceWeights
+  ilr_sbp_history?: string[]
 }
 
 // Backwards compatibility alias — old tests and lowercase file use AdvancedOverrides
@@ -96,6 +117,113 @@ export const DANGER_ACK_TOKEN = 'I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH'
 
 export const SCHEMA_VERSION = '1.0.0'
 
+const ILR_PATH_FORBIDDEN = /["\n\r\0[\]{}`;$]/
+
+function ilrSet(value: string | null | undefined): boolean {
+  return value !== undefined && value !== null && value.trim() !== ''
+}
+
+/** The ILR basis in force: the normalization's, or 'default' when unset. */
+export function ilrBasisOf(config: AnalysisConfig): IlrBasis {
+  const b = config.normalization.ilr_basis
+  return (ILR_BASES as readonly string[]).includes(b ?? '') ? (b as IlrBasis) : 'default'
+}
+
+/** Distinct SBP matrices recorded as tried (the run adds the current file's digest). */
+export function ilrSbpAttempts(advanced: AdvancedConfig): number {
+  return new Set((advanced.ilr_sbp_history ?? []).map(h => h.trim().toLowerCase())).size
+}
+
+/**
+ * The ILR basis-input contract — the same table as `_validate_ilr_inputs` in
+ * AnalysisConfig.jl, the JSON schema's allOf rules and Nickel IlrBasisInputsContract:
+ * each non-default basis requires its own input and forbids the others'. File
+ * existence is checked by the run, not here.
+ */
+export function ilrInputProblems(config: AnalysisConfig): ValidationError[] {
+  const a = config.advanced
+  const problems: ValidationError[] = []
+  const push = (field: string, message: string) => problems.push({ field, message, help: contextHelp(field) })
+  for (const [field, value] of [['advanced.ilr_phylo_tree_path', a.ilr_phylo_tree_path], ['advanced.ilr_sbp_matrix_path', a.ilr_sbp_matrix_path]] as const) {
+    if (value !== undefined && value !== null && value.trim() === '') push(field, `${field} is empty — give the path of the file, or leave the field unset.`)
+    else if (ilrSet(value) && ILR_PATH_FORBIDDEN.test(value as string)) push(field, `${field} contains a character that is not allowed in a path here (quote, newline, NUL, brackets, backtick, ';' or '$').`)
+  }
+  const partW = a.ilr_part_weights ?? 'uniform'
+  const balW = a.ilr_balance_weights ?? 'uniform'
+  const history = a.ilr_sbp_history ?? []
+  for (const h of history) {
+    if (!/^[0-9a-f]{64}$/.test(h.trim().toLowerCase())) push('advanced.ilr_sbp_history', `advanced.ilr_sbp_history entries must be SHA-256 hex digests (64 hex characters) — got '${h}'.`)
+  }
+  if (config.normalization.method !== 'ilr') {
+    const fields: Array<[string, boolean]> = [
+      ['advanced.ilr_phylo_tree_path', ilrSet(a.ilr_phylo_tree_path)],
+      ['advanced.ilr_sbp_matrix_path', ilrSet(a.ilr_sbp_matrix_path)],
+      ['advanced.ilr_balance_dendrogram_method', ilrSet(a.ilr_balance_dendrogram_method)],
+      ['advanced.ilr_part_weights', partW !== 'uniform'],
+      ['advanced.ilr_balance_weights', balW !== 'uniform'],
+      ['advanced.ilr_sbp_history', history.length > 0],
+    ]
+    for (const [field, set] of fields) {
+      if (set) push(field, `${field} only meaningful for the ILR transform (normalization.method = '${config.normalization.method}').`)
+    }
+    return problems
+  }
+  const basis = ilrBasisOf(config)
+  const pairs: Array<[string, IlrBasis, boolean]> = [
+    ['advanced.ilr_phylo_tree_path', 'phylogenetic', ilrSet(a.ilr_phylo_tree_path)],
+    ['advanced.ilr_sbp_matrix_path', 'sequential_binary_partition', ilrSet(a.ilr_sbp_matrix_path)],
+    ['advanced.ilr_balance_dendrogram_method', 'balance_dendrogram', ilrSet(a.ilr_balance_dendrogram_method)],
+  ]
+  for (const [field, wanted, set] of pairs) {
+    if (basis === wanted && !set) push(field, `normalization.ilr_basis = '${wanted}' requires ${field}.`)
+    if (basis !== wanted && set) push(field, `${field} is only used by ilr_basis = '${wanted}', but ilr_basis is '${basis}'. Refusing an input that would be silently ignored.`)
+  }
+  if (basis === 'default' && partW !== 'uniform') push('advanced.ilr_part_weights', `advanced.ilr_part_weights = '${partW}' needs a phylogenetic, sequential_binary_partition or balance_dendrogram basis: the default Helmert basis is unweighted.`)
+  if (basis !== 'phylogenetic' && balW !== 'uniform') push('advanced.ilr_balance_weights', `advanced.ilr_balance_weights = '${balW}' needs branch lengths, which only ilr_basis = 'phylogenetic' has.`)
+  if (basis !== 'sequential_binary_partition' && history.length > 0) push('advanced.ilr_sbp_history', `advanced.ilr_sbp_history is only used by ilr_basis = 'sequential_binary_partition'.`)
+  return problems
+}
+
+/**
+ * Switch the ILR basis explicitly. Inputs that belong to other bases are cleared (they
+ * would otherwise be refused as silently ignored); the new basis's required input is
+ * left unset for the user to supply — nothing is chosen for them.
+ */
+export function withIlrBasis(config: AnalysisConfig, basis: IlrBasis): AnalysisConfig {
+  const a = config.advanced
+  return {
+    ...config,
+    normalization: { ...config.normalization, ilr_basis: basis },
+    advanced: {
+      ...a,
+      ilr_phylo_tree_path: basis === 'phylogenetic' ? (a.ilr_phylo_tree_path ?? null) : null,
+      ilr_sbp_matrix_path: basis === 'sequential_binary_partition' ? (a.ilr_sbp_matrix_path ?? null) : null,
+      ilr_balance_dendrogram_method: basis === 'balance_dendrogram' ? (a.ilr_balance_dendrogram_method ?? null) : null,
+      ilr_part_weights: basis === 'default' ? 'uniform' : (a.ilr_part_weights ?? 'uniform'),
+      ilr_balance_weights: basis === 'phylogenetic' ? (a.ilr_balance_weights ?? 'uniform') : 'uniform',
+      ilr_sbp_history: basis === 'sequential_binary_partition' ? (a.ilr_sbp_history ?? []) : [],
+    },
+  }
+}
+
+/** Clear every ILR basis input (used when the normalization stops being ILR). */
+export function withoutIlrInputs(advanced: AdvancedConfig): AdvancedConfig {
+  return {
+    ...advanced,
+    ilr_phylo_tree_path: null,
+    ilr_sbp_matrix_path: null,
+    ilr_balance_dendrogram_method: null,
+    ilr_part_weights: 'uniform',
+    ilr_balance_weights: 'uniform',
+    ilr_sbp_history: [],
+  }
+}
+
+function sbpGuardTripped(config: AnalysisConfig): boolean {
+  return config.normalization.method === 'ilr' && ilrBasisOf(config) === 'sequential_binary_partition' &&
+    ilrSbpAttempts(config.advanced) > ILR_SBP_ATTEMPT_DANGER_THRESHOLD
+}
+
 /** Report whether the current fields match a client-recognised risky configuration. */
 export function isDangerous(config: AnalysisConfig): boolean {
   if (config.correction.allow_no_correction) return true
@@ -103,6 +231,7 @@ export function isDangerous(config: AnalysisConfig): boolean {
   if (config.normalization.zero_policy === 'refuse') return true
   if (config.normalization.method === 'rarefy' && config.method === 'nb_glm') return true
   if (config.advanced.min_samples_per_group < 3) return true
+  if (sbpGuardTripped(config)) return true
   return false
 }
 
@@ -121,6 +250,9 @@ export function dangerBanner(config: AnalysisConfig): string | null {
   }
   if (config.normalization.method === 'rarefy' && config.method === 'nb_glm') {
     reasons.push(`rarefy + NB_GLM — rarefy discards data and NB_GLM already handles library size via size_factors — combining is questionable`)
+  }
+  if (sbpGuardTripped(config)) {
+    reasons.push(`SBP p-hacking guard — ${ilrSbpAttempts(config.advanced)} distinct SBP matrices recorded as tried (more than ${ILR_SBP_ATTEMPT_DANGER_THRESHOLD}); choosing a partition after seeing results is a forking-paths problem BH cannot correct. Report every SBP tried.`)
   }
   return `
 ╔════════════════════════════════════════════════════════════════════════════╗
@@ -264,6 +396,47 @@ Microbiome data tests thousands of taxa. Uncorrected p-values give ~5% false pos
 See JSON schema and Nickel CorrectionContract, and danger_banner().
 
 Scientific value: Prevents p-hacking and false discoveries. See Benjamini & Hochberg 1995.
+`,
+    'normalization.ilr_basis': `ILR basis (only for ILR, meaningless otherwise). Every basis gives D-1 orthonormal balances; one test per balance, Benjamini-Hochberg across balances is mandatory.
+
+- default: Helmert sequential binary partition (balance i = taxa 1..i against taxon i+1). Unchanged; the new engine reproduces it exactly (Agda: comb-is-helmert).
+- phylogenetic: PhILR (Silverman et al. 2017, eLife 6:e21887). Needs advanced.ilr_phylo_tree_path, a ROOTED, strictly BIFURCATING Newick tree whose tips are the taxon ids. Unrooted trees and polytomies are refused, never resolved; tips that are not retained taxa are pruned.
+- sequential_binary_partition: a user-defined SBP (Egozcue & Pawlowsky-Glahn 2005, Math. Geol. 37:795-828). Needs advanced.ilr_sbp_matrix_path (CSV: taxa rows, balance columns, entries 1/-1/0). More than 3 distinct SBPs tried raises the DANGER banner.
+- balance_dendrogram: clusters parts on the variation matrix Var(log(x_i/x_j)) and uses the dendrogram as the SBP (Pawlowsky-Glahn, Egozcue & Tolosana-Delgado 2015, Modeling and Analysis of Compositional Data, Wiley). Needs advanced.ilr_balance_dendrogram_method. Data-derived basis: recorded as such.
+
+See docs/statistics/method-conditions/ilr-bases.md, the JSON schema and Nickel IlrBasisInputsContract.
+`,
+    'advanced.ilr_phylo_tree_path': `Newick tree for ilr_basis = 'phylogenetic' (required then, refused otherwise).
+
+- Tip labels must equal taxon ids exactly (no case folding or underscore/space rewriting; quote labels with spaces).
+- Must be rooted: a basal trifurcation is how FastTree, IQ-TREE and RAxML write UNROOTED trees — root it in a phylogenetics tool first.
+- Must be strictly bifurcating: polytomies are refused, never resolved at random.
+- Extra tips are pruned; retained taxa missing from the tree are refused.
+- The file's SHA-256 is recorded in the provenance. Relative paths resolve against the working directory of the run.
+
+Silverman et al. (2017) eLife 6:e21887.
+`,
+    'advanced.ilr_sbp_matrix_path': `SBP CSV for ilr_basis = 'sequential_binary_partition' (required then, refused otherwise).
+
+- First column: taxon ids (exactly the retained taxa). Other columns: one per balance, header = balance id, entries 1 (numerator), -1 (denominator), 0 (not involved).
+- D taxa need exactly D-1 columns; the first partition involves every taxon and each later one splits a group made by an earlier one (Egozcue & Pawlowsky-Glahn 2005).
+- Each failure names the column and the taxa. The file's SHA-256 is recorded; add it to advanced.ilr_sbp_history if you try another SBP.
+`,
+    'advanced.ilr_balance_dendrogram_method': `Clustering for ilr_basis = 'balance_dendrogram' (required then, refused otherwise): ward (R's ward.D2), complete or average, applied to the variation matrix with R's hclust algorithm — as robCompositions::clustCoDa_qmode with the classical variation. Needs at least 2 samples.
+
+The basis is chosen from the data it is then used to test; this is recorded. Pawlowsky-Glahn, Egozcue & Tolosana-Delgado (2015).
+`,
+    'advanced.ilr_part_weights': `Part weights for a non-default ILR basis (philr's part.weights): uniform (default), gm_counts, anorm, enorm, anorm_x_gm_counts, enorm_x_gm_counts.
+
+Non-uniform weights give the weighted ILR of Silverman et al. (2017) — orthonormal in the weighted Aitchison geometry — computed from the zero-handled table itself (recorded). Refused for the default basis.
+`,
+    'advanced.ilr_balance_weights': `Balance weights for ilr_basis = 'phylogenetic' only (philr's ilr.weights): uniform (default), blw, blw_sqrt, mean_descendants. They need branch lengths.
+
+A balance weight multiplies a balance by a constant: effect sizes change, per-balance test statistics do not, and the coordinates stop being isometric (recorded). Zero-length tip edges are replaced by the smallest non-zero edge, as in philr.
+`,
+    'advanced.ilr_sbp_history': `SHA-256 digests of SBP files tried earlier in this project (ilr_basis = 'sequential_binary_partition' only).
+
+The run counts distinct SBPs including the current one; more than 3 raises the DANGER banner. Trying partitions until one 'works' is a forking-paths problem BH cannot correct. The count is disclosed, not refused: pre-register the SBP.
 `,
     'advanced.pseudocount': `Custom pseudocount (advanced, behind Advanced Analysis, hidden unless Evidence Mode)
 

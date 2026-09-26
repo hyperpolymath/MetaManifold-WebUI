@@ -50,6 +50,8 @@ include("analysis/estimation.jl")
 # response is and which offset it gets, and Scaling computes both under the conditions
 # published in docs/statistics/method-conditions/scaling-and-offsets.md.
 include("analysis/scaling.jl")
+# ILR bases (issue #20): phylogenetic, SBP, balance dendrogram. Before Execution, which uses it.
+include("analysis/ilr_basis.jl")
 include("analysis/Execution.jl")
 
 end

@@ -12,6 +12,39 @@ types, tests, infrastructure, and alignment.
 
 ## [Unreleased]
 
+### Added — the three deferred ILR bases are implemented, with proofs (#20, 2026-09-26)
+
+- **`phylogenetic` (PhILR), `sequential_binary_partition` and `balance_dendrogram`** are
+  computed, no longer refused (`DEFERRED_ILR_BASIS` is now empty; it stays, so a future
+  basis can be deferred the same way). `src/analysis/ilr_basis.jl` is one engine for all
+  three: each basis is a rooted binary tree, and balances are clade sums in one post-order
+  pass, `O(D)` per sample, with no dense basis matrix. Pure Julia; no new dependency.
+- **Inputs and contracts.** `advanced.ilr_phylo_tree_path`, `ilr_sbp_matrix_path`,
+  `ilr_balance_dendrogram_method` (plus philr's part/balance weights and the SBP history)
+  are identical in the Julia validator, the Nickel contract, the JSON schema, DEED and the
+  frontend: each basis requires its input and refuses the others'. Configurations that
+  use none of them hash exactly as before; the default Helmert balances are byte-identical.
+- **Validity is refused, not repaired.** Trees must be rooted, bifurcating and cover the
+  retained taxa (tips outside them are pruned and recorded); an SBP must be the SBP of a
+  binary tree (Egozcue & Pawlowsky-Glahn 2005), over exactly the retained taxa.
+- **Provenance and guards.** Each run records the tree or SBP SHA-256, the dendrogram
+  method, the weights and the balance-id rule. More than 3 distinct SBPs tried in a project
+  raises a DANGER (p-hacking guard). BH stays mandatory.
+- **Evidence.** Known answers; an independent Julia reference
+  (`test/fixtures/ilr/ilr_reference.jl`) that recomputes all 17 committed expectations
+  (philr, `compositions::ilr`, R `hclust`) every run; R cross-checks where philr,
+  compositions and robCompositions are installed; negative controls. The balance algebra
+  (contrast sums, orthonormality, injectivity with its positive-weight hypothesis, scale
+  and perturbation invariance, comb = Helmert, SBP validity) is proved in Agda
+  (`proofs/agda/`, new `proofs` CI job) and mapped to the tests in
+  `docs/formal/verification-plan.md`. The conditions document is
+  `docs/statistics/method-conditions/ilr-bases.md`.
+- **Benchmarks.** `bench/ilr_bases/benchmark.jl` (100 / 1 000 / 10 000 taxa; warns over
+  5 minutes or 1 GiB) and a pull-request gate that fails when CLR or default ILR allocate
+  or run more than 10 % worse than the base commit on the same runner.
+- **Removed** the Python fixture generator: Python is not permitted by the estate language
+  policy; the Julia reference replaces it (`docs/compliance/standards-alignment.md`).
+
 ### Fixed — the NB test fixture is data a negative binomial describes (2026-09-26)
 
 - The estimation tests' synthetic table was **under-dispersed** (variance below the mean,
