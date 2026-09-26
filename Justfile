@@ -596,3 +596,41 @@ reanchor:
 # Re-anchor but STOP at every conflict for hands-on resolution.
 reanchor-manual:
     @{{REANCHOR}} run --policy manual --keep
+
+# ----------------------------------------------------------------------- #
+# Formal verification — Agda proofs for the validated statistics layer
+#
+# Issue #1 requires the numeric core to be validated, not merely tested.  These
+# recipes wrap `proofs/bootstrap.sh`, which pins Agda 2.7.0.1 and agda-stdlib
+# 3.0 and refuses to pass when the prover is missing.  `just proofs` is the whole
+# gate: install if needed, audit for escape hatches, type-check every module.
+# See proofs/PROOF-STATUS.md for what is proved and proofs/residue/ for what is
+# explicitly not.
+# ----------------------------------------------------------------------- #
+
+# Bootstrap the pinned Agda toolchain into proofs/.vendor (no checking).
+proofs-bootstrap:
+    @proofs/bootstrap.sh --bootstrap
+
+# The whole proof gate: axiom audit + type-check of MetaManifold.All.
+proofs:
+    @proofs/bootstrap.sh
+
+# Type-check only; fails loudly if the toolchain has not been bootstrapped.
+proofs-check:
+    @proofs/bootstrap.sh --check
+
+# Audit for postulates, FFI, unsound flags, holes, and unreachable modules.
+proofs-audit:
+    @proofs/tests/axiom-audit.sh
+
+# Prove the gate can fail: nine deliberate breakages, each must be rejected.
+# A gate whose self-test is skipped is a gate nobody can trust, so `just ci`
+# runs this too.
+proofs-selftest:
+    @proofs/tests/gate-selftest.sh
+
+# Remove the vendored toolchain (proofs/.vendor) and Agda's interface cache.
+proofs-clean:
+    @rm -rf proofs/.vendor proofs/agda/_build proofs/agda/MetaManifold/*.agdai
+    @echo "proofs: cleaned"
