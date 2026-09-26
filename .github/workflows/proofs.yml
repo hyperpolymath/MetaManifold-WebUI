@@ -1,0 +1,122 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: Proofs
+
+# The formal-verification gate for issue #1.
+#
+# Design rules, all of which are here because the alternative is a gate that lies:
+#
+#   * An absent prover is a FAILURE, never a skip.  `proofs/bootstrap.sh` exits
+#     non-zero if it cannot install Agda.  There is no `if: always()` escape and
+#     no `continue-on-error`.
+#   * The self-test runs on every push.  A gate that has never been observed to
+#     reject anything is not evidence, so `proofs/tests/gate-selftest.sh` breaks
+#     the proofs on purpose in nine ways and requires each to be rejected.
+#   * The axiom audit runs as its own step, so a failure says which check failed
+#     rather than "the proofs job failed".
+#   * The type-check output is uploaded as an artifact whether it passed or not,
+#     because "it passed" and "it printed warnings nobody read" look identical in
+#     a green tick.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proofs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  agda:
+    name: Agda proofs (2.7.0.1 / stdlib 3.0)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache the vendored toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            proofs/.vendor
+            ~/.agda
+          key: agda-2.7.0.1-stdlib-v3.0-${{ hashFiles('proofs/agda/**/*.agda', 'proofs/agda/*.agda-lib') }}
+          restore-keys: agda-2.7.0.1-stdlib-v3.0-
+
+      - name: Bootstrap the prover
+        run: proofs/bootstrap.sh --bootstrap
+
+      - name: Axiom audit (postulates, FFI, unsound flags, holes, reachability)
+        run: proofs/tests/axiom-audit.sh
+
+      - name: Type-check every proof module
+        run: |
+          set -o pipefail
+          proofs/bootstrap.sh --check 2>&1 | tee proofs-typecheck.log
+          # A clean run prints nothing but the harness lines.  Any Agda warning
+          # is treated as a failure here rather than being left in the log.
+          if grep -qE '^(warning|Warning)' proofs-typecheck.log; then
+            echo "::error::Agda emitted warnings"
+            grep -nE '^(warning|Warning)' proofs-typecheck.log
+            exit 1
+          fi
+
+      - name: Gate self-test (nine deliberate breakages must be rejected)
+        run: proofs/tests/gate-selftest.sh
+
+      - name: Upload the type-check transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agda-typecheck-transcript
+          path: proofs-typecheck.log
+          if-no-files-found: error
+
+  # The proof status document is a claim about the tree.  This job checks the
+  # claims that are mechanically checkable, so PROOF-STATUS.md cannot drift away
+  # from what the modules actually contain.
+  status-consistency:
+    name: PROOF-STATUS.md matches the tree
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every module is listed, and every listed module exists
+        run: |
+          set -euo pipefail
+          fail=0
+          # Every .agda module under proofs/agda/MetaManifold must appear in the
+          # status document, and every `MetaManifold.X` named in the document
+          # must exist on disk.
+          for f in proofs/agda/MetaManifold/*.agda; do
+            mod="$(basename "$f" .agda)"
+            if ! grep -q "MetaManifold.$mod" proofs/PROOF-STATUS.md; then
+              echo "::error::PROOF-STATUS.md does not mention MetaManifold.$mod"
+              fail=1
+            fi
+          done
+          for named in $(grep -oE 'MetaManifold\.[A-Za-z]+' proofs/PROOF-STATUS.md | sort -u); do
+            path="proofs/agda/${named//./\/}.agda"
+            if [[ ! -f "$path" ]]; then
+              echo "::error::PROOF-STATUS.md names $named but $path does not exist"
+              fail=1
+            fi
+          done
+          # Residue files referenced by the document must exist.
+          for r in $(grep -oE '[a-z-]+\.residue' proofs/PROOF-STATUS.md | sort -u); do
+            if [[ ! -f "proofs/residue/$r" ]]; then
+              echo "::error::PROOF-STATUS.md references proofs/residue/$r, which is missing"
+              fail=1
+            fi
+          done
+          exit $fail

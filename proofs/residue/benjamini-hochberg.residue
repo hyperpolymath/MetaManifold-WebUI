@@ -1,0 +1,52 @@
+# Residue — Benjamini–Hochberg scaling
+#
+# See exact-counts.residue for the format and for what this file is for.
+
+R-BH-1
+  statement: |
+    ∀ M j n d → 0ℚᵘ ≤ℚ bhScale M j (+ n) d
+    (the scaled value of a non-negative p-value is non-negative)
+  status: OPEN
+  why: |
+    `+ M * + n` does not reduce to `+ (M ℕ.* n)`; `ℤ._*_` unfolds to a
+    sign-times-absolute-value form, and the non-negativity lemmas in
+    `Data.Integer.Properties` (`*-monoʳ-≤-nonNeg`, `*-monoˡ-≤-nonNeg`) are stated
+    about the reduced form.  Two attempts were made — one via
+    `ℤ.+≤+ z≤n` directly, one via `*-zeroʳ` plus `*-monoʳ-≤-nonNeg` — and both
+    failed on exactly that mismatch.
+  impact: LOW.  A negative q-value would need a negative p-value numerator, and
+    p-value numerators are counts.
+  closes-with: |
+    A transport through `ℤₚ.◃-+`/`sign` lemmas, or restating the goal with the
+    numerator written as `+ (M ℕ.* n)` and transporting the `bhScale` definition.
+
+R-BH-2
+  statement: |
+    The BH step-down envelope: `q_i = min over j ≥ i of bhScale M j p_j`,
+    monotone-enforced so that adjusted values are non-decreasing in rank.
+  status: NOT ATTEMPTED
+  why: |
+    `ℚᵘ` has no `⊓` lemmas in the standard library — there is no `x⊓y≤x` for the
+    unnormalised rationals — so a minimum has to be built from `≤-total` and then
+    have its two projection properties proved by hand.  That is a real chunk of
+    work and it was cut to keep this change reviewable.
+  impact: |
+    MEDIUM.  What IS proved is the per-rank scaling step, which is the part that
+    can silently go wrong through floating-point drift.  The envelope is a
+    `min` over proved-correct values.
+  closes-with: |
+    `minℚ : ℚᵘ → ℚᵘ → ℚᵘ` defined by case analysis on `≤-total`, with
+    `minℚ-≤ˡ`/`minℚ-≤ʳ` proved from it, then a fold with a monotonicity
+    invariant.  Also note: `q_i ≥ p_i` is FALSE in general and must not be
+    attempted — it holds only when `M/(j+1) ≥ 1`.
+
+R-BH-3
+  statement: |
+    That the q-values produced by this scaling control the false discovery rate
+    at the nominal level.
+  status: OUT OF SCOPE (see out-of-scope.residue)
+  why: |
+    FDR control is a theorem about a probability measure over a sampling model.
+    This development is about exact rational arithmetic, not about measure
+    theory.  Claiming FDR control from these lemmas would be the single worst
+    thing this directory could assert.
