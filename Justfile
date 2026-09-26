@@ -271,13 +271,41 @@ lint:
     ./scripts/check-lint.sh
 
 # All hygiene gates together.
-hygiene: spdx format lint
+hygiene: spdx format lint check-kyaml
     @echo "hygiene: OK"
 
 # Agda proof gate (docs/formal/verification-plan.md): guard, type-check,
 # negative controls. Honours AGDA=... and AGDA_STDLIB_LIB=... overrides.
 proofs:
     ./scripts/check-proofs.sh
+
+# ----------------------------------------------------------------------- #
+# YAML <-> KYAML (pilot: docs/pilots/kyaml-pilot.md)
+#
+# Authority: hyperpolymath/standards 3-practice/YAML-POLICY.adoc, rules Y-2 and
+# Y-3, owner ruling 2026-09-26 making this repository the pilot. YAML is
+# deprecated here but stays first-class until KYAML has proven itself: these two
+# recipes are the switch, and `git revert` of the pilot commit is the byte-exact
+# way back.
+# ----------------------------------------------------------------------- #
+
+# Rewrite this repository's YAML as KYAML (the target authoring dialect).
+use-kyaml:
+    {{JULIA_CMD}} --project=no --startup-file=no scripts/kyaml/KYAML.jl --to-kyaml
+
+# Rewrite it back as ordinary block-style YAML.
+use-yaml:
+    {{JULIA_CMD}} --project=no --startup-file=no scripts/kyaml/KYAML.jl --to-yaml
+
+# Gate: every non-exempt YAML file is canonical KYAML (config/kyaml/drift.txt
+# names the bot-owned exceptions, with reasons).
+check-kyaml:
+    {{JULIA_CMD}} --project=no --startup-file=no scripts/kyaml/KYAML.jl --check
+
+# What would switching either way do? Nothing is written; decisions are printed.
+kyaml-report:
+    {{JULIA_CMD}} --project=no --startup-file=no scripts/kyaml/KYAML.jl --to-kyaml --report
+
 
 # Lint a commit message against the canonical format (default: HEAD).
 commit-check msg="":
@@ -397,7 +425,7 @@ check:
     cd frontend && bun run check
 
 # Every green gate, in CI order. This is the 'am I safe to push?' recipe.
-ci: spdx format lint typecheck test bench
+ci: spdx format lint check-kyaml typecheck test bench
     @echo "ci: ALL GATES GREEN"
 
 # Full local CI including the production bundle (sandbox-RAM hostile).

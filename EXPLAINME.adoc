@@ -432,3 +432,38 @@ This document is licensed under CC BY-SA 4.0. Code receipts point at
 AGPL-3.0-only / MPL-2.0 sources per link:NOTICE[NOTICE].
 
 SPDX-License-Identifier: CC-BY-SA-4.0
+
+
+== Language and format rulings (2026-09-26)
+
+Nothing in this file is a receipt yet — these are rulings, recorded where a reader will
+find them before they wonder why something is written the way it is.
+
+**Julia is the default language for everything we can put in it**: analysis, configuration,
+gates, benchmarks, glue. Two standing exceptions:
+
+* **The dada2 pipeline itself.** The original R/dada2 pipeline is the one the field trusts.
+  It is not rewritten, wrapped into another language, or "modernised" for tidiness; new
+  analysis work happens in Julia around it.
+* **The TypeScript view, for now.** The marid project will eventually move the view without a
+  detour through Genie. That is a plan, not a task, and no action is taken here for it;
+  recorded so the next reader does not mistake the TS surface for a decision never revisited.
+
+Banned languages in the estate (`standards :: 3-practice/LANGUAGE-POLICY.adoc`) are banned
+here too: no new Python, no Makefiles. Nothing in this repository is generated or checked by a
+banned language.
+
+**This repository is the estate's KYAML pilot** (owner ruling, 2026-09-26;
+`docs/pilots/kyaml-pilot.md`). YAML here is deprecated but stays first-class until KYAML has
+proven itself, and the switch goes both ways:
+
+[source,shell]
+----
+just use-kyaml     # write the tree as KYAML (the target dialect)
+just use-yaml      # write it back as block-style YAML
+just check-kyaml   # the gate: every non-exempt file is canonical KYAML
+----
+
+`git revert` of the pilot commit is the byte-exact way back. The migration itself is one
+command, run where Julia is; the gate lands in the same commit as the conversion so it is
+never red for a reason unrelated to the change under review.

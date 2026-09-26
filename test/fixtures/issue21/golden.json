@@ -1,0 +1,566 @@
+{
+  "dispersion": {
+    "counts": [
+      [
+        12.0,
+        14.0,
+        9.0,
+        13.0,
+        11.0,
+        15.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0,
+        2.0,
+        0.0,
+        1.0
+      ],
+      [
+        40.0,
+        38.0,
+        45.0,
+        41.0,
+        39.0,
+        43.0
+      ],
+      [
+        3.0,
+        9.0,
+        4.0,
+        11.0,
+        5.0,
+        12.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    ],
+    "cox_reid_adjustment": true,
+    "design": [
+      [
+        1.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.0
+      ],
+      [
+        1.0,
+        1.0
+      ],
+      [
+        1.0,
+        1.0
+      ],
+      [
+        1.0,
+        1.0
+      ]
+    ],
+    "dispersion_trend": [
+      0.11783777423164521,
+      0.11783777423164521,
+      0.11783777423164521,
+      0.11783777423164521,
+      0.11783777423164521
+    ],
+    "expected_refusals": {
+      "abundance_trend_true": "refused (spline trend not ported)",
+      "all_counts_zero_feature_index": 4,
+      "features_at_or_above_100": "refused unless glmgampoi_abundance_trend=false"
+    },
+    "gene_means": [
+      12.5,
+      1.0000000000000002,
+      42.00000000000001,
+      7.5,
+      1e-06
+    ],
+    "means": [
+      [
+        12.0,
+        12.0,
+        12.0,
+        13.0,
+        13.0,
+        13.0
+      ],
+      [
+        0.8,
+        0.8,
+        0.8,
+        1.2000000000000002,
+        1.2000000000000002,
+        1.2000000000000002
+      ],
+      [
+        41.00000000000001,
+        41.00000000000001,
+        41.00000000000001,
+        43.0,
+        43.0,
+        43.0
+      ],
+      [
+        6.0,
+        6.0,
+        6.0,
+        9.000000000000002,
+        9.000000000000002,
+        9.000000000000002
+      ],
+      [
+        1e-06,
+        1e-06,
+        1e-06,
+        1e-06,
+        1e-06,
+        1e-06
+      ]
+    ],
+    "ql_df0": 89.37836593389258,
+    "ql_disp_estimate": [
+      0.4043717147076737,
+      2.1175411788162632,
+      0.16809020813516468,
+      1.0,
+      0.9999998821622397
+    ],
+    "ql_disp_shrunken": [
+      0.8952132114588625,
+      0.9685993516841662,
+      0.885091744705427,
+      0.920727827369533,
+      0.9207278223217787
+    ],
+    "raw_mle": [
+      0.0,
+      1.3670675181718255,
+      0.0,
+      0.11783777423164521,
+      0.0
+    ],
+    "reference": "glmGamPoi (Ahlmann-Eltze & Huber 2020)",
+    "residual_df": 4.0,
+    "theta_used_by_the_fit": [
+      8.48624311279168,
+      8.48624311279168,
+      8.48624311279168,
+      8.48624311279168,
+      8.48624311279168
+    ]
+  },
+  "generator": {
+    "purpose": "Independent transcription of the published methods that the module is checked against. It is not a reference implementation from the field, and it is not part of the module under test.",
+    "how_derived": "Every number here was computed 2026-09-26 by an out-of-band transcription of the published methods (Martin-Fernandez et al. 2003 and 2015 for the replacements, Ahlmann-Eltze & Huber 2020 / const-ae/glmGamPoi for the dispersion pipeline). That transcription is deliberately NOT committed: LANGUAGE-POLICY.adoc section 3 bans Python for new work estate-wide, so no gate, test or generator may depend on it. test/reference/issue21_reference.jl re-derives these numbers in Julia and asserts them; it is written to a different algorithm on purpose (grid search refined by the secant method where the module uses the reference's Newton and Nelder-Mead steps, and SpecialFunctions.jl's gamma functions where the module hand-rolls them), so agreement is evidence and not a tautology. Until that file lands on this branch, these values are a pinned expectation, not a reproduced result, and the fixture must not be described as checked.",
+    "arithmetic_check": "The closed-form entries are checkable by hand. Multiplicative replacement, delta = 0.65, detection limits [10, 20, 20, 30]: est = 0.65 * dl = [6.5, 13, 13, 19.5], sum(est) = 52, adjustment = 1 - 52/100 = 0.48, so the two zeros become 13/0.48 = 27.0833... and 19.5/0.48 = 40.625, and the observed parts are scaled by 0.48. The Bayesian sample-3 row [26.1, 13, 34.8, 26.1] is 261/10, 13, 174/5, 261/10, which sums to exactly 100: the counts returned are the closed table times the sample total.",
+    "not_a_field_reference": "Neither zCompositions nor glmGamPoi is installed in the sandbox that produced these values, so they catch transcription slips and do not catch a shared misreading of the source. The comparisons against R's cmultRepl and glmGamPoi live in test/unit/test_zero_replacement.jl and test/unit/test_dispersion.jl and run where those packages exist."
+  },
+  "zero_replacement": {
+    "bayesian_multiplicative": {
+      "adjust": true,
+      "capped_imputations": 0,
+      "counts": [
+        [
+          10.0,
+          0.0,
+          30.0,
+          40.0
+        ],
+        [
+          20.0,
+          50.0,
+          0.0,
+          30.0
+        ],
+        [
+          30.0,
+          20.0,
+          40.0,
+          0.0
+        ],
+        [
+          40.0,
+          30.0,
+          30.0,
+          30.0
+        ]
+      ],
+      "imputed_mass_per_sample": [
+        0.0,
+        0.010562071842103034,
+        0.013566555423493238,
+        0.012186588502352618
+      ],
+      "prior_concentration_per_sample": [
+        4.045533557851106,
+        4.124124305281695,
+        4.242640687119286,
+        4.234197579236933
+      ],
+      "replaced": [
+        [
+          10.0,
+          1.0562071842103034,
+          29.593003337295197,
+          39.512536459905895
+        ],
+        [
+          20.0,
+          49.47189640789485,
+          1.3566555423493238,
+          29.634402344929416
+        ],
+        [
+          30.0,
+          19.78875856315794,
+          39.45733778306027,
+          1.2186588502352618
+        ],
+        [
+          40.0,
+          29.683137844736905,
+          29.593003337295197,
+          29.634402344929416
+        ]
+      ],
+      "replaced_alpha_2": [
+        [
+          10.0,
+          0.522875816993464,
+          29.80392156862745,
+          39.76470588235295
+        ],
+        [
+          20.0,
+          49.73856209150327,
+          0.65359477124183,
+          29.823529411764703
+        ],
+        [
+          30.0,
+          19.895424836601308,
+          39.73856209150327,
+          0.5882352941176471
+        ],
+        [
+          40.0,
+          29.843137254901958,
+          29.80392156862745,
+          29.823529411764703
+        ]
+      ],
+      "replaced_prop": [
+        [
+          0.1,
+          0.010562071842103034,
+          0.295930033372952,
+          0.39512536459905895
+        ],
+        [
+          0.2,
+          0.4947189640789485,
+          0.013566555423493238,
+          0.29634402344929417
+        ],
+        [
+          0.3,
+          0.1978875856315794,
+          0.3945733778306027,
+          0.012186588502352618
+        ],
+        [
+          0.4,
+          0.29683137844736907,
+          0.295930033372952,
+          0.29634402344929417
+        ]
+      ],
+      "replaced_without_adjustment": [
+        [
+          10.0,
+          1.0562071842103034,
+          29.593003337295197,
+          39.512536459905895
+        ],
+        [
+          20.0,
+          49.47189640789485,
+          1.3566555423493238,
+          29.634402344929416
+        ],
+        [
+          30.0,
+          19.78875856315794,
+          39.45733778306027,
+          1.2186588502352618
+        ],
+        [
+          40.0,
+          29.683137844736905,
+          29.593003337295197,
+          29.634402344929416
+        ]
+      ],
+      "threshold": 0.65,
+      "total_preserved": [
+        100.0,
+        100.0,
+        99.99999999999999,
+        99.99999999999999
+      ]
+    },
+    "bayesian_multiplicative_cap": {
+      "capped": 2,
+      "counts": [
+        [
+          1000.0,
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1000.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0,
+          1000.0
+        ]
+      ],
+      "imputed_mass_per_sample": [
+        0.0006487025948103793,
+        0.0,
+        0.0006487025948103793
+      ],
+      "prior_concentration_per_sample": [
+        20.01665778456214,
+        15.88988453020168,
+        20.01665778456214
+      ],
+      "replaced_adjusted": [
+        [
+          999.3512974051896,
+          0.9999999999999999,
+          0.6493512974051896
+        ],
+        [
+          0.9993512974051896,
+          1000.0,
+          0.9993512974051896
+        ],
+        [
+          0.6493512974051896,
+          0.9999999999999999,
+          999.3512974051896
+        ]
+      ],
+      "replaced_prop_adjusted": [
+        [
+          0.9983529444607289,
+          0.000998003992015968,
+          0.0006487025948103793
+        ],
+        [
+          0.000998352944460729,
+          0.998003992015968,
+          0.000998352944460729
+        ],
+        [
+          0.0006487025948103793,
+          0.000998003992015968,
+          0.9983529444607289
+        ]
+      ],
+      "replaced_unadjusted": [
+        [
+          990.2025768663318,
+          0.9999999999999999,
+          9.807220556801902
+        ],
+        [
+          0.9902025768663316,
+          1000.0,
+          0.9902025768663316
+        ],
+        [
+          9.807220556801902,
+          0.9999999999999999,
+          990.2025768663318
+        ]
+      ],
+      "threshold": 0.65,
+      "total_preserved": [
+        1001.0,
+        1002.0,
+        1001.0
+      ]
+    },
+    "multiplicative_replacement": {
+      "counts": [
+        [
+          10.0,
+          0.0,
+          30.0,
+          40.0
+        ],
+        [
+          20.0,
+          50.0,
+          0.0,
+          30.0
+        ],
+        [
+          30.0,
+          20.0,
+          40.0,
+          0.0
+        ],
+        [
+          40.0,
+          30.0,
+          30.0,
+          30.0
+        ]
+      ],
+      "delta": 0.65,
+      "detection_limits": [
+        10.0,
+        20.0,
+        20.0,
+        30.0
+      ],
+      "imputed_mass_per_sample": [
+        0.0,
+        0.065,
+        0.13,
+        0.13
+      ],
+      "observed_scale_factor": [
+        1.0,
+        0.935,
+        0.87,
+        0.87
+      ],
+      "replaced": [
+        [
+          10.0,
+          6.5,
+          26.1,
+          34.8
+        ],
+        [
+          20.0,
+          46.75,
+          13.0,
+          26.1
+        ],
+        [
+          30.0,
+          18.700000000000003,
+          34.8,
+          13.0
+        ],
+        [
+          40.0,
+          28.05,
+          26.1,
+          26.1
+        ]
+      ],
+      "replaced_exact": [
+        [
+          [
+            10,
+            1
+          ],
+          [
+            13,
+            2
+          ],
+          [
+            261,
+            10
+          ],
+          [
+            174,
+            5
+          ]
+        ],
+        [
+          [
+            20,
+            1
+          ],
+          [
+            187,
+            4
+          ],
+          [
+            13,
+            1
+          ],
+          [
+            261,
+            10
+          ]
+        ],
+        [
+          [
+            30,
+            1
+          ],
+          [
+            187,
+            10
+          ],
+          [
+            174,
+            5
+          ],
+          [
+            13,
+            1
+          ]
+        ],
+        [
+          [
+            40,
+            1
+          ],
+          [
+            561,
+            20
+          ],
+          [
+            261,
+            10
+          ],
+          [
+            261,
+            10
+          ]
+        ]
+      ],
+      "total_preserved": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ]
+    }
+  }
+}
