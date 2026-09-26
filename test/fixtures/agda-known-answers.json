@@ -1,0 +1,128 @@
+{
+  "_provenance": {
+    "generator": "proofs/agda/MetaManifold/DecimalRounding.agda, BenjaminiHochberg.agda, PermutationTest.agda",
+    "checked_by": "agda 2.7.0.1 --safe --without-K, agda-stdlib v3.0",
+    "gate": "proofs/bootstrap.sh --check",
+    "generated": "2026-09-26",
+    "contract": "Every value in this file is a value a proof assistant has checked against a definition, not a number somebody typed into two places. The Julia conformance testset MUST reproduce these exactly. If the Julia layer and this file disagree, the Julia layer is wrong: these are the specification, and each entry names the lemma that fixes it.",
+    "do_not_edit_by_hand": "Edit the Agda module and re-run the gate. A hand-edited value here is an unchecked value."
+  },
+
+  "decimal_rounding": {
+    "_spec": "IsRounding n d s m  ==  2*n*10^s - (d+1) <= 2*m*(d+1) < 2*n*10^s + (d+1); the rational being rounded is n/(d+1), so d is denominator-minus-one. Exact halves go DOWN under this rule.",
+    "_alt_spec": "IsRoundHalfUp n d s m  ==  2*m*(d+1) - (d+1) <= 2*n*10^s < 2*m*(d+1) + (d+1); same tolerance, exact halves go UP.",
+    "vectors": [
+      {
+        "rational": "2/3",
+        "n": 2, "d": 2, "decimals": 2,
+        "scaled_integer": 67,
+        "printed": "0.67",
+        "rule": "IsRounding",
+        "lemma": "rounding-2/3-at-2dp"
+      },
+      {
+        "rational": "1/3",
+        "n": 1, "d": 2, "decimals": 2,
+        "scaled_integer": 33,
+        "printed": "0.33",
+        "rule": "IsRounding",
+        "lemma": "rounding-1/3-at-2dp"
+      },
+      {
+        "rational": "5/8",
+        "n": 5, "d": 7, "decimals": 3,
+        "scaled_integer": 625,
+        "printed": "0.625",
+        "rule": "IsRounding",
+        "lemma": "rounding-5/8-at-3dp"
+      },
+      {
+        "rational": "0/1",
+        "n": 0, "d": 0, "decimals": 2,
+        "scaled_integer": 0,
+        "printed": "0.00",
+        "rule": "IsRounding",
+        "lemma": "rounding-zero-at-2dp",
+        "note": "An exact zero rounds to zero, not to a small number that merely prints as zero."
+      },
+      {
+        "rational": "1/1",
+        "n": 1, "d": 0, "decimals": 2,
+        "scaled_integer": 100,
+        "printed": "1.00",
+        "rule": "IsRounding",
+        "lemma": "rounding-one-at-2dp",
+        "note": "Rounding must not introduce error where there is none."
+      }
+    ],
+    "tie": {
+      "_note": "The two rules differ ONLY at an exact half. Everywhere else they agree, which is what the agreement_* lemmas record.",
+      "half_at_zero_decimals": {
+        "rational": "1/2",
+        "n": 1, "d": 1, "decimals": 0,
+        "IsRounding":     { "scaled_integer": 0, "printed": "0", "lemma": "half-ties-round-down" },
+        "IsRoundHalfUp":  { "scaled_integer": 1, "printed": "1", "lemma": "half-ties-round-up" }
+      },
+      "agreement": [
+        { "rational": "2/3", "scaled_integer": 67,  "lemma": "agreement-2/3" },
+        { "rational": "1/3", "scaled_integer": 33,  "lemma": "agreement-1/3" },
+        { "rational": "5/8", "scaled_integer": 625, "lemma": "agreement-5/8" },
+        { "rational": "1/1", "scaled_integer": 100, "lemma": "agreement-one" }
+      ]
+    }
+  },
+
+  "benjamini_hochberg": {
+    "_spec": "bhScale M j n d = mkQ (+ M * n) (j + d + j*d), i.e. (M/(j+1)) * (n/(d+1)). Numerator and denominator are fixed by bhScale-numerator and bhScale-denominator; the denominator stored is (j+1)(d+1) - 1.",
+    "vectors": [
+      {
+        "family_size": 10, "rank0": 0, "p_numerator": 1, "p_denominator_minus_one": 99,
+        "q_numerator": 10, "q_denominator": 100, "q": "1/10",
+        "note": "Rank 0 of 10 tests scales p=0.01 by 10/1."
+      },
+      {
+        "family_size": 10, "rank0": 9, "p_numerator": 5, "p_denominator_minus_one": 19,
+        "q_numerator": 50, "q_denominator": 200, "q": "1/4",
+        "note": "Rank 9 of 10 tests scales p=0.25 by 10/10 = 1."
+      }
+    ],
+    "properties": [
+      "monotone-in-family-size: M <= M' implies bhScale M j n d <= bhScale M' j n d, for non-negative n. Adding tests never makes a q-value smaller."
+    ]
+  },
+
+  "permutation_test": {
+    "_spec": "pValue b B = (b+1)/(B+1); the naive estimator it replaces is b/B, which is a refusal at B=0 and exactly zero at b=0.",
+    "vectors": [
+      { "b": 0, "B": 999, "p_numerator": 1,   "p_denominator": 1000, "p": "1/1000", "lemma": "resolution-is-one-over-B+1" },
+      { "b": 0, "B": 99,  "p_numerator": 1,   "p_denominator": 100,  "p": "1/100",  "lemma": "resolution-is-one-over-B+1" },
+      { "b": 5, "B": 99,  "p_numerator": 6,   "p_denominator": 100,  "p": "3/50",   "lemma": "pValue" }
+    ],
+    "properties": [
+      "never-reports-zero: 0 < pValue b B for every b and B. p = 0 is unprintable by construction, not by convention.",
+      "at-most-one: b <= B implies pValue b B <= 1.",
+      "monotone-in-extremes: b <= b' implies pValue b B <= pValue b' B.",
+      "naive-estimator-can-report-zero: the replaced estimator really does return exactly zero at b=0 (negative control)."
+    ]
+  },
+
+  "proportions": {
+    "_spec": "relativeAbundance c t = c/t exactly, or a named refusal, with refusals checked in the order the Julia layer checks them.",
+    "properties": [
+      "proportions-sum-to-one: exact proportions of a sample sum to exactly 1, with no rounding in the chain.",
+      "zero-total-is-refused: relativeAbundance 0 0 refuses as zeroTotal.",
+      "zero-total-with-count-is-refused-as-exceeding: relativeAbundance (suc c) 0 refuses as countExceedsTotal, NOT zeroTotal, because count <= total is checked first. A test written from the docstring would expect the other.",
+      "value-has-nonzero-denominator: a returned proportion never has a zero denominator."
+    ]
+  },
+
+  "exact_counts": {
+    "_spec": "Fits k v == -2^k <= v < 2^k. checkedAdd returns the true sum if it still fits, otherwise refused overflow. There is no branch in which a wrapped value escapes.",
+    "properties": [
+      "checkedAdd-is-exact: a returned value is the true sum; never a plausible-looking wrong total.",
+      "checkedAdd-never-refuses-a-sum-that-fits: the guard is not so cautious that it refuses valid work.",
+      "checkedAdd-refuses-exactly-when-it-must: it refuses precisely when the sum leaves the range.",
+      "checkedSumOf-is-exact: if a table's counts sum without overflowing, the reported total is the sum of the counts."
+    ]
+  }
+}

@@ -596,3 +596,32 @@ reanchor:
 # Re-anchor but STOP at every conflict for hands-on resolution.
 reanchor-manual:
     @{{REANCHOR}} run --policy manual --keep
+
+# ----------------------------------------------------------------------- #
+# Formal verification — Agda bootstrap, gate and self-test controls
+#
+# Issue #1 requires the numeric core to be validated, not merely tested. These
+# recipes wrap `proofs/bootstrap.sh` and the self-tests.
+# ----------------------------------------------------------------------- #
+
+# Bootstrap the pinned Agda toolchain into proofs/.vendor (no checking).
+proofs-bootstrap:
+    @proofs/bootstrap.sh --bootstrap
+
+# Type-check only; fails loudly if the toolchain has not been bootstrapped.
+proofs-check:
+    @proofs/bootstrap.sh --check
+
+# Audit for postulates, FFI, unsound flags, holes, and unreachable modules.
+proofs-audit:
+    @proofs/tests/axiom-audit.sh
+
+# Prove the gate can fail: deliberate breakages, each must be rejected.
+proofs-selftest:
+    @proofs/tests/gate-selftest.sh
+
+# Remove the vendored toolchain (proofs/.vendor) and Agda's interface cache.
+proofs-clean:
+    @rm -rf proofs/.vendor proofs/agda/_build proofs/agda/MetaManifold/*.agdai proofs/.agda-libraries
+    @echo "proofs: cleaned"
+

@@ -29,3 +29,11 @@ import MetaManifold.Evidence.Echo
 import MetaManifold.Evidence.Warrant
 import MetaManifold.Evidence.Signed
 import MetaManifold.Evidence.Decision
+
+-- Issue #1: Validated statistics layer — numeric core formal verification.
+import MetaManifold.Prelude
+import MetaManifold.Proportions
+import MetaManifold.ExactCounts
+import MetaManifold.PermutationTest
+import MetaManifold.BenjaminiHochberg
+import MetaManifold.DecimalRounding
