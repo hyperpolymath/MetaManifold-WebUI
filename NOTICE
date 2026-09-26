@@ -29,11 +29,47 @@ unambiguous; it is not a claim of copyright ownership either way.
 ## Third-party components
 
 MetaManifold orchestrates, but does not vendor, third-party command-line
-tools (cutadapt, DADA2, SWARM, vsearch, cd-hit-est, R/vegan). Each tool
-retains its own licence; see `README.md § Third-party tools` for the
-runtime dependency list and upstream references. Frontend npm dependencies
-are declared in `frontend/package.json` / `frontend/bun.lock` under their
-own licences.
+tools. Each is fetched from its upstream source by `install.sh` and is
+subject to its own licence; no third-party binaries are included in this
+repository.
+
+| Tool | License | Source |
+|---|---|---|
+| [cutadapt](https://github.com/marcelm/cutadapt) | MIT | PyPI |
+| [FastQC](https://github.com/s-andrews/FastQC) | GPL v3 | Babraham Bioinformatics |
+| [MultiQC](https://github.com/MultiQC/MultiQC) | GPL v3 | PyPI |
+| [DADA2](https://benjjneb.github.io/dada2/) | LGPL v3 | Bioconductor |
+| [swarm](https://github.com/frederic-mahe/swarm) | GPL v3 | GitHub Releases |
+| [vsearch](https://github.com/torognes/vsearch) | GPL v3 | GitHub Releases |
+| [cd-hit](https://github.com/weizhongli/cdhit) | GPL v2+ | GitHub Releases / apt |
+
+R/vegan and the R runtime are system components under their own licences
+(GPL family). Frontend npm dependencies are declared in
+`frontend/package.json` / `frontend/bun.lock` under their own licences.
+
+## Acknowledgements and lineage
+
+This pipeline draws on the following prior work:
+
+- **Frédéric Mahé**: [Fred's metabarcoding pipeline](https://github.com/frederic-mahe/swarm/wiki/Fred's-metabarcoding-pipeline)
+  informed the overall workflow architecture, namely the sequencing of
+  primer trimming, `swarm.jl`, vsearch-based taxonomy assignment, and the
+  final table merge/filter stages.
+- **Benjamin J. Callahan _et al._**: [DADA2 tutorial](https://benjjneb.github.io/dada2/tutorial.html),
+  used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), on
+  which `dada2.jl` and its modules are based.
+
+The following colleagues at the **Department of Parasitology, Charles
+University** (Faculty of Science, BIOCEV, Vestec, Czech Republic)
+contributed to this work:
+
+- **Mgr. Jiří Novák** (supervisor): scripts from which several modules and
+  configurations were adapted.
+- **doc. Mgr. Vladimír Hampl**: provided laboratory access and resources.
+- **Mgr. Paulína Pristašová**: <3.
+
+Copyright © 2026 Joshua Benjamin Jewell (origin design) and the
+hyperpolymath fork authors.
 
 ## Notices required by AGPL-3.0
 

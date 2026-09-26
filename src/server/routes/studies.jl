@@ -225,9 +225,11 @@ end
         "Study '$new_name' already exists")
     _study_has_active_jobs(study) && return json_error(409, "jobs_active",
         "Study '$study' has active jobs - wait for them to finish before renaming")
-    _safe_move(joinpath(ServerState.data_dir(),     study), joinpath(ServerState.data_dir(),     new_name))
-    _safe_move(joinpath(ServerState.projects_dir(), study), joinpath(ServerState.projects_dir(), new_name))
-    json(_study_data(new_name))
+    _doi_protect_study_mutation(study) do
+        _safe_move(joinpath(ServerState.data_dir(),     study), joinpath(ServerState.data_dir(),     new_name))
+        _safe_move(joinpath(ServerState.projects_dir(), study), joinpath(ServerState.projects_dir(), new_name))
+        json(_study_data(new_name))
+    end
 end
 
 @delete "/api/v1/studies/{study}" function(req, study::String)
@@ -235,9 +237,11 @@ end
                                                      "Study '$study' not found")
     _study_has_active_jobs(study) && return json_error(409, "jobs_active",
         "Study '$study' has active jobs - wait for them to finish before deleting")
-    rm(joinpath(ServerState.data_dir(),     study); recursive=true, force=true)
-    rm(joinpath(ServerState.projects_dir(), study); recursive=true, force=true)
-    json((; deleted=study))
+    _doi_protect_study_mutation(study) do
+        rm(joinpath(ServerState.data_dir(),     study); recursive=true, force=true)
+        rm(joinpath(ServerState.projects_dir(), study); recursive=true, force=true)
+        json((; deleted=study))
+    end
 end
 
 ## Group management

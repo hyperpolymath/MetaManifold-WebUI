@@ -1,0 +1,469 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+= MetaManifold — EXPLAINME
+:toc: preamble
+:toc-title: Contents
+:icons: font
+:doctype: article
+
+This is the receipts file: every factual claim in link:README.adoc[README.adoc]
+mapped to the code that implements it, with the honest caveat attached. It is
+written for the sceptical developer or reviewer doing due diligence after the
+README has interested them. The mathematics and type theory behind the
+statistical layer are *not* re-derived here — they run to pages, so they live
+in the link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki[project wiki]
+and this file points at them. README sells; this file proves; the wiki teaches.
+
+== Claim-to-implementation map
+
+=== "MetaManifold is three designs stacked honestly on top of each other."
+
+[quote, README.adoc]
+____
+MetaManifold is three designs stacked honestly on top of each other. Each
+layer is still visible in the code; none of them pretends to be the whole
+story.
+____
+
+How this is implemented::
+Layer 1 (raw R/DADA2 + shell/swarm-vsearch) survives as the R bridge in
+`src/pipeline/dada2/dada2_functions.r` and the external-tool stages in
+`src/pipeline/{swarm,vsearch,tools}.jl`. Layer 2 (the orchestration and
+web workbench) is `src/core/config.jl`, `src/core/duckdb_store.jl`,
+`src/server/`, `frontend/`. Layer 3 (the honesty and typing discipline) is
+`src/analysis/{estimation,exact_summaries,numeric_policy,scaling,AnalysisConfig}.jl`
+plus `src/core/epistemic.jl` and the `test/`, `bench/`, CI estate. The
+lineage boundaries are recorded in link:NOTICE[NOTICE] and the full visual
+progression is
+link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Design-Progression[Deep-Dives — Design Progression].
+
+Caveat::
+"Stacked honestly" is a claim about presentation as much as code: the
+cutadapt/DADA2/vsearch semantics remain upstream's, and this fork tracks
+application changes, not the science (link:ROADMAP.md[Roadmap], "Out of
+scope").
+
+=== "One run takes raw paired-end FASTQs to chimera-filtered, taxonomy-annotated ASV *and* OTU tables"
+
+[quote, README.adoc]
+____
+One run takes raw paired-end FASTQs to chimera-filtered, taxonomy-annotated
+ASV **and** OTU tables, with per-stage read accounting and QC (FastQC/MultiQC
+plus DADA2 diagnostics) embedded in the UI.
+____
+
+How this is implemented::
+Typed stage results (`TrimmedReads`, `ASVResult`, `OTUResult`,
+`TaxonomyHits`, `MergedTables`) in `src/core/types.jl`; stage bodies in
+`src/pipeline/`; per-stage counts land in `pipeline_stats.csv`; QC endpoints
+in `src/server/routes/` feed the MultiQC report and DADA2 figures to the UI.
+Stages skip when outputs are fresh (mtime for files, content hash for
+configuration) — `src/pipeline/pipeline freshness logic`.
+
+Caveat::
+FastQC and MultiQC were absent from CI for a while (issue #30) so prefilter
+QC was never exercised there; fixed by issue #44 with sha256-pinned installs
+(`config/defaults/tool_versions.yml`). Freshness skipping trusts mtimes for
+files — editing an output behind the engine's back is not detected.
+
+=== "Analysis configuration is typed and validated (`AnalysisConfig`)"
+
+[quote, README.adoc]
+____
+Analysis configuration is typed and validated (`AnalysisConfig`): negative
+binomial GLM, CLR/ILR linear models, logistic models — each with explicit
+constraints, convergence and boundary reporting, or a refusal. Benjamini–
+Hochberg correction is mandatory wherever several tests are reported.
+____
+
+How this is implemented::
+`src/analysis/AnalysisConfig.jl` (immutable struct mirroring the user's
+answers, Nickel schema `config/schemas/analysis_config.ncl`); fits in
+`src/analysis/estimation.jl` called through `Execution.run_analysis` — R
+`MASS::glm.nb`, `stats::lm`, `stats::glm(family=binomial)` with
+identifiability, boundary-estimate and convergence checks that produce named
+unsuccessful states instead of plausible parameters; BH via R `p.adjust`,
+mandatory, with the DANGER banner if anyone tries to disable it. Conditions
+published before implementation in
+link:docs/statistics/method-conditions/parametric-fits.md[method conditions — parametric fits].
+
+Caveat::
+[CAUTION]
+====
+There has been **no independent statistical review** of this layer. Issue
+#1 requires one before acceptance; it is outstanding. The fits are real and
+tested against R references, but "computed correctly" is not "appropriate for
+your data" — the method conditions say exactly this.
+====
+
+=== "Normalisation as honest bookkeeping … never silently swapped"
+
+[quote, README.adoc]
+____
+Normalisation as honest bookkeeping: none, rarefaction, or exact
+TSS/CSS/RSS size-factor **offsets** (depth modelled, response unchanged) —
+never silently swapped for relative abundances.
+____
+
+How this is implemented::
+`src/analysis/scaling.jl` implements scaling factors (one positive number per
+sample) and offsets (their logs, after a stated centring) per
+link:docs/statistics/method-conditions/scaling-and-offsets.md[scaling-and-offsets conditions];
+unknown or aliased methods are refused, lower-case method names compare
+correctly (issue #62), offsets are wired into the fits (issue #62/61), and
+zero-depth samples are healed before any transform (issue #58). Regression
+tests assert the substitutions cannot return.
+
+Caveat::
+Offsets are a depth-modelling device, not a compositional solution — the
+conditions document says so explicitly. CSS without `metagenomeSeq` is a
+repo-local implementation of the idea; treat equivalence to the original
+package as unreviewed (covered by the same #1 caution).
+
+=== "an exact/approximate/rounded numeric policy where higher precision is never sold as exactness"
+
+[quote, README.adoc]
+____
+an exact/approximate/rounded numeric policy where higher precision is never
+sold as exactness
+____
+
+How this is implemented::
+`src/analysis/numeric_policy.jl` — an immutable `NumericPolicySpec` with
+modes `:ordinary`, `:exact_counts`, `:high_precision`; only integer and
+rational arithmetic is exact, `BigFloat` is approximate by definition, and a
+float claiming exactness is refused at the boundary. `exact_summaries.jl`
+carries counts and proportions at exact precision (integers beyond 2^53−1
+included) and labels any float-derived input as approximate. Contracts:
+link:docs/statistics/numeric-contracts.md[numeric contracts].
+
+Caveat::
+None currently known in the policy itself; the scope limit is real though —
+exactness covers descriptive summaries only. Inference is not exact just
+because its inputs are (see
+link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Exact-Arithmetic[Deep-Dives — Exact Arithmetic]).
+
+=== "maximum-likelihood fits (or explicit unsuccessful states) published under method conditions written *before* implementation"
+
+[quote, README.adoc]
+____
+Placeholder statistics were removed and guarded
+against by test; maximum-likelihood fits (or explicit unsuccessful states)
+published under method conditions written *before* implementation
+(link:docs/statistics[method catalogue])
+____
+
+How this is implemented::
+The replaced placeholder derived p-values from `hash(taxon_id)` — a stub
+returned as a result. Its history and the guard against its return are
+documented in
+link:docs/statistics/method-conditions/parametric-fits.md[parametric fits];
+`test/unit/test_estimation.jl` contains a source-level guard that such
+placeholders do not come back, plus known answers written into fixture data
+and an independent R reference comparison. The catalogue that gates all of
+this is link:docs/statistics/method-catalogue-v1.md[method catalogue v1]
+(owner-approved 2026-09-22).
+
+Caveat::
+[CAUTION]
+====
+Catalogue item 3 (nonparametric tests) and item 4 (exact tests, issue #3)
+are approved in scope but not implemented. Nothing here claims them.
+====
+
+=== "0 TypeScript errors under strict + `exactOptionalPropertyTypes`"
+
+[quote, README.adoc]
+____
+0 TypeScript errors under strict +
+`exactOptionalPropertyTypes`
+____
+
+How this is implemented::
+`frontend/tsconfig.json` (no-emit gate) with a build sidecar
+(`tsconfig.build.json`); type estate mapped in
+link:docs/types/architecture.md[types architecture]; `bun run typecheck` is
+CI-gated. Third-party coverage is audited in
+link:docs/type-system/category-d-e-closure.md[category D & E closure] —
+including two `FIXME(types)` stubs that declare `unknown`-safe surfaces, never
+`any`.
+
+Caveat::
+Two documented exceptions ride alongside: `skipLibCheck: true` (react-router
+6.30.x ships 7 erroneous `.d.ts` entries; retried on react-router 7) and the
+`useAnalysis.alphaFig` `unknown` awaiting a `PlotFigure` narrowing. Both are
+tracked in `docs/compliance/fixme-index.md`.
+
+=== "pinned toolchains (`mise` + Guix lanes) with sha256-pinned pipeline tools"
+
+[quote, README.adoc]
+____
+pinned toolchains (`mise` + Guix lanes) with
+sha256-pinned pipeline tools
+____
+
+How this is implemented::
+`mise.toml` pins julia/bun/node/just to the exact CI versions (R is a
+documented registry-absent exception, restored by `renv.lock`); `guix.scm` +
+`channels.scm` provide the time-machine-pinned peer lane; `install.sh`
+fetches cutadapt/FastQC/MultiQC/vsearch/cd-hit-est/swarm byte-exact against
+the sha256 records in `config/defaults/tool_versions.yml`. Pin
+single-sourcing is enforced by the `coupling-toolchain-pins` test.
+
+Caveat::
+The Guix lane carries functional equivalents, not binary identity with the
+download lane (documented in the `guix.scm` header) — use `mise` for exact CI
+parity. Swarm is download-lane-only under Guix.
+
+=== "Everything at a run's configuration is editable in the browser at every cascade level"
+
+[quote, README.adoc]
+____
+Everything at a run's configuration is editable in the browser at every
+cascade level; stale stages are flagged with the exact keys that changed.
+____
+
+How this is implemented::
+The cascade (instance → study → group → run; omitted keys inherit) resolves
+in `src/core/config.jl` and is materialised per run to `run_config.yml` as
+provenance; the REST config routes accept patches at any level and report
+downstream overrides; staleness recomputes stage freshness and the tooltip
+diffs the changed keys.
+
+Caveat::
+`run_config.yml` is the only place the fully merged truth appears — editing
+YAML files directly while the server runs can surprise the freshness hash.
+The editors validate whole documents before writing (primers, databases,
+composition) and refuse dangling renames only by *reporting* them, not
+blocking them.
+
+=== "Functional annotation with dual-classifier consensus (DADA2 bootstrap × vsearch identity)"
+
+[quote, README.adoc]
+____
+Functional annotation with dual-classifier consensus (DADA2 bootstrap ×
+vsearch identity), contamination curation, manual BLAST override, and an
+append-only FuncDB ledger that survives re-annotation.
+____
+
+How this is implemented::
+`src/annotation/` computes the consensus rank (finest rank where the
+classifiers agree) and a composite confidence score; curation writes
+(contamination flags, manual assignments) are stored separately from the
+derived annotation and re-applied after regeneration; FuncDB entries append to
+a ledger file.
+
+Caveat::
+The composite confidence is explicitly "mostly for the sake of curiosity"
+(the README says so) — it is not a calibrated probability. Consensus is
+string equality of labels, which is why both reference formats must come from
+the same release.
+
+=== Quick start and the gate claim
+
+[quote, README.adoc]
+____
+From a clean
+checkout, `just ci` runs every gate that CI runs.
+____
+
+How this is implemented::
+`Justfile` recipes are thin wrappers over the canonical entry points
+(`frontend/package.json` scripts, `scripts/check-*.sh`, the Julia test lanes);
+`.github/workflows/ci.yml` invokes the same commands, so local and CI gates
+are one set.
+
+Caveat::
+Fail-loud by design: Julia lanes error without Julia, `test-e2e` errors
+without browsers. "Every gate" means the gated set — benchmarks are
+informational and do not gate.
+
+== The mathematics, in the wiki
+
+The type-theoretic and statistical reasoning behind layer 3 is long-form by
+nature (this is closer to a statistics package than a game). It lives in the
+wiki, cross-linked both ways. Start from the
+link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives[deep dives hub].
+
+[cols="1,2,2", options="header"]
+|===
+| README claim area | Type-theory thread | Statistics thread (wiki page)
+
+| Typed, validated configuration; refusals as results
+| Refinement-style validation of `AnalysisConfig`; third-party type closure (category D/E)
+| ML estimation with identifiability, convergence, boundary states — link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Maximum-Likelihood[Deep-Dives — Maximum Likelihood]
+
+| Exact counts and rationals
+| Mode-indexed numeric policy; exact/approximate/rounded as distinct types of claim
+| Exact descriptive summaries; what exact inference cannot be — link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Exact-Arithmetic[Deep-Dives — Exact Arithmetic]
+
+| Offsets vs transforms
+| `Offset` is not `Transform` — the type distinction is the safety property
+| Size factors, TSS/CSS/RSS, compositional bias — link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Compositional-Statistics[Deep-Dives — Compositional Statistics]
+
+| Epistemic receipts; DANGER banner
+| Σ-types, identity types, factive modalities and warrants without soundness (`src/core/epistemic.jl`, shadows of the Agda echo/epistemic/residual-evidence types)
+| Unsuccessful states as first-class statistical output — link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Epistemic-Status[Deep-Dives — Epistemic Status]
+
+| Advanced functionality (planned)
+| Symbolic engine (#2) — blocked on the numeric layer's review
+| Exact tests, multinomial/DM, occupancy, constrained ordination, PhILR/SBP, zero handling — link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Advanced-Functionality[Deep-Dives — Advanced Functionality]
+|===
+
+Where the two threads meet — the central argument that a statistical result
+is only as good as the *type of claim* its numbers can carry — is developed in
+link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki/Deep-Dives--Type-Theory-Meets-Statistics[Deep-Dives — Type theory meets statistics].
+
+== Dogfooded across the account
+
+[cols="1,2,2", options="header"]
+|===
+| Technology / pattern | Used here | Also used in
+
+| README + EXPLAINME authoring standard (the pair you are reading)
+| Root `README.adoc` + `EXPLAINME.adoc`, claim→implementation map and all
+| link:https://github.com/hyperpolymath/standards[standards] (the standard itself), link:https://github.com/hyperpolymath/rsr-template-repo[rsr-template-repo]
+
+| BerryWiki page format (hidden metadata, generated sidebar, plain-Markdown survival)
+| The whole link:https://github.com/hyperpolymath/MetaManifold-WebUI/wiki[project wiki], sourced from `docs/wikis/`
+| link:https://github.com/metadatastician/berrywiki[berrywiki]'s own wiki — the format's first dogfood
+
+| Justfile command surface (Makefiles banned estate-wide)
+| `Justfile` (43 thin-wrapper recipes incl. pin codegen + drift gate)
+| link:https://github.com/hyperpolymath/standards[standards], link:https://github.com/hyperpolymath/rsr-template-repo[rsr-template-repo]
+
+| Pinned dual-lane toolchain (mise exact pins + Guix time-machine)
+| `mise.toml`, `guix.scm`, `channels.scm`, sha256-pinned `install.sh`
+| rsr-template-repo doctrine; the estate's reproducibility practice
+
+| Publish method conditions *before* implementation, then hold code to them
+| link:docs/statistics/method-conditions/[method conditions] + `test/unit/test_estimation.jl`
+| The estate statistics track (link:https://github.com/hyperpolymath/statistikles[statistikles]) adopts the same gate
+|===
+
+== Known gaps
+
+[CAUTION]
+====
+*Independent statistical review (issue #1):* the estimation and exact-summary
+layers are implemented and tested, but issue #1's acceptance criteria include
+an independent review that has not happened. Read every inference result as
+"computed as documented", not "reviewed".
+====
+
+[CAUTION]
+====
+*Exact statistical tests (issue #3) and the milestone-3 deferred suite
+(issues #17–21: multinomial/DM, occupancy, constrained ordinations, PhILR/SBP,
+advanced zero handling):* approved in scope, specified in
+link:docs/issues/milestone3/[docs/issues/milestone3], **not implemented**.
+The README marks them COMING and this file repeats that.
+====
+
+[CAUTION]
+====
+*Symbolic engine (issue #2):* deliberately **BLOCKED** until the numeric
+statistics layer passes real-data validation. Do not read the AnalysisConfig
+formula strings as a symbolic algebra — they are parsed and fitted, not
+manipulated.
+====
+
+[CAUTION]
+====
+*Stipple/Vue migration and standalone releases:* agreed requirements, partial
+delivery (the first read-only UI slice). The legacy React app is the default;
+no standalone offline archive has been built yet. Source of truth:
+link:docs/migration/STATUS.md[migration status].
+====
+
+[CAUTION]
+====
+*Deployment posture:* local single-user operation only. The current server is
+not multiuser-ready and must not be exposed as if it were (a standing line in
+link:docs/migration/STATUS.md[migration status]).
+====
+
+[CAUTION]
+====
+*README screenshots:* the UI captures referenced by the origin README were
+never committed to this repository; the design progression in `README.adoc`
+is therefore diagrammatic. Screenshots will land on the wiki pages when
+captured — the pages say which ones lack them.
+====
+
+Type-estate gaps (`skipLibCheck` exception, `alphaFig` `unknown`, the two
+`FIXME(types)` stubs) are documented with their exit criteria in
+`docs/compliance/fixme-index.md` and are not repeated as cautions here.
+
+== Evidence index
+
+[cols="2,3", options="header"]
+|===
+| Path | Proves
+
+| `test/unit/test_estimation.jl`
+| Known-answer fits, independent R reference comparison (coefficients and BH against `p.adjust`), negative controls for every refusal path, and the guard that placeholder statistics never return.
+
+| `test/unit/test_exact_summaries.jl`
+| Hand-derived exact answers, an independent `fractions.Fraction` cross-check, negative controls (float claiming exactness, negative counts, budget overrun) and the "pipeline does not call this module by default" property.
+
+| `test/unit/` numeric boundary suites
+| Boundary values (e.g. counts beyond 2^53−1) are measured, not assumed (issue #52's lesson).
+
+| `src/analysis/scaling.jl` + its tests
+| TSS/CSS/RSS produce offsets; aliases and silent substitutions are refused (issues #16, #61–62).
+
+| `docs/statistics/method-conditions/*.md`
+| The conditions documents that predate their implementations — the receipts that code is held to documents, not the reverse.
+
+| `frontend/tests/` + `frontend/tsconfig.json`
+| The strict type gate (0 errors) and the behavioural suite behind `bun run check`.
+
+| `test/` coupling pins test
+| Toolchain pins are single-sourced (`.bun-version` generated from `mise.toml`; overlaps drift-checked).
+
+| `bench/*/baseline.json`
+| Recorded performance baselines the informational bench lane compares against.
+|===
+
+== Licence
+
+This document is licensed under CC BY-SA 4.0. Code receipts point at
+AGPL-3.0-only / MPL-2.0 sources per link:NOTICE[NOTICE].
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+
+== Language and format rulings (2026-09-26)
+
+Nothing in this file is a receipt yet — these are rulings, recorded where a reader will
+find them before they wonder why something is written the way it is.
+
+**Julia is the default language for everything we can put in it**: analysis, configuration,
+gates, benchmarks, glue. Two standing exceptions:
+
+* **The dada2 pipeline itself.** The original R/dada2 pipeline is the one the field trusts.
+  It is not rewritten, wrapped into another language, or "modernised" for tidiness; new
+  analysis work happens in Julia around it.
+* **The TypeScript view, for now.** The marid project will eventually move the view without a
+  detour through Genie. That is a plan, not a task, and no action is taken here for it;
+  recorded so the next reader does not mistake the TS surface for a decision never revisited.
+
+Banned languages in the estate (`standards :: 3-practice/LANGUAGE-POLICY.adoc`) are banned
+here too: no new Python, no Makefiles. Nothing in this repository is generated or checked by a
+banned language.
+
+**This repository is the estate's KYAML pilot** (owner ruling, 2026-09-26;
+`docs/pilots/kyaml-pilot.md`). YAML here is deprecated but stays first-class until KYAML has
+proven itself, and the switch goes both ways:
+
+[source,shell]
+----
+just use-kyaml     # write the tree as KYAML (the target dialect)
+just use-yaml      # write it back as block-style YAML
+just check-kyaml   # the gate: every non-exempt file is canonical KYAML
+----
+
+`git revert` of the pilot commit is the byte-exact way back. The migration itself is one
+command, run where Julia is; the gate lands in the same commit as the conversion so it is
+never red for a reason unrelated to the change under review.

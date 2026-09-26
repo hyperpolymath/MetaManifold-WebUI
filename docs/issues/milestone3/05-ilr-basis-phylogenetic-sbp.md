@@ -8,6 +8,22 @@ SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@
 
 **Labels:** `enhancement`, `analysis`, `deferred`, `compositional`, `scientific-value:high`, `difficulty:medium`
 
+**Status (2026-09-26):** implemented for GitHub issue #20; the text below is the original
+issue, kept as written. Where the implementation departs from it, the reason is recorded:
+
+- pure Julia, no `philr`/`Phylo`/`Clustering.jl`/robCompositions dependency (none is in
+  `renv.lock` or `Project.toml`); R cross-checks run where those R packages are installed,
+  and the committed expectations are recomputed every run by an independent Julia
+  reference (`test/fixtures/ilr/ilr_reference.jl`);
+- no dense basis matrix: balances are clade sums in `O(D)` per sample, so the 800 MB concern
+  does not arise (the dendrogram's variation matrix is the one `O(D²)` structure; guarded);
+- the ">10 % CLR/ILR regression" gate compares base and head on the same CI runner, not a
+  committed baseline (`bench/ilr_bases/regression_gate.jl`);
+- the balance algebra is proved in Agda (`proofs/agda/MetaManifold/`), mapped to tests in
+  `docs/formal/verification-plan.md`.
+
+Conditions, contracts and references: `docs/statistics/method-conditions/ilr-bases.md`.
+
 **Body:**
 
 ### Scientific Value

@@ -256,15 +256,29 @@ docs/*
 !docs/milestones/**
 !docs/statistics/
 !docs/statistics/**
+# Pilots: repository-scoped experiments with an owner ruling behind them
+# (docs/pilots/kyaml-pilot.md is the first one).
+!docs/pilots/
+!docs/pilots/**
 !docs/issues/
 !docs/issues/**
 !docs/testing/
 !docs/type-system/
 !docs/types/
 !docs/reproducibility.md
+!docs/doi-publication.md
 !docs/owner-review-2026-09-25.md
 !docs/integration/
 !docs/integration/**
+!docs/wikis/
+!docs/wikis/**
+!docs/formal/
+!docs/formal/**
+!docs/triage/
+!docs/triage/**
+# …but the generated PR-#7 stack patches are derived artefacts: regenerate
+# with docs/triage/pr7-split/make-stacks.sh instead of committing them.
+docs/triage/pr7-split/patches/*.patch
 
 # Test + benchmark run artifacts (not the committed fixtures/baselines)
 frontend/tests/results/

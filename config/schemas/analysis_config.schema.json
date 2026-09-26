@@ -1,15 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hyperpolymath.github.io/MetaManifold-WebUI/schemas/analysis_config.schema.json",
-  "title": "AnalysisConfig — versioned, explicit, provenance-rich analysis configuration — Milestone 3",
+  "title": "AnalysisConfig \u2014 versioned, explicit, provenance-rich analysis configuration \u2014 Milestone 3",
   "description": "Safe, explicit, versioned AnalysisConfig layer for parametric and nonparametric analyses (NB GLM, CLR/ILR+Gaussian LM, logistic in v1; BH mandatory; DANGER banner on overrides; Advanced Analysis section heavy validation/help/warnings for custom pseudocount/epsilon/zero_policy/etc.; DOI-ready bundles). From hyperpolymath/standards JSON + Nickel + DEED schemes. tss/css/rss are exact offsets (issue #16, 2026-09-25), not aliases to relative; see docs/statistics/method-conditions/scaling-and-offsets.md.",
   "type": "object",
-  "required": ["schema_version", "id", "method", "formula", "metadata_columns", "normalization", "correction"],
+  "required": [
+    "schema_version",
+    "id",
+    "method",
+    "formula",
+    "metadata_columns",
+    "normalization",
+    "correction"
+  ],
   "properties": {
     "schema_version": {
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
-      "enum": ["1.0.0"],
+      "enum": [
+        "1.0.0"
+      ],
       "description": "Semver schema version. Currently only 1.0.0 is supported. From DEED :schema-version first."
     },
     "id": {
@@ -29,8 +39,13 @@
     },
     "method": {
       "type": "string",
-      "enum": ["nb_glm", "clr_lm", "ilr_lm", "logistic"],
-      "description": "Analysis method — explicit, no silent switching. NB_GLM for counts, CLR/ILR+LM for compositional, logistic for presence/absence. v1 only, deferred: multinomial, dirichlet_multinomial, occupancy, zinb, rda, cca, cap, etc. See GitHub issues."
+      "enum": [
+        "nb_glm",
+        "clr_lm",
+        "ilr_lm",
+        "logistic"
+      ],
+      "description": "Analysis method \u2014 explicit, no silent switching. NB_GLM for counts, CLR/ILR+LM for compositional, logistic for presence/absence. v1 only, deferred: multinomial, dirichlet_multinomial, occupancy, zinb, rda, cca, cap, etc. See GitHub issues."
     },
     "formula": {
       "type": "string",
@@ -39,7 +54,10 @@
       "description": "R-style formula containing '~', e.g. '~ group' or 'disease ~ group + batch'. Must reference only metadata_columns. Refuses empty or meaningless formulas. See Nickel ValidFormula contract."
     },
     "outcome_column": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Binary outcome column for logistic regression. Required for logistic, ignored for others unless formula uses it."
     },
     "metadata_columns": {
@@ -55,11 +73,27 @@
     },
     "normalization": {
       "type": "object",
-      "required": ["method"],
+      "required": [
+        "method"
+      ],
       "properties": {
         "method": {
           "type": "string",
-          "enum": ["none", "rarefy", "relative", "size_factors", "clr", "ilr", "presence_absence", "TSS", "CSS", "RSS", "tss", "css", "rss"],
+          "enum": [
+            "none",
+            "rarefy",
+            "relative",
+            "size_factors",
+            "clr",
+            "ilr",
+            "presence_absence",
+            "TSS",
+            "CSS",
+            "RSS",
+            "tss",
+            "css",
+            "rss"
+          ],
           "description": "Normalization / transform. Must be compatible with method: nb_glm allows none/rarefy/size_factors/relative/tss/css/rss, clr_lm requires clr, ilr_lm requires ilr, logistic allows none/relative/rarefy/presence_absence/tss. tss/css/rss are offsets computed exactly (issue #16, docs/statistics/method-conditions/scaling-and-offsets.md), not aliases to relative; css and rss apply to count responses only, because an offset needs something to offset. See MethodNormalizationCompatibility Nickel contract."
         },
         "pseudocount": {
@@ -71,28 +105,48 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "exclusiveMaximum": 1,
-          "default": 1e-6,
+          "default": 1e-06,
           "description": "Epsilon for numerical stability, in (0,1), typical 1e-6. Advanced, behind Advanced Analysis expander, heavy validation, warnings for >1e-3 or <1e-12."
         },
         "zero_policy": {
           "type": "string",
-          "enum": ["pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse"],
+          "enum": [
+            "pseudocount",
+            "multiplicative_replacement",
+            "bayesian_multiplicative",
+            "refuse"
+          ],
           "default": "pseudocount",
           "description": "Zero handling policy: pseudocount (default safe), multiplicative_replacement, bayesian_multiplicative, refuse (DANGEROUS, requires DANGER token, mathematically invalid for CLR/ILR). See ZeroHandlingContract."
         },
         "ilr_basis": {
-          "type": ["string", "null"],
-          "enum": ["default", "phylogenetic", "sequential_binary_partition", "balance_dendrogram", null],
-          "description": "ILR basis. Only meaningful for ilr method. Refuses meaningless use for other methods. phylogenetic/sequential_binary_partition/balance_dendrogram deferred, see GitHub issues."
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "default",
+            "phylogenetic",
+            "sequential_binary_partition",
+            "balance_dendrogram",
+            null
+          ],
+          "description": "ILR basis. Only meaningful for ilr method. default (Helmert); phylogenetic (PhILR) requires advanced.ilr_phylo_tree_path; sequential_binary_partition requires advanced.ilr_sbp_matrix_path; balance_dendrogram requires advanced.ilr_balance_dendrogram_method. Issue #20; see docs/statistics/method-conditions/ilr-bases.md."
         },
         "multiplicative_replacement_delta": {
-          "type": ["number", "null"],
+          "type": [
+            "number",
+            "null"
+          ],
           "exclusiveMinimum": 0,
           "exclusiveMaximum": 1,
           "description": "Delta for multiplicative replacement, in (0,1), e.g., 0.65. Advanced, behind Advanced Analysis."
         },
         "tss_css_rss_note": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Free-form note recorded with the configuration. The field name is historical: TSS/CSS/RSS are not deferred any more (issue #16, 2026-09-25) and are exact offsets. Retained so existing documents keep parsing."
         },
         "css_quantile": {
@@ -103,7 +157,10 @@
           "description": "CSS: the per-sample quantile of the count distribution whose cumulative sum becomes the scaling factor (Paulson et al. 2013 use 0.5-0.75). Used only by normalization.method='css'. Refused at run time when that cumulative sum is zero for any sample, because log(0) is not a small number. metagenomeSeq's data-driven cumNormStatFast choice of the quantile is deliberately not implemented: a parameter chosen from the data must be recorded, not defaulted. See docs/statistics/method-conditions/scaling-and-offsets.md."
         },
         "tmm_ref_column": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "default": null,
           "description": "RSS/TMM: the sample every other sample's log-ratios are taken against. Null chooses it the way edgeR chooses it (the sample whose upper-quartile-scaled counts are closest to the mean of those values) and records which one. An unknown name is refused at run time, never silently replaced by the data-driven choice. Used only by normalization.method='rss'."
         },
@@ -112,7 +169,7 @@
           "minimum": 0,
           "exclusiveMaximum": 0.5,
           "default": 0.3,
-          "description": "RSS/TMM: fraction trimmed from each tail of the log-ratios before the weighted mean; edgeR's default is 0.3. Zero disables the trimming, which removes the robustness TMM is used for — both values are recorded, so an untrimmed run is visible rather than assumed. Used only by normalization.method='rss'."
+          "description": "RSS/TMM: fraction trimmed from each tail of the log-ratios before the weighted mean; edgeR's default is 0.3. Zero disables the trimming, which removes the robustness TMM is used for \u2014 both values are recorded, so an untrimmed run is visible rather than assumed. Used only by normalization.method='rss'."
         },
         "tmm_sum_trim": {
           "type": "number",
@@ -120,22 +177,53 @@
           "exclusiveMaximum": 0.5,
           "default": 0.05,
           "description": "RSS/TMM: fraction trimmed from each tail of the mean abundances before the weighted mean; edgeR's default is 0.05. Used only by normalization.method='rss'."
+        },
+        "bayesian_multiplicative_alpha": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "description": "Prior concentration (alpha) of bayesian_multiplicative, > 0. Omitted means the reference's GBM estimate 1/gmean(t) from the leave-one-out profile; supplying a value is recorded in the DEED as a deliberate deviation. See context_help('advanced.bayesian_alpha'), Martin-Fernandez et al. 2015, and src/analysis/zero_replacement.jl."
         }
       },
       "allOf": [
         {
-          "if": { "properties": { "method": { "const": "clr" } } },
-          "then": { "required": ["pseudocount"] }
+          "if": {
+            "properties": {
+              "method": {
+                "const": "clr"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "pseudocount"
+            ]
+          }
         },
         {
-          "if": { "properties": { "method": { "const": "ilr" } } },
-          "then": { "required": ["pseudocount"] }
+          "if": {
+            "properties": {
+              "method": {
+                "const": "ilr"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "pseudocount"
+            ]
+          }
         }
       ]
     },
     "correction": {
       "type": "object",
-      "required": ["method", "alpha"],
+      "required": [
+        "method",
+        "alpha"
+      ],
       "properties": {
         "method": {
           "type": "string",
@@ -153,29 +241,52 @@
           "description": "If true, allows non-BH methods, but triggers DANGER banner and requires acknowledgment_token = I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH"
         },
         "acknowledgment_token": {
-          "type": ["string", "null"],
-          "description": "Must be 'I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH' if allow_no_correction=true — scary DANGER banner for paper writers"
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Must be 'I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH' if allow_no_correction=true \u2014 scary DANGER banner for paper writers"
         }
       },
       "allOf": [
         {
           "if": {
-            "properties": { "allow_no_correction": { "const": true } }
+            "properties": {
+              "allow_no_correction": {
+                "const": true
+              }
+            }
           },
           "then": {
             "properties": {
-              "acknowledgment_token": { "const": "I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH" }
+              "acknowledgment_token": {
+                "const": "I_UNDERSTAND_THE_RISK_AND_WANT_TO_OVERRIDE_BH"
+              }
             },
-            "required": ["acknowledgment_token"]
+            "required": [
+              "acknowledgment_token"
+            ]
           }
         },
         {
           "if": {
-            "properties": { "allow_no_correction": { "const": false } }
+            "properties": {
+              "allow_no_correction": {
+                "const": false
+              }
+            }
           },
           "then": {
             "properties": {
-              "method": { "enum": ["BH", "FDR", "Benjamini-Hochberg", "benjamini-hochberg", "Benjamini_Hochberg"] }
+              "method": {
+                "enum": [
+                  "BH",
+                  "FDR",
+                  "Benjamini-Hochberg",
+                  "benjamini-hochberg",
+                  "Benjamini_Hochberg"
+                ]
+              }
             }
           }
         }
@@ -187,19 +298,35 @@
       "properties": {
         "dispersion_method": {
           "type": "string",
-          "enum": ["parametric", "local", "mean", "pooled", "glmGamPoi"],
+          "enum": [
+            "parametric",
+            "local",
+            "mean",
+            "pooled",
+            "glmGamPoi"
+          ],
           "default": "parametric",
-          "description": "Dispersion estimation for NB_GLM. parametric default, glmGamPoi deferred fast exact, see GitHub issue 06-glm-gam-poi."
+          "description": "Dispersion estimation for NB_GLM. parametric (default), local, mean, pooled, or glmGamPoi, which is the pure-Julia port of the reference pipeline (Cox-Reid adjusted MLE, local-median trend, quasi-likelihood conversion, inverse-chisquare prior). The reference's spline abundance trend is not ported and is refused by name. See docs/statistics/method-conditions/dispersion-glmGamPoi.md."
         },
         "zero_handling": {
           "type": "string",
-          "enum": ["pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse"],
+          "enum": [
+            "pseudocount",
+            "multiplicative_replacement",
+            "bayesian_multiplicative",
+            "refuse"
+          ],
           "default": "pseudocount",
           "description": "Zero handling. 'refuse' is DANGEROUS and requires acknowledgment token, mathematically invalid for CLR/ILR."
         },
         "zero_policy": {
           "type": "string",
-          "enum": ["pseudocount", "multiplicative_replacement", "bayesian_multiplicative", "refuse"],
+          "enum": [
+            "pseudocount",
+            "multiplicative_replacement",
+            "bayesian_multiplicative",
+            "refuse"
+          ],
           "default": "pseudocount",
           "description": "Zero policy enum, same as zero_handling but explicit. Advanced, heavy validation, warnings."
         },
@@ -213,7 +340,7 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "exclusiveMaximum": 1,
-          "default": 1e-6,
+          "default": 1e-06,
           "description": "Epsilon for numerical stability, (0,1), typical 1e-6, warnings for >1e-3 or <1e-12, heavy validation."
         },
         "min_prevalence": {
@@ -230,7 +357,10 @@
           "description": "Minimum abundance threshold >=0"
         },
         "max_features": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 1,
           "maximum": 100000,
           "description": "Max features to test. >100k refused as meaningless, <10 warning."
@@ -247,8 +377,112 @@
           "description": "Robust estimation flag"
         },
         "acknowledgment_token": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Required for dangerous zero_handling='refuse' or min_samples_per_group<3"
+        },
+        "ilr_phylo_tree_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "pattern": "^[^\"\\n\\r\\u0000\\[\\]{}`;$]+$",
+          "description": "Rooted, strictly bifurcating Newick tree for ilr_basis=phylogenetic (required then, refused otherwise). Tip labels = taxon ids exactly. SHA-256 recorded in provenance; existence checked at run time."
+        },
+        "ilr_sbp_matrix_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "pattern": "^[^\"\\n\\r\\u0000\\[\\]{}`;$]+$",
+          "description": "SBP CSV (taxa rows, balance columns, entries 1/-1/0) for ilr_basis=sequential_binary_partition (required then, refused otherwise). Validated per Egozcue & Pawlowsky-Glahn (2005). SHA-256 recorded."
+        },
+        "ilr_balance_dendrogram_method": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "ward",
+            "complete",
+            "average",
+            null
+          ],
+          "description": "Clustering for ilr_basis=balance_dendrogram (required then, refused otherwise) on the variation matrix: ward (R ward.D2), complete, average."
+        },
+        "ilr_part_weights": {
+          "type": "string",
+          "enum": [
+            "uniform",
+            "gm_counts",
+            "anorm",
+            "enorm",
+            "anorm_x_gm_counts",
+            "enorm_x_gm_counts"
+          ],
+          "default": "uniform",
+          "description": "philr part.weights for a non-default ILR basis. Must be uniform for the default (Helmert) basis."
+        },
+        "ilr_balance_weights": {
+          "type": "string",
+          "enum": [
+            "uniform",
+            "blw",
+            "blw_sqrt",
+            "mean_descendants"
+          ],
+          "default": "uniform",
+          "description": "philr ilr.weights, phylogenetic basis only (needs branch lengths). Non-uniform weights are not isometric; recorded."
+        },
+        "ilr_sbp_history": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "uniqueItems": true,
+          "default": [],
+          "description": "SHA-256 of SBP files tried earlier in the project (SBP basis only). More than 3 distinct SBPs including the current one raises the DANGER banner (p-hacking guard)."
+        },
+        "zero_replacement_method": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "multiplicative_replacement",
+            "bayesian_multiplicative",
+            null
+          ],
+          "description": "Explicit zero-replacement method. Must equal normalization.zero_policy when both are set; the two cannot disagree. null means the policy name is the method."
+        },
+        "multiplicative_delta": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "delta of multiplicative replacement, exactly the (0,1) interval the operator accepts; 0.65 is the reference's frac and the issue's default. Values below 0.01 or at or above 0.9 warn. Overrides normalization.multiplicative_replacement_delta when set."
+        },
+        "bayesian_alpha": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "description": "alpha of bayesian_multiplicative, > 0. Overrides normalization.bayesian_multiplicative_alpha when set. Supplying it is recorded as a hand-set prior, not an estimate."
+        },
+        "glmgampoi_abundance_trend": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "glmGamPoi's natural-spline abundance trend for the variance prior. The spline is NOT ported: true is refused, null is refused at or above 100 features (the point at which glmGamPoi switches it on), and false runs the reference's own non-trended prior and records the deviation."
         }
       }
     },
@@ -263,41 +497,320 @@
     },
     "dangerous": {
       "type": "boolean",
-      "description": "Computed is_dangerous — true if BH disabled, zero_handling refuse, min_samples_per_group<3, rarefy+NB_GLM"
+      "description": "Computed is_dangerous \u2014 true if BH disabled, zero_handling refuse, min_samples_per_group<3, rarefy+NB_GLM"
     }
   },
   "allOf": [
     {
       "if": {
-        "properties": { "method": { "const": "logistic" } }
-      },
-      "then": {
-        "required": ["outcome_column"],
         "properties": {
-          "outcome_column": { "type": "string", "minLength": 1 }
+          "method": {
+            "const": "logistic"
+          }
         }
-      }
-    },
-    {
-      "if": {
-        "properties": { "method": { "const": "clr_lm" } }
       },
       "then": {
+        "required": [
+          "outcome_column"
+        ],
         "properties": {
-          "normalization": {
-            "properties": { "method": { "const": "clr" } }
+          "outcome_column": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }
     },
     {
       "if": {
-        "properties": { "method": { "const": "ilr_lm" } }
+        "properties": {
+          "method": {
+            "const": "clr_lm"
+          }
+        }
       },
       "then": {
         "properties": {
           "normalization": {
-            "properties": { "method": { "const": "ilr" } }
+            "properties": {
+              "method": {
+                "const": "clr"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "ilr_lm"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "normalization": {
+            "properties": {
+              "method": {
+                "const": "ilr"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "ILR basis inputs (issue #20): each non-default basis requires its own input and forbids the others'. Same table as AnalysisConfig._validate_ilr_inputs and Nickel IlrBasisInputsContract; see docs/statistics/method-conditions/ilr-bases.md."
+    },
+    {
+      "if": {
+        "required": [
+          "normalization"
+        ],
+        "properties": {
+          "normalization": {
+            "required": [
+              "ilr_basis"
+            ],
+            "properties": {
+              "ilr_basis": {
+                "enum": [
+                  "phylogenetic"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_phylo_tree_path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ilr_phylo_tree_path"
+            ]
+          }
+        },
+        "required": [
+          "advanced"
+        ]
+      },
+      "else": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_phylo_tree_path": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "normalization"
+        ],
+        "properties": {
+          "normalization": {
+            "required": [
+              "ilr_basis"
+            ],
+            "properties": {
+              "ilr_basis": {
+                "enum": [
+                  "sequential_binary_partition"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_sbp_matrix_path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ilr_sbp_matrix_path"
+            ]
+          }
+        },
+        "required": [
+          "advanced"
+        ]
+      },
+      "else": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_sbp_matrix_path": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "normalization"
+        ],
+        "properties": {
+          "normalization": {
+            "required": [
+              "ilr_basis"
+            ],
+            "properties": {
+              "ilr_basis": {
+                "enum": [
+                  "balance_dendrogram"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_balance_dendrogram_method": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ilr_balance_dendrogram_method"
+            ]
+          }
+        },
+        "required": [
+          "advanced"
+        ]
+      },
+      "else": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_balance_dendrogram_method": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "normalization"
+          ],
+          "properties": {
+            "normalization": {
+              "required": [
+                "ilr_basis"
+              ],
+              "properties": {
+                "ilr_basis": {
+                  "enum": [
+                    "phylogenetic",
+                    "sequential_binary_partition",
+                    "balance_dendrogram"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_part_weights": {
+                "const": "uniform"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "normalization"
+          ],
+          "properties": {
+            "normalization": {
+              "required": [
+                "ilr_basis"
+              ],
+              "properties": {
+                "ilr_basis": {
+                  "enum": [
+                    "phylogenetic"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_balance_weights": {
+                "const": "uniform"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "normalization"
+          ],
+          "properties": {
+            "normalization": {
+              "required": [
+                "ilr_basis"
+              ],
+              "properties": {
+                "ilr_basis": {
+                  "enum": [
+                    "sequential_binary_partition"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "advanced": {
+            "properties": {
+              "ilr_sbp_history": {
+                "maxItems": 0
+              }
+            }
           }
         }
       }
@@ -310,11 +823,16 @@
       "properties": {
         "avec_fibre": {
           "type": "boolean",
-          "description": "True if artefact carries enough semantic fibre to support inferences (Echo Types A ≃ Σ B (Echo f))"
+          "description": "True if artefact carries enough semantic fibre to support inferences (Echo Types A \u2243 \u03a3 B (Echo f))"
         },
         "epistemic_status": {
           "type": "string",
-          "enum": ["present_in_every_admissible_world", "present_in_some_admissible_world", "absent_in_every_admissible_world", "unknown"],
+          "enum": [
+            "present_in_every_admissible_world",
+            "present_in_some_admissible_world",
+            "absent_in_every_admissible_world",
+            "unknown"
+          ],
           "description": "Residual evidence status: Holds Present across all admissible worlds? From residual-evidence-types"
         }
       }

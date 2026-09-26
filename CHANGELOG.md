@@ -12,6 +12,138 @@ types, tests, infrastructure, and alignment.
 
 ## [Unreleased]
 
+### Added — the README/EXPLAINME pair, the wiki, and the autolink specification (2026-09-26)
+
+- **`README.adoc` replaces `README.md`**, per the estate README/EXPLAINME authoring
+  standard (`standards:docs/README-EXPLAINME-STANDARD.adoc`). The README is now the
+  three-layer design history — base R/Python design around raw DADA2, the origin
+  MetaManifold augmentation (JoshuaJewell), and the fork's honesty/typing steps — with
+  diagrammatic progression and shipped/planned markers throughout. The configuration
+  chapters moved to the wiki (they made the README unreadable); the third-party tools
+  table and acknowledgements moved into `NOTICE` (their natural home).
+- **`EXPLAINME.adoc`** (new): the receipts file — claim→implementation→caveat map over
+  every README claim, the dogfooding table, known gaps as CAUTION blocks, and an
+  evidence index. The type-theory/enhanced-statistics deep material deliberately lives
+  in the wiki; EXPLAINME cross-references it rather than re-deriving it.
+- **The GitHub wiki is now the full BerryWiki-format documentation**
+  (`metadatastician/berrywiki` page format: hidden metadata blocks, generated
+  `_Sidebar.md`), sourced from `docs/wikis/` and synced to `MetaManifold-WebUI.wiki.git`:
+  three audience sections (users — with academics and lab-professional tracks; platform
+  maintainers — operator and steward tracks; developers), seven deep dives (design
+  progression, type theory meets statistics, exact arithmetic, maximum likelihood and
+  refusals, compositional statistics and offsets, epistemic status, advanced
+  functionality), and a Status-and-Roadmap board marking everything IN PLACE / PARTIAL /
+  COMING / BLOCKED.
+- **`docs/integration/autolink-references.md`** (new): the complete elaboration of the
+  repository's Settings → Autolink references set (lineage/estate, upstream tools,
+  toolchain, registries), paste-ready and machine-readable, with reserved/omitted cases
+  reasoned. Application in Settings needs Administration permission (one human pass);
+  the file is the source of truth for it.
+
+### Added — the three deferred ILR bases are implemented, with proofs (#20, 2026-09-26)
+
+- **`phylogenetic` (PhILR), `sequential_binary_partition` and `balance_dendrogram`** are
+  computed, no longer refused (`DEFERRED_ILR_BASIS` is now empty; it stays, so a future
+  basis can be deferred the same way). `src/analysis/ilr_basis.jl` is one engine for all
+  three: each basis is a rooted binary tree, and balances are clade sums in one post-order
+  pass, `O(D)` per sample, with no dense basis matrix. Pure Julia; no new dependency.
+- **Inputs and contracts.** `advanced.ilr_phylo_tree_path`, `ilr_sbp_matrix_path`,
+  `ilr_balance_dendrogram_method` (plus philr's part/balance weights and the SBP history)
+  are identical in the Julia validator, the Nickel contract, the JSON schema, DEED and the
+  frontend: each basis requires its input and refuses the others'. Configurations that
+  use none of them hash exactly as before; the default Helmert balances are byte-identical.
+- **Validity is refused, not repaired.** Trees must be rooted, bifurcating and cover the
+  retained taxa (tips outside them are pruned and recorded); an SBP must be the SBP of a
+  binary tree (Egozcue & Pawlowsky-Glahn 2005), over exactly the retained taxa.
+- **Provenance and guards.** Each run records the tree or SBP SHA-256, the dendrogram
+  method, the weights and the balance-id rule. More than 3 distinct SBPs tried in a project
+  raises a DANGER (p-hacking guard). BH stays mandatory.
+- **Evidence.** Known answers; an independent Julia reference
+  (`test/fixtures/ilr/ilr_reference.jl`) that recomputes all 17 committed expectations
+  (philr, `compositions::ilr`, R `hclust`) every run; R cross-checks where philr,
+  compositions and robCompositions are installed; negative controls. The balance algebra
+  (contrast sums, orthonormality, injectivity with its positive-weight hypothesis, scale
+  and perturbation invariance, comb = Helmert, SBP validity) is proved in Agda
+  (`proofs/agda/`, new `proofs` CI job) and mapped to the tests in
+  `docs/formal/verification-plan.md`. The conditions document is
+  `docs/statistics/method-conditions/ilr-bases.md`.
+- **Benchmarks.** `bench/ilr_bases/benchmark.jl` (100 / 1 000 / 10 000 taxa; warns over
+  5 minutes or 1 GiB) and a pull-request gate that fails when CLR or default ILR allocate
+  or run more than 10 % worse than the base commit on the same runner.
+- **Removed** the Python fixture generator: Python is not permitted by the estate language
+  policy; the Julia reference replaces it (`docs/compliance/standards-alignment.md`).
+
+### Added — advanced zero handling and the glmGamPoi dispersion port (issue #21, 2026-09-26)
+
+- **`src/analysis/zero_replacement.jl`** — the two operators the issue names, implemented
+  rather than aliased:
+  - *multiplicative replacement* (Martín-Fernández et al. 2003), the operator of
+    `zCompositions::multRepl`: zeros become `delta x detection limit`, observed parts are
+    scaled by `1 - Delta`, and the sample total and the ratios among observed parts are
+    preserved **exactly**;
+  - *Bayesian multiplicative replacement* (Martín-Fernández et al. 2015), the GBM of
+    `cmultRepl`: the inserted value is the posterior mean of a Dirichlet-multinomial whose
+    prior mean is the leave-one-out profile and whose concentration is `1/gmean(t)` unless the
+    caller supplies `alpha`, with the reference's `frac x colmins` cap and its `adjust`
+    switch.
+  Both refuse what they cannot do (a delta outside (0,1); an imputed mass that would consume
+  the sample, naming the largest admissible delta; all-zero samples; never-observed parts;
+  parts seen in fewer than two samples) and both record a full provenance block, including
+  the sentence that matters: **all replacement is biased**.
+- **`src/analysis/dispersion.jl`** — a pure-Julia port of glmGamPoi's dispersion pipeline
+  (Ahlmann-Eltze & Huber 2020): Cox-Reid adjusted NB maximum likelihood with the reference's
+  `0.99` factor and its early returns, the `dnorm`-weighted local-median trend, the
+  quasi-likelihood conversion, and the inverse-chisquare prior by Nelder-Mead. The reference's
+  **natural-spline abundance trend is not ported and is refused by name** rather than being
+  silently replaced by the non-trended prior; `glmgampoi_abundance_trend = false` runs the
+  reference's own non-trended form and records the deviation.
+- **`dispersion_method = "glmGamPoi"` in `estimation.jl`** — the by-name refusal is replaced
+  by the real two-pass path: pass 1 fits the mean sweep in R, the port estimates the
+  dispersions on those means, pass 2 refits at the fixed dispersion (`theta = 1/alpha`, with
+  `stats::glm(poisson())` where alpha is 0).
+- **Configuration** — `normalization.bayesian_multiplicative_alpha`, and
+  `advanced.{zero_replacement_method, multiplicative_delta, bayesian_alpha,
+  glmgampoi_abundance_trend}` in the Julia model, the Nickel contract, the JSON schema and the
+  frontend types; validation at the door (`delta` in (0,1), `alpha` > 0), warnings for
+  `delta < 0.01` and `delta >= 0.9`, a DEED echo of every value, and the DANGER banner when
+  three or more deltas have been tried — the p-hacking case the issue names. The Advanced
+  expander gains the delta slider **with a replacement preview**, the alpha field, and the
+  trend selector.
+- **Proofs** — `proofs/agda/` (Agda 2.7.0.1, stdlib 2.1.1, `--safe`, no postulates):
+  `ZeroReplacement.agda` (totals and observed-part ratios preserved, imputed values strictly
+  positive and below their detection limit), `NoRigidReplacement.agda` (no rule determined by
+  the observed data can be faithful — the theorem behind "all replacement is biased"), and
+  `DispersionShrinkage.agda` (the shrinkage lies between the prior and the sample estimate and
+  is exact when they coincide). `proofs/agda/README.md` says what each proves, what is
+  deliberately *not* proved, and what would falsify them.
+- **Tests and benchmarks** — `test/unit/test_zero_replacement.jl` and
+  `test/unit/test_dispersion.jl` against the pinned fixture `test/fixtures/issue21/golden.json`
+  (with direct comparisons against `zCompositions` and `glmGamPoi` wherever R has them, and
+  explicit "this comparison did not run" notices where it does not);
+  `bench/zero_replacement/benchmark.jl` at 100/1000/10000 taxa with the issue's 5-minute
+  warning and a 10% regression report behind `METAMANIFOLD_BENCH_STRICT`.
+- **Docs** — `docs/statistics/zero-handling.md` (what each policy does, its cost, the exact
+  relation to the two reference packages, and the alternatives that insert nothing) and
+  `docs/statistics/method-conditions/dispersion-glmGamPoi.md` (the conditions of use and the
+  residues).
+
+### Added — the KYAML pilot (2026-09-26)
+
+- **`scripts/kyaml/KYAML.jl`** — `just use-kyaml`, `just use-yaml`, `just check-kyaml`: the
+  switch between block-style YAML and KYAML (the KEP-5295 strict subset), with comments kept
+  and associated with their entries, canonical-form checking that is idempotent by
+  construction, and refusals (anchors, aliases, tags, multi-document files, duplicate keys,
+  multi-line plain scalars) that name the file and line and write nothing.
+- **`docs/pilots/kyaml-pilot.md`** — the operating manual for this repository being the
+  estate's KYAML pilot: the owner ruling of 2026-09-26, what the switch guarantees, what it
+  refuses, the decisions it takes and prints, the proof obligations from
+  `standards :: 3-practice/YAML-POLICY.adoc`, and how to revert.
+- **`config/kyaml/drift.txt`** — the two workflow files Dependabot and `gh actions-lock`
+  rewrite: converted, not gated, accepted in writing as the policy's §5 step 6 requires.
+- **`stapeln.toml` + `Containerfile` + the `proofs` CI job** — the proof lane as a standalone
+  deployment (Guix environment, mise pins, Agda from the channels pin) rather than a local
+  convenience.
+
 ### Fixed — the NB test fixture is data a negative binomial describes (2026-09-26)
 
 - The estimation tests' synthetic table was **under-dispersed** (variance below the mean,

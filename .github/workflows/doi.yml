@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: MPL-2.0
+name: DOI publication contracts
+
+on:
+  pull_request:
+    paths: ['src/doi/**', 'src/server/**', 'src/analysis/AnalysisConfig.jl', 'test/doi/**', 'test/unit/test_doi*', 'bench/doi/**', 'scripts/link-doi.sh', 'config/schemas/doi*', 'config/templates/doi*', 'Project.toml', 'Manifest.toml', '.github/workflows/doi.yml']
+  push:
+    branches: [main, 'arena/**']
+    paths: ['src/doi/**', 'src/server/**', 'src/analysis/AnalysisConfig.jl', 'test/doi/**', 'test/unit/test_doi*', 'bench/doi/**', 'scripts/link-doi.sh', 'config/schemas/doi*', 'config/templates/doi*', 'Project.toml', 'Manifest.toml', '.github/workflows/doi.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: DOI contracts (no credentials or live deposits)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
+        with:
+          version: '1.12.5'
+      - uses: julia-actions/cache@a7bed9df697e5d7309d68afe7542a87621a8b6c8  # v3.3.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2
+        with:
+          bun-version-file: .bun-version
+      - name: Syntax and source dependency contracts
+        run: |
+          julia --startup-file=no config/ci/lint_source.jl
+          bash -n scripts/link-doi.sh test/doi/check-nickel.sh
+          command -v zip
+          command -v jq
+          command -v flock
+      - name: Instantiate isolated HTTP-only test environment
+        run: julia --project=test/doi -e 'using Pkg; Pkg.instantiate()'
+      - name: Configure temporary contract outputs
+        run: echo "DOI_CONTRACT_ARTIFACTS=$RUNNER_TEMP/doi-contracts" >> "$GITHUB_ENV"
+      - name: Publication lifecycle, security, restart and streamed HTTP contracts
+        run: julia --project=test/doi test/doi/runtests.jl
+      - name: Install pinned browser and schema tools
+        working-directory: test/doi
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          bunx playwright install --with-deps chromium
+      - name: Linker, JSON Schema, CFF and projection roundtrips
+        working-directory: test/doi
+        run: bun run test
+      - name: Evidence Mode, typed confirmation and browser recovery
+        working-directory: test/doi
+        run: bun run test:browser
+      - name: Verify Nickel contracts with a checksum-pinned CLI
+        run: |
+          curl --fail --location --retry 2 --max-time 120 https://github.com/nickel-lang/nickel/releases/download/1.18.0/nickel-x86_64-linux -o "$RUNNER_TEMP/nickel"
+          printf '9cba4dd65ae9915ec61f73033aafcff307a377665a83fd8f530df086763318cb  %s\n' "$RUNNER_TEMP/nickel" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/nickel"
+          NICKEL="$RUNNER_TEMP/nickel" bash test/doi/check-nickel.sh
+      - name: Publication performance and bounded-memory smoke
+        run: |
+          julia --project=test/doi bench/doi/benchmark.jl > "$RUNNER_TEMP/doi-performance.json"
+          if [[ -f bench/doi/baseline.json ]]; then
+            bun bench/doi/compare.js bench/doi/baseline.json "$RUNNER_TEMP/doi-performance.json"
+          else
+            echo '::warning::First DOI benchmark baseline is not established. Report is informational; no regression verdict is claimed. Review and retain a same-host baseline before enabling the >10% comparison.'
+          fi
+      - name: Preserve contract outputs and resolved environment
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: doi-contract-evidence
+          path: |
+            test/doi/Manifest.toml
+            ${{ runner.temp }}/doi-contracts/
+            ${{ runner.temp }}/doi-performance.json
+          if-no-files-found: warn

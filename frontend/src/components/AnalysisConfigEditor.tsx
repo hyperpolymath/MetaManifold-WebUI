@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from 'react'
+import { apiUrl } from '../api/client'
 import type { AnalysisConfig, ValidationError } from '../types/analysis_config'
-import { contextHelp, isDangerous, DANGER_ACK_TOKEN } from '../types/analysis_config'
+import { contextHelp, isDangerous, DANGER_ACK_TOKEN, withoutIlrInputs } from '../types/analysis_config'
 import { DangerBanner } from './DangerBanner'
 import { AdvancedAnalysisExpander } from './AdvancedAnalysisExpander'
+import { IlrBasisInputs } from './IlrBasisInputs'
 
 interface AnalysisConfigEditorProps {
   evidenceMode: boolean
+  /** Thin launch link: publication UI and lifecycle remain Julia-owned. */
+  study?: string
   config: AnalysisConfig
   onChange: (config: AnalysisConfig) => void
   onSave: () => void
@@ -14,7 +18,7 @@ interface AnalysisConfigEditorProps {
   validationErrors?: ValidationError[]
 }
 
-export function AnalysisConfigEditor({ evidenceMode, config, onChange, onSave, availableMetadataColumns, validationErrors }: AnalysisConfigEditorProps) {
+export function AnalysisConfigEditor({ evidenceMode, study, config, onChange, onSave, availableMetadataColumns, validationErrors }: AnalysisConfigEditorProps) {
   const [helpField, setHelpField] = useState<string | null>(null)
   const [showJson, setShowJson] = useState(false)
 
@@ -75,7 +79,9 @@ export function AnalysisConfigEditor({ evidenceMode, config, onChange, onSave, a
             } else if (newMethod === 'logistic' && (newNorm.method === 'clr' || newNorm.method === 'ilr')) {
               newNorm = { ...newNorm, method: 'presence_absence' }
             }
-            onChange({ ...config, method: newMethod, normalization: newNorm })
+            // ILR basis inputs are refused outside ILR, so leaving ILR clears them (visibly: the controls disappear with it)
+            const newAdvanced = newNorm.method === 'ilr' ? config.advanced : withoutIlrInputs(config.advanced)
+            onChange({ ...config, method: newMethod, normalization: newNorm, advanced: newAdvanced })
           }}
           style={{ width: '100%', padding: 8, marginTop: 4 }}
         >
@@ -161,7 +167,14 @@ export function AnalysisConfigEditor({ evidenceMode, config, onChange, onSave, a
         </label>
         <select
           value={config.normalization.method}
-          onChange={e => onChange({ ...config, normalization: { ...config.normalization, method: e.target.value as any } })}
+          onChange={e => {
+            const method = e.target.value as any
+            onChange({
+              ...config,
+              normalization: { ...config.normalization, method },
+              advanced: method === 'ilr' ? config.advanced : withoutIlrInputs(config.advanced),
+            })
+          }}
           style={{ width: '100%', padding: 8, marginTop: 4 }}
         >
           <option value="none">none</option>
@@ -195,19 +208,7 @@ export function AnalysisConfigEditor({ evidenceMode, config, onChange, onSave, a
         )}
 
         {config.normalization.method === 'ilr' && (
-          <div style={{ marginTop: 8 }}>
-            <label>ILR Basis</label>
-            <select
-              value={config.normalization.ilr_basis ?? 'default'}
-              onChange={e => onChange({ ...config, normalization: { ...config.normalization, ilr_basis: e.target.value } })}
-              style={{ width: '100%', padding: 8, marginTop: 4 }}
-            >
-              <option value="default">default</option>
-              <option value="phylogenetic">phylogenetic</option>
-              <option value="sequential_binary_partition">sequential_binary_partition</option>
-              <option value="balance_dendrogram">balance_dendrogram</option>
-            </select>
-          </div>
+          <IlrBasisInputs evidenceMode={evidenceMode} config={config} onChange={onChange} validationErrors={errorsByField} />
         )}
 
         {helpField === 'norm' && (
@@ -309,6 +310,15 @@ export function AnalysisConfigEditor({ evidenceMode, config, onChange, onSave, a
         <br />
         <strong>DOI-ready:</strong> Bundle includes JSON + Nickel + DEED + DataCite + provenance.
       </div>
+
+      {evidenceMode && study && (
+        <p>
+          <a className="btn" href={apiUrl(`/api/v1/studies/${encodeURIComponent(study)}/doi-ui?config=${encodeURIComponent(config.id)}`)}>
+            Mint DOI / view publication badge…
+          </a>
+          {' '}Opens the Julia publication screen for a saved configuration. Preparing a draft does not publish it.
+        </p>
+      )}
 
       {/* Actions */}
       <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
