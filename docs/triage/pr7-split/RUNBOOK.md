@@ -136,8 +136,9 @@ this is a settings/platform-side block, not a code break. On each repo:
 4. If human pushes fail identically, raise it with GitHub Support
    (platform-side incident) — and re-run the failed Dependabot Updates
    run on fork `main` once green (`gh run rerun 36210545146`).
-5. Until CI runs again, PRs cannot go green: fork PR #75 ("Closes #20
-   once CI is green") and any stack PRs from this kit are all gated on
-   this fix.
+5. Until CI runs again, PRs cannot go green: any stack PRs from this
+   kit are gated on this fix — and fork PR #75 (merged 2026-09-26
+   without green CI, closing fork issue #20) still owes its
+   post-merge verification (first real Julia execution of its tests).
 
 [p7]: https://github.com/JoshuaJewell/MetaManifold-WebUI/pull/7
