@@ -97,6 +97,14 @@ end
             min_samples_per_group=Int(get(adv_body, "min_samples_per_group", 3)),
             robust=Bool(get(adv_body, "robust", false)),
             acknowledgment_token=get(adv_body, "acknowledgment_token", nothing) isa Nothing ? nothing : String(get(adv_body, "acknowledgment_token", nothing)),
+            # ILR basis inputs (issue #20). Validated, and cross-checked against
+            # normalization.ilr_basis, by the same constructors as everything else.
+            ilr_phylo_tree_path=get(adv_body, "ilr_phylo_tree_path", nothing) isa Nothing ? nothing : String(get(adv_body, "ilr_phylo_tree_path", nothing)),
+            ilr_sbp_matrix_path=get(adv_body, "ilr_sbp_matrix_path", nothing) isa Nothing ? nothing : String(get(adv_body, "ilr_sbp_matrix_path", nothing)),
+            ilr_balance_dendrogram_method=get(adv_body, "ilr_balance_dendrogram_method", nothing) isa Nothing ? nothing : String(get(adv_body, "ilr_balance_dendrogram_method", nothing)),
+            ilr_part_weights=String(get(adv_body, "ilr_part_weights", "uniform")),
+            ilr_balance_weights=String(get(adv_body, "ilr_balance_weights", "uniform")),
+            ilr_sbp_history=String[String(h) for h in get(adv_body, "ilr_sbp_history", String[])],
         )
 
         cfg = AnalysisConfig.AnalysisConfigStruct(
