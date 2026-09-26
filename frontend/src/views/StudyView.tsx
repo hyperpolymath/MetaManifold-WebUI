@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useJobRefetch } from '../hooks/useJobEvents'
-import { api } from '../api/client'
+import { api, apiUrl } from '../api/client'
 import { Skeleton } from '../components/Skeleton'
 import { NameDialog } from '../components/NameDialog'
 import { CardActions, RunCard } from '../components/CardActions'
@@ -160,6 +160,11 @@ export function StudyView() {
           <button className="btn btn-primary" onClick={runPipeline}>Run full pipeline</button>
         </div>
       </div>
+
+      <p>
+        <a href={apiUrl(`/api/v1/studies/${encodeURIComponent(study!)}/doi-ui`)}>Evidence &amp; DOI publication</a>
+        {' '}— review an immutable analysis bundle and publish it on Zenodo.
+      </p>
 
       {loading && <Skeleton lines={3} />}
       {error   && <p className="error-msg">{error}</p>}

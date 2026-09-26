@@ -262,6 +262,7 @@ docs/*
 !docs/type-system/
 !docs/types/
 !docs/reproducibility.md
+!docs/doi-publication.md
 !docs/owner-review-2026-09-25.md
 !docs/integration/
 !docs/integration/**

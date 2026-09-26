@@ -150,6 +150,7 @@ flake.lock text eol=lf -diff linguist-generated=true
 Manifest.toml        text eol=lf -diff -merge linguist-generated=true
 renv.lock            text eol=lf -diff -merge linguist-generated=true
 frontend/bun.lock    text eol=lf -diff -merge linguist-generated=true
+test/doi/bun.lock    text eol=lf -diff -merge linguist-generated=true
 bun.lockb            binary      -diff -merge linguist-generated=true
 package-lock.json    text eol=lf -diff -merge linguist-generated=true
 pnpm-lock.yaml       text eol=lf -diff -merge linguist-generated=true

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useRef } from 'react'
+import type { JSX } from 'react'
 
 interface CladeNode {
   id: string
