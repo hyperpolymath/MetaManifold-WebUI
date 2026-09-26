@@ -186,3 +186,37 @@ needs the *addressee's* eyes before closing — left open deliberately.
 [notif]: https://github.com/notifications
 [c73]: https://github.com/hyperpolymath/MetaManifold-WebUI/pull/73#issuecomment-5845153601
 [p7]: https://github.com/JoshuaJewell/MetaManifold-WebUI/pull/7
+
+## Sweep 2 (same day, ~10:30 UTC) — leftovers the bot could still clear
+
+1. **Kit PR #76: MERGEABLE**, CodeQL + CodeFactor green, semgrep pending.
+   No CI/DOI checks report (outage). Ready whenever the owner is.
+2. **CodeFactor on the #75 merge: 3 × "Complex Method" notices, style
+   only** — `IlrBasisInputs.tsx:39`, `analysis_config.ts:143`,
+   `AnalysisConfigEditor.tsx:21` (run `108381688702`). Not correctness
+   blockers: refactor-or-accept during post-merge verification.
+3. **Dependabot: API rerun refused too** ("cannot be rerun" stock
+   message), so both `main` failures wait on an owner UI re-run or the
+   next Dependabot cycle after CI is fixed.
+4. **Probe branch `arena/01a0db23`: KEEP — do not delete.** True delta is
+   14 files, +2,896/−2, all additive, SPDX-clean: the issue-#21 Agda
+   proofs + `golden.json` fixture, the KYAML pilot (`KYAML.jl`, gate,
+   docs), and the spent CI probe. Landing notes for whoever opens its
+   PR: `proofs/agda/README.md` will add/add-conflict with #75's copy
+   (merge contents by hand); `test/runtests.jl` needs the one-line
+   kyaml include re-applied next to #75's; `*.agdai` would duplicate
+   (harmless, tidy it); drop `ci-probe.yml` (probe answered); note its
+   `EXPLAINME.adoc` differs from the db67 copy archived in
+   `docs/triage/db67-rescue/`.
+5. **Parent #12: §4 walkthrough + §5 Option B are now stale** — they
+   describe #8/#10/#11 as small reviewable PRs, but those have deleted
+   branches and render as whole-tree noise. Draft correction for the
+   owner to paste as a comment (bot is 403 on the parent):
+
+   > Correction (26 Sept triage): PRs #8, #10 and #11 no longer have
+   > live branches and cannot be reviewed or merged as §4 describes —
+   > their real changes (2/0/1 commits) are already on the fork's
+   > `main`, so they should be closed, not reviewed. Please review #7
+   > instead (a 14-part review guide now exists on the fork at
+   > `docs/triage/pr7-split/STACKS.md`). §5 Option B is therefore
+   > obsolete; options A, C and D stand as written.
