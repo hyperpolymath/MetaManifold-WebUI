@@ -1,4 +1,5 @@
 <!-- berrywiki
+SPDX-License-Identifier: CC-BY-SA-4.0
 id: 0198ba50-0000-7000-8000-000000000020
 parent: null
 position: 20
