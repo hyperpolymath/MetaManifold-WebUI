@@ -17,16 +17,23 @@
 set -uo pipefail
 
 PROOFS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AGDA="${AGDA_BIN:-agda}"
-
-if ! command -v "$AGDA" >/dev/null 2>&1 && [[ ! -x "$AGDA" ]]; then
-  printf 'gate-selftest: FATAL: agda not found (set AGDA_BIN)\n' >&2
+# Resolve Agda the same way bootstrap.sh does, so `just proofs-selftest` works
+# after `just proofs-bootstrap` with nothing else on PATH.
+VENDOR="${PROOFS_VENDOR:-$PROOFS_DIR/.vendor}"
+if [[ -n "${AGDA_BIN:-}" ]]; then
+  AGDA="$AGDA_BIN"
+elif command -v agda >/dev/null 2>&1; then
+  AGDA="$(command -v agda)"
+elif [[ -x "$VENDOR/venv/bin/agda" ]]; then
+  AGDA="$VENDOR/venv/bin/agda"
+else
+  printf 'gate-selftest: FATAL: agda not found (run proofs/bootstrap.sh --bootstrap, or set AGDA_BIN)\n' >&2
   exit 1
 fi
+[[ -x "$AGDA" ]] || { printf 'gate-selftest: FATAL: %s is not executable\n' "$AGDA" >&2; exit 1; }
 
 STDLIB_LIB=""
-for cand in "${PROOFS_VENDOR:-$PROOFS_DIR/.vendor}/agda-stdlib/standard-library.agda-lib" \
-            /tmp/clonetest/standard-library.agda-lib; do
+for cand in "$VENDOR/agda-stdlib/standard-library.agda-lib"; do
   [[ -f "$cand" ]] && { STDLIB_LIB="$cand"; break; }
 done
 [[ -n "$STDLIB_LIB" ]] || { printf 'gate-selftest: FATAL: standard library not found\n' >&2; exit 1; }

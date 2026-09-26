@@ -27,7 +27,15 @@
 set -euo pipefail
 
 AGDA_VERSION="2.7.0.1"
-STDLIB_VERSION="v3.0"
+
+# agda-stdlib revision.  Pinned by SHA, not by tag, and the reason matters:
+# these proofs use stdlib APIs (`Data.Integer.Properties._≡?_`, the `Dec` record
+# shape, `toWitness {a? = …}`, `NonNegative` *instances* for
+# `*-monoʳ-≤-nonNeg`) that exist only on the development line towards 3.0 — the
+# branch self-identifies as `standard-library-3.0` but no `v3.0` tag has been cut.
+# They do NOT compile against the latest release (v2.4) or against v2.1, which is
+# the estate pin on `main`.  See proofs/residue/toolchain.residue.
+STDLIB_VERSION="2ffa8b7d4e8e818717ad643d184f055a4d1b0447"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROOFS_DIR="$REPO_ROOT/proofs"
@@ -80,18 +88,27 @@ vendor_stdlib() {
   if [[ -f "$VENDOR/agda-stdlib/standard-library.agda-lib" ]]; then
     return 0
   fi
-  log "cloning agda-stdlib $STDLIB_VERSION"
+  log "cloning agda-stdlib at $STDLIB_VERSION"
   mkdir -p "$VENDOR"
   rm -rf "$VENDOR/agda-stdlib"
-  git clone --quiet --depth 1 --branch "$STDLIB_VERSION" \
-    https://github.com/agda/agda-stdlib "$VENDOR/agda-stdlib" \
-    || die "could not clone agda-stdlib $STDLIB_VERSION"
-  # The upstream repository calls itself `agda-stdlib`; the `defaults` file and
-  # every `depend:` clause in the wild refer to `standard-library`.
-  sed -i 's/^name: .*/name: standard-library/' "$VENDOR/agda-stdlib/agda-stdlib.agda-lib" 2>/dev/null || true
-  if [[ ! -f "$VENDOR/agda-stdlib/standard-library.agda-lib" ]]; then
-    printf 'name: standard-library\ninclude: src\n' > "$VENDOR/agda-stdlib/standard-library.agda-lib"
+  # A tag would allow `--branch`; a SHA does not, so fetch the exact revision.
+  git init -q "$VENDOR/agda-stdlib"
+  git -C "$VENDOR/agda-stdlib" remote add origin https://github.com/agda/agda-stdlib
+  git -C "$VENDOR/agda-stdlib" fetch -q --depth 1 origin "$STDLIB_VERSION" \
+    && git -C "$VENDOR/agda-stdlib" checkout -q FETCH_HEAD \
+    || die "could not fetch agda-stdlib $STDLIB_VERSION"
+  # The upstream `.agda-lib` file is named after the tag (`agda-stdlib.agda-lib`
+  # on some tags, `standard-library-2.1.agda-lib` on others) and its `name:` does
+  # not always read `standard-library`, which is what `defaults` and every
+  # `depend:` clause refer to.  Normalise both, whatever the tag ships.
+  local lib
+  lib="$(find "$VENDOR/agda-stdlib" -maxdepth 1 -name '*.agda-lib' | head -1)"
+  [[ -n "$lib" ]] || die "the agda-stdlib checkout at $STDLIB_VERSION has no .agda-lib file"
+  sed -i 's/^name: .*/name: standard-library/' "$lib"
+  if [[ "$(basename "$lib")" != "standard-library.agda-lib" ]]; then
+    cp "$lib" "$VENDOR/agda-stdlib/standard-library.agda-lib"
   fi
+  log "stdlib library file: $lib"
 }
 
 vendor_prims() {
@@ -119,16 +136,30 @@ vendor_prims() {
     || die "could not install the primitive libraries into $datadir/lib/prim"
 }
 
+# Agda looks for the library list in two places, and which one wins depends on
+# how Agda was installed: the user config directory (`~/.config/agda/`, i.e.
+# $XDG_CONFIG_HOME/agda/) and the data directory reported by --print-agda-dir.
+# A PyPI wheel reads one, a distro package the other.  Write both, so the gate
+# does not depend on how the toolchain happens to have been installed.
+AGDA_LIBRARIES_FILE="$PROOFS_DIR/.agda-libraries"
+
 write_agda_config() {
-  local datadir
-  datadir="$("$AGDA" --print-agda-dir)"
-  mkdir -p "$datadir/lib"
+  # A stable, in-repo libraries file.  check() passes this to Agda explicitly via
+  # --library-file, so the gate works even if neither config location is read.
   {
     printf '%s\n' "$LIB_FILE"
     printf '%s\n' "$VENDOR/agda-stdlib/standard-library.agda-lib"
-  } > "$datadir/lib/libraries"
-  printf 'standard-library\n' > "$datadir/lib/defaults"
-  log "wrote $datadir/lib/{libraries,defaults}"
+  } > "$AGDA_LIBRARIES_FILE"
+
+  local datadir userdir
+  datadir="$("$AGDA" --print-agda-dir)"
+  userdir="${XDG_CONFIG_HOME:-$HOME/.config}/agda"
+  for d in "$datadir/lib" "$userdir"; do
+    mkdir -p "$d"
+    cp "$AGDA_LIBRARIES_FILE" "$d/libraries"
+    printf 'standard-library\n' > "$d/defaults"
+    log "wrote $d/{libraries,defaults}"
+  done
 }
 
 ##############################################################################
@@ -143,7 +174,11 @@ check() {
   # needs an escape hatch is not a proof.
   # --without-K: no proof-irrelevance-by-fiat for equality.
   log "type-checking MetaManifold.All (this reaches every module in the tree)"
-  "$AGDA" --safe --without-K MetaManifold/All.agda
+  if [[ -f "$AGDA_LIBRARIES_FILE" ]]; then
+    "$AGDA" --library-file="$AGDA_LIBRARIES_FILE" --safe --without-K MetaManifold/All.agda
+  else
+    die "$AGDA_LIBRARIES_FILE is missing; run proofs/bootstrap.sh --bootstrap first"
+  fi
   log "axiom audit"
   "$PROOFS_DIR/tests/axiom-audit.sh"
   log "OK"

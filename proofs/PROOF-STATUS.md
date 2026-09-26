@@ -1,7 +1,15 @@
 # Proof status
 
 Formal verification of the validated Julia statistics layer (issue #1), in **Agda
-2.7.0.1** with **agda-stdlib 3.0**, under `--safe --without-K`.
+2.7.0.1** with **agda-stdlib pinned at `2ffa8b7d4e8e818717ad643d184f055a4d1b0447`**,
+under `--safe --without-K`.
+
+> **Read this before trusting the pin.** That SHA is on agda-stdlib's development
+> line towards 3.0 — the branch's own library file declares
+> `name: standard-library-3.0`, but **no `v3.0` tag exists** (the newest is
+> `v2.4`). These proofs do **not** compile against `v2.4`, nor against `v2.1`,
+> which is the estate pin on `main`. See `R-TC-1` in
+> [`residue/toolchain.residue`](residue/toolchain.residue).
 
 | Gate | Command | Result |
 | --- | --- | --- |
@@ -9,8 +17,14 @@ Formal verification of the validated Julia statistics layer (issue #1), in **Agd
 | Axiom audit | `proofs/tests/axiom-audit.sh` | **PASS** — 7/7 modules reachable, no postulates, no FFI, no unsound flags, no holes, all `--safe` |
 | Gate self-test (does the gate reject anything?) | `proofs/tests/gate-selftest.sh` | **PASS** — 10/10 controls |
 
-Last verified locally: 2026-09-26, Agda 2.7.0.1 (PyPI wheel), agda-stdlib `v3.0`,
-`agda --safe --without-K MetaManifold/All.agda` → exit 0 with empty output.
+Last verified locally: 2026-09-26, from an **empty `proofs/.vendor`** — i.e. the
+whole toolchain was installed by `proofs/bootstrap.sh` itself (PyPI wheel for
+Agda, stdlib fetched at the pinned SHA, Agda source for the primitive libraries)
+and then:
+
+- `proofs/bootstrap.sh` → `proofs: OK`, exit 0
+- `proofs/tests/axiom-audit.sh` → `7/7 modules reachable`, `clean`, exit 0
+- `proofs/tests/gate-selftest.sh` → `10/10 controls behaved correctly`, exit 0
 
 ## Why Agda and not Lean
 
@@ -162,6 +176,12 @@ Everything not proved is in `proofs/residue/`:
 - `out-of-scope.residue` — probability theory, IEEE-754 semantics, the
   Agda-model-to-Julia correspondence, the `:ordinary` regression path, and exact
   statistical tests (issue #3).
+- `toolchain.residue` — `R-TC-1`: the proofs compile only against an untagged
+  agda-stdlib development SHA, not against any release; porting to `main`'s
+  `v2.1` pin is required to land there, with the failing APIs listed in order.
+  `R-TC-2` (closed): Agda's library-file location differs between install
+  methods; `bootstrap.sh` now writes both locations and passes `--library-file`
+  explicitly.
 
 `q_i ≥ p_i` is **false** in general and is deliberately absent.
 
@@ -173,8 +193,9 @@ just proofs                    # same, via the Justfile
 just proofs-selftest           # prove the gate rejects broken proofs
 ```
 
-The bootstrap pins Agda `2.7.0.1` and agda-stdlib `v3.0`. Changing either is a
-change to the gate and must be reviewed.
+The bootstrap pins Agda `2.7.0.1` and agda-stdlib at the SHA above. Changing
+either is a change to the gate and must be reviewed — and note that moving the
+stdlib pin to a *released* tag is not a version bump, it is a port (see `R-TC-1`).
 
 `proofs/bootstrap.sh` fails non-zero if Agda cannot be installed. **An absent
 prover is a failure, never a skip** — in CI and locally alike.

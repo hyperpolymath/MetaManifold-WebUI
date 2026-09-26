@@ -10,10 +10,17 @@ assistant" does and does not mean for issue #1, without reading Agda.
 ## The one-line version
 
 Seven modules, 77 top-level definitions, type-checked by Agda 2.7.0.1 with
-agda-stdlib 3.0 under `--safe --without-K`: no postulates, no foreign code, no
-proof-irrelevance escape hatch, no universe-level cheating. A separate audit
-script enforces those four facts on every build, and a self-test script proves
-the audit and the type-checker can actually fail.
+agda-stdlib (pinned by SHA — see the caveat below) under `--safe --without-K`: no
+postulates, no foreign code, no proof-irrelevance escape hatch, no universe-level
+cheating. A separate audit script enforces those four facts on every build, and a
+self-test script proves the audit and the type-checker can actually fail.
+
+One caveat that changes what "verified" means here, stated up front rather than
+in a footnote: the stdlib pin is `2ffa8b7d`, which is on the development line
+towards agda-stdlib 3.0. **No `v3.0` tag exists** — the newest is `v2.4` — and
+these proofs do not compile against `v2.4` or against the `v2.1` estate pin on
+`main`. Reproducible, but not portable. `proofs/residue/toolchain.residue` lists
+the exact APIs that have to change to port it.
 
 ## Why a proof assistant at all
 
@@ -114,8 +121,11 @@ just proofs-selftest # prove the gate rejects broken proofs (nine breakages)
 just proofs-clean    # remove the vendored toolchain and interface cache
 ```
 
-`proofs/bootstrap.sh` pins Agda `2.7.0.1` and agda-stdlib `v3.0` and exits
-non-zero if it cannot install them. **An absent prover is a failure, never a
-skip**, in CI and locally alike. CI runs the audit, the type-check, the
+`proofs/bootstrap.sh` pins Agda `2.7.0.1` and agda-stdlib at `2ffa8b7d`, and
+exits non-zero if it cannot install them. **An absent prover is a failure, never
+a skip**, in CI and locally alike. CI runs the audit, the type-check, the
 self-test, and a consistency check that `PROOF-STATUS.md` matches the tree, and
 uploads the type-check transcript as an artifact whether it passed or not.
+
+Verified from an empty `proofs/.vendor`, so the numbers above are the bootstrap
+script installing its own toolchain, not a pre-existing one being reused.

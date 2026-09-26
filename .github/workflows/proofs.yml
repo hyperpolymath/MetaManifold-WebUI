@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   agda:
-    name: Agda proofs (2.7.0.1 / stdlib 3.0)
+    name: Agda proofs (2.7.0.1 / stdlib 2ffa8b7d)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -48,9 +48,9 @@ jobs:
         with:
           path: |
             proofs/.vendor
-            ~/.agda
-          key: agda-2.7.0.1-stdlib-v3.0-${{ hashFiles('proofs/agda/**/*.agda', 'proofs/agda/*.agda-lib') }}
-          restore-keys: agda-2.7.0.1-stdlib-v3.0-
+            ~/.config/agda
+          key: agda-2.7.0.1-stdlib-2ffa8b7d-${{ hashFiles('proofs/agda/**/*.agda', 'proofs/agda/*.agda-lib') }}
+          restore-keys: agda-2.7.0.1-stdlib-2ffa8b7d-
 
       - name: Bootstrap the prover
         run: proofs/bootstrap.sh --bootstrap
