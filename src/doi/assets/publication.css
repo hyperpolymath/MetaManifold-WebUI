@@ -26,6 +26,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .actions, .section-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .section-heading { justify-content: space-between; }
+.publication, #config-summary { overflow-wrap: anywhere; }
 .publication { border-top: 1px solid #dbe2eb; padding: 22px 0; }
 .publication > a { display: inline-block; margin: 6px 14px 6px 0; }
 .state { text-transform: none; font-weight: 600; color: #445f77; }

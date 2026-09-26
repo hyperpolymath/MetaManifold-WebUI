@@ -75,7 +75,12 @@ end
             publication = base * "/doi-publications/" * prepared["id"]
             @test call("POST", publication * "/publish", Dict()).status == 422
             @test Main.DOIContractTests.count_calls(fake, "POST", "/actions/publish") == 0
-            @test call("GET", publication * "/download/bundle").status == 200
+            archive_response = call("GET", publication * "/download/bundle")
+            @test archive_response.status == 200
+            @test HTTP.header(archive_response, "Content-Length") == string(prepared["bundle_size"])
+            archive_bytes = IOBuffer()
+            write(archive_bytes, archive_response.body)
+            @test bytes2hex(sha256(take!(archive_bytes))) == prepared["bundle_sha256"]
             @test call("GET", publication * "/download/receipt").status == 409
             @test call("GET", publication * "/download/state.json").status == 404
             # Study-level destruction and generic file serving cannot erase or
@@ -86,6 +91,11 @@ end
             middleware = server._file_middleware(_ -> HTTP.Response(200))
             @test middleware(HTTP.Request("GET", "/files/example/runs/.doi/" * prepared["id"] * "/state.json")).status == 403
             @test middleware(HTTP.Request("GET", "/files/example/runs/%2Eanalysis/configs/" * cfg["id"] * ".json")).status == 403
+            @test middleware(HTTP.Request("GET", "/files/example%2F.doi/runs/" * prepared["id"] * "/state.json")).status == 403
+            symlink(joinpath(tmp, "projects", "example", ".doi", prepared["id"], "state.json"), joinpath(tmp, "projects", "example", "public-alias.json"))
+            @test middleware(HTTP.Request("GET", "/files/example/runs/public-alias.json")).status == 403
+            @test middleware(HTTP.Request("GET", "/../projects/example/.doi/state.json")).status == 403
+            @test middleware(HTTP.Request("GET", "/%2E%2E/projects/example/.doi/state.json")).status == 403
             # Preview/same-origin proxy requests work without wildcard CORS.
             preview_headers = ["Host" => "8080-test.e2b.app", "Origin" => "https://8080-test.e2b.app"]
             cors = server._cors_middleware(_ -> HTTP.Response(200))

@@ -12,7 +12,7 @@ const LICENSES = Dict("CC-BY-4.0" => "cc-by-4.0", "CC-BY-SA-4.0" => "cc-by-sa-4.
 const BASE_FILES = Set(["analysis_config.json", "analysis_config.ncl", "analysis_config_chora.deed",
                         "datacite.json", "provenance.json", "content_hash.txt", "README.md"])
 const BUNDLE_FILES = union(BASE_FILES, Set(["analysis_result.json", "DANGER_BANNER.txt", "checksums.sha256"]))
-const DECORATED_FILES = union(BUNDLE_FILES, Set(["publication.json", "CITATION.cff", "CITATION.txt", "zenodo.json"]))
+const DECORATED_FILES = union(BUNDLE_FILES, Set(["publication.json", "publication.ncl", "publication_chora.deed", "CITATION.cff", "CITATION.txt", "zenodo.json"]))
 fail(message) = throw(PublicationError(422, "invalid_publication", message))
 file_md5(path::AbstractString) = open(io -> bytes2hex(md5(io)), path)
 
@@ -28,7 +28,7 @@ end
 function _github_url(value, field, kind)
     text = _text(value, field; max_length=2048, optional=true)
     isempty(text) && return nothing
-    pattern = kind == :release ? r"^https://github\.com/[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+/releases/tag/[A-Za-z0-9_.~%+/-]+$" :
+    pattern = kind == :release ? r"^https://github\.com/[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+/releases/tag/[A-Za-z0-9_.~+/-]+$" :
         r"^https://github\.com/(users|orgs)/[A-Za-z0-9][A-Za-z0-9-]*/projects/[1-9][0-9]*$"
     occursin(pattern, text) || fail("$field must be a public GitHub $(kind == :release ? "release tag" : "Projects v2") URL without credentials, query, or fragment.")
     # Refuse URL parser normalisation and malformed percent escapes.
@@ -217,6 +217,26 @@ function decorate_bundle!(directory, metadata, binding, publication_id, environm
         "environment" => environment, "deposition_id" => deposit_id, "doi" => doi, "state" => "reserved",
         "github_release_url" => metadata["github_release_url"], "github_project_url" => metadata["github_project_url"]))
     write(joinpath(directory, "publication.json"), canonical_json(publication))
+    # Flat attestation values are controlled identifiers/URLs, never executable
+    # user-authored Nickel expressions. Missing optional fields are explicit null.
+    open(joinpath(directory, "publication.ncl"), "w") do io
+        println(io, "# SPDX-License-Identifier: MPL-2.0\n# Reserved DOI attestation; see doi_publication.ncl contract.\n{")
+        for key in sort!(collect(keys(publication)))
+            println(io, "  ", key, " = ", JSON3.write(publication[key]), ",")
+        end
+        println(io, "}")
+    end
+    open(joinpath(directory, "publication_chora.deed"), "w") do io
+        println(io, ";; SPDX-License-Identifier: MPL-2.0\n(repo-deed\n  :schema-version \"1.0.0\"")
+        println(io, "  :canonical-name ", JSON3.write("doi-publication-" * publication_id))
+        println(io, "  (doi-publication")
+        for key in sort!(collect(setdiff(keys(publication), ["schema_version"])))
+            value = publication[key]
+            rendered = value isa Bool ? (value ? "#t" : "#f") : JSON3.write(isnothing(value) ? "" : value)
+            println(io, "    :", replace(key, '_' => '-'), " ", rendered)
+        end
+        println(io, "  ))")
+    end
     write(joinpath(directory, "CITATION.cff"), citation_cff(metadata, doi))
     write(joinpath(directory, "CITATION.txt"), citation_text(metadata, doi) * "\n")
     write(joinpath(directory, "zenodo.json"), canonical_json(zenodo_metadata(metadata, binding, publication_id)))
@@ -229,7 +249,7 @@ function decorate_bundle!(directory, metadata, binding, publication_id, environm
         "publicationYear" => parse(Int, metadata["publication_date"][1:4]),
         "types" => Dict("resourceTypeGeneral" => "Dataset", "resourceType" => binding["kind"]),
         "descriptions" => [Dict("description" => metadata["description"], "descriptionType" => "Abstract")],
-        "rightsList" => [Dict("rights" => metadata["license"], "rightsIdentifier" => lowercase(metadata["license"]), "rightsIdentifierScheme" => "SPDX")],
+        "rightsList" => [Dict("rights" => metadata["license"], "rightsIdentifier" => metadata["license"], "rightsIdentifierScheme" => "SPDX")],
         "relatedIdentifiers" => related, "version" => metadata["version"],
         "alternateIdentifiers" => [Dict("alternateIdentifier" => binding["config_hash"], "alternateIdentifierType" => "SHA-256")])
     write(joinpath(directory, "datacite.json"), canonical_json(datacite))

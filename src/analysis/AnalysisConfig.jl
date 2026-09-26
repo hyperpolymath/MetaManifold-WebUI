@@ -819,6 +819,37 @@ return a fallback message that includes the requested path.
 """
 function context_help(field_path::String)
     help_db = Dict{String,String}(
+        "doi" => """
+        DOI publication is opt-in and behind Evidence Mode. Prepare a private Zenodo draft,
+        download and review its frozen ZIP, then separately confirm irreversible publication.
+        Configuration-only bundles are explicitly labelled; mock/empty results are not citable results.
+        A reserved DOI or HTTP 202 is not publication. Only a verified published record has a badge.
+        See docs/doi-publication.md for setup, privacy review and recovery.
+        """,
+        "doi.environment" => """
+        Sandbox is the default test environment (10.5072); production (10.5281) registers permanent DOIs.
+        The operator sets METAMANIFOLD_ZENODO_ENABLED and METAMANIFOLD_ZENODO_ENVIRONMENT,
+        with a separate server-side ZENODO_SANDBOX_TOKEN or ZENODO_TOKEN. Never enter tokens in the browser.
+        CSRF protection is not authentication: use a local single-user server or an authenticated reverse proxy.
+        """,
+        "doi.confirmation" => """
+        DANGER: publication makes the entire reviewed archive public and the DOI cannot be unminted.
+        Check privacy, creator consent, licence, provenance paths, results and scientific override warnings.
+        Acknowledge this review, type PUBLISH followed by the environment and deposition ID,
+        and submit the exact reviewed bundle SHA-256. Preparing/uploading is not this confirmation.
+        """,
+        "doi.recovery" => """
+        Reload saved publications after a restart or lost response. Resume draft preparation against
+        the same journal. If creation is uncertain, find the marked draft on Zenodo and recover its ID.
+        If publication is uncertain, refresh the existing deposition; publication is never blindly retried.
+        Back up .analysis and .doi together. Never delete a journal or mint a replacement to fix a timeout.
+        """,
+        "doi.github" => """
+        Download the verified production receipt and run scripts/link-doi.sh --receipt PATH for
+        an offline dry run. Explicit --apply updates the existing release and optional Projects v2 item
+        using gh authentication. No GitHub credential enters the web server and no second DOI is minted.
+        A partial linking failure is safe to resume with the same receipt; check the GitHub connection.
+        """,
         "method" => """
         Analysis Method (required, explicit, no auto-selection) — v1: NB GLM, CLR/ILR+Gaussian, logistic
 

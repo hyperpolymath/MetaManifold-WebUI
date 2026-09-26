@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 module DOIContractTests
-using Test, HTTP, JSON3, Dates, SHA, MD5, Sockets
+using Test, HTTP, JSON3, Dates, SHA, MD5, Sockets, Logging
 const Target = isdefined(Main, :MetaManifold) ? Main.MetaManifold : Main.DOIIsolated
 const S = Target.DOIStorage
 const B = Target.DOIBundles
@@ -184,6 +184,9 @@ end
             @test read(joinpath(payload, "analysis_result.json")) == read(joinpath(source, "analysis_result.json"))
             @test read(joinpath(payload, "provenance.json")) == read(joinpath(source, "provenance.json"))
             @test isfile(joinpath(payload, "DANGER_BANNER.txt"))
+            @test isfile(joinpath(payload, "publication.ncl"))
+            @test isfile(joinpath(payload, "publication_chora.deed"))
+            @test occursin(":schema-version", read(joinpath(payload, "publication_chora.deed"), String))
             @test S.read_json(joinpath(payload, "publication.json"))["state"] == "reserved"
             @test S.read_json(joinpath(payload, "datacite.json"))["identifiers"][1]["identifier"] == prepared["reserved_doi"]
             @test occursin(prepared["reserved_doi"], read(joinpath(payload, "CITATION.cff"), String))
@@ -225,6 +228,18 @@ end
             @test length(fake.calls) == before
             @test read(P.download_path(root, prepared["id"], "receipt")[1]) == receipt_before
             @test S.file_sha256(archive) == prepared["bundle_sha256"] # no self-referential rewrite
+            if haskey(ENV, "DOI_CONTRACT_ARTIFACTS")
+                output = ENV["DOI_CONTRACT_ARTIFACTS"]
+                mkpath(output)
+                S.atomic_json(joinpath(output, "prepared-" * environment * ".json"), prepared)
+                S.atomic_json(joinpath(output, "published-" * environment * ".json"), P.receipt(root, prepared["id"]))
+                for (source, suffix) in (("publication.json", ".json"), ("publication.ncl", ".ncl"), ("publication_chora.deed", ".deed"), ("CITATION.cff", ".cff"))
+                    cp(joinpath(payload, source), joinpath(output, "attestation-" * environment * suffix); force=true)
+                end
+                write(joinpath(output, "publication.html"), W.render_page("example", "fixture-csrf", "sandbox", true; selected_config=CONFIG_ID))
+                write(joinpath(output, "publication-production.html"), W.render_page("example", "fixture-csrf", "production", true; selected_config=CONFIG_ID))
+                write(joinpath(output, "publication-disabled.html"), W.render_page("example", "fixture-csrf", "sandbox", false; selected_config=CONFIG_ID))
+            end
             for (dir, _, files) in walkdir(root), file in files
                 endswith(file, ".zip") && continue
                 @test !occursin(FAKE_TOKEN, read(joinpath(dir, file), String))
@@ -311,6 +326,18 @@ end
             @test count_calls(fake, "POST", "/actions/publish") == 0
         end
     end
+    prepared_fixture() do _, root, _, fake, c, prepared
+        publish_fixture(root, prepared, c)
+        receipt_path = P.download_path(root, prepared["id"], "receipt")[1]
+        original = read(receipt_path, String)
+        write(receipt_path, original * " ")
+        @test_throws S.PublicationError P.receipt(root, prepared["id"])
+        write(receipt_path, original)
+        citation_path = P.download_path(root, prepared["id"], "citation")[1]
+        write(citation_path, "doi: 10.5281/zenodo.999")
+        @test_throws S.PublicationError P.download_path(root, prepared["id"], "citation")
+        @test count_calls(fake, "POST", "/actions/publish") == 1
+    end
     # PUT failure can be resumed with the original bytes and the same deposition.
     mktempdir() do tmp
         source = bundle_fixture(tmp); root = joinpath(tmp, "state")
@@ -329,6 +356,31 @@ end
     end
 end
 
+@testset "Bounded downloads through the real HTTP writer" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "archive.zip")
+        content = repeat("0123456789abcdef", 200_003) # multiple 1 MiB chunks and a final partial chunk
+        write(path, content)
+        socket = Sockets.listen(ip"127.0.0.1", 0)
+        port = last(Sockets.getsockname(socket))
+        server = HTTP.serve!(_ -> HTTP.Response(200, ["Content-Type" => "application/zip", "Content-Length" => string(filesize(path))]; body=S.FileBody(path)), socket; verbose=false)
+        try
+            response = HTTP.get("http://127.0.0.1:$port/"; retry=false, readtimeout=10)
+            @test response.status == 200
+            @test HTTP.header(response, "Content-Length") == string(sizeof(content))
+            @test String(response.body) == content
+            logs = IOBuffer()
+            with_logger(SimpleLogger(logs, Logging.Debug)) do
+                # The real HTTP transport must suppress even opt-in wire logging.
+                Z._http("GET", "http://127.0.0.1:$port/", ["Authorization" => "Bearer " * FAKE_TOKEN], "")
+            end
+            @test !occursin(FAKE_TOKEN, String(take!(logs)))
+        finally
+            HTTP.forceclose(server)
+        end
+    end
+end
+
 @testset "Private atomic storage and Julia UI" begin
     mktempdir() do tmp
         root = joinpath(tmp, "private")
@@ -336,6 +388,10 @@ end
         @test S.read_json(joinpath(root, "state.json"))["value"] == 1
         S.atomic_json(joinpath(root, "state.json"), Dict("value" => 2))
         @test S.read_json(joinpath(root, "state.json"))["value"] == 2
+        stream = IOBuffer()
+        bytes = write(stream, S.FileBody(joinpath(root, "state.json")))
+        @test bytes == filesize(joinpath(root, "state.json"))
+        @test String(take!(stream)) == read(joinpath(root, "state.json"), String)
         @test readdir(root) == ["state.json"]
         S.with_publication_lock(root) do
             err = captured_error(() -> S.with_publication_lock(() -> nothing, root))

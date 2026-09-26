@@ -1,0 +1,26 @@
+;; SPDX-License-Identifier: MPL-2.0
+;; Reserved DOI attestation template. Generated alongside publication.json/.ncl.
+;; No token, browser confirmation or post-publication archive hash belongs here.
+;; Optional JSON nulls are represented by empty strings in this DEED projection.
+;; The actual publication receipt is an external, immutable JSON sidecar, avoiding
+;; a circular hash and preserving the original scientific config/result bytes.
+
+(repo-deed
+  :schema-version "1.0.0"
+  :canonical-name "doi-publication-template"
+  (doi-publication
+    :publication-id "<64 lowercase hex characters>"
+    :environment "sandbox"
+    :state "reserved"
+    :deposition-id "<positive decimal Zenodo ID>"
+    :doi "<reserved DOI; not yet registered>"
+    :kind "configuration"
+    :config-id "<saved AnalysisConfig UUID>"
+    :config-hash "<scientific config SHA-256>"
+    :config-file-sha256 "<exact config file SHA-256 including provenance>"
+    :result-id ""
+    :result-hash ""
+    :result-file-sha256 ""
+    :dangerous #f
+    :github-release-url ""
+    :github-project-url ""))

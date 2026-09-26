@@ -24,6 +24,8 @@ _archive(root, s) = joinpath(publication_path(root, s["id"]), _archive_name(s["i
 
 function _read(root, id)
     path = _state_path(root, id)
+    islink(root) && throw(PublicationError(409, "unsafe_storage", "Publication storage must not be a symlink."))
+    islink(publication_path(root, id)) && throw(PublicationError(409, "unsafe_storage", "Publication storage must not be a symlink."))
     isfile(path) && !islink(path) || throw(PublicationError(404, "publication_not_found", "Publication not found."))
     s = try read_json(path) catch; throw(PublicationError(409, "corrupt_publication", "Publication state cannot be read. Restore its journal from backup; do not create a replacement.")) end
     get(s, "schema_version", nothing) == SCHEMA_VERSION && get(s, "id", nothing) == id && get(s, "state", "") in STATES ||
@@ -61,6 +63,7 @@ end
 status(root, id) = _public(_read(root, id))
 
 function publications(root)
+    islink(root) && throw(PublicationError(409, "unsafe_storage", "Publication storage must not be a symlink."))
     isdir(root) || return Dict{String,Any}[]
     [_public(_read(root, id)) for id in sort!(readdir(root)) if occursin(r"^[0-9a-f]{64}$", id) && isfile(_state_path(root, id))]
 end
@@ -85,9 +88,10 @@ function _remote_metadata(s, deposit, client)
     delete!(expected, "prereserve_doi")
     actual = get(deposit, "metadata", nothing)
     actual isa AbstractDict && _subset(expected, actual) ||
-        throw(PublicationError(409, "remote_metadata_changed", "Zenodo metadata differs from the frozen publication request. Review the existing draft; it was not overwritten or published."))
+        throw(PublicationError(409, "remote_metadata_changed", "Zenodo metadata differs from the frozen publication request. Review the existing deposition; this operation will not overwrite it or issue another publish request."))
     doi = get(deposit, "submitted", false) === true ?
         Zenodo.checked_doi(client, get(deposit, "doi", get(actual, "doi", nothing))) : Zenodo.reserved_doi(client, deposit)
+    endswith(doi, "." * s["deposition_id"]) || throw(PublicationError(409, "deposition_mismatch", "Reserved DOI is not bound to the expected deposition ID."))
     if !isnothing(s["reserved_doi"])
         doi == s["reserved_doi"] || throw(PublicationError(409, "doi_changed", "The Zenodo DOI differs from the reserved identifier."))
     end
@@ -109,7 +113,7 @@ end
 function _remote_files(s, deposit)
     files = get(deposit, "files", nothing)
     files isa AbstractVector && length(files) == 1 && _file_matches(only(files), s) ||
-        throw(PublicationError(409, "remote_files_changed", "Zenodo must contain exactly the reviewed archive with the matching size and MD5 checksum. No publication was attempted."))
+        throw(PublicationError(409, "remote_files_changed", "Zenodo does not contain exactly the reviewed archive with its matching size and MD5 checksum. Publication cannot be verified. Review the existing deposition; do not create a replacement."))
     return true
 end
 
@@ -152,12 +156,16 @@ function _finish!(root, s, deposit, client)
     doi = Zenodo.checked_doi(client, get(deposit, "doi", get(deposit["metadata"], "doi", nothing)))
     doi == s["reserved_doi"] || throw(PublicationError(409, "doi_changed", "Published DOI differs from the reviewed DOI."))
     s["doi"] = doi
+    s["last_error"] = nothing
     # Do not trust remote URLs (or render javascript: links). Construct known origins.
     s["record_url"] = Zenodo.origin(client) * "/records/" * Zenodo.checked_id(get(deposit, "record_id", s["deposition_id"]))
     receipt_path = joinpath(publication_path(root, s["id"]), "publication-receipt.json")
+    islink(receipt_path) && throw(PublicationError(409, "unsafe_storage", "Publication receipt must not be a symlink."))
     if isfile(receipt_path)
         previous = read_json(receipt_path)
-        previous["doi"] == doi && previous["bundle_sha256"] == s["bundle_sha256"] ||
+        fields = ("schema_version", "id", "environment", "binding", "metadata", "deposition_id", "reserved_doi", "doi", "bundle_sha256", "bundle_md5", "bundle_size")
+        get(previous, "state", nothing) == "published" && get(previous, "api_version", nothing) == Zenodo.API_VERSION &&
+            all(get(previous, key, nothing) == s[key] for key in fields) ||
             throw(PublicationError(409, "receipt_conflict", "An immutable publication receipt already exists with different content."))
         s["published_at"] = previous["published_at"]
     else
@@ -169,6 +177,7 @@ function _finish!(root, s, deposit, client)
         value["events"] = vcat(s["events"], [Dict("at" => s["published_at"], "event" => "publication_verified", "state" => "published")])
         atomic_json(receipt_path, value)
     end
+    s["receipt_sha256"] = file_sha256(receipt_path)
     s["state"] = "published"
     s["last_error"] = nothing
     _save(root, s, "publication_verified")
@@ -241,6 +250,7 @@ function prepare!(root::String, bundle::String, input::AbstractDict, client::Zen
     isnothing(Sys.which("zip")) && throw(PublicationError(503, "zip_unavailable", "Install zip before preparing a Zenodo draft."))
     sum(filesize(joinpath(bundle, f)) for f in readdir(bundle)) <= MAX_ARCHIVE_BYTES ||
         throw(PublicationError(422, "bundle_too_large", "Bundle exceeds the supported 50 GB limit."))
+    private_dir(root)
     id = bytes2hex(sha256(canonical_json(Dict("environment" => client.environment, "binding" => binding))))
     directory = publication_path(root, id)
     return with_publication_lock(directory) do
@@ -363,7 +373,10 @@ end
 function receipt(root, id)
     s = _read(root, id)
     s["state"] == "published" || throw(PublicationError(409, "not_published", "There is no published receipt yet."))
-    read_json(joinpath(publication_path(root, id), "publication-receipt.json"))
+    path = joinpath(publication_path(root, id), "publication-receipt.json")
+    isfile(path) && !islink(path) && file_sha256(path) == get(s, "receipt_sha256", nothing) ||
+        throw(PublicationError(409, "receipt_changed", "The immutable publication receipt is missing or changed. Restore the journal and receipt from backup."))
+    return read_json(path)
 end
 
 function download_path(root, id, kind)
@@ -375,7 +388,10 @@ function download_path(root, id, kind)
         return joinpath(publication_path(root, id), "publication-receipt.json"), "application/json", "publication-" * id * ".json"
     elseif kind == "citation"
         s["state"] == "published" || throw(PublicationError(409, "not_published", "Cite only a published record, not a reserved DOI."))
-        return joinpath(publication_path(root, id), "payload", "CITATION.cff"), "text/yaml", "citation-" * id * ".cff"
+        path = joinpath(publication_path(root, id), "payload", "CITATION.cff")
+        isfile(path) && !islink(path) && read(path, String) == citation_cff(s["metadata"], s["doi"]) ||
+            throw(PublicationError(409, "citation_changed", "The local citation file differs from the published metadata."))
+        return path, "text/yaml", "citation-" * id * ".cff"
     end
     throw(PublicationError(404, "file_not_found", "Unknown publication download."))
 end

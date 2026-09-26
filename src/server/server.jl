@@ -22,7 +22,9 @@ module Server
     using MetaManifold.Tools, MetaManifold.TaxonomyTableTools, MetaManifold.ProjectSetup
     using MetaManifold.DADA2, MetaManifold.OTUPipeline
     using MetaManifold.DiversityMetrics, MetaManifold.Analysis
-    using MetaManifold.Epistemic, MetaManifold.AnalysisConfig, MetaManifold.CladeCumulus
+    using MetaManifold.Epistemic, MetaManifold.CladeCumulus
+    # Bind the module, not its same-named exported struct.
+    using MetaManifold: AnalysisConfig
 
     ## EPIPE log filter
     # HTTP.jl logs every broken-pipe error from SSE streams as @error
@@ -160,14 +162,19 @@ module Server
             if !isnothing(m)
                 # Private analysis/publication journals are not generic run files.
                 # They are available only through the explicit DOI API allowlist.
+                study = HTTP.URIs.unescapeuri(m[1])
+                _valid_name(study) || return HTTP.Response(403, "Invalid study path")
                 segments = split(replace(HTTP.URIs.unescapeuri(m[2]), '\\' => '/'), '/')
                 any(segment -> startswith(segment, "."), segments) && return HTTP.Response(403, "Private application state")
-                candidate = abspath(joinpath(ServerState.projects_dir(), HTTP.URIs.unescapeuri(m[1]), HTTP.URIs.unescapeuri(m[2])))
+                candidate = abspath(joinpath(ServerState.projects_dir(), study, HTTP.URIs.unescapeuri(m[2])))
                 isfile(candidate) || return HTTP.Response(404, "File not found")
                 full     = realpath(candidate)
                 projects = realpath(ServerState.projects_dir())
                 startswith(full, projects * Base.Filesystem.path_separator) ||
                     return HTTP.Response(403, "Forbidden")
+                # A harmless-looking symlink must not bypass the hidden-path rule.
+                any(segment -> startswith(segment, "."), splitpath(relpath(full, projects))) &&
+                    return HTTP.Response(403, "Private application state")
                 ext  = last(splitext(full))
                 mime = get(_mime_map, ext, "application/octet-stream")
                 return HTTP.Response(200, ["Content-Type" => mime]; body=read(full))
@@ -177,9 +184,13 @@ module Server
             startswith(uri, "/api/") && return next(req)
 
             # SPA catch-all: serve frontend build or index.html
-            rel    = lstrip(uri, '/')
-            target = joinpath(_frontend_dir, rel)
+            rel = HTTP.URIs.unescapeuri(lstrip(uri, '/'))
+            any(segment -> startswith(segment, "."), split(replace(rel, '\\' => '/'), '/')) &&
+                return HTTP.Response(403, "Forbidden")
+            target = abspath(joinpath(_frontend_dir, rel))
             if isfile(target)
+                startswith(realpath(target), realpath(_frontend_dir) * Base.Filesystem.path_separator) ||
+                    return HTTP.Response(403, "Forbidden")
                 ext  = last(splitext(target))
                 mime = get(_mime_map, ext, "application/octet-stream")
                 # Content-hashed assets (js/css in assets/) are immutable.

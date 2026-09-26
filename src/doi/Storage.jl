@@ -5,7 +5,7 @@ module DOIStorage
 using JSON3, SHA, OrderedCollections
 
 export PublicationError, atomic_write, atomic_json, read_json, canonical_json,
-       with_publication_lock, file_sha256, private_dir
+       with_publication_lock, file_sha256, private_dir, FileBody
 
 struct PublicationError <: Exception
     status::Int
@@ -20,6 +20,26 @@ canonical(x) = x
 canonical_json(x) = JSON3.write(canonical(x))
 file_sha256(path::AbstractString) = open(io -> bytes2hex(sha256(io)), path)
 read_json(path::AbstractString) = JSON3.read(read(path, String), Dict{String,Any})
+
+
+# Lazy HTTP response body: open only while writing, close on success/disconnect,
+# and use bounded memory even for large publication archives.
+struct FileBody
+    path::String
+end
+Base.length(body::FileBody) = filesize(body.path)
+function Base.write(destination::IO, body::FileBody)
+    open(body.path, "r") do source
+        buffer = Vector{UInt8}(undef, 1024 * 1024)
+        total = 0
+        while !eof(source)
+            count = readbytes!(source, buffer)
+            count == 0 && break
+            total += write(destination, view(buffer, 1:count))
+        end
+        return total
+    end
+end
 
 function private_dir(path::AbstractString)
     islink(path) && throw(PublicationError(409, "unsafe_storage", "Publication storage must not be a symlink."))

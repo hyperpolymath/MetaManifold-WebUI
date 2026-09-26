@@ -2,7 +2,7 @@
 # Zenodo's documented deposition-v1 API, not the separate InvenioRDM records API.
 module Zenodo
 
-using HTTP, JSON3, Dates
+using HTTP, JSON3, Dates, Logging
 
 export Client, RemoteError, environment_client, origin, create_deposition,
        get_deposition, upload_file, publish_deposition, checked_id, reserved_doi,
@@ -28,9 +28,13 @@ end
 Base.showerror(io::IO, e::RemoteError) = print(io, e.message)
 
 function _http(method, url, headers, body)
-    HTTP.request(method, url, headers, body;
-        redirect=false, retry=false, status_exception=false, logerrors=false,
-        connect_timeout=10, readtimeout=120)
+    # Even an operator's HTTP debug logger must not dump a reflected secret from
+    # a remote response body. Only the sanitised domain errors leave this boundary.
+    with_logger(NullLogger()) do
+        HTTP.request(method, url, headers, body;
+            redirect=false, retry=false, status_exception=false, logerrors=false,
+            connect_timeout=10, readtimeout=120)
+    end
 end
 
 struct Client{T,S,C}
@@ -115,13 +119,14 @@ end
 
 # Factory bodies are reopened on EVERY attempt, including streamed uploads. HTTP.jl's
 # automatic retries are disabled so an uncertain POST is never silently replayed.
-function _request(c::Client, method::String, url::String; body_factory=() -> "", content_type="application/json", expected=(200,))
+function _request(c::Client, method::String, url::String; body_factory=() -> "", content_type="application/json", content_length=nothing, expected=(200,))
     # All endpoints are built here; only the bucket link is taken from a response,
     # and it goes through a stricter origin/path validator below.
     startswith(url, origin(c) * "/api/") || throw(ArgumentError("Refusing foreign Zenodo endpoint"))
     headers = ["Authorization" => "Bearer " * c.token.value,
                "Content-Type" => content_type, "Accept" => "application/json",
                "User-Agent" => "MetaManifold-WebUI/doi-v1"]
+    isnothing(content_length) || push!(headers, "Content-Length" => string(content_length))
     safe = method in ("GET", "PUT")
     waited = 0
     for attempt in 1:c.attempts
@@ -187,7 +192,7 @@ end
 function upload_file(c::Client, deposit, path::String, filename::String)
     occursin(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,150}\.zip$", filename) || throw(ArgumentError("Invalid bundle filename"))
     _request(c, "PUT", _bucket(c, deposit) * "/" * filename;
-        body_factory=() -> open(path, "r"), content_type="application/zip", expected=(200, 201))
+        body_factory=() -> open(path, "r"), content_type="application/zip", content_length=filesize(path), expected=(200, 201))
 end
 
 end # module Zenodo

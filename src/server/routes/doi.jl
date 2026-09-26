@@ -11,7 +11,9 @@ function _doi_store_dir(study::String)
     _valid_name(study) || throw(DOIStorage.PublicationError(400, "invalid_study", "Invalid study name."))
     project = joinpath(ServerState.projects_dir(), study)
     islink(project) && throw(DOIStorage.PublicationError(403, "unsafe_storage", "DOI study storage must not be a symlink."))
-    joinpath(project, ".doi")
+    root = joinpath(project, ".doi")
+    islink(root) && throw(DOIStorage.PublicationError(403, "unsafe_storage", "DOI storage must not be a symlink."))
+    return root
 end
 
 function _doi_capabilities()
@@ -216,6 +218,7 @@ end
     _doi_api(req, study) do
         path, mime, name = DOIPublications.download_path(_doi_store_dir(study), id, kind)
         HTTP.Response(200, ["Content-Type" => mime, "Cache-Control" => "no-store",
-            "Content-Disposition" => "attachment; filename=\"$name\"", "X-Content-Type-Options" => "nosniff"]; body=read(path))
+            "Content-Disposition" => "attachment; filename=\"$name\"", "X-Content-Type-Options" => "nosniff",
+            "Content-Length" => string(filesize(path))]; body=DOIStorage.FileBody(path))
     end
 end

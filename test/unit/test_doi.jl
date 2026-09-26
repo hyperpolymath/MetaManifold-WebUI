@@ -5,6 +5,9 @@ include(joinpath(@__DIR__, "..", "doi", "tests.jl"))
 
 @testset "Analysis persistence and actual DOI bundles" begin
     using OrderedCollections
+    for topic in ("doi", "doi.environment", "doi.confirmation", "doi.recovery", "doi.github")
+        @test !startswith(AnalysisConfig.context_help(topic), "No help available")
+    end
     mktempdir() do tmp
         cfg = AnalysisConfig.AnalysisConfigStruct(method="nb_glm", formula="~ group",
             metadata_columns=["group"], created_by="Example, Ada")

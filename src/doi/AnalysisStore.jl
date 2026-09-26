@@ -17,6 +17,7 @@ end
 
 function configs(root)
     directory = joinpath(root, "configs")
+    (islink(root) || islink(directory)) && throw(PublicationError(409, "unsafe_storage", "Stored analysis must not be a symlink."))
     output = Dict{String,AnalysisConfig.AnalysisConfigStruct}()
     isdir(directory) || return output
     for name in readdir(directory)
@@ -46,6 +47,7 @@ end
 
 function results(root)
     directory = joinpath(root, "results")
+    (islink(root) || islink(directory)) && throw(PublicationError(409, "unsafe_storage", "Stored analysis must not be a symlink."))
     output = Dict{String,AnalysisConfig.AnalysisResult}()
     isdir(directory) || return output
     for name in readdir(directory)
@@ -70,6 +72,7 @@ end
 function _save(root, kind, id, text)
     with_publication_lock(root) do
         path = _record_path(root, kind, id)
+        islink(path) && throw(PublicationError(409, "unsafe_storage", "Stored analysis must not be a symlink."))
         if isfile(path)
             read(path, String) == text || throw(PublicationError(409, "immutable_analysis", "An immutable analysis ID already exists with different content."))
         else

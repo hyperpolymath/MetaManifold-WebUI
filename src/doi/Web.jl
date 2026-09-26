@@ -66,7 +66,7 @@ function render_page(study, csrf, environment, enabled; selected_config="")
     <div id="publications" aria-live="polite">Loading saved publications…</div>
   </section>
   <aside><h2>After publication</h2><p>Download the receipt and citation. The receipt binds the DOI to SHA-256 hashes of the exact config, selected result and uploaded archive, without changing the scientific objects.</p>
-    <p>To update a GitHub release and its project board, use <code>scripts/link_doi.jl</code> with the downloaded receipt: review its dry run, then explicitly use <code>--apply</code>. A GitHub failure never causes a second DOI to be minted.</p>
+    <p>To update a GitHub release and its project board, use <code>scripts/link-doi.sh</code> with the downloaded receipt: review its dry run, then explicitly use <code>--apply</code>. A GitHub failure never causes a second DOI to be minted.</p>
     <p>Back up the study’s private <code>.analysis</code> and <code>.doi</code> directories. This is a local, single-user feature, not an authenticated public upload service.</p>
   </aside>
 </main>
