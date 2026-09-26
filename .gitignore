@@ -333,8 +333,6 @@ databases/
 # Machine-level config: generated from config/defaults/ on first run
 # (new_project) and edited in place; never committed.
 config/tools.yml
-# Agda interface files: build output of `just prove-agda`, rebuilt from source.
-*.agdai
 config/pipeline.yml
 config/databases.yml
 config/primers.yml

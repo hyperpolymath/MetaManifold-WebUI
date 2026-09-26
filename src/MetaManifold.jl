@@ -43,6 +43,15 @@ include("analysis/analysis.jl")
 include("analysis/AnalysisConfig.jl")
 include("doi/AnalysisStore.jl")
 include("analysis/clade_cumulus.jl")
+# Zero replacement (issue #21): the exact multiplicative and Bayesian-multiplicative
+# operators, the refusals that keep a zero from being reported as an observation, and the
+# provenance a DOI bundle needs. Execution's zero_policy branches and AnalysisConfig's
+# context help both use it, so it follows AnalysisConfig and precedes Execution.
+include("analysis/zero_replacement.jl")
+# Quasi-likelihood dispersion estimation for the negative binomial GLM (the pure-Julia port
+# of glmGamPoi's dispersion pipeline, issue #21). Estimation dispatches to it for
+# dispersion_method = "glmGamPoi", so it must be included before estimation.
+include("analysis/dispersion.jl")
 # Estimation fits what AnalysisConfig declares and Execution runs it, so it sits between them.
 include("analysis/estimation.jl")
 # Library-size scaling factors and the offsets count models are fitted with. Included

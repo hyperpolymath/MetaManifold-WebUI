@@ -55,6 +55,17 @@ end
         @test occursin("test:", lines[comment_at + 1])
     end
 
+    @testset "a comment above the document root survives" begin
+        # Every YAML file in this repository starts with an SPDX comment above the document.
+        # Dropping it would be a silent licence-header deletion, which is the worst possible
+        # thing for a formatter to do quietly.
+        src = "# SPDX-License-Identifier: MPL-2.0\n---\nname: \"x\"\n"
+        out = render_kyaml(parse_document("t.kyaml", src))
+        @test occursin("SPDX-License-Identifier", out)
+        again = render_kyaml(parse_document("t.kyaml", out))
+        @test out == again
+    end
+
     @testset "conversion is idempotent" begin
         src = "# c\nname: \"x\"\nitems:\n  - one\n  - two\n"
         once = render_kyaml(parse_document("t.yml", src))

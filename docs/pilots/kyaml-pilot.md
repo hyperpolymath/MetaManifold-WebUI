@@ -132,8 +132,10 @@ Three levels, cheapest first:
 
 * Extract the shell out of `.github/workflows/ci.yml` into `scripts/ci/*.sh` (§2) — the
   conversion commit's largest diff, and the reason the workflow files stay reviewable.
-* A CI step running `just check-kyaml`, and one running the Agda proofs (`proofs/agda/`) —
-  both are workflow edits, so they land with the workflow work.
+* A CI step running `just check-kyaml` — it lands in the same commit as the conversion, so
+  that the gate is never red for a reason that has nothing to do with the change under
+  review. The Agda proofs lane is already wired (`proofs` job in ci.yml, gated on
+  `vars.STAPELN_AGDA_IMAGE`, with the reason printed by the hygiene job when it is unset).
 * `gh actions-lock` emitting KYAML, or an explicit reconciliation note per bot PR.
 * The estate-wide formatter (standards#1022) should absorb this tool's parser and its
   refusal list rather than grow a second implementation.

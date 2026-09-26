@@ -267,6 +267,11 @@ jobs:
       - name: Source lint (fail fast, no dependencies)
         run: julia --project=no --startup-file=no config/ci/lint_source.jl
 
+      # The KYAML gate (docs/pilots/kyaml-pilot.md) lands in the same commit as the conversion
+      # itself: `just use-kyaml` writes the canonical bytes, this step then holds them. It runs
+      # here rather than in repo-hygiene because it needs Julia, which this job has installed.
+      # Until the conversion is committed the step is deliberately absent rather than red.
+
       # Every external version CI installs is read from the committed pin file, so CI
       # and a developer's machine cannot drift apart. A temporary environment is used
       # because the project environment cannot be instantiated until R is present:
@@ -655,6 +660,10 @@ jobs:
           # or over 1 GiB (allocation or peak-RSS growth); never fails the job — the
           # hard CLR/ILR gate is the same-runner base-vs-head step below.
           julia --project=. bench/ilr_bases/benchmark.jl
+          # issue #21's lane: 100 / 1000 / 10000 taxa for both replacement operators and the
+          # dispersion pipeline. Informational by default (see the file's header for why the
+          # issue's "fail CI at >10%" is behind METAMANIFOLD_BENCH_STRICT).
+          julia --project=. bench/zero_replacement/benchmark.jl
           julia --project=. bench/comprehensive_benchmark.jl
 
       - name: Summarise Julia benchmark deltas (informational)

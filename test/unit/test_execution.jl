@@ -536,11 +536,41 @@
         # In sample 2, taxa 2 and 4 are 50 and 30 -> ratio 5/3
         @test prepared_mult[2, 2] / prepared_mult[4, 2] ≈ counts[2, 2] / counts[4, 2] atol=1e-10
 
-        # Bayesian multiplicative replacement
+        # Multiplicative replacement at the operator's own admissible edge: the smallest
+        # detection limit in this table is 30 (taxon 4), and sample 3's zeros are taxa 1 and 4
+        # with limits 10 and 30, so delta must stay below 70/40 = 1.75 to be admissible. The
+        # point of asserting it here is that the refusal is a named error with the largest
+        # admissible delta in the message, not a silent rescale.
+        norm_mult_big = AnalysisConfig.NormalizationConfig(
+            method="none",
+            zero_policy="multiplicative_replacement",
+            multiplicative_replacement_delta=0.99
+        )
+        config_mult_big = AnalysisConfig.AnalysisConfig(
+            method="nb_glm",
+            formula="~ group",
+            metadata_columns=["group"],
+            normalization=norm_mult_big,
+            advanced=adv,
+            created_by="test_mult_big"
+        )
+        (prepared_mult_big, _, _, _, _) = Execution.prepare_analysis_table(
+            config_mult_big, counts;
+            sample_ids=sample_ids,
+            taxa_ids=taxa_ids,
+            drop_policy="drop"
+        )
+        for j in 1:4
+            @test sum(prepared_mult_big[:, j]) ≈ sum(counts[:, j]) atol=1e-10
+        end
+
+        # Bayesian multiplicative replacement. The reference's GBM prior is estimated from the
+        # leave-one-out profile per sample, so the delta slider has nothing to do with this
+        # method and multiplicative_replacement_delta is deliberately absent: the config layer
+        # must not require it for a policy that does not use it.
         norm_bayes = AnalysisConfig.NormalizationConfig(
             method="none",
-            zero_policy="bayesian_multiplicative",
-            multiplicative_replacement_delta=0.65
+            zero_policy="bayesian_multiplicative"
         )
         config_bayes = AnalysisConfig.AnalysisConfig(
             method="nb_glm",
@@ -561,6 +591,10 @@
         for j in 1:4
             @test sum(prepared_bayes[:, j]) ≈ sum(counts[:, j]) atol=1e-10
         end
+        # ... and that the zeros are gone and positive, which is the whole point of replacing
+        # them: log(0) is what the CLR/ILR transforms cannot survive.
+        @test all(>(0.0), prepared_mult)
+        @test all(>(0.0), prepared_bayes)
     end
 
     @testset "TSS offset for NB_GLM" begin

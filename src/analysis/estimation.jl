@@ -69,13 +69,21 @@ different multiple-testing outcomes under a label that says otherwise. See
 `docs/statistics/method-conditions/parametric-fits.md`.
 """
 const REFUSED_DISPERSION = Dict{String,String}(
-    "glmGamPoi" => "not implemented: the pinned R library (renv.lock) has no glmGamPoi, and the quasi-likelihood estimator that issue #21 asks for has not been written or validated here. Refusing the alias that v1 shipped.",
     "local"     => "not implemented: the trended (local) dispersion fit is not implemented. Refusing to substitute the per-taxon estimator.",
     "mean"      => "not implemented: the mean-dispersion fit is not implemented. Refusing to substitute the per-taxon estimator.",
     "pooled"    => "not implemented: the pooled single-theta fit is not implemented in this release. Refusing to substitute the per-taxon estimator.",
 )
 
-const SUPPORTED_DISPERSION = ("parametric",)
+# glmGamPoi is implemented (issue #21) as a pure-Julia port of the reference's dispersion
+# pipeline, `Dispersion.estimate_dispersions`, driven from a two-pass fit: fit nb_glm per
+# feature for the mean matrix, estimate the dispersion from that mean matrix, then refit at
+# the fixed dispersion. What the port does and does not cover is stated in
+# docs/statistics/method-conditions/dispersion-glmGamPoi.md and recorded in the run's
+# provenance; the estimator does not fall back silently, and the refusal for the unported
+# spline abundance trend (>= $(Dispersion.SPLINE_TREND_MIN_FEATURES) features) is raised by
+# the estimator itself, naming that document.
+const SUPPORTED_DISPERSION = ("parametric", "glmgampoi")
+const GLMGAMPOI_DISPERSION = "glmgampoi"
 
 """
 The strings R's `write.csv(..., na = "NA")` uses for a missing value. CSV.jl's default
@@ -356,8 +364,10 @@ What is supported, and what happens otherwise:
 - `logistic` — `stats::glm(family = binomial)` on a 0/1 response. A non-binary response is
   refused: a binomial fit on proportions needs the number of trials, and this layer will not
   invent weights.
-- `advanced.dispersion_method` — `parametric` only. Everything else is refused by name; see
-  `REFUSED_DISPERSION`.
+- `advanced.dispersion_method` — `parametric` (`MASS::glm.nb` per feature) or `glmGamPoi`
+  (the ported quasi-likelihood dispersion pipeline of `Dispersion`, issue #21, with the
+  two-pass fit described in `docs/statistics/method-conditions/dispersion-glmGamPoi.md`).
+  `local`, `mean` and `pooled` are refused by name; see `REFUSED_DISPERSION`.
 
 Unsuccessful states are reported, not smoothed over: a feature whose fit fails gets
 `status = "failed"`, a `note` saying why, and `nothing` for every statistic. It is excluded
@@ -433,10 +443,15 @@ function estimate_models(config::AnalysisConfig.AnalysisConfig,
     # -- row labels ------------------------------------------------------
     row_labels, label_note = _row_labels(method, n_features, taxa_ids)
 
+    dispersion_name = lowercase(strip(config.advanced.dispersion_method))
+    use_glmgampoi = method == AnalysisConfig.NB_GLM && dispersion_name == GLMGAMPOI_DISPERSION
+
     # -- the fit, in R ---------------------------------------------------
     dir = mktempdir()
     fits_path = joinpath(dir, "fits.csv")
     coefs_path = joinpath(dir, "coefficients.csv")
+    mu_path = joinpath(dir, "fitted_means.csv")
+    dispersion_record = Ref{Any}(nothing)
     versions = Ref{Dict{String,String}}(Dict{String,String}())
     fit_rows = Ref{Vector}(Any[])
     coef_rows = Ref{Vector}(Any[])
@@ -466,6 +481,48 @@ function estimate_models(config::AnalysisConfig.AnalysisConfig,
             RCall.globalEnv[:est_coefs_path] = coefs_path
 
             RCall.reval(R_ESTIMATION_SETUP)
+
+            if use_glmgampoi
+                # Pass 1: the mean matrix. The reference estimates its preliminary means a
+                # different way (estimate_betas_roughly); the mean matrix that enters the
+                # dispersion estimate here is the parametric NB fit, which is what this
+                # repository already fits, and the choice is recorded in provenance.
+                RCall.globalEnv[:est_mu_path] = mu_path
+                RCall.reval(R_ESTIMATION_MEAN_SWEEP)
+                mu = _read_matrix_csv(mu_path, n_features, n_samples)
+
+                # Rows whose pass-1 fit failed fall back to the feature's mean over samples so
+                # that the dispersion estimate for every *other* feature is unaffected by the
+                # count of failures; those features are named in diagnostics and fail again in
+                # pass 2 with their own reason.
+                fallback = Int[]
+                for i in 1:n_features
+                    if any(!isfinite, vec(mu[i, :]))
+                        row_mean = sum(prepared[i, :]) / n_samples
+                        mu[i, :] .= row_mean
+                        push!(fallback, i)
+                    end
+                end
+
+                design = _design_matrix(cols, terms, n_samples)
+                disp = Dispersion.estimate_dispersions(
+                    prepared, mu;
+                    design = design,
+                    do_cox_reid_adjustment = true,
+                    shrinkage = true,
+                    disp_trend = true,
+                    abundance_trend = config.advanced.glmgampoi_abundance_trend,
+                    feature_ids = row_labels)
+                # glmGamPoi refits the coefficients with `dispersion_trend`, not with the
+                # shrunken quasi-likelihood dispersion (R/glm_gp_impl.R: disp_latest <-
+                # dispersion_shrinkage$dispersion_trend). Using anything else here would
+                # report a fit that is not the one the reference describes.
+                alpha_fit = isnothing(disp.trend) ? disp.overdispersion : disp.trend
+                theta_fit = Float64[a <= 0.0 ? Inf : 1.0 / a for a in alpha_fit]
+                RCall.globalEnv[:est_theta] = theta_fit
+                dispersion_record[] = (disp = disp, fallback = fallback, design = design)
+            end
+
             RCall.reval(R_ESTIMATION_FIT)
 
             versions[] = Dict(
@@ -482,9 +539,13 @@ function estimate_models(config::AnalysisConfig.AnalysisConfig,
         fits_hash[] = bytes2hex(sha256(read(fits_path)))
         coefs_hash[] = bytes2hex(sha256(read(coefs_path)))
 
-        return _assemble(config, method, method_str, terms, prim, row_labels, label_note,
-                         fit_rows[], coef_rows[], offset, versions[], fits_hash[], coefs_hash[],
-                         seed, n_features, n_samples)
+        assembled = _assemble(config, method, method_str, terms, prim, row_labels, label_note,
+                              fit_rows[], coef_rows[], offset, versions[], fits_hash[], coefs_hash[],
+                              seed, n_features, n_samples)
+        if !isnothing(dispersion_record[])
+            _record_glmgampoi!(assembled, dispersion_record[])
+        end
+        return assembled
     catch err
         # A runtime that cannot produce a fit produces no number. RBusyError is the
         # documented case (a pipeline stage holds the R lock); anything else is reported
@@ -660,9 +721,112 @@ function _assemble(config, method, method_str, terms, prim, row_labels, label_no
     return EstimationOutcome(overall, reason, method_str, results, diagnostics, provenance)
 end
 
+
+# ---------------------------------------------------------------------------
+# glmGamPoi: the design matrix, the mean matrix, and what is recorded
+#
+# The fit itself is R's (`MASS::glm.nb` for the first pass, `stats::glm` with a fixed
+# `MASS::negative.binomial(theta = ...)` family for the second), and the numbers that cross
+# the boundary cross as CSV, as everywhere else in this file. The dispersion is the only
+# quantity computed in Julia, by `Dispersion.estimate_dispersions`.
+# ---------------------------------------------------------------------------
+
+"""
+    _design_matrix(cols, terms, n_samples) -> Matrix{Float64}
+
+The model matrix R's `model.matrix` produces for the additive formula this layer supports,
+built here because the Cox-Reid term needs the same `X` the fit used.
+
+- intercept column first;
+- a numeric column enters as itself;
+- a factor (anything else) enters with treatment coding: levels sorted, first level as the
+  reference, one indicator column per remaining level, named nowhere — the matrix is only
+  used for `X'WX`, so column names would be decoration.
+
+Refuses columns whose values are neither all numeric nor all non-empty strings, rather than
+inventing codes for them: the R fit would have refused the same column.
+"""
+function _design_matrix(cols::Dict{String,Vector}, terms::Vector{String}, n_samples::Int)::Matrix{Float64}
+    X = ones(Float64, n_samples, 1)
+    for t in terms
+        v = cols[t]
+        length(v) == n_samples ||
+            throw(ArgumentError("design: column '$t' has $(length(v)) values for $n_samples samples. Refusing."))
+        if all(x -> x isa Real && !(x isa Bool), v)
+            X = hcat(X, Float64[Float64(x) for x in v])
+            continue
+        end
+        text = String[string(x) for x in v]
+        length(unique(text)) >= 1 || throw(ArgumentError("design: column '$t' is empty. Refusing."))
+        levels = sort(unique(text))
+        for lvl in levels[2:end]
+            X = hcat(X, Float64[x == lvl ? 1.0 : 0.0 for x in text])
+        end
+    end
+    return X
+end
+
+"""
+    _read_matrix_csv(path, n_rows, n_cols) -> Matrix{Float64}
+
+Read a numeric matrix written by R through CSV, with `NA` mapped to `NaN` rather than to
+`missing`, so callers can use `isfinite` and the failure cannot be read as a zero.
+"""
+function _read_matrix_csv(path::String, n_rows::Int, n_cols::Int)::Matrix{Float64}
+    table = CSV.File(path; missingstring = R_NA_STRINGS)
+    length(table) == n_rows ||
+        throw(ArgumentError("the mean matrix R wrote has $(length(table)) rows for $n_rows features. Refusing."))
+    M = Matrix{Float64}(undef, n_rows, n_cols)
+    for (i, row) in enumerate(table)
+        j = 0
+        for (name, value) in pairs(row)
+            j += 1
+            j > n_cols && break
+            M[i, j] = ismissing(value) ? NaN : Float64(value)
+        end
+        j == n_cols ||
+            throw(ArgumentError("the mean matrix R wrote has $j columns for $n_cols samples. Refusing."))
+    end
+    return M
+end
+
+"""
+    _record_glmgampoi!(outcome, record)
+
+Attach the dispersion estimator's own diagnostics and provenance to the fit it produced. The
+record is nested rather than flattened into the fit's provenance so that a reader can see
+which engine produced which number, and the parameters actually used (δ or α, the detection
+limits, the mean-matrix pass) travel with it.
+"""
+function _record_glmgampoi!(outcome::EstimationOutcome, record::NamedTuple)
+    disp = record.disp
+    outcome.diagnostics["dispersion_estimator"] = OrderedDict{String,Any}(
+        "method" => "glmGamPoi (ported quasi-likelihood dispersion pipeline, two-pass fit)",
+        "n_features" => length(disp.overdispersion),
+        "features_at_zero_dispersion" => disp.diagnostics["features_at_zero_dispersion"],
+        "features_at_poisson_equivalence" => disp.diagnostics["features_at_poisson_equivalence"],
+        "residual_df" => disp.df,
+        "features_whose_pass_1_fit_failed" => length(record.fallback),
+        "features_whose_pass_1_fit_failed_indices" => record.fallback,
+        "boundary_messages" => disp.messages,
+        "notes" => disp.notes,
+        "design_columns" => size(record.design, 2),
+    )
+    outcome.provenance["dispersion"] = OrderedDict{String,Any}(
+        "engine" => "Julia (Dispersion.estimate_dispersions), fed by R's per-feature NB fits",
+        "passes" => "pass 1 fits nb_glm per feature for the mean matrix; the dispersion is estimated from that matrix; pass 2 refits with MASS::negative.binomial(theta = ...) held fixed",
+        "dispersion_used_in_refit" => "dispersion_trend (as glmGamPoi's glm_gp_impl does), i.e. the local weighted-median trend of the per-feature estimates",
+        "port_scope" => disp.provenance,
+        "mean_matrix_fallback" => length(record.fallback) == 0 ? "none: every feature's pass-1 fit converged" :
+            "$(length(record.fallback)) feature(s) had no pass-1 fit and entered the dispersion estimate with their mean over samples instead; they are listed in diagnostics and fail again in pass 2 with their own reason",
+        "quasi_likelihood_f_test" => "not ported: the p-values here are the same Wald tests this layer reports for every other dispersion, not glmGamPoi's QL F-test (test_de). The difference is stated in docs/statistics/method-conditions/dispersion-glmGamPoi.md.",
+    )
+    return outcome
+end
+
 # ---------------------------------------------------------------------------
 # The R that does the work
-#
+
 # Held to the repository's boundary rule: values cross through CSV rather than as R objects,
 # so an NA arrives in Julia as a missing value and never as a zero or a NaN that a downstream
 # reader would render as a number. R list elements are reached with [[ ]] rather than with $,
@@ -698,6 +862,28 @@ const R_ESTIMATION_SETUP = """
     }
 """
 
+const R_ESTIMATION_MEAN_SWEEP = """
+    # Pass 1 of the glmGamPoi path: one nb_glm per feature, exporting the fitted means. The
+    # dispersion estimator needs the same mean matrix the fit used, and an NA (a feature
+    # whose fit failed) is written as NA rather than as a zero so Julia can see it as a
+    # failure to be handled rather than as a value to average.
+    est_mu <- matrix(NA_real_, nrow = est_n, ncol = est_ns)
+    est_meta[["y"]] <- rep(0, est_ns)
+    if (!is.null(est_offset)) est_meta[["off"]] <- as.numeric(est_offset)
+
+    for (i in seq_len(est_n)) {
+        y <- as.numeric(est_counts[i, ])
+        if (sum(is.finite(y)) < 3 || length(unique(y[is.finite(y)])) < 2) next
+        est_meta[["y"]] <- y
+        fit <- tryCatch(suppressWarnings(MASS::glm.nb(est_form, data = est_meta,
+                                                      control = glm.control(maxit = 100))),
+                        error = function(e) NULL)
+        if (is.null(fit)) next
+        est_mu[i, ] <- as.numeric(stats::fitted(fit))
+    }
+    utils::write.csv(as.data.frame(est_mu), est_mu_path, row.names = FALSE, na = "NA")
+"""
+
 const R_ESTIMATION_FIT = """
     est_status <- character(est_n)
     est_note <- character(est_n)
@@ -716,10 +902,24 @@ const R_ESTIMATION_FIT = """
 
     est_one_fit <- function() {
         if (est_method == "nb_glm") {
-            if (est_dispersion != "parametric") {
-                stop("dispersion method '", est_dispersion, "' has no implementation here")
+            if (est_dispersion == "parametric") {
+                return(MASS::glm.nb(est_form, data = est_meta, control = glm.control(maxit = 100)))
             }
-            return(MASS::glm.nb(est_form, data = est_meta, control = glm.control(maxit = 100)))
+            if (est_dispersion == "glmgampoi") {
+                # The dispersion is fixed at the value Julia estimated from the pass-1 mean
+                # matrix. theta <= 1e8 is the Poisson-equivalent boundary this layer already
+                # reports for nb_glm, and above it the negative binomial family is numerically
+                # the Poisson one, so it is used directly and the row is marked boundary.
+                if (is.null(est_theta) || !is.finite(est_theta[est_i])) {
+                    stop("glmGamPoi dispersion: the estimator produced no usable dispersion for this feature")
+                }
+                if (est_theta[est_i] > 1e8) {
+                    return(stats::glm(est_form, data = est_meta, family = stats::poisson()))
+                }
+                return(stats::glm(est_form, data = est_meta,
+                                  family = MASS::negative.binomial(theta = est_theta[est_i])))
+            }
+            stop("dispersion method '", est_dispersion, "' has no implementation here")
         } else if (est_method == "logistic") {
             return(stats::glm(est_form, data = est_meta, family = stats::binomial()))
         }
@@ -730,6 +930,7 @@ const R_ESTIMATION_FIT = """
     est_k <- 0
 
     for (i in seq_len(est_n)) {
+        est_i <- i
         y <- as.numeric(est_counts[i, ])
         est_nobs[i] <- sum(is.finite(y))
         if (sum(is.finite(y)) < 3 || length(unique(y[is.finite(y)])) < 2) {
@@ -783,6 +984,14 @@ const R_ESTIMATION_FIT = """
                 notes <- c(notes, "theta <= 1e-8: the dispersion estimate is at its boundary and the standard error of this coefficient is not trustworthy")
             }
             est_theta[i] <- fit[["theta"]]
+        } else if (est_method == "nb_glm" && est_dispersion == "glmgampoi") {
+            # theta was fixed from the ported dispersion estimator, not fitted here, so
+            # fit[["theta"]] is absent; the boundary that matters is the Poisson limit.
+            est_theta[i] <- est_theta[est_i]
+            if (!is.finite(est_theta[i]) || est_theta[i] > 1e8) {
+                status <- "boundary"
+                notes <- c(notes, "theta > 1e8 or non-finite: the estimated overdispersion is indistinguishable from zero at this precision, so the fit used the Poisson family and the negative binomial model adds nothing here")
+            }
         }
         if (est_method == "logistic" && any(grepl("numerically 0 or 1", warns))) {
             status <- "boundary"

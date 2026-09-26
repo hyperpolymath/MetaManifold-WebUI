@@ -13,6 +13,12 @@
 ;;   just    -> estate task runner (Justfile)
 ;;   git     -> hygiene gates read git ls-files
 ;;
+;; Proof lane: agda + agda-stdlib from this pin run `just prove-agda`
+;; (proofs/agda/README.md). The proofs themselves pin nothing about Agda's
+;; version beyond the language features they use; the lane exists so that a
+;; standalone checkout — and the stapeln image (stapeln.toml) — can check them
+;; without a hand-assembled toolchain.
+;;
 ;; Pipeline tools: config/defaults/tool_versions.yml is the BYTE-EXACT lane
 ;; (install.sh downloads cutadapt 5.2, multiqc 1.33, fastqc 0.12.1,
 ;; cd-hit-est 4.8.1, vsearch 2.30.5, swarm 3.1.6 against recorded sha256
@@ -42,7 +48,11 @@
              (gnu packages statistics)
              (gnu packages node)
              (gnu packages version-control)
-             (gnu packages rust-apps))
+             (gnu packages rust-apps)
+             ;; Agda: the proof lane (proofs/agda/README.md). Both the compiler
+             ;; and the standard library come from the same channels pin, so the
+             ;; proofs are checked against the revision the file records.
+             (gnu packages agda))
 
 (package
   (name "metamanifold-webui")
@@ -50,6 +60,8 @@
   (source #f)
   (build-system gnu-build-system)
   (inputs (list julia r node-lts just git coreutils bash
+                ;; proof lane (issue #21's laws + the impossibility result):
+                agda agda-stdlib
                 ;; pipeline-tool equivalents (see header scope note):
                 cutadapt multiqc fastqc vsearch cd-hit))
   (synopsis "MetaManifold-WebUI development environment")

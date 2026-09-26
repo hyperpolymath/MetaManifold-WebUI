@@ -30,7 +30,12 @@ export interface NormalizationConfig {
   epsilon: number
   zero_policy: ZeroPolicy
   ilr_basis?: string | null
+  // Multiplicative replacement (Martín-Fernández et al. 2003): delta in (0,1), 0.65 default.
   multiplicative_replacement_delta?: number | null
+  // Bayesian multiplicative replacement (Martín-Fernández et al. 2015): Dirichlet prior
+  // concentration. Omitted means the reference's GBM estimate 1/gmean(t); a value here is a
+  // hand-set prior and is recorded as a deviation.
+  bayesian_multiplicative_alpha?: number | null
   tss_css_rss_note?: string | null
   // CSS: quantile of each sample's count distribution whose cumulative sum is the
   // scaling factor. Only used by method='css'. Default 0.75 (Paulson et al. 2013).
@@ -55,6 +60,15 @@ export interface AdvancedConfig {
   dispersion_method: 'parametric' | 'local' | 'mean' | 'pooled' | 'glmGamPoi'
   zero_handling: ZeroPolicy
   zero_policy: ZeroPolicy
+  // Explicit replacement method; must equal zero_policy when both are set.
+  zero_replacement_method?: ZeroPolicy | null
+  // delta of multiplicative replacement, exactly the (0,1) the operator accepts.
+  multiplicative_delta?: number | null
+  // alpha of bayesian_multiplicative, > 0.
+  bayesian_alpha?: number | null
+  // glmGamPoi's natural-spline abundance trend. Not ported: true is refused, null is refused
+  // at or above 100 features, false runs the reference's non-trended prior.
+  glmgampoi_abundance_trend?: boolean | null
   pseudocount: number
   epsilon: number
   min_prevalence: number
@@ -473,6 +487,20 @@ See Nickel ZeroHandlingContract.
 - Heavy validation [0,1]
 
 See JSON schema and Nickel PrevalenceContract.
+`,
+    'advanced.zero_replacement_parameters': `Zero replacement parameters (advanced)
+
+- delta (multiplicative replacement, Martín-Fernández et al. 2003): fraction of each part's
+  detection limit used for its zeros, in (0,1). 0.65 is the reference's frac. Below 0.01 or at
+  or above 0.9 warns; outside (0,1) is refused.
+- alpha (Bayesian multiplicative replacement, Martín-Fernández et al. 2015): Dirichlet prior
+  concentration, > 0. Omitted means the reference's GBM estimate 1/gmean(t) of the
+  leave-one-out profile; supplying it is a hand-set prior and is recorded as such.
+- The preview below is the replaced table for the first sample, so the effect of delta is
+  visible before the run rather than after it. Every replacement is biased: a replaced value
+  is not a measurement (proofs/agda/NoRigidReplacement.agda).
+
+See docs/statistics/zero-handling.md and context_help('advanced.zero_policy').
 `,
     'advanced.dispersion_method': `Dispersion estimation (NB_GLM advanced, behind Advanced Analysis)
 

@@ -96,6 +96,30 @@ let CorrectionContract = fun label value =>
       'Ok value
 in
 
+let MultiplicativeDeltaContract = fun label value =>
+  if value == null then
+    'Ok value
+  else
+    if value <= 0 || value >= 1 then
+      'Error {
+        message = "multiplicative_delta must be in (0,1) exclusive, got %{std.to_string value}. The operator refuses anything else: delta drives the fraction of the sample total placed in replaced values (Martín-Fernández et al. 2003). Values below 0.01 or at or above 0.9 warn in the runtime validation. See context_help('advanced.multiplicative_delta').",
+      }
+    else
+      'Ok value
+in
+
+let BayesianAlphaContract = fun label value =>
+  if value == null then
+    'Ok value
+  else
+    if value <= 0 then
+      'Error {
+        message = "bayesian_alpha must be > 0, got %{std.to_string value}. It is the Dirichlet prior concentration of bayesian_multiplicative; zero or negative leaves the prior improper (Martín-Fernández et al. 2015). See context_help('advanced.bayesian_alpha').",
+      }
+    else
+      'Ok value
+in
+
 let ZeroHandlingContract = fun label value =>
   if value.zero_handling == 'refuse || value.zero_policy == 'refuse then
     if value.acknowledgment_token != DANGER_TOKEN then
@@ -272,7 +296,11 @@ in
 
         multiplicative_replacement_delta
           | std.option.Number
-          | doc "Delta for multiplicative replacement, in (0,1), e.g., 0.65. Advanced.",
+          | doc "Delta for multiplicative replacement, in (0,1), e.g., 0.65. Advanced. Martin-Fernandez et al. 2003; the operator refuses anything outside (0,1), warns below 0.01, and warns at or above 0.9.",
+
+        bayesian_multiplicative_alpha
+          | std.option.Number
+          | doc "Prior concentration (alpha) of bayesian_multiplicative, > 0. Omitted means the reference GBM estimate 1/gmean(t); supplied means a hand-set prior, recorded as a deviation. Martin-Fernandez et al. 2015, as implemented in zCompositions::cmultRepl(method='GBM').",
 
         tss_css_rss_note
           | std.option.String
@@ -328,7 +356,7 @@ in
         dispersion_method
           | DispersionMethod
           | default = 'parametric
-          | doc "Dispersion estimation for NB_GLM: parametric (DESeq2 default), local, mean, pooled, glmGamPoi (deferred fast, see issue 06).",
+          | doc "Dispersion estimation for NB_GLM: parametric (DESeq2 default), local, mean, pooled, or glmGamPoi, the pure-Julia port of the reference pipeline (Cox-Reid adjusted MLE, local-median trend, quasi-likelihood conversion, inverse-chisquare prior). The reference's spline abundance trend is not ported and is refused by name. See docs/statistics/method-conditions/dispersion-glmGamPoi.md.",
 
         zero_handling
           | ZeroHandling
@@ -339,6 +367,24 @@ in
           | ZeroPolicy
           | default = 'pseudocount
           | doc "Zero policy enum, same as zero_handling but explicit. Advanced heavy validation warnings.",
+
+        zero_replacement_method
+          | std.option ZeroPolicy
+          | doc "Explicit replacement method; must equal zero_policy when both are set. null means the policy name is the method. See src/analysis/zero_replacement.jl.",
+
+        multiplicative_delta
+          | std.option.Number
+          | MultiplicativeDeltaContract
+          | doc "delta of multiplicative replacement, exactly the (0,1) the operator accepts (0.65 is the reference's frac). Below 0.01 or at or above 0.9 warns. Martin-Fernandez et al. 2003; see docs/statistics/zero-handling.md.",
+
+        bayesian_alpha
+          | std.option.Number
+          | BayesianAlphaContract
+          | doc "alpha of bayesian_multiplicative, > 0. Supplying it is a hand-set prior and is recorded as a deviation from the reference's GBM estimate. Martin-Fernandez et al. 2015.",
+
+        glmgampoi_abundance_trend
+          | std.option.Bool
+          | doc "glmGamPoi's natural-spline abundance trend for the variance prior. The spline is NOT ported: true is refused, null is refused at or above 100 features, false runs the reference's own non-trended prior and records the deviation.",
 
         pseudocount
           | Number
