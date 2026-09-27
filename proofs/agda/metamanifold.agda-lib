@@ -1,0 +1,3 @@
+name: metamanifold
+include: .
+depend: standard-library
