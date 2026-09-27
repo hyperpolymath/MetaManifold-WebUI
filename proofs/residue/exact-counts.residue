@@ -1,0 +1,63 @@
+# Residue — exact counts
+#
+# What this file is: obligations that the Agda development does *not* discharge,
+# stated precisely enough that somebody could pick one up cold.  Residue is not a
+# backlog of nice-to-haves.  Each entry is something a reader of PROOF-STATUS.md
+# might reasonably assume is proved, and is not.
+#
+# Format: `id | statement | status | why it is open | what would close it`
+
+R-EC-1
+  statement:
+    ∀ {A} {r s : Refusal} → Checked.refused r ≡ Checked.refused s → r ≡ s
+    (injectivity of the `refused` constructor of `MetaManifold.ExactCounts.Checked`)
+  status: OPEN
+  why: |
+    Agda's pattern matcher will not discharge `refl` on `refused r ≡ refused s`
+    here, even with the carrier `A` pinned on both sides; the unification stays
+    blocked on the implicit carrier.  This was attempted three ways (dotted
+    pattern, `{A = A}` on both sides, and a `where`-scoped helper) and all three
+    reported the same blocked meta.
+  impact: |
+    LOW.  The statement that a caller actually depends on is
+    `checkedAdd-refuses-exactly-when-it-must` — a refusal happens exactly when
+    the sum leaves the representable range — and that IS proved.  Injectivity
+    would additionally pin down *which* constructor is used, which no call site
+    currently branches on.
+  closes-with: |
+    Either a five-clause case analysis over `Refusal`'s constructors (each arm
+    closed by `refl`, since both sides are then closed constructor applications),
+    or moving `Checked` into the Prelude next to `Outcome` so the two share one
+    carrier discipline.
+
+R-EC-2
+  statement: |
+    The bound `k` in `Bounded k` models `Int64` as `Fits 63`, i.e.
+    -2^63 ≤ v < 2^63.  The connection between this `k = 63` and the width of
+    Julia's `Int64` is not proved, because Julia's integer width is not in scope
+    for an Agda module.
+  status: OPEN BY CONSTRUCTION
+  why: |
+    Proving it would require a model of Julia's `Int` inside Agda.  What the
+    development does instead is make the bound *data* — `pow2 63` — so the
+    arithmetic is checked for whatever `k` the caller supplies.
+  impact: |
+    MEDIUM but bounded.  A wrong `k` would make the guard wrong in a way the
+    proofs would still accept.
+  closes-with: |
+    A conformance test in the Julia testset that asserts the constant the
+    statistics layer passes as the bit width equals `sizeof(Int) * 8 - 1`.  That
+    is a one-line test, not a proof, and it has to live on the Julia side because
+    `sizeof(Int)` is a fact about the running Julia, not about the model.
+
+R-EC-3
+  statement: |
+    `checked_count_sum` with `on_overflow = :widen` promotes to `BigInt` instead
+    of refusing.  The Agda model covers only the refusing branch.
+  status: OUT OF SCOPE (see out-of-scope.residue)
+  why: |
+    Widening has no bound, so there is no `k` to state `Fits k` about.  Modelling
+    it would mean modelling unbounded integers, which is what `sumℤ` in the
+    Prelude already does — and `checkedSumOf-is-exact` is the exactness statement
+    for the *refusing* path that the analysis layer actually uses.
+  impact: LOW.

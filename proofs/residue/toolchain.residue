@@ -1,0 +1,46 @@
+# Residue — toolchain
+#
+# The one entry in this directory that is not a mathematical obligation but a
+# reproducibility defect.  It is recorded here rather than buried in a script
+# comment because it changes what "the proofs are verified" means.
+
+R-TC-1
+  statement: |
+    The proofs compile against agda-stdlib's development line towards 3.0, pinned
+    by SHA `2ffa8b7d4e8e818717ad643d184f055a4d1b0447` (2026-09-12, "Remove fixity
+    declarations for closed operators (#3115)").  That branch's own library file
+    declares `name: standard-library-3.0`, but **no `v3.0` tag has been cut**.
+  status: OPEN
+  why: |
+    Verified this session: `git clone --branch v3.0` fails with "Could not find
+    remote branch v3.0"; the newest tag is `v2.4`.  Against `v2.4` the proofs do
+    NOT compile — the first failure is `Data.Integer.Properties` not exporting
+    `_≡?_`.  Pinning an untagged SHA is reproducible but fragile: it is a moving
+    target's frozen point, not a supported release.
+  impact: |
+    HIGH for portability, nil for correctness.  The theorems are unaffected; only
+    the API surface they are written against is.
+  closes-with: |
+    Either (a) wait for an agda-stdlib `v3.0` tag and re-pin to it, or (b) port
+    the six modules to a released stdlib.  Option (b) is required anyway to land
+    on `main`, which pins agda-stdlib 2.1 / Agda 2.6.4.3.  Known porting targets,
+    in the order they fail: `Data.Integer.Properties._≡?_` (use `_≟_`), the `Dec`
+    record shape and `toWitness {a? = …}`, `NonNegative` as an *instance* argument
+    to `*-monoˡ-≤-nonNeg` / `*-monoʳ-≤-nonNeg`, and `Data.Rational.Unnormalised`
+    module layout.  `main`'s `Evidence.*` modules avoid all of this by being
+    stdlib-free (`Agda.Builtin.*` only), which is the better target if the estate
+    wants the statistics modules to check without the stdlib at all.
+
+R-TC-2
+  statement: |
+    Agda's library-file location differs between install methods.
+  status: CLOSED (worked around)
+  why: |
+    A PyPI wheel and a distro package disagree about whether the library list is
+    read from `$XDG_CONFIG_HOME/agda/libraries` or from the data directory
+    reported by `--print-agda-dir`.  `proofs/bootstrap.sh` now writes both AND
+    passes `--library-file` explicitly on every invocation, so the gate no longer
+    depends on ambient configuration.  Recorded because an earlier version of the
+    script wrote only the data directory and silently failed on a fresh venv with
+    "Library 'standard-library' not found" — despite the file being present and
+    correct.

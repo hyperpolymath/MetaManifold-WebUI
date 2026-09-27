@@ -1,0 +1,41 @@
+# Residue — out of scope for the Agda development
+#
+# Statements that the formalisation deliberately does not make.  They are listed
+# here rather than left unsaid because the alternative is a reader inferring them
+# from the presence of a proof directory, which would be worse than not having
+# one.
+
+R-OOS-1  Probability theory
+  This development reasons about exact rational arithmetic: what a proportion is,
+  when a count overflows, what a p-value estimator can and cannot return, what a
+  rounded decimal means.  It does not model randomness.  No statement here is a
+  statement about coverage, bias, type I error, or FDR control.  Those are
+  simulation-study questions and are addressed (with pre-set tolerances) in the
+  Julia validation layer, not here.
+
+R-OOS-2  Floating point
+  No IEEE-754 semantics are modelled.  Every theorem is over `ℚᵘ`, the exact
+  unnormalised rationals.  Claims of the form "Float64 arithmetic gives the same
+  answer" are not made and cannot be read off this directory.  Where the shipped
+  code uses Float64 — `:ordinary` mode, which is unchanged — its correctness is
+  an empirical question answered by tests, not a proved one.
+
+R-OOS-3  Correspondence between the Agda model and the Julia implementation
+  The Agda modules model the *semantics* the Julia layer is required to have.
+  Nothing here proves that `src/analysis/numeric_policy.jl` implements them.  The
+  bridge is `test/fixtures/agda-known-answers.json`: values computed by the
+  proof assistant that the Julia conformance testset must reproduce.  If the
+  Julia layer and the model disagree, the fixture test fails — that is the
+  mechanism, and it is a test, not a proof.
+
+R-OOS-4  The `:ordinary` path
+  Existing behaviour with the new layer not selected is required to be
+  byte-for-byte unchanged.  That is a regression property over a large existing
+  test suite, not a theorem about a small model, and it is verified by running
+  that suite, not by Agda.
+
+R-OOS-5  Exact statistical tests
+  Deferred to issue #3 by the approved method catalogue
+  (docs/statistics/method-catalogue-v1.md, item 4).  `PermutationTest.agda`
+  proves properties of the *estimator* used when a permutation test is run, and
+  says nothing about exact tests as a method.
