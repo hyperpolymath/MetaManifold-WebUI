@@ -44,7 +44,7 @@
         @test excl[1]["set"] == "contamination"
         @test excl[1]["category"] == "Contaminant"
         # Composition is intentionally left out so its chart shows the full make-up.
-        @test excl[1]["apply_to"] == ["diversity", "taxa", "venn", "differential"]
+        @test excl[1]["apply_to"] == ["diversity", "taxa", "venn"]
         @test !("composition" in excl[1]["apply_to"])
     end
 
