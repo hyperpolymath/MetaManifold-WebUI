@@ -67,8 +67,9 @@ run-in-turn<cost = reclaimed (gone 9204) (gone 9180) (s≤s z≤n) (s≤s z≤n)
 vsearch-timeline : TH.Timeline
 vsearch-timeline = gone 9204 TH.∷ gone 9180 TH.∷ TH.[]
 
--- Cut anywhere in it: the suffix starts from the prefix's DRIFT, not its peak.
--- The statement Reclaim.occupancy-at-cut proves, at the two-task cut.
+-- Prove the Reclaim.occupancy-at-cut statement for the ASV/OTU cut: the stage
+-- peak is the maximum of the prefix peak and prefix drift plus suffix peak,
+-- with all memory figures in KiB.
 at-the-cut : peak (TH.grade vsearch-timeline) ≡
              max (peak (TH.grade (gone 9204 TH.∷ TH.[])))
                  (drift (TH.grade (gone 9204 TH.∷ TH.[])) +
