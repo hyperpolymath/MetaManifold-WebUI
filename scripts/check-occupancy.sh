@@ -4,8 +4,9 @@
 #
 # Gate for the occupancy reading of the vsearch stage (docs/occupancy-2026-10.adoc):
 #   1. each Session IR text checks, and occupancy-types' stepper counts its bytes;
-#   2. TypedPeak.agda type-checks against the pinned siblings, and each module in
-#      docs/occupancy/reject is refused at its own declaration;
+#   2. TypedPeak.agda and GradedStages.agda type-check against the pinned
+#      siblings, and each module in docs/occupancy/reject is refused at its own
+#      declaration;
 #   3. the counted bytes equal the typed peak, order by order.
 # Needs julia and agda (2.6.4.x) on PATH. Exit 0 only if all three hold.
 set -euo pipefail
@@ -39,6 +40,14 @@ echo "== Typed peak (Agda, HWM Timeline)"
 agda "${flags[@]}" docs/occupancy/TypedPeak.agda >"$logs/TypedPeak.log" 2>&1 ||
   { cat "$logs/TypedPeak.log"; echo "ERROR: TypedPeak.agda does not type-check" >&2; exit 1; }
 echo "PASS: TypedPeak.agda"
+
+# The graded reading (fork issue #105): occupancy-types' Reclaim theorems at the
+# measured grades, from the same pinned siblings. The recorded run's grades
+# against its measurement are checked by scripts/check-occupancy-grades.jl, which
+# needs the project's Julia packages and so runs in the disagreement job.
+agda "${flags[@]}" docs/occupancy/GradedStages.agda >"$logs/GradedStages.log" 2>&1 ||
+  { cat "$logs/GradedStages.log"; echo "ERROR: GradedStages.agda does not type-check" >&2; exit 1; }
+echo "PASS: GradedStages.agda"
 for file in docs/occupancy/reject/*.agda; do
   name="$(basename -- "$file" .agda)"
   log="$logs/$name.log"
