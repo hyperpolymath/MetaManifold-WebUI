@@ -84,11 +84,13 @@ bound is what the cuts reclaimed: 9180, 9152 and 0 KiB.
 non-negative reclamation against this page's raw record, rebuilding each order's
 windows from `docs/occupancy/schedules.yml` (the file records no windows of its
 own; the Session IR texts in this directory state the same interleavings). The
-two reclamation readings are also theorems over the pinned siblings at these
-numbers: `docs/occupancy/GradedStages.agda` — `no-reclaim` for the concurrent
-stage, `reclaimed` and `occupancy-at-cut` for the serial one, and one more
-rejection in `docs/occupancy/reject` for reading the concurrent stage's drift as
-0.
+reclamation readings are theorems over the pinned siblings at these numbers:
+`docs/occupancy/GradedStages.agda` — `no-reclaim` for the concurrent stage,
+`reclaimed` for the serial one, where 9204 KiB are released at the frontier and
+the cost reading counts them — and the two protocol-level statements
+(`occupancy-at-cut`, `protocol-occupancy≤cost`) as the siblings' own two-step
+over the stage's timeline. `docs/occupancy/reject` gains a fourth rejection, for
+reading the concurrent stage's drift as 0.
 
 `scripts/lint-occupancy-readings.sh` keeps production code from reading the key
 directly: outside `src/core/memory_probe.jl`, an occupancy figure must go through
