@@ -74,9 +74,9 @@ at-the-cut : peak (TH.grade vsearch-timeline) ≡
                  (drift (TH.grade (gone 9204 TH.∷ TH.[])) +
                   peak (TH.grade (gone 9180 TH.∷ TH.[])))
 at-the-cut =
-  trans (cong peak (TH.cut-factor (gone 9204 TH.∷ TH.[]) (gone 9180 TH.∷ TH.[_])))
+  trans (cong peak (TH.cut-factor (gone 9204 TH.∷ TH.[]) (gone 9180 TH.∷ TH.[])))
         (reclaim-law (TH.grade (gone 9204 TH.∷ TH.[]))
-                     (TH.grade (gone 9180 TH.∷ TH.[_])))
+                     (TH.grade (gone 9180 TH.∷ TH.[])))
 
 -- And occupancy never exceeds cost, at every cut of a pipeline: the slack is
 -- what the cut reclaims (the statement Reclaim.protocol-occupancy≤cost proves,
