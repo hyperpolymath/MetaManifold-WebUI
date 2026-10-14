@@ -307,38 +307,4 @@ allowed_action(uses) =
             @test !haskey(get(job, "strategy", Dict{String,Any}()), "matrix")
         end
     end
-
-    @testset "a required check name is a stable identifier" begin
-        ci = YAML.load_file(CI_PATH)
-
-        # A branch ruleset matches a required status check by the DISPLAY NAME GitHub
-        # posts for the job. A renamed check does not fail -- it is simply absent, and a
-        # required check that never reports can never be satisfied, so every pull request
-        # deadlocks until an admin bypasses the rule. The bump that triggers it is a
-        # one-line edit to this very file's subject matter.
-        #
-        # TWO conditions are needed for GitHub to post the `name:` field verbatim, and
-        # the first without the second is the trap this file exists to close:
-        #
-        #   1. the name must not interpolate a pin; and
-        #   2. the job must not have a `strategy.matrix`.
-        #
-        # MEASURED 2026-09-21 on hyperpolymath/MetaManifold-WebUI#39: a job named exactly `Julia tests` with a 1x1
-        # matrix posted `Julia tests (1.12.5, ubuntu-24.04)`. GitHub appends the matrix
-        # combination whenever the name does not already reference the matrix, so a 1x1
-        # matrix is still a matrix and the version was still embedded. A guard asserting
-        # only (1) PASSED on that broken fix, because it asked about the YAML field while
-        # the ruleset reads the rendered check name.
-        #
-        # Asserted over EVERY job rather than the one job we happen to require today:
-        # the rule is "a job name is a stable identifier", and a rule enforced at each
-        # door in turn is a rule that a new door escapes. If a matrix is ever genuinely
-        # needed, the required context must move to a matrix-free aggregator job and this
-        # assertion be re-scoped to that job -- not deleted.
-        for (id, job) in ci["jobs"]
-            name = get(job, "name", id)
-            @test !occursin("\${{", name)
-            @test !haskey(get(job, "strategy", Dict{String,Any}()), "matrix")
-        end
-    end
 end
