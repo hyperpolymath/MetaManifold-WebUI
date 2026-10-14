@@ -335,6 +335,9 @@ end
 # can be negative — the signed-drift extension `Instances/HWM`'s header records
 # as H-2. The folded drift is the sum of peaks still live at the stage's end.
 #
+# A task's drift subtracts earlier tasks that exited before the next start, so
+# it can be negative. The folded drift is the sum of peaks still live there.
+#
 # Sequencing starts the next interaction from the previous one's drift:
 #
 #     hwm p₁ n₁ ⊗ hwm p₂ n₂ = hwm (max p₁ (n₁ + p₂)) (n₁ + n₂)
