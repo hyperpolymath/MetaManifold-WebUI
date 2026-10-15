@@ -383,3 +383,21 @@ end
         end
     end
 end
+
+@testset "KYAML is the authoring dialect, ratcheted" begin
+    # YAML-POLICY Y-3 (standards, owner rulings D280/D307): KYAML is the
+    # estate's authoring dialect; a *.kyaml file that is not in KYAML form
+    # is a violation, an unconverted *.yml is migration backlog. The
+    # formatter is the standards repo's kyaml-format.sh, verbatim: the one
+    # rewriter the step-2 comment-preservation proof covers. Tool-named
+    # files (workflows, dependabot, codecov) keep their extensions; the
+    # shared config defaults convert as an upstream unit, not unilaterally.
+    formatter = joinpath(REPO_ROOT, "scripts", "kyaml-format.sh")
+    tracked = split(readchomp(`git -C $(REPO_ROOT) ls-files`), "\n")
+    kyamls = [joinpath(REPO_ROOT, f) for f in tracked if endswith(f, ".kyaml")]
+    for path in kyamls
+        proc = run(pipeline(ignorestatus(`bash $formatter --check $path`),
+                            stdout = devnull, stderr = devnull))
+        @test success(proc)
+    end
+end
