@@ -240,10 +240,11 @@ main() {
         --start)  exec bash "$REPO_DIR/start.sh" ;;
         --doctor) doctor ;;
         --status)
-            if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8080/; then
-                say "something is answering on http://127.0.0.1:8080/"
+            status_url="http://127.0.0.1:${JULIA_METAMANIFOLD_PORT:-8080}/"
+            if curl -s -o /dev/null --max-time 2 "$status_url"; then
+                say "something is answering on $status_url"
             else
-                say "nothing answering on http://127.0.0.1:8080/ (start with: ./launcher.sh --start)"
+                say "nothing answering on $status_url (start with: ./launcher.sh --start)"
             fi
             ;;
         --agent)  shift; agent_mode "${1:-}" ;;
