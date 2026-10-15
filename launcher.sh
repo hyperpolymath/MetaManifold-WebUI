@@ -63,17 +63,50 @@ agent_alive() {
 
 remove_profile_block() {
     [ -f "$PROFILE" ] || return 0
-    awk -v b="$BLOCK_BEGIN" -v e="$BLOCK_END" '
-        $0 == b { skip = 1 }
+    local target tmp mode
+    target="$(readlink -f "$PROFILE")" || return 1
+    tmp="$(mktemp "$(dirname "$target")/.profile.tmp.XXXXXX")" || return 1
+    if ! awk -v b="$BLOCK_BEGIN" -v e="$BLOCK_END" '
+        $0 == b {
+            if (skip) exit 1
+            skip = 1
+            next
+        }
+        $0 == e {
+            if (skip) { skip = 0; next }
+            print
+            next
+        }
         !skip { print }
-        $0 == e { skip = 0 }
-    ' "$PROFILE" > "$PROFILE.tmp" && mv "$PROFILE.tmp" "$PROFILE"
+        END { if (skip) exit 1 }
+    ' "$target" > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    mode="$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")" || {
+        rm -f "$tmp"
+        return 1
+    }
+    chmod "$mode" "$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    mv "$tmp" "$target" || {
+        rm -f "$tmp"
+        return 1
+    }
 }
 
 write_profile_block() {  # $1 = "export" | "spawn"
-    remove_profile_block
-    [ -f "$PROFILE" ] || touch "$PROFILE"
-    cp "$PROFILE" "$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S)"
+    [ -f "$PROFILE" ] || touch "$PROFILE" || die "could not create $PROFILE"
+    local backup
+    backup="$(mktemp "$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S).XXXXXX")" ||
+        die "could not create backup of $PROFILE"
+    cp -p "$PROFILE" "$backup" || {
+        rm -f "$backup"
+        die "backup of $PROFILE failed"
+    }
+    remove_profile_block || die "could not update $PROFILE"
     {
         printf '%s\n' "$BLOCK_BEGIN"
         if [ "$1" = "spawn" ]; then
