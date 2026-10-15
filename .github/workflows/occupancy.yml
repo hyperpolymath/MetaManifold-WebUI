@@ -109,13 +109,13 @@ jobs:
                     scripts/lint-occupancy-readings.sh 'docs/occupancy/*'
                     docs/occupancy-2026-10.adoc scripts/check-occupancy.sh
                     scripts/fetch-siblings.sh .github/workflows/occupancy.yml)
-          while IFS= read -r file; do
+          while IFS= read -r -d '' file; do
             for pattern in "${patterns[@]}"; do
               case "$file" in
                 $pattern) relevant=true; break 2 ;;
               esac
             done
-          done < <(git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD")
+          done < <(git diff --no-renames --name-only -z "${{ github.event.pull_request.base.sha }}...HEAD")
           echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
 
   disagreement:
