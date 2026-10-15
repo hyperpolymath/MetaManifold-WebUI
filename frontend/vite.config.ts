@@ -9,9 +9,10 @@ export default defineConfig({
     sourcemap:   false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          plotly: ['plotly.js-dist-min'],
-        },
+        // Vite 8 (rolldown) accepts manualChunks only as a function; the
+        // object form it replaces listed plotly.js-dist-min by package name.
+        manualChunks: (id: string) =>
+          id.includes('plotly.js-dist-min') ? 'plotly' : undefined,
       },
     },
   },
