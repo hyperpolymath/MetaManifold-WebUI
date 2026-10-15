@@ -53,8 +53,13 @@ PROFILE="${HOME}/.profile"
 BLOCK_BEGIN="# >>> metamanifold git-signing agent >>>"
 BLOCK_END="# <<< metamanifold git-signing agent <<<"
 
+# Print all arguments as one launcher-prefixed message to standard output.
 say()  { printf 'launcher: %s\n' "$*"; }
+
+# Print all arguments as one launcher-prefixed message to standard error.
 warn() { printf 'launcher: %s\n' "$*" >&2; }
+
+# Report all arguments through warn and terminate the launcher with status 1.
 die()  { warn "$*"; exit 1; }
 
 # Return 0 only when SOCKET is a Unix socket and ssh-add can list identities.
@@ -240,6 +245,7 @@ doctor() {
     exit "$fail"
 }
 
+# Print the launcher header and available modes to standard output.
 help() {
     sed -n '2,40p' "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \{0,1\}//'
     cat <<'MODES'
@@ -254,6 +260,7 @@ Modes:
 MODES
 }
 
+# Print the launcher and launcher-standard versions to standard output.
 version() { echo "metamanifold-webui-launcher 0.1.0 (launcher-standard 0.6.0, hand-adapted)"; }
 
 # Dispatch the first argument as a launcher mode. Setup replaces this process
