@@ -53,27 +53,75 @@ PROFILE="${HOME}/.profile"
 BLOCK_BEGIN="# >>> metamanifold git-signing agent >>>"
 BLOCK_END="# <<< metamanifold git-signing agent <<<"
 
+# Print all arguments as one launcher-prefixed message to standard output.
 say()  { printf 'launcher: %s\n' "$*"; }
+
+# Print all arguments as one launcher-prefixed message to standard error.
 warn() { printf 'launcher: %s\n' "$*" >&2; }
+
+# Report all arguments through warn and terminate the launcher with status 1.
 die()  { warn "$*"; exit 1; }
 
+# Return 0 only when SOCKET is a Unix socket and ssh-add can list identities.
+# An agent with no loaded identities also returns non-zero.
 agent_alive() {
     [ -S "$SOCKET" ] && SSH_AUTH_SOCK="$SOCKET" ssh-add -l >/dev/null 2>&1
 }
 
+# Remove marked agent blocks from PROFILE, following symlinks and preserving
+# file permissions. A missing profile succeeds. Return 1 for nested or
+# unterminated blocks, or file-operation failures; no backup is made here.
 remove_profile_block() {
     [ -f "$PROFILE" ] || return 0
-    awk -v b="$BLOCK_BEGIN" -v e="$BLOCK_END" '
-        $0 == b { skip = 1 }
+    local target tmp mode
+    target="$(readlink -f "$PROFILE")" || return 1
+    tmp="$(mktemp "$(dirname "$target")/.profile.tmp.XXXXXX")" || return 1
+    if ! awk -v b="$BLOCK_BEGIN" -v e="$BLOCK_END" '
+        $0 == b {
+            if (skip) exit 1
+            skip = 1
+            next
+        }
+        $0 == e {
+            if (skip) { skip = 0; next }
+            print
+            next
+        }
         !skip { print }
-        $0 == e { skip = 0 }
-    ' "$PROFILE" > "$PROFILE.tmp" && mv "$PROFILE.tmp" "$PROFILE"
+        END { if (skip) exit 1 }
+    ' "$target" > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    mode="$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")" || {
+        rm -f "$tmp"
+        return 1
+    }
+    chmod "$mode" "$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    mv "$tmp" "$target" || {
+        rm -f "$tmp"
+        return 1
+    }
 }
 
+# Back up PROFILE and replace its marked agent block, creating the file if absent.
+# "export" sets the socket for future shells; "spawn" also tries to start an
+# agent when ssh-add cannot list identities. Neither mode loads the signing key.
+# Exit 1 if profile creation, backup or block removal fails; append failures
+# return a non-zero status and do not restore the backup.
 write_profile_block() {  # $1 = "export" | "spawn"
-    remove_profile_block
-    [ -f "$PROFILE" ] || touch "$PROFILE"
-    cp "$PROFILE" "$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S)"
+    [ -f "$PROFILE" ] || touch "$PROFILE" || die "could not create $PROFILE"
+    local backup
+    backup="$(mktemp "$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S).XXXXXX")" ||
+        die "could not create backup of $PROFILE"
+    cp -p "$PROFILE" "$backup" || {
+        rm -f "$backup"
+        die "backup of $PROFILE failed"
+    }
+    remove_profile_block || die "could not update $PROFILE"
     {
         printf '%s\n' "$BLOCK_BEGIN"
         if [ "$1" = "spawn" ]; then
@@ -86,6 +134,8 @@ write_profile_block() {  # $1 = "export" | "spawn"
     } >> "$PROFILE"
 }
 
+# Create or overwrite UNIT_FILE for an ssh-agent on SOCKET, without a backup.
+# Return the write status; this does not enable or start the service.
 write_unit() {
     mkdir -p "$(dirname "$UNIT_FILE")"
     cat > "$UNIT_FILE" <<UNIT
@@ -101,6 +151,13 @@ WantedBy=default.target
 UNIT
 }
 
+# Apply $1: systemd enables the user service and installs a socket export;
+# profile installs a fallback that starts an agent; both installs both mechanisms.
+# none attempts to disable the service, deletes its unit and removes the profile
+# block after backing up the profile. status only reports the observed state.
+# Invalid modes, unavailable systemctl when required, service enablement failures
+# and profile creation, backup or block removal failures exit 1. In none mode,
+# profile backup/removal failures return 1; service disable/reload failures warn.
 agent_mode() {
     mode="${1:-}"
     case "$mode" in
@@ -126,9 +183,32 @@ agent_mode() {
             say "systemd service plus spawn-if-dead profile fallback installed"
             ;;
         none)
-            systemctl --user disable --now "$UNIT_NAME" >/dev/null 2>&1
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl --user disable --now "$UNIT_NAME" >/dev/null 2>&1 ||
+                    warn "could not disable $UNIT_NAME"
+            else
+                warn "systemctl not found; user unit was not disabled"
+            fi
             rm -f "$UNIT_FILE"
-            remove_profile_block
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl --user daemon-reload ||
+                    warn "could not reload the user manager"
+            fi
+            if [ -f "$PROFILE" ]; then
+                backup="$(mktemp "$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S).XXXXXX")" || {
+                    warn "could not create backup of $PROFILE; profile block was not removed"
+                    return 1
+                }
+                if ! cp -p "$PROFILE" "$backup"; then
+                    rm -f "$backup"
+                    warn "could not back up $PROFILE; profile block was not removed"
+                    return 1
+                fi
+            fi
+            if ! remove_profile_block; then
+                warn "could not remove the profile block"
+                return 1
+            fi
             say "removed unit and profile block; any agent already running is left alone"
             ;;
         status)
@@ -143,6 +223,9 @@ agent_mode() {
     esac
 }
 
+# Report toolchain and signing readiness, then exit 1 if julia, bun, R or git
+# is missing from PATH, or agent_alive fails; otherwise exit 0. Missing tool
+# configuration or a signing-key check failure only produces a warning.
 doctor() {
     fail=0
     for tool in julia bun R git; do
@@ -166,6 +249,7 @@ doctor() {
     exit "$fail"
 }
 
+# Print the launcher header and available modes to standard output.
 help() {
     sed -n '2,40p' "${BASH_SOURCE[0]}" | grep '^#' | sed 's/^# \{0,1\}//'
     cat <<'MODES'
@@ -180,18 +264,25 @@ Modes:
 MODES
 }
 
+# Print the launcher and launcher-standard versions to standard output.
 version() { echo "metamanifold-webui-launcher 0.1.0 (launcher-standard 0.6.0, hand-adapted)"; }
 
+# Dispatch the first argument as a launcher mode. Setup replaces this process
+# with install.sh and forwards remaining arguments; start executes start.sh.
+# Status checks the configured local port (default 8080) with a two-second
+# timeout; HTTP error responses count as reachable and connection failure does
+# not set a failure exit status. Missing or unknown modes print help and exit 1.
 main() {
     case "${1:-}" in
         --setup)  shift; exec bash "$REPO_DIR/install.sh" "$@" ;;
         --start)  exec bash "$REPO_DIR/start.sh" ;;
         --doctor) doctor ;;
         --status)
-            if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8080/; then
-                say "something is answering on http://127.0.0.1:8080/"
+            status_url="http://127.0.0.1:${JULIA_METAMANIFOLD_PORT:-8080}/"
+            if curl -s -o /dev/null --max-time 2 "$status_url"; then
+                say "something is answering on $status_url"
             else
-                say "nothing answering on http://127.0.0.1:8080/ (start with: ./launcher.sh --start)"
+                say "nothing answering on $status_url (start with: ./launcher.sh --start)"
             fi
             ;;
         --agent)  shift; agent_mode "${1:-}" ;;
