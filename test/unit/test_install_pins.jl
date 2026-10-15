@@ -325,7 +325,9 @@ end
         "README.md", "LICENSE", "CITATION.cff",
         # The two entry points a newcomer runs (the launcher stays at the
         # root); the installer itself lives under scripts/.
-        "install.sh", "start.sh",
+        "install.sh", "start.sh", "launcher.sh",
+        # The RSR scheme's task entry and changelog index.
+        "Justfile", "CHANGELOG.md",
         # Build metadata rooted by its tooling: Julia Pkg, and renv, which
         # also scans R/ for dependency discovery.
         "Project.toml", "Manifest.toml", "renv.lock", "renv", ".Rprofile", "R",
@@ -338,8 +340,8 @@ end
         # is listed here rather than living under .github/ with the other
         # health files.
         "AGENTS.md",
-        # VCS housekeeping.
-        ".gitignore",
+        # VCS housekeeping, and the editor configuration.
+        ".gitignore", ".editorconfig",
     ]
     tracked = Set(split(readchomp(`git -C $(REPO_ROOT) ls-tree --name-only HEAD`), "\n"))
     for entry in root_entries
