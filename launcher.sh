@@ -159,9 +159,28 @@ agent_mode() {
             say "systemd service plus spawn-if-dead profile fallback installed"
             ;;
         none)
-            systemctl --user disable --now "$UNIT_NAME" >/dev/null 2>&1
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl --user disable --now "$UNIT_NAME" >/dev/null 2>&1 ||
+                    warn "could not disable $UNIT_NAME"
+            else
+                warn "systemctl not found; user unit was not disabled"
+            fi
             rm -f "$UNIT_FILE"
-            remove_profile_block
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl --user daemon-reload ||
+                    warn "could not reload the user manager"
+            fi
+            if [ -f "$PROFILE" ]; then
+                backup="$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S)"
+                if ! cp "$PROFILE" "$backup"; then
+                    warn "could not back up $PROFILE; profile block was not removed"
+                    return 1
+                fi
+            fi
+            if ! remove_profile_block; then
+                warn "could not remove the profile block"
+                return 1
+            fi
             say "removed unit and profile block; any agent already running is left alone"
             ;;
         status)
