@@ -221,11 +221,15 @@ module Server
         _allowed_origins() -> Set{String}
 
     The browser origins allowed to call the API cross-origin: the origin this
-    server is served from (its bound port, spelled with `localhost` and
+    server is served from over HTTP (its bound port, spelled with `localhost` and
     `127.0.0.1`, plus the bound host itself when it is a specific name), the Vite
     dev server, and any listed comma-separated in
     `JULIA_METAMANIFOLD_ALLOWED_ORIGINS`. Every other origin is refused, including
     other ports and schemes on localhost.
+
+    Wildcard bind addresses are not included. Read the environment on each call,
+    ignoring blank entries and normalising case, surrounding whitespace and
+    trailing slashes; entries are not validated as URLs.
     """
     function _allowed_origins()
         port = _bound_port[]
@@ -244,9 +248,12 @@ module Server
     """
         _cors_middleware(next)
 
-    Refuse requests whose Host is not loopback on a loopback bind, and requests
-    carrying an `Origin` outside `_allowed_origins()`. Allowed origins get CORS
-    headers and preflight answers; requests with no `Origin` pass unchanged.
+    Return a request handler that answers 403 for a non-empty, non-loopback Host
+    on a loopback bind, or a non-empty `Origin` outside `_allowed_origins()` after
+    normalisation. The Host check also applies to requests without an Origin.
+    Allowed origins get CORS headers echoing the supplied Origin; OPTIONS gets
+    204 without calling `next`. Otherwise call `next(req)`, adding CORS headers
+    only when the Origin is non-empty. Errors from `next` propagate.
     """
     function _cors_middleware(next)
         function(req::HTTP.Request)
@@ -292,8 +299,13 @@ module Server
         _file_middleware(next)
 
     Serve run outputs under `/files/{study}/runs/...` from the projects tree and
-    the frontend build for every other non-API path, passing `/api/` requests on.
+    the frontend build for other non-API paths, passing `/api/` requests to `next`.
+    Return a request handler; query strings are ignored when locating files.
+    Missing run files return 404; existing files resolving outside the projects
+    tree return 403. For other paths, serve a matching frontend file or fall back
+    to `index.html`, calling `next` if neither exists.
     Run files are sent with `nosniff`; report uploads also get `_UPLOAD_CSP`.
+    File resolution and read errors, and errors from `next`, propagate.
     """
     function _file_middleware(next)
         function(req::HTTP.Request)
@@ -396,6 +408,19 @@ module Server
     # above, so they would bypass the Host and Origin checks; nothing uses them.
     const _SERVE_OPTIONS = (access_log=nothing, show_errors=false, docs=false, metrics=false)
 
+    """
+        start(; root=pwd(), host="127.0.0.1", port=8080, listen=true)
+
+    Set the server's root for `data/`, `projects/` and `config/`, record the bind
+    host and port for request guards, and initialise missing study projects.
+    Individual project creation failures are caught and startup continues;
+    errors enumerating studies propagate.
+
+    With `listen=false`, perform this initialisation and return `nothing` without
+    opening a listener. Otherwise serve the API and frontend with the request
+    guards enabled and Oxygen docs and metrics disabled, waiting until the server
+    stops and returning its server object. Listener startup errors propagate.
+    """
     function start(; root=pwd(), host="127.0.0.1", port=8080, listen::Bool=true)
         global_logger(_SuppressEpipe(global_logger()))
         ServerState.set_root!(root)
