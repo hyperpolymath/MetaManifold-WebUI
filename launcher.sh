@@ -63,17 +63,50 @@ agent_alive() {
 
 remove_profile_block() {
     [ -f "$PROFILE" ] || return 0
-    awk -v b="$BLOCK_BEGIN" -v e="$BLOCK_END" '
-        $0 == b { skip = 1 }
+    local target tmp mode
+    target="$(readlink -f "$PROFILE")" || return 1
+    tmp="$(mktemp "$(dirname "$target")/.profile.tmp.XXXXXX")" || return 1
+    if ! awk -v b="$BLOCK_BEGIN" -v e="$BLOCK_END" '
+        $0 == b {
+            if (skip) exit 1
+            skip = 1
+            next
+        }
+        $0 == e {
+            if (skip) { skip = 0; next }
+            print
+            next
+        }
         !skip { print }
-        $0 == e { skip = 0 }
-    ' "$PROFILE" > "$PROFILE.tmp" && mv "$PROFILE.tmp" "$PROFILE"
+        END { if (skip) exit 1 }
+    ' "$target" > "$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    mode="$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")" || {
+        rm -f "$tmp"
+        return 1
+    }
+    chmod "$mode" "$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    mv "$tmp" "$target" || {
+        rm -f "$tmp"
+        return 1
+    }
 }
 
 write_profile_block() {  # $1 = "export" | "spawn"
-    remove_profile_block
-    [ -f "$PROFILE" ] || touch "$PROFILE"
-    cp "$PROFILE" "$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S)"
+    [ -f "$PROFILE" ] || touch "$PROFILE" || die "could not create $PROFILE"
+    local backup
+    backup="$(mktemp "$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S).XXXXXX")" ||
+        die "could not create backup of $PROFILE"
+    cp -p "$PROFILE" "$backup" || {
+        rm -f "$backup"
+        die "backup of $PROFILE failed"
+    }
+    remove_profile_block || die "could not update $PROFILE"
     {
         printf '%s\n' "$BLOCK_BEGIN"
         if [ "$1" = "spawn" ]; then
@@ -126,9 +159,28 @@ agent_mode() {
             say "systemd service plus spawn-if-dead profile fallback installed"
             ;;
         none)
-            systemctl --user disable --now "$UNIT_NAME" >/dev/null 2>&1
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl --user disable --now "$UNIT_NAME" >/dev/null 2>&1 ||
+                    warn "could not disable $UNIT_NAME"
+            else
+                warn "systemctl not found; user unit was not disabled"
+            fi
             rm -f "$UNIT_FILE"
-            remove_profile_block
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl --user daemon-reload ||
+                    warn "could not reload the user manager"
+            fi
+            if [ -f "$PROFILE" ]; then
+                backup="$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S)"
+                if ! cp "$PROFILE" "$backup"; then
+                    warn "could not back up $PROFILE; profile block was not removed"
+                    return 1
+                fi
+            fi
+            if ! remove_profile_block; then
+                warn "could not remove the profile block"
+                return 1
+            fi
             say "removed unit and profile block; any agent already running is left alone"
             ;;
         status)
@@ -188,10 +240,11 @@ main() {
         --start)  exec bash "$REPO_DIR/start.sh" ;;
         --doctor) doctor ;;
         --status)
-            if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8080/; then
-                say "something is answering on http://127.0.0.1:8080/"
+            status_url="http://127.0.0.1:${JULIA_METAMANIFOLD_PORT:-8080}/"
+            if curl -s -o /dev/null --max-time 2 "$status_url"; then
+                say "something is answering on $status_url"
             else
-                say "nothing answering on http://127.0.0.1:8080/ (start with: ./launcher.sh --start)"
+                say "nothing answering on $status_url (start with: ./launcher.sh --start)"
             fi
             ;;
         --agent)  shift; agent_mode "${1:-}" ;;
