@@ -115,13 +115,25 @@ jobs:
                     scripts/lint-occupancy-readings.sh 'docs/occupancy/*'
                     docs/occupancy-2026-10.adoc scripts/check-occupancy.sh
                     scripts/fetch-siblings.sh .github/workflows/occupancy.yml)
+          # The diff goes to a file first because a process substitution hides
+          # git diff's exit status: an unavailable comparison SHA or a repository
+          # error would read as "no changes", and the gate would post
+          # relevant=false -- skipping the two occupancy jobs, whose `skipped`
+          # conclusion satisfies a required check -- so a relevant PR would
+          # pass silently. A failed diff must fail the gate itself: that is
+          # the one failure the required-check design cannot afford to skip.
+          changed="$RUNNER_TEMP/occupancy-changed-files"
+          if ! git diff --no-renames --name-only -z "$BASE_SHA...HEAD" > "$changed"; then
+            echo "ERROR: git diff $BASE_SHA...HEAD failed" >&2
+            exit 1
+          fi
           while IFS= read -r -d '' file; do
             for pattern in "${patterns[@]}"; do
               case "$file" in
                 $pattern) relevant=true; break 2 ;;
               esac
             done
-          done < <(git diff --no-renames --name-only -z "$BASE_SHA...HEAD")
+          done < "$changed"
           echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
 
   disagreement:
