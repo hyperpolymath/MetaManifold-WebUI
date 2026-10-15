@@ -101,6 +101,12 @@ jobs:
       - name: Does the change touch the occupancy reading?
         id: pr
         if: github.event_name == 'pull_request'
+        env:
+          # zizmor flags template expressions interpolated into run scripts
+          # (template-injection), and the gate script is easier to run locally
+          # with the value in an environment variable in any case. The base SHA
+          # is GitHub-supplied, but the indirection costs nothing.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           relevant=false
           patterns=(src/core/memory_probe.jl src/core/provenance.jl src/pipeline/tools.jl
@@ -115,7 +121,7 @@ jobs:
                 $pattern) relevant=true; break 2 ;;
               esac
             done
-          done < <(git diff --no-renames --name-only -z "${{ github.event.pull_request.base.sha }}...HEAD")
+          done < <(git diff --no-renames --name-only -z "$BASE_SHA...HEAD")
           echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
 
   disagreement:
