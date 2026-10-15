@@ -195,8 +195,12 @@ agent_mode() {
                     warn "could not reload the user manager"
             fi
             if [ -f "$PROFILE" ]; then
-                backup="$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S)"
-                if ! cp "$PROFILE" "$backup"; then
+                backup="$(mktemp "$PROFILE.launcher-backup.$(date +%Y%m%d%H%M%S).XXXXXX")" || {
+                    warn "could not create backup of $PROFILE; profile block was not removed"
+                    return 1
+                }
+                if ! cp -p "$PROFILE" "$backup"; then
+                    rm -f "$backup"
                     warn "could not back up $PROFILE; profile block was not removed"
                     return 1
                 fi
