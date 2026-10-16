@@ -755,8 +755,15 @@ end
                 @test e isa GlmGamPoiUnavailable
                 @test occursin("renv::restore()", sprint(showerror, e))
                 # The override defers to base for everything else, so the default
-                # dispersion must still fit normally with it in place.
-                r = fit_nb([5 6; 7 3; 9 4; 4 8], ["A", "A", "B", "B"], [0.0, 0.0, 0.0, 0.0];
+                # dispersion must still fit normally with it in place. The
+                # injected-effect dataset, not the minimal matrix above:
+                # MEASURED with MASS::glm.nb, with 4 samples of small counts the
+                # alternating fit runs theta to its upper bound (status boundary)
+                # and one taxon's fit even produced NaNs (status failed), so that
+                # data never reaches status ok on any machine; the dataset
+                # "Negative-binomial fit recovers an injected effect" already
+                # proves fits.
+                r = fit_nb(effect, effect_groups, log.(tss_factors(effect, effect_samples));
                            levels=("A", "B"))
                 @test all(r.status .== "ok")
             finally
