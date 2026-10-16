@@ -253,6 +253,8 @@ docs/*
 # and the dated occupancy reading (MMW-01), whose table the gate checks
 !docs/occupancy-2026-10.adoc
 !docs/occupancy/
+# and the deferred-features spec the backlog issues link to (#3, #4, #5)
+!docs/milestones/
 
 # translation temp files
 
