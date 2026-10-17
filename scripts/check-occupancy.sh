@@ -17,8 +17,12 @@ bash scripts/fetch-siblings.sh
 deps=_build/dependencies
 sir="$deps/occupancy-types/src/julia"
 agda --version | head -1
+# Debian's stdlib 2.x stores modules under src/; older packages used the root.
+stdlib=/usr/share/agda-stdlib
+if [ -f "$stdlib/src/Data/Integer.agda" ]; then stdlib="$stdlib/src"; fi
+[ -f "$stdlib/Data/Integer.agda" ] || { echo "ERROR: Agda standard library is unavailable" >&2; exit 1; }
 flags=(--safe --without-K --no-libraries --ignore-interfaces --double-check
-       -i docs/occupancy -i /usr/share/agda-stdlib -i "$deps/occupancy-types/src" -i "$deps/resource-algebra/src")
+       -i docs/occupancy -i "$stdlib" -i "$deps/occupancy-types/src" -i "$deps/resource-algebra/src")
 logs=_build/check-logs
 mkdir -p "$logs"
 failures=0
