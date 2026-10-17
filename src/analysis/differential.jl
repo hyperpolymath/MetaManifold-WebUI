@@ -388,7 +388,7 @@ for (da_j in seq_len(da_n)) {
                                      paste(c(da_fit[["th.warn"]], da_warns), collapse = "; "))
     next
   }
-  da_co <- summary(da_fit)[["coefficients"]]
+  da_co <- summary(da_fit, dispersion = 1)[["coefficients"]]
   if (!(da_term %in% rownames(da_co))) {
     da_result[da_j, "status"] <- "failed"
     da_result[da_j, "note"] <- "the group coefficient is not estimable (aliased)"
@@ -807,7 +807,9 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
                     "pvalue" => f.pvalue, "dispersion_theta" => f.theta))
             end
         end
-        method_text = "Negative-binomial GLM per taxon (MASS::glm.nb, log link) with a " *
+        nb_fit = config.dispersion == "ml" ? "MASS::glm.nb" :
+                 "MASS::negative.binomial with dispersion from glmGamPoi::glm_gp"
+        method_text = "Negative-binomial GLM per taxon ($nb_fit, log link) with a " *
                       "$(uppercase(config.offset)) size-factor offset; Wald test of the group " *
                       "coefficient; Benjamini-Hochberg adjustment over the fitted taxa"
         effect = Dict("key" => "log2_fold_change", "label" => "log2 fold change")

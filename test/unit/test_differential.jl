@@ -29,6 +29,8 @@ end
 const HAVE_R = _r_has("stats")
 const HAVE_MASS = HAVE_R && _r_has("MASS")
 HAVE_MASS || @info "R or MASS unavailable - the negative-binomial fit tests are SKIPPED"
+const HAVE_GLMGAMPOI = HAVE_MASS && _r_has("glmGamPoi")
+HAVE_GLMGAMPOI || @info "R, MASS or glmGamPoi unavailable - the shrunken-dispersion fit tests are SKIPPED"
 const HAVE_ZCOMP = HAVE_R && _r_has("zCompositions")
 HAVE_ZCOMP || @info "R or zCompositions unavailable - the clr_welch tests are SKIPPED"
 
@@ -219,6 +221,9 @@ end
                                          reference="A", contrast="B")
             byt = Dict(r["taxon"] => r for r in res["rows"])
             @test res["status"] == "ok"
+            @test res["method"] == "Negative-binomial GLM per taxon (MASS::glm.nb, log link) with a " *
+                                   "TSS size-factor offset; Wald test of the group coefficient; " *
+                                   "Benjamini-Hochberg adjustment over the fitted taxa"
             @test res["diagnostics"]["n_tested"] == 3
             @test all(r -> r["status"] == "ok", res["rows"])
             @test isapprox(byt["t_up"]["estimate"], log(4); atol=0.5)
@@ -253,6 +258,51 @@ end
                     @test r["pvalue"] ≈ direct[3] rtol=1e-6
                     @test r["dispersion_theta"] ≈ direct[4] rtol=1e-6
                 end
+            end
+        end
+    end
+
+    @testset "glmGamPoi matches a direct negative-binomial GLM with fixed dispersion" begin
+        if !HAVE_GLMGAMPOI
+            @test_skip false
+        else
+            res = differential_abundance(effect, effect_samples, effect_taxa, effect_groups;
+                                         reference="A", contrast="B",
+                                         config=DifferentialConfig(dispersion="glmGamPoi"))
+            @test res["status"] == "ok"
+            @test res["method"] == "Negative-binomial GLM per taxon (MASS::negative.binomial " *
+                                   "with dispersion from glmGamPoi::glm_gp, log link) with a " *
+                                   "TSS size-factor offset; Wald test of the group coefficient; " *
+                                   "Benjamini-Hochberg adjustment over the fitted taxa"
+            byt = Dict(r["taxon"] => r for r in res["rows"])
+            off = log.(tss_factors(effect, effect_samples))
+            g = effect_groups
+            phi = rcopy(R"""
+                local({
+                  gp <- glmGamPoi::glm_gp(t($effect),
+                          design = model.matrix(~ factor($g, levels = c("A", "B"))),
+                          size_factors = exp($off))
+                  as.numeric(gp$overdispersions)
+                })
+            """)
+            for (j, t) in enumerate(effect_taxa)
+                y = effect[:, j]
+                theta = 1 / phi[j]
+                direct = rcopy(R"""
+                    local({
+                      fit <- glm($y ~ factor($g, levels = c("A", "B")) + offset($off),
+                                 family = MASS::negative.binomial(theta = $theta),
+                                 control = glm.control(maxit = 100))
+                      unname(summary(fit, dispersion = 1)$coefficients[2, ])
+                    })
+                """)
+                r = byt[t]
+                @test r["status"] == "ok"
+                @test r["estimate"] ≈ direct[1] rtol=1e-6
+                @test r["standard_error"] ≈ direct[2] rtol=1e-6
+                @test r["statistic"] ≈ direct[3] rtol=1e-6
+                @test r["pvalue"] ≈ direct[4] rtol=1e-6
+                @test r["dispersion_theta"] ≈ theta rtol=1e-6
             end
         end
     end
@@ -361,6 +411,12 @@ end
         @test isnothing(SV._config_value_error("analysis.differential.min_prevalence", 0.1))
         @test isnothing(SV._config_value_error("analysis.differential.method", "clr_welch"))
         @test !isnothing(SV._config_value_error("analysis.differential.method", "ancombc"))
+        for dispersion in ("ml", "glmGamPoi")
+            @test isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
+        end
+        for dispersion in ("shrinkage", "", nothing, 1)
+            @test !isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
+        end
     end
 
     @testset "CLR transform" begin
@@ -730,12 +786,12 @@ end
     end
 
     ## Without glmGamPoi, dispersion: glmGamPoi refuses with
-    # GlmGamPoiUnavailable. Same trick as the zCompositions testset above: a
+    # GlmGamPoiUnavailable and the route answers 503. As above, a
     # `requireNamespace` bound in R's global environment reports glmGamPoi
     # missing and defers to base for every other package, so the production
     # probe sees the package as absent on any machine. MASS is probed first
     # and must be real, so this testset needs it.
-    @testset "nb_glm without glmGamPoi refuses with GlmGamPoiUnavailable" begin
+    @testset "nb_glm without glmGamPoi refuses with GlmGamPoiUnavailable and a 503" begin
         if !HAVE_MASS
             @test_skip false    # no MASS means the ml path's own guard fires first
         else
@@ -753,7 +809,18 @@ end
                     err
                 end
                 @test e isa GlmGamPoiUnavailable
-                @test occursin("renv::restore()", sprint(showerror, e))
+                @test occursin("BiocManager::install('glmGamPoi')", sprint(showerror, e))
+                _da_fixture() do
+                    root = MetaManifold.Server.ServerState._root[]
+                    write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                          "analysis:\n  differential:\n    dispersion: glmGamPoi\n")
+                    response = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                                       "table" => "merged", "rank" => "Genus"))
+                    body = JSON3.read(String(response.body))
+                    @test response.status == 503
+                    @test body.error == "r_unavailable"
+                    @test occursin("glmGamPoi", body.message)
+                end
                 # The override defers to base for everything else, so the default
                 # dispersion must still fit normally with it in place. The
                 # injected-effect dataset, not the minimal matrix above:
