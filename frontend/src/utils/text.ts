@@ -16,6 +16,8 @@ export function splitLines(text: string): string[] {
  * filename. A single pass is not enough: replacing "<scr<script>ipt>" once
  * removes the inner tag and leaves the halves joined into another, so the
  * strip repeats until the text stops changing.
+ * Entities are not decoded and removed tags add no spacing or line breaks.
+ * This is a text helper, not an HTML sanitiser.
  */
 export function stripHtmlTags(text: string): string {
   let stripped = text

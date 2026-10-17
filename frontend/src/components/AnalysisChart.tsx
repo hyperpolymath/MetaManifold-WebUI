@@ -5,6 +5,11 @@ import { stripHtmlTags } from '../utils/text'
 import { AddToReport } from './AddToReport'
 import { PlotlyChart } from './PlotlyChart'
 
+/**
+ * Read a Plotly title from `layout.title` or its `text` property and strip tags
+ * for the default report caption. A missing or empty title returns null; a
+ * title containing only tags returns an empty string. Whitespace is preserved.
+ */
 const figureTitle = (fig: unknown): string | null => {
   const t = (fig as { layout?: { title?: unknown } })?.layout?.title
   const text = typeof t === 'string' ? t : (t as { text?: string } | undefined)?.text

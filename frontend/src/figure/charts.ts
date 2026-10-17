@@ -102,7 +102,14 @@ function recolour(t: Record<string, unknown>, colours: Record<string, string>): 
   return { ...t, marker: { ...marker, color: rgba(c, c[3]), ...(t.type === 'scatter' ? { line: outline } : {}) } }
 }
 
-/** The chart sized, typeset and titled for its pane. */
+/**
+ * Return a JSON-cloned copy of the chart, sized, typeset and titled for its pane.
+ * A null pane title keeps the chart's title; an empty or whitespace-only title
+ * hides it. Title markup is retained for rendering but stripped for measuring
+ * the font size needed to fit the available width.
+ * Requires a browser document for text measurement. JSON serialisation, parsing
+ * and text measurement errors propagate to the caller.
+ */
 export function paneFigure(raw: unknown, pane: FigurePane, doc: FigureDoc, opts: {
   showLegend: boolean
   widthPx: number
