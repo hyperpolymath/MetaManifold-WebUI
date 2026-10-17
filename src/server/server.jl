@@ -262,7 +262,9 @@ module Server
         hostport = o[length("http://") + 1:end]
         hostport == lowercase(strip(host_header)) || return false
         m = match(r"^(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]+\]):(\d+)$"i, hostport)
-        !isnothing(m) && parse(Int, m.captures[1]) == _bound_port[]
+        isnothing(m) && return false
+        port = tryparse(Int, m.captures[1])
+        !isnothing(port) && port == _bound_port[]
     end
 
     """

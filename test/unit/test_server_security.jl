@@ -122,6 +122,11 @@ end
             SV._bound_host[] = "127.0.0.1"
         end
 
+        @testset "Oversized origin ports are refused without throwing" begin
+            host = "192.168.1.10:" * repeat("9", 100)
+            @test !SV._bound_ip_origin("http://" * host, host)
+        end
+
         @testset "Oxygen docs and metrics are not served" begin
             @test SV._SERVE_OPTIONS.docs === false
             @test SV._SERVE_OPTIONS.metrics === false
