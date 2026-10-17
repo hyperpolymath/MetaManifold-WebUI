@@ -149,7 +149,8 @@ struct GlmGamPoiUnavailable <: Exception end
 
 Base.showerror(io::IO, ::GlmGamPoiUnavailable) = print(io,
     "the R package glmGamPoi is not available, so the shrunken dispersion cannot be " *
-    "fitted; restore the R library from renv.lock (Rscript -e 'renv::restore()')")
+    "fitted; install it from Bioconductor (Rscript -e \"BiocManager::install('glmGamPoi')\") " *
+    "or use analysis.differential.dispersion: ml")
 
 """
     _geomean(x) -> Float64
