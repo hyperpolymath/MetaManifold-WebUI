@@ -122,6 +122,22 @@ end
             SV._bound_host[] = "127.0.0.1"
         end
 
+        @testset "Implicit HTTP port on wildcard binds" begin
+            SV._bound_host[] = "0.0.0.0"
+            SV._bound_port[] = 80
+            for host in ("192.168.1.10", "[2001:db8::1]")
+                @test SV._bound_ip_origin("http://" * host, host)
+                r = _ss_request("OPTIONS", "/api/v1/studies",
+                    ["Host" => host, "Origin" => "http://" * host])
+                @test r.status == 204
+                @test !SV._bound_ip_origin("https://" * host, host)
+            end
+            @test !SV._bound_ip_origin("http://attacker.example", "attacker.example")
+            SV._bound_port[] = 8080
+            @test !SV._bound_ip_origin("http://192.168.1.10", "192.168.1.10")
+            SV._bound_host[] = "127.0.0.1"
+        end
+
         @testset "Oversized origin ports are refused without throwing" begin
             host = "192.168.1.10:" * repeat("9", 100)
             @test !SV._bound_ip_origin("http://" * host, host)
