@@ -55,6 +55,8 @@ for name in sort(collect(keys(orders)))
     println(rpad(name, 16), rpad(string(predicted), 11), rpad(string(measured), 11),
             rpad(string(cost), 8), string(reclaimed))
 
+    grade = MemoryProbe.stage_grade(occ)
+    grade.drift == 0 || fail("$name: completed stage retains $(grade.drift) KiB")
     predicted == measured ||
         fail("$name: predicted $predicted KiB != measured $measured KiB")
     predicted <= cost ||

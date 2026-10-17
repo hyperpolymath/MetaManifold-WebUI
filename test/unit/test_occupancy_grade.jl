@@ -77,6 +77,9 @@ _occ_stage(tasks; measured) = OrderedDict{String,Any}(
         @test MG.cost_bound_rss_kib(together) == 160
         @test MG.reclaimed_kib(together) == 0         # Reclaim.no-reclaim: drift = peak
         @test MG.disagreement(together) === nothing
+        @test MG.task_grades(together)[1].drift == 100
+        @test MG.task_grades(together)[2].drift == -100
+        @test MG.stage_grade(together).drift == 0
     end
 
     @testset "overlap expires at each handover" begin

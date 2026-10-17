@@ -15,7 +15,9 @@
 -- still resident when the second starts, so that is graded with drift = peak.
 -- That is the interleaving the measurement observed (both resident at once).
 -- The algebra's sequence law, max (peak a) (drift a + peak b), then gives:
--- serial = the larger peak; concurrent = the sum.
+-- serial = the larger peak; concurrent = the sum. These are peak claims.
+-- The concurrent timeline is a handover prefix; GradedStages explicitly
+-- closes its signed final boundary before stating the completed-stage drift.
 module TypedPeak where
 
 open import ResourceAlgebra.Prelude

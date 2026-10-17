@@ -42,7 +42,7 @@ still p = hwm p p (≤-refl p)
 gone : Nat → Grade
 gone p = hwm p 0 z≤n
 
--- The full pipeline runs the two searches together: ASV is still resident when
+-- This is the handover prefix, not the completed stage. ASV is still resident when
 -- OTU starts, so the stage peak is their sum and nothing is reclaimed —
 -- Reclaim.no-reclaim's equality, whose `refl` argument discharges the theorem's
 -- own hypothesis (drift = peak) at the measured grade.
@@ -94,3 +94,19 @@ any-cut≤cost xs ys =
 -- cost and no less than the larger search alone.
 together≤cost : peak (still 9176 ⊗h gone 9204) ≤ peak (still 9176) + peak (gone 9204)
 together≤cost = occupancy≤cost (still 9176) (gone 9204)
+
+-- The pinned HWM grade uses natural drift and cannot represent Julia's signed
+-- final task delta. State that boundary explicitly using signed integers rather
+-- than attributing a signed extension to the pinned algebra.
+import Data.Integer as Int
+
+concurrent-final-delta : Int.ℤ
+concurrent-final-delta = Int.- (Int.+ 9176)
+
+concurrent-completed-drift : Int.ℤ
+concurrent-completed-drift = Int._+_ (Int.+ (drift (still 9176 ⊗h gone 9204))) concurrent-final-delta
+
+-- Both searches have exited: the closing boundary releases the first search.
+-- This arithmetic closes the example; it is not a general signed-HWM proof.
+completed-releases-everything : concurrent-completed-drift ≡ Int.+ 0
+completed-releases-everything = refl

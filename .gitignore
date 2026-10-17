@@ -335,3 +335,6 @@ dev/server.log
 
 # Agda interface files (proofs/agda)
 proofs/agda/_build/
+
+# Occupancy proof dependencies and reproduction logs
+/_build/

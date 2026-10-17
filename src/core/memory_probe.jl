@@ -332,8 +332,9 @@ end
 #     and the next boundary, which can exceed the interaction's own peak.
 #
 # A task's drift subtracts earlier tasks that exited before the next start, so it
-# can be negative — the signed-drift extension `Instances/HWM`'s header records
-# as H-2. The folded drift is the sum of peaks still live at the stage's end.
+# can be negative. The pinned Agda HWM instance has natural drift only;
+# this Julia extension is not covered by its general algebra proofs. The
+# concrete final boundary is checked separately in GradedStages.agda.
 #
 # A task's drift subtracts earlier tasks that exited before the next start, so
 # it can be negative. The folded drift is the sum of peaks still live there.

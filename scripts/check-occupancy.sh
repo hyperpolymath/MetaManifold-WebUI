@@ -18,7 +18,7 @@ deps=_build/dependencies
 sir="$deps/occupancy-types/src/julia"
 agda --version | head -1
 flags=(--safe --without-K --no-libraries --ignore-interfaces --double-check
-       -i docs/occupancy -i "$deps/occupancy-types/src" -i "$deps/resource-algebra/src")
+       -i docs/occupancy -i /usr/share/agda-stdlib -i "$deps/occupancy-types/src" -i "$deps/resource-algebra/src")
 logs=_build/check-logs
 mkdir -p "$logs"
 failures=0

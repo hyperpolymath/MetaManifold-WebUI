@@ -344,3 +344,20 @@ jobs:
           echo /usr/share/agda-stdlib/standard-library.agda-lib > "$AGDA_DIR/libraries"
           cd proofs/agda
           agda MetaManifold/All.agda
+
+  occupancy:
+    name: Occupancy proof gate
+    runs-on: ubuntu-24.04
+    container: debian:trixie-20250929-slim@sha256:1caf1c703c8f7e15dcf2e7769b35000c764e6f50e4d7401c355fb0248f3ddfdb
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install proof tools
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ca-certificates curl git agda-bin=2.6.4.3-1+b2 agda-stdlib=2.1-4
+      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9
+        with:
+          version: "1.12.5"
+      - name: Check Session IR and occupancy proofs
+        run: bash scripts/check-occupancy.sh

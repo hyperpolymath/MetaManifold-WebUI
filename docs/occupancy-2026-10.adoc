@@ -81,9 +81,10 @@ live at it, so a task's `drift_kib` is the change in the live peak sum across it
 boundary — negative when the boundary also releases an earlier task — and
 `release_kib` is everything freed between its start and the next boundary, which
 can exceed that task's own peak. The folded drift is the sum of the peaks still
-live when the stage ends; the pinned instance's own `drift` is that non-negative
-live sum, the signed per-task delta being the extension its header records as
-H-2.
+live when the stage ends. The pinned Agda instance has natural drift only;
+its H-2 signed extension is a proposal, not an established general proof of
+Julia's signed per-task deltas. GradedStages explicitly adds the concurrent
+example's final delta of -9176 KiB and proves that completed drift is zero.
 
 For the three orders above, the algebra's predicted peak reproduces the measured
 stage peak exactly — 9204, 9192 and 18380 KiB — and the slack against the cost
@@ -93,12 +94,12 @@ non-negative reclamation against this page's raw record, rebuilding each order's
 windows from `docs/occupancy/schedules.yml` (the file records no windows of its
 own; the Session IR texts in this directory state the same interleavings). The
 reclamation readings are theorems over the pinned siblings at these numbers:
-`docs/occupancy/GradedStages.agda` — `no-reclaim` for the concurrent stage,
+`docs/occupancy/GradedStages.agda` — `no-reclaim` for the concurrent handover prefix,
 `reclaimed` for the serial one, where 9204 KiB are released at the frontier and
 the cost reading counts them — and the two protocol-level statements
 (`occupancy-at-cut`, `protocol-occupancy≤cost`) as the siblings' own two-step
-over the stage's timeline. `docs/occupancy/reject` gains a fourth rejection, for
-reading the concurrent stage's drift as 0.
+over the stage's timeline. `docs/occupancy/reject` rejects a completed concurrent drift of 9176 KiB;
+the completed stage has released both searches and has drift zero.
 
 `scripts/lint-occupancy-readings.sh` keeps production code from reading the key
 directly: outside `src/core/memory_probe.jl`, an occupancy figure must go through
