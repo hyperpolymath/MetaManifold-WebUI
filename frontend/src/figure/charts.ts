@@ -2,6 +2,7 @@
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { api } from '../api/client'
 import { extractAlphaPanel } from '../components/alphaMetrics'
+import { stripHtmlTags } from '../utils/text'
 import { textWidth } from './legend'
 import { PX_PER_PT, tickPt, titlePt, type AlphaMetricKey, type ChartSpec, type FigureDoc, type FigurePane } from './types'
 
@@ -101,7 +102,14 @@ function recolour(t: Record<string, unknown>, colours: Record<string, string>): 
   return { ...t, marker: { ...marker, color: rgba(c, c[3]), ...(t.type === 'scatter' ? { line: outline } : {}) } }
 }
 
-/** The chart sized, typeset and titled for its pane. */
+/**
+ * Return a JSON-cloned copy of the chart, sized, typeset and titled for its pane.
+ * A null pane title keeps the chart's title; an empty or whitespace-only title
+ * hides it. Title markup is retained for rendering but stripped for measuring
+ * the font size needed to fit the available width.
+ * Requires a browser document for text measurement. JSON serialisation, parsing
+ * and text measurement errors propagate to the caller.
+ */
 export function paneFigure(raw: unknown, pane: FigurePane, doc: FigureDoc, opts: {
   showLegend: boolean
   widthPx: number
@@ -119,7 +127,7 @@ export function paneFigure(raw: unknown, pane: FigurePane, doc: FigureDoc, opts:
   // A title wider than its pane shrinks to fit, clear of the group letter.
   const titleRoom = opts.widthPx - 2 * doc.letters.sizePt * PX_PER_PT
   const titleSize = Math.min(titlePt(doc) * PX_PER_PT,
-    titlePt(doc) * PX_PER_PT * titleRoom / Math.max(1, textWidth(title.replace(/<[^>]+>/g, ''), titlePt(doc) * PX_PER_PT, family)))
+    titlePt(doc) * PX_PER_PT * titleRoom / Math.max(1, textWidth(stripHtmlTags(title), titlePt(doc) * PX_PER_PT, family)))
 
   for (const k of axisKeys(L, 'x').concat(axisKeys(L, 'y'))) {
     const ax = { ...(L[k] as Record<string, unknown>) }
