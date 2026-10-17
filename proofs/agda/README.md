@@ -189,3 +189,15 @@ returns.
 
    A concrete counterexample is `p = [0.01, 0.011]`, `n = 2`. Without the
    minimum the scaled values are `0.02` and `0.011`, which are not monotone.
+
+## Significance publication interface (experimental)
+
+`MetaManifold.Significance` models an interface that requires evidence of a
+computed status before publishing numbers. Its noncomputed constructor stores
+only a reason. This is a proposed interface, not a model equivalent to Julia's
+`AlphaSignificance`: Julia may retain pairwise rows after omnibus failure.
+There is no verified refinement or extracted implementation. These proofs alone
+do not establish Julia reporting behavior or statistical validity.
+
+Before integration, specify the Julia-to-model mapping and test all publication
+paths, including failed omnibus tests with retained pairwise results.
