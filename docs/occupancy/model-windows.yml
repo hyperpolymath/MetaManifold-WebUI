@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Synthetic model boundaries, NOT probe sample indices or historical evidence.
+# Peak magnitudes come from results-2026-10-14.yml; these assumed interleavings
+# illustrate the algebra only. They cannot establish empirical correspondence.
+asv_then_otu:
+  - [1, 2]
+  - [3, 4]
+otu_then_asv:
+  - [1, 2]
+  - [3, 4]
+concurrent:
+  - [1, 4]
+  - [2, 5]

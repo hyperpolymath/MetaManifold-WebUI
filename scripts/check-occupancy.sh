@@ -62,10 +62,8 @@ done
 echo "== Typed peak (Agda, HWM Timeline)"
 check_agda docs/occupancy/TypedPeak.agda TypedPeak.agda
 
-# The graded reading (fork issue #105): occupancy-types' Reclaim theorems at the
-# measured grades, from the same pinned siblings. The recorded run's grades
-# against its measurement are checked by scripts/check-occupancy-grades.jl, which
-# needs the project's Julia packages and so runs in the disagreement job.
+# Conditional algebra examples at historical peak magnitudes, with assumed
+# interleavings. This proof gate does not validate the missing historical windows.
 check_agda docs/occupancy/GradedStages.agda GradedStages.agda
 for file in docs/occupancy/reject/*.agda; do
   name="$(basename -- "$file" .agda)"

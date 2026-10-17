@@ -1,3 +1,5 @@
+-- Model example: assumed interleavings, historical peak magnitudes only.
+-- Historical sample windows were not retained; empirical correspondence is indeterminate.
 {-# OPTIONS --safe --without-K #-}
 -- SPDX-License-Identifier: AGPL-3.0-only
 -- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
@@ -6,7 +8,7 @@
 -- measured numbers. Fork issue #105 asks for exactly this: grade the stages
 -- (alloc/hold/release) and compare the predicted peak with the measured one.
 -- TypedPeak.agda computes the typed peak by the algebra's sequence law; this
--- module adds the grades the measurement itself gives, and the laws that say
+-- module assigns conditional model grades, and applies the laws that say
 -- what the difference between a peak and a cost reading is: occupancy≤cost, and
 -- the strict reclamation at a cut where something is released.
 --

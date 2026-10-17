@@ -1,3 +1,5 @@
+-- Model example: assumed interleavings, historical peak magnitudes only.
+-- Historical sample windows were not retained; empirical correspondence is indeterminate.
 {-# OPTIONS --safe --without-K #-}
 -- SPDX-License-Identifier: AGPL-3.0-only
 -- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
@@ -13,7 +15,7 @@
 -- 2026-10-14 run in docs/occupancy-2026-10.adoc. A search's process exits
 -- holding nothing, so run alone its drift is 0. Run concurrently, the first is
 -- still resident when the second starts, so that is graded with drift = peak.
--- That is the interleaving the measurement observed (both resident at once).
+-- This is an assumed interleaving, not a recovered historical sample trace.
 -- The algebra's sequence law, max (peak a) (drift a + peak b), then gives:
 -- serial = the larger peak; concurrent = the sum. These are peak claims.
 -- The concurrent timeline is a handover prefix; GradedStages explicitly

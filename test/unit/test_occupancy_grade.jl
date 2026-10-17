@@ -8,7 +8,7 @@
 # restates a sibling's definition: what is tested is the *reading* of a probe's
 # samples as grades — that a task is sequenced from the previous one's drift,
 # that the siblings' laws come out of that reading, and that the prediction
-# reproduces the measurement the occupancy reading recorded on 2026-10-14.
+# illustrates conditional predictions; historical windows were not retained.
 
 using MetaManifold.MemoryProbe
 using OrderedCollections, YAML
@@ -17,13 +17,13 @@ const MG = MetaManifold.MemoryProbe
 
 const RECORDED_OCCUPANCY =
     normpath(joinpath(@__DIR__, "..", "..", "docs", "occupancy", "results-2026-10-14.yml"))
-const RECORDED_SCHEDULES =
-    normpath(joinpath(@__DIR__, "..", "..", "docs", "occupancy", "schedules.yml"))
+const MODEL_WINDOWS =
+    normpath(joinpath(@__DIR__, "..", "..", "docs", "occupancy", "model-windows.yml"))
 
-# One task as the probe records it, with the sample window a schedule gives it.
+# A synthetic task with model boundaries, not a historical probe record.
 # The windows determine which peaks remain live at each handover.
 function _occ_task(peak; label = "t", first_sample = 1, last_sample = 2)
-    OrderedDict{String,Any}("label" => label, "processes" => 1, "samples" => 3,
+    OrderedDict{String,Any}("label" => label, "processes" => 1, "samples" => (last_sample >= first_sample ? last_sample - first_sample + 1 : 0),
                             "peak_rss_kib" => peak, "hwm_kib" => peak,
                             "first_sample" => first_sample, "last_sample" => last_sample)
 end
@@ -33,6 +33,24 @@ _occ_stage(tasks; measured) = OrderedDict{String,Any}(
     "probe" => MG.PROBE, "interval_ms" => 10, "samples" => 10,
     "julia_allocated_bytes" => 1000, "julia_live_bytes_delta" => 500,
     "child_peak_rss_kib" => measured, "tasks" => Any[tasks...])
+
+@testset "empirical checker rejects missing or inconsistent windows" begin
+    include(joinpath(@__DIR__, "..", "..", "scripts", "check-occupancy-grades.jl"))
+    historical = YAML.load_file(RECORDED_OCCUPANCY)["orders"]
+    @test check_records(historical; io=devnull) == 2
+    @test check_records(Dict(); io=devnull) == 2
+    rec = deepcopy(historical["asv_then_otu"])
+    for t in rec["tasks"]
+        t["first_sample"], t["last_sample"] = 1, 2
+    end
+    @test check_records(Dict("impossible" => rec); io=devnull) == 1
+    valid = Dict("samples" => 4, "child_peak_rss_kib" => 100,
+        "tasks" => [Dict("label" => "a", "samples" => 2, "peak_rss_kib" => 100,
+                         "first_sample" => 1, "last_sample" => 2),
+                    Dict("label" => "b", "samples" => 2, "peak_rss_kib" => 60,
+                         "first_sample" => 3, "last_sample" => 4)])
+    @test check_records(Dict("synthetic" => valid); io=devnull) == 0
+end
 
 @testset "occupancy grades" begin
     @testset "a grade is (peak, drift), drift ≤ peak" begin
@@ -245,16 +263,13 @@ _occ_stage(tasks; measured) = OrderedDict{String,Any}(
         end
     end
 
-    @testset "the prediction reproduces the recorded measurement" begin
-        # docs/occupancy/results-2026-10-14.yml is the probe's own record of the
-        # run docs/occupancy-2026-10.adoc publishes. The schedules are the ones the
-        # .sir files in docs/occupancy state — serial for two orders, together for
-        # the third — and the peaks are the recorded ones: nothing here is invented.
+    @testset "synthetic interleavings illustrate conditional predictions" begin
+        # Only peak magnitudes are historical. Boundaries are assumed examples.
         orders = YAML.load_file(RECORDED_OCCUPANCY)["orders"]
-        # The interleavings the run used, from the same file the gate reads
-        # (scripts/check-occupancy-grades.jl), so the two cannot disagree.
-        schedules = YAML.load_file(RECORDED_SCHEDULES)
+        schedules = YAML.load_file(MODEL_WINDOWS)
         for (name, rec) in orders
+            @test MG.stage_grade(rec) === nothing
+            @test MG.predicted_peak_rss_kib(rec) === nothing
             windows = schedules[name]
             tasks = [_occ_task(t["peak_rss_kib"]; label = t["label"],
                                first_sample = windows[i][1], last_sample = windows[i][2])
