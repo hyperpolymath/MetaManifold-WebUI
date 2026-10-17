@@ -187,18 +187,13 @@ end
         ci = YAML.load_file(CI_PATH)
         job = ci["jobs"]["test"]
 
-        # Julia is the one version CI cannot read from the pin file, because nothing can
-        # be read before Julia exists. It is therefore duplicated, and this is the test
-        # that makes the duplication safe.
-        #
-        # Read from the `Set up Julia` step rather than from a matrix: the matrix was
-        # removed because GitHub appends a matrix combination to the posted check name
-        # (see "a required check name is a stable identifier" below). The step is located
-        # by its `uses:` rather than by index, so reordering the steps cannot make this
-        # assertion quietly vanish.
-        setup = ci_step_using(job, "julia-actions/setup-julia")
-        @test setup !== nothing
-        @test setup["with"]["version"] == pins["runtimes"]["julia"]["version"]
+        # The repo-owned installer reads the same committed version, URL and SHA.
+        setup = only(filter(step -> get(step, "name", "") == "Set up Julia", job["steps"]))
+        @test setup["run"] == "bash scripts/install-ci-julia.sh"
+        script = joinpath(REPO_ROOT, "scripts", "install-ci-julia.sh")
+        declared = split(strip(read(`bash $script --print-pin`, String)), '\n')
+        archive = pins["runtimes"]["julia"]["archives"]["linux-x86_64"]
+        @test declared == [pins["runtimes"]["julia"]["version"], archive["url"], archive["sha256"]]
 
         # A floating runner would carry the R apt pin, which names a 24.04 build, off to
         # whatever the next LTS ships.

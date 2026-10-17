@@ -6,4 +6,5 @@ if (FALSE) {
     # Retain while installer and CI explicitly verify this package.
     library(tibble)
     library(MASS)
+    library(glmGamPoi)
 }

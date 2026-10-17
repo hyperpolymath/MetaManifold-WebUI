@@ -58,17 +58,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Set up Julia
-        uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2.7.0
-        with:
-          # Pinned rather than tracking latest stable, because a pinned Manifest.toml
-          # resolved by an unpinned Julia is not a reproducible build. This must equal
-          # julia_version in Manifest.toml; it cannot be read from the pin file, since
-          # nothing can be read before Julia exists. test/unit/test_install_pins.jl
-          # fails if the three ever disagree.
-          version: "1.12.5"
+        run: bash scripts/install-ci-julia.sh
 
       - name: Cache Julia packages
-        uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2.1.0
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.julia/artifacts
+            ~/.julia/packages
+            ~/.julia/registries
+          key: julia-${{ runner.os }}-${{ hashFiles('Manifest.toml', 'config/defaults/tool_versions.yml') }}
 
       # Every external version CI installs is read from the committed pin file, so CI
       # and a developer's machine cannot drift apart. A temporary environment is used
@@ -156,7 +155,7 @@ jobs:
           sudo chmod 777 "$RENV_PATHS_CACHE"
           sudo env R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'install.packages(c("renv", "BiocManager"), repos="https://cloud.r-project.org", lib=.Library)'
           sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'renv::restore(project=".", library=.Library, prompt=FALSE)'
-          Rscript --no-init-file -e 'for (pkg in c("dada2","Biostrings","ShortRead","vegan","MASS","zCompositions")) if (!require(pkg,character.only=TRUE,quietly=TRUE)) stop(pkg, " failed to install")'
+          Rscript --no-init-file -e 'for (pkg in c("dada2","Biostrings","ShortRead","vegan","MASS","zCompositions","glmGamPoi")) if (!require(pkg,character.only=TRUE,quietly=TRUE)) stop(pkg, " failed to install")'
 
       - name: Check DADA2 CSV assembly
         run: Rscript --vanilla test/unit/test_dada2_tables.R
@@ -250,7 +249,7 @@ jobs:
           julia --project=. -e '
             using RCall
             R"cat(.libPaths(), sep=\"\n\")"
-            for pkg in ["dada2", "vegan", "tibble", "MASS", "zCompositions"]
+            for pkg in ["dada2", "vegan", "tibble", "MASS", "zCompositions", "glmGamPoi"]
               R"if (!require($pkg, character.only=TRUE, quietly=TRUE)) stop($pkg, \" not found\")"
             end
           '
@@ -293,7 +292,7 @@ jobs:
           exit "$status"
 
       - name: Process coverage
-        uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38  # v1.2.2
+        run: julia scripts/process-ci-coverage.jl
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v6.0.2
@@ -356,8 +355,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends ca-certificates curl git agda-bin=2.6.4.3-1+b2 agda-stdlib=2.1-4
-      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9
-        with:
-          version: "1.12.5"
+      - name: Set up Julia
+        run: bash scripts/install-ci-julia.sh
       - name: Check Session IR and occupancy proofs
         run: bash scripts/check-occupancy.sh
