@@ -10,7 +10,7 @@ using MetaManifold
 using MetaManifold.Differential
 using RCall
 using Test
-using DuckDB, DBInterface, JSON3
+using DuckDB, DBInterface, JSON3, HTTP
 
 """
     _r_has(pkg) -> Bool
@@ -264,6 +264,7 @@ end
 
     @testset "glmGamPoi matches a direct negative-binomial GLM with fixed dispersion" begin
         if !HAVE_GLMGAMPOI
+            @test get(ENV, "CI", "false") != "true" # the pinned dependency is required in CI
             @test_skip false
         else
             res = differential_abundance(effect, effect_samples, effect_taxa, effect_groups;
@@ -271,7 +272,7 @@ end
                                          config=DifferentialConfig(dispersion="glmGamPoi"))
             @test res["status"] == "ok"
             @test res["method"] == "Negative-binomial GLM per taxon (MASS::negative.binomial " *
-                                   "with dispersion from glmGamPoi::glm_gp, log link) with a " *
+                                   "with dispersion trend from glmGamPoi::glm_gp, log link) with a " *
                                    "TSS size-factor offset; Wald test of the group coefficient; " *
                                    "Benjamini-Hochberg adjustment over the fitted taxa"
             byt = Dict(r["taxon"] => r for r in res["rows"])
@@ -281,8 +282,8 @@ end
                 local({
                   gp <- glmGamPoi::glm_gp(t($effect),
                           design = model.matrix(~ factor($g, levels = c("A", "B"))),
-                          size_factors = exp($off))
-                  as.numeric(gp$overdispersions)
+                          size_factors = exp($off), overdispersion_shrinkage = TRUE)
+                  as.numeric(gp$overdispersion_shrinkage_list$dispersion_trend)
                 })
             """)
             for (j, t) in enumerate(effect_taxa)
@@ -303,6 +304,39 @@ end
                 @test r["statistic"] ≈ direct[3] rtol=1e-6
                 @test r["pvalue"] ≈ direct[4] rtol=1e-6
                 @test r["dispersion_theta"] ≈ theta rtol=1e-6
+            end
+        end
+    end
+
+    @testset "glmGamPoi invalid trends are isolated per taxon" begin
+        if !HAVE_GLMGAMPOI
+            @test_skip false
+        else
+            MetaManifold.RRuntime.with_r_lock() do
+                reval(raw"""
+                    test_original_gp <- get("glm_gp", asNamespace("glmGamPoi"))
+                    test_phi <- 0
+                    assignInNamespace("glm_gp", function(...) {
+                        fit <- test_original_gp(...)
+                        fit$overdispersion_shrinkage_list$dispersion_trend[1] <- test_phi
+                        fit
+                    }, ns="glmGamPoi")
+                """)
+                try
+                    off = log.(tss_factors(effect, effect_samples))
+                    for (phi, status) in ((0.0, "boundary"), (-1.0, "failed"), (NaN, "failed"))
+                        RCall.globalEnv[:test_phi] = phi
+                        rows = fit_nb(effect, effect_groups, off; levels=("A", "B"), dispersion="glmGamPoi")
+                        @test rows.status[1] == status
+                        @test isnothing(rows.pvalue[1])
+                        @test all(rows.status[2:end] .== "ok")
+                    end
+                finally
+                    reval(raw"""
+                        assignInNamespace("glm_gp", test_original_gp, ns="glmGamPoi")
+                        rm(test_original_gp, test_phi)
+                    """)
+                end
             end
         end
     end
@@ -416,6 +450,25 @@ end
         end
         for dispersion in ("shrinkage", "", nothing, 1, true, ["ml"])
             @test !isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
+        end
+    end
+
+    @testset "Config rejects incompatible effective dispersion pairs" begin
+        SV = MetaManifold.Server
+        keym, keyd = "analysis.differential.method", "analysis.differential.dispersion"
+        @test SV._differential_pair_error(Dict(keym=>"clr_welch"), Dict(keyd=>"glmGamPoi")) !== nothing
+        @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>"clr_welch")) !== nothing
+        @test SV._differential_pair_error(Dict(keym=>(; value="clr_welch",source="study")), Dict(keyd=>" GLMGAMPOI ")) !== nothing
+        @test SV._differential_pair_error(Dict(keym=>"clr_welch"), Dict(keym=>"nb_glm",keyd=>"glmGamPoi")) === nothing
+        @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>"clr_welch",keyd=>"ml")) === nothing
+        _da_fixture() do
+            root = SV.ServerState._root[]
+            path = joinpath(root,"data","studyD","pipeline.yml")
+            write(path,"analysis:\n  differential:\n    method: clr_welch\n")
+            before = read(path,String)
+            response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", "/api/v1/studies/studyD/config", ["Content-Type"=>"application/json"], JSON3.write(Dict(keyd=>"glmGamPoi"))))
+            @test response.status == 400
+            @test read(path,String) == before
         end
     end
 
@@ -809,7 +862,7 @@ end
                     err
                 end
                 @test e isa GlmGamPoiUnavailable
-                @test occursin("BiocManager::install('glmGamPoi')", sprint(showerror, e))
+                @test occursin("renv::restore()", sprint(showerror, e))
                 _da_fixture() do
                     root = MetaManifold.Server.ServerState._root[]
                     write(joinpath(root, "data", "studyD", "pipeline.yml"),

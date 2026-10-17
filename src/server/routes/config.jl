@@ -183,6 +183,26 @@ function _config_value_error(key::String, value)
     nothing
 end
 
+# Validate the effective pair after merging a PATCH, before writing any key.
+# Resolved entries carry source annotations; global defaults are raw values.
+function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
+    keys_ = ("analysis.differential.method", "analysis.differential.dispersion")
+    any(k -> haskey(changes, k), keys_) || return nothing
+    value(k, default) = if haskey(changes, k)
+        changes[k]
+    else
+        current = get(resolved, k, default)
+        current isa NamedTuple ? current.value : current
+    end
+    method = value(keys_[1], "nb_glm")
+    dispersion = value(keys_[2], "ml")
+    if method isa AbstractString && dispersion isa AbstractString &&
+       lowercase(strip(method)) == "clr_welch" && lowercase(strip(dispersion)) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with clr_welch"
+    end
+    nothing
+end
+
 function _validate_config_key(dotted_key::String)
     dotted_key in _ALLOWED_CONFIG_KEYS || error(
         "Config key '$dotted_key' is not a recognised pipeline option")
@@ -244,6 +264,8 @@ end
         bad = _config_value_error(string(k), v)
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
+    bad = _differential_pair_error(_default_cfg(root), body)
+    isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     for (k, v) in body
         _write_override(user_path, string(k), v)
     end
@@ -507,6 +529,8 @@ end
         bad = _config_value_error(string(k), v)
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
+    bad = _differential_pair_error(_resolve_config(study), body)
+    isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     path = joinpath(ServerState.data_dir(), study, "pipeline.yml")
     for (k, v) in body
         _write_override(path, string(k), v)
@@ -591,6 +615,8 @@ end
         bad = _config_value_error(string(k), v)
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
+    bad = _differential_pair_error(_resolve_config(study, nothing, group), body)
+    isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     path = joinpath(ServerState.data_dir(), study, group, "pipeline.yml")
     for (k, v) in body
         _write_override(path, string(k), v)
@@ -639,6 +665,8 @@ end
         bad = _config_value_error(string(k), v)
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
+    bad = _differential_pair_error(_resolve_config(study, run, group), body)
+    isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     path = joinpath(ServerState.data_dir(), study, run_path, "pipeline.yml")
     for (k, v) in body
         _write_override(path, string(k), v)

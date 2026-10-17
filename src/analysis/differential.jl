@@ -61,10 +61,13 @@ have at least one read to be tested. `replacement_delta`, in (0, 1), is the
 above its taxon's smallest observed proportion is lowered to this fraction of it.
 `dispersion` names the per-taxon dispersion `nb_glm` uses (`"ml"` or
 `"glmGamPoi"`): `"ml"` takes the maximum-likelihood theta from `MASS::glm.nb`,
-`"glmGamPoi"` uses the `overdispersions` returned by `glmGamPoi::glm_gp` for
+`"glmGamPoi"` uses `overdispersion_shrinkage_list.dispersion_trend` from
+`glmGamPoi::glm_gp` for
 the taxa passing the prevalence filter, with `theta = 1 / dispersion` fixed
 in each negative-binomial GLM. Both options use a Wald test of the group
-coefficient; `"glmGamPoi"` is refused for `clr_welch`.
+coefficient with fixed scale 1; `"glmGamPoi"` is refused for `clr_welch`.
+The trend is plugged into an NB Wald model; its estimation uncertainty is not
+propagated. This option does not implement glmGamPoi's quasi-likelihood test.
 Method and offset names are stripped and lowercased; dispersion names are
 stripped and matched without regard to case, then stored as `"ml"` or
 `"glmGamPoi"`. Throws `ArgumentError` for unsupported names, incompatible
@@ -152,12 +155,12 @@ struct GlmGamPoiUnavailable <: Exception end
 """
     Base.showerror(io::IO, ::GlmGamPoiUnavailable)
 
-Write the missing-package error and guidance to install glmGamPoi or select
+Write the missing-package error and guidance to restore the pinned R library or select
 `dispersion: ml` to `io`, without a trailing newline.
 """
 Base.showerror(io::IO, ::GlmGamPoiUnavailable) = print(io,
     "the R package glmGamPoi is not available, so the shrunken dispersion cannot be " *
-    "fitted; install it from Bioconductor (Rscript -e \"BiocManager::install('glmGamPoi')\") " *
+    "fitted; restore the pinned R library (Rscript -e 'renv::restore()') " *
     "or use analysis.differential.dispersion: ml")
 
 """
@@ -291,23 +294,24 @@ da_result <- data.frame(status = rep("ok", da_n), note = rep("", da_n),
 # glmGamPoi's shrunken dispersion, fitted across all taxa in one call -- its
 # genes x samples convention, so the counts are transposed, and size_factors
 # is the linear size factor (the per-taxon fits below take its log as the
-# offset). A fit error or a dispersion that is not one finite positive value
-# per taxon fails every taxon with the reason: with theta given, not
-# estimated, there is nothing left to fall back to.
+# offset). A global fit error or missing trend fails the batch. A zero trend
+# is a per-taxon Poisson boundary; malformed values fail only their own taxa.
+# No fallback to a different dispersion estimator is permitted.
 da_phi <- rep(NA_real_, da_n)
 da_gp_failed <- ""
 if (da_use_gp) {
   da_gp <- tryCatch(
     glmGamPoi::glm_gp(t(da_counts), design = model.matrix(~ da_g),
-                      size_factors = exp(da_offset)),
+                      size_factors = exp(da_offset), overdispersion_shrinkage = TRUE),
     error = function(e) e)
   if (inherits(da_gp, "error")) {
     da_gp_failed <- paste("glm_gp stopped with an error:", conditionMessage(da_gp))
   } else {
-    da_phi <- as.numeric(da_gp[["overdispersions"]])
-    if (length(da_phi) != da_n || any(!is.finite(da_phi)) || any(da_phi <= 0)) {
-      da_gp_failed <- paste("glm_gp returned a dispersion that is not one finite",
-                            "positive value per taxon")
+    # glm_gp's overdispersions retain the unshrunk MLEs. Its NB refit uses
+    # dispersion_trend; ql_disp_shrunken is a distinct quasi-likelihood scale.
+    da_phi <- as.numeric(da_gp[["overdispersion_shrinkage_list"]][["dispersion_trend"]])
+    if (length(da_phi) != da_n) {
+      da_gp_failed <- "glm_gp returned no dispersion trend for each taxon"
       da_phi <- rep(NA_real_, da_n)
     }
   }
@@ -343,6 +347,16 @@ for (da_j in seq_len(da_n)) {
   # negative.binomial family, so the Wald test and every check below are the
   # same machinery on a given dispersion instead of an estimated one.
   if (da_use_gp) {
+    if (!is.finite(da_phi[da_j]) || da_phi[da_j] < 0) {
+      da_result[da_j, "status"] <- "failed"
+      da_result[da_j, "note"] <- "the dispersion trend for this taxon is invalid"
+      next
+    }
+    if (da_phi[da_j] == 0) {
+      da_result[da_j, "status"] <- "boundary"
+      da_result[da_j, "note"] <- "zero dispersion: Poisson boundary; NB Wald inference withheld"
+      next
+    }
     da_theta <- 1 / da_phi[da_j]
     if (!is.finite(da_theta) || da_theta <= 0) {
       da_result[da_j, "status"] <- "failed"
@@ -439,8 +453,8 @@ sample's size factor. `levels` is `(reference, contrast)`, so the estimate is
 the natural-log fold change of `contrast` over `reference`.
 `dispersion` names where each taxon's theta comes from: `"ml"` (the default)
 takes `MASS::glm.nb`'s maximum-likelihood estimate; `"glmGamPoi"` uses the
-`overdispersions` returned by `glmGamPoi::glm_gp` on all supplied taxa in one
-call, then fits each taxon with `theta = 1 / dispersion` fixed. Both options
+`overdispersion_shrinkage_list.dispersion_trend` from `glmGamPoi::glm_gp` on
+all supplied taxa in one call, then fits each taxon with `theta = 1 / dispersion` fixed. Both options
 use a Wald test of the group coefficient. Names are stripped and matched
 without regard to case.
 
@@ -451,7 +465,9 @@ at or above 1e7 marks the Poisson end, and theta at or below 1e-8 marks extreme
 variance. Constant counts, complete separation, non-convergence and unusable
 coefficients produce failed rows. Errors caught from the model-fitting calls
 also produce failed rows; a caught `glm_gp` error or an invalid dispersion
-vector fails every taxon, with no fallback to `"ml"`.
+vector fails every taxon, with no fallback to `"ml"`. A zero trend marks only
+its taxon as a Poisson boundary and withholds NB Wald statistics. Invalid
+negative/non-finite trends fail only the affected taxa.
 
 Throws `ArgumentError` for an unsupported dispersion name or mismatched sample,
 group and offset lengths, `MASSUnavailable` when MASS cannot be loaded,
@@ -728,7 +744,7 @@ labelled `reference` in `groups`, by `config.method`.
 `nb_glm`: size factors are computed on the full matrix by `config.offset` and
 enter each negative-binomial model as `log(factor)`; the estimate is a
 natural-log fold change. `config.dispersion` selects per-taxon maximum-likelihood
-theta (`"ml"`) or fixed theta from `glmGamPoi::glm_gp`'s `overdispersions`
+theta (`"ml"`) or fixed theta from `glmGamPoi::glm_gp`'s cross-taxon dispersion trend
 (`"glmGamPoi"`), fitted in one call on the taxa passing the prevalence filter.
 The result's `config` includes the selected dispersion name.
 
@@ -808,7 +824,7 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
             end
         end
         nb_fit = config.dispersion == "ml" ? "MASS::glm.nb" :
-                 "MASS::negative.binomial with dispersion from glmGamPoi::glm_gp"
+                 "MASS::negative.binomial with dispersion trend from glmGamPoi::glm_gp"
         method_text = "Negative-binomial GLM per taxon ($nb_fit, log link) with a " *
                       "$(uppercase(config.offset)) size-factor offset; Wald test of the group " *
                       "coefficient; Benjamini-Hochberg adjustment over the fitted taxa"
