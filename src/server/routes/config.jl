@@ -108,6 +108,7 @@ const _ENUM_VALUES = Dict(
     "analysis.beta.normalisation"    => ("hellinger", "none", "rarefy", "srs"),
     "analysis.differential.method"   => Differential.METHODS,
     "analysis.differential.offset"   => Differential.OFFSET_METHODS,
+    "analysis.differential.dispersion" => Differential.DISPERSIONS,
     "phylogeny.reference.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.placement.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.reference.trim.method"    => Validation.PHYLOGENY_TRIM_METHODS,
@@ -130,6 +131,11 @@ factory default; a key whose default is ~ accepts a string, number or boolean.
 """
 function _config_value_error(key::String, value)
     v = value isa JSON3.Array ? collect(value) : value
+    if key == "analysis.differential.dispersion" && v isa AbstractString
+        v = lowercase(strip(v))
+        return v in lowercase.(Differential.DISPERSIONS) ? nothing :
+            "$key must be one of $(join(Differential.DISPERSIONS, ", "))"
+    end
     if haskey(_ENUM_VALUES, key)
         allowed = _ENUM_VALUES[key]
         v in allowed || return "$key must be one of $(join(filter(!isnothing, collect(allowed)), ", "))"
@@ -175,6 +181,39 @@ function _config_value_error(key::String, value)
         v isa AbstractDict || return "$key must be a section"
     end
     nothing
+end
+
+# Validate the effective pair after merging a PATCH, before writing any key.
+# Resolved entries carry source annotations; global defaults are raw values.
+function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
+    keys_ = ("analysis.differential.method", "analysis.differential.dispersion")
+    any(k -> haskey(changes, k), keys_) || return nothing
+    value(k, default) = if haskey(changes, k)
+        changes[k]
+    else
+        current = get(resolved, k, default)
+        current isa NamedTuple ? current.value : current
+    end
+    method = value(keys_[1], "nb_glm")
+    dispersion = value(keys_[2], "ml")
+    if method isa AbstractString && dispersion isa AbstractString &&
+       lowercase(strip(method)) == "clr_welch" && lowercase(strip(dispersion)) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with clr_welch"
+    end
+    nothing
+end
+
+# Validate against the current cascade and write under the same reentrant lock.
+# Two individually valid concurrent PATCHes must not create an invalid pair.
+function _write_config_updates(resolve::Function, path::String, changes::AbstractDict)
+    lock(_config_file_lock) do
+        bad = _differential_pair_error(resolve(), changes)
+        isnothing(bad) || return json_error(400, "invalid_config_value", bad)
+        for (k, v) in changes
+            _write_override(path, string(k), v)
+        end
+        nothing
+    end
 end
 
 function _validate_config_key(dotted_key::String)
@@ -238,9 +277,8 @@ end
         bad = _config_value_error(string(k), v)
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
-    for (k, v) in body
-        _write_override(user_path, string(k), v)
-    end
+    bad = _write_config_updates(() -> _default_cfg(root), user_path, body)
+    isnothing(bad) || return bad
     json(Dict(k => (; value=v, source="default") for (k, v) in _default_cfg(root)))
 end
 
@@ -502,9 +540,8 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, "pipeline.yml")
-    for (k, v) in body
-        _write_override(path, string(k), v)
-    end
+    bad = _write_config_updates(() -> _resolve_config(study), path, body)
+    isnothing(bad) || return bad
     json(_resolve_config(study))
 end
 
@@ -586,9 +623,8 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, group, "pipeline.yml")
-    for (k, v) in body
-        _write_override(path, string(k), v)
-    end
+    bad = _write_config_updates(() -> _resolve_config(study, nothing, group), path, body)
+    isnothing(bad) || return bad
     json(_resolve_config(study, nothing, group))
 end
 
@@ -634,9 +670,8 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, run_path, "pipeline.yml")
-    for (k, v) in body
-        _write_override(path, string(k), v)
-    end
+    bad = _write_config_updates(() -> _resolve_config(study, run, group), path, body)
+    isnothing(bad) || return bad
     json(_resolve_config(study, run, group))
 end
 

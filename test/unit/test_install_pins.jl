@@ -187,18 +187,13 @@ end
         ci = YAML.load_file(CI_PATH)
         job = ci["jobs"]["test"]
 
-        # Julia is the one version CI cannot read from the pin file, because nothing can
-        # be read before Julia exists. It is therefore duplicated, and this is the test
-        # that makes the duplication safe.
-        #
-        # Read from the `Set up Julia` step rather than from a matrix: the matrix was
-        # removed because GitHub appends a matrix combination to the posted check name
-        # (see "a required check name is a stable identifier" below). The step is located
-        # by its `uses:` rather than by index, so reordering the steps cannot make this
-        # assertion quietly vanish.
-        setup = ci_step_using(job, "julia-actions/setup-julia")
-        @test setup !== nothing
-        @test setup["with"]["version"] == pins["runtimes"]["julia"]["version"]
+        # The repo-owned installer reads the same committed version, URL and SHA.
+        setup = only(filter(step -> get(step, "name", "") == "Set up Julia", job["steps"]))
+        @test setup["run"] == "bash scripts/install-ci-julia.sh"
+        script = joinpath(REPO_ROOT, "scripts", "install-ci-julia.sh")
+        declared = split(strip(read(`bash $script --print-pin`, String)), '\n')
+        archive = pins["runtimes"]["julia"]["archives"]["linux-x86_64"]
+        @test declared == [pins["runtimes"]["julia"]["version"], archive["url"], archive["sha256"]]
 
         # A floating runner would carry the R apt pin, which names a 24.04 build, off to
         # whatever the next LTS ships.
@@ -250,6 +245,75 @@ end
         @test occursin("source scripts/ci/fetch_pinned.sh", runs)
         for ref in (raw"$VSEARCH_URL", raw"$SWARM_URL", raw"$FASTQC_URL")
             @test occursin("fetch_pinned \"$ref\"", runs)
+        end
+    end
+
+    @testset "required relevance gates classify changes and fail closed" begin
+        jobs = YAML.load_file(CI_PATH)["jobs"]
+        required = ["Code relevance", "Julia tests", "Agda proofs", "Occupancy relevance",
+                    "Occupancy disagreement test", "Occupancy typed peak"]
+        @test all(name -> count(j -> get(j, "name", "") == name, values(jobs)) == 1, required)
+        @test jobs["disagreement"]["needs"] == ["occupancy_gate", "test"]
+        @test startswith(jobs["disagreement"]["if"], "always() &&")
+        steps = jobs["test"]["steps"]
+        run_tests = only(filter(s -> get(s, "name", "") == "Run tests", steps))
+        @test haskey(run_tests["env"], "OCCUPANCY_RESULTS")
+        @test occursin("command -v vsearch", run_tests["run"])
+        @test any(s -> get(s, "name", "") == "Validate measured occupancy grades", steps)
+
+        # Execute the actual YAML scripts against real diffs, including a rename
+        # out of a watched path and a pathname containing a newline. A missing
+        # comparison commit must fail rather than authorise skipped tests.
+        mktempdir() do dir
+            git(args...) = run(pipeline(Cmd(["git", "-C", dir, args...]); stdout=devnull, stderr=devnull))
+            git("init")
+            git("config", "user.name", "CI gate test")
+            git("config", "user.email", "ci@example.invalid")
+            mkpath(joinpath(dir, "docs", "occupancy"))
+            write(joinpath(dir, "docs", "occupancy", "watched.agda"), "fixture")
+            git("add", "."); git("commit", "-m", "base")
+            base = strip(read(`git -C $dir rev-parse HEAD`, String))
+            function verdict(id, comparison=base)
+                script = only(filter(s -> get(s, "id", "") == "pr", jobs[id]["steps"]))["run"]
+                out = joinpath(dir, "gate-output")
+                write(out, "")
+                cmd = addenv(Cmd(Cmd(["bash", "-e", "-o", "pipefail", "-c", script]); dir=dir),
+                             "BASE_SHA" => comparison, "RUNNER_TEMP" => dir, "GITHUB_OUTPUT" => out)
+                ok = success(pipeline(cmd; stdout=devnull, stderr=devnull))
+                (ok, strip(read(out, String)))
+            end
+            for id in ("gate", "occupancy_gate")
+                @test verdict(id) == (true, "relevant=false")
+                @test verdict(id, "not-a-commit") == (false, "")
+            end
+            write(joinpath(dir, "README.md"), "docs only")
+            git("add", "README.md"); git("commit", "-m", "docs")
+            for id in ("gate", "occupancy_gate")
+                @test verdict(id) == (true, "relevant=false")
+            end
+            git("mv", "docs/occupancy/watched.agda", "elsewhere.agda")
+            git("commit", "-m", "rename away")
+            for id in ("gate", "occupancy_gate")
+                @test verdict(id) == (true, "relevant=true")
+            end
+            git("reset", "--hard", base)
+            write(joinpath(dir, "docs", "occupancy", "unusual\nname.agda"), "fixture")
+            git("add", "docs"); git("commit", "-m", "unusual path")
+            for id in ("gate", "occupancy_gate")
+                @test verdict(id) == (true, "relevant=true")
+            end
+            git("reset", "--hard", base)
+            mkpath(joinpath(dir, "src", "analysis"))
+            write(joinpath(dir, "src", "analysis", "differential.jl"), "fixture")
+            git("add", "src"); git("commit", "-m", "analysis only")
+            @test verdict("gate") == (true, "relevant=true")
+            @test verdict("occupancy_gate") == (true, "relevant=false")
+            report = only(jobs["disagreement"]["steps"])["run"]
+            for result in ("success", "failure", "cancelled", "skipped")
+                cmd = addenv(`bash -e -c $report`, "TEST_RESULT" => result,
+                             "GITHUB_STEP_SUMMARY" => joinpath(dir, "summary"))
+                @test success(pipeline(cmd; stdout=devnull, stderr=devnull)) == (result == "success")
+            end
         end
     end
 
