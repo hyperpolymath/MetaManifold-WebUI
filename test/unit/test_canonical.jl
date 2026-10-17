@@ -1,18 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# Unit tests for the JCS (RFC 8785) canonical JSON writer. The oracle is the
-# estate's ijson-jcs crate (Rust): every fixture in
-# test/fixtures/jcs_oracle.jsonl was PRODUCED by that crate, and this file
-# asserts MetaManifold.Canonical reproduces it byte-for-byte. Any
-# disagreement is a bug in one of the two implementations, and the fixture
-# names the case.
+# Tests against stored canonical strings independently checked using
+# ECMAScript JSON.stringify and UTF-16 key order. Rust fixture generation
+# provenance has not been reproduced in this audit.
 using MetaManifold
 using MetaManifold.Canonical: jcs_bytes, jcs_sha256
 using JSON3, SHA, Test
 
 @testset "canonical JSON (JCS)" begin
-    # Byte-for-byte against the Rust crate's output, over the fixture
+    # Byte-for-byte against the stored expected strings, over the fixture
     # corpus: key sorting (including the astral-before-high-BMP UTF-16
     # case), ES number formatting, string escaping, nesting, literals.
     fixtures = joinpath(@__DIR__, "..", "fixtures", "jcs_oracle.jsonl")
@@ -20,7 +17,7 @@ using JSON3, SHA, Test
         case = JSON3.read(line)
         @testset "oracle case $i" begin
             value = case.input
-            # The input arrives already parsed; the expected is the oracle's text.
+            # The input arrives parsed; the expected is the stored canonical text.
             @test String(jcs_bytes(value)) == case.expected
         end
     end
@@ -88,4 +85,9 @@ end
         @test String(jcs_bytes(T(1))) == "1"
     end
     @test String(jcs_bytes(UInt8[0, 1, 255])) == "[0,1,255]"
+end
+
+@testset "rounding fixture is explicitly binary64 input" begin
+    cases = readlines(joinpath(@__DIR__, "..", "fixtures", "jcs_oracle.jsonl"))
+    @test JSON3.read(cases[5]).input[2] isa AbstractFloat
 end

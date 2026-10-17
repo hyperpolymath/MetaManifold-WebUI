@@ -21,13 +21,10 @@
 #     consumer cannot read them back as the same number.
 #   * NaN and Inf are refused for the same reason.
 #
-# The implementation is verified against the estate's ijson-jcs crate
-# (Rust, RFC 7493 + RFC 8785): the fixtures in
-# test/fixtures/jcs_oracle.jsonl were produced BY that crate, and
-# test/unit/test_canonical.jl asserts this module reproduces them
-# byte-for-byte. The crate is the oracle; this is the second
-# implementation, and any disagreement between them is a bug in one of
-# them.
+# The stored fixture strings were checked against ECMAScript JSON.stringify
+# with UTF-16 key ordering, and the Julia tests compare this writer with them.
+# The inherited claim of Rust ijson-jcs fixture provenance has not been
+# independently reproduced; no cross-language Rust verification is claimed.
 
 module Canonical
 
