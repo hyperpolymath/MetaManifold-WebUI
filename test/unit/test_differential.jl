@@ -411,10 +411,10 @@ end
         @test isnothing(SV._config_value_error("analysis.differential.min_prevalence", 0.1))
         @test isnothing(SV._config_value_error("analysis.differential.method", "clr_welch"))
         @test !isnothing(SV._config_value_error("analysis.differential.method", "ancombc"))
-        for dispersion in ("ml", "glmGamPoi")
+        for dispersion in ("ml", "glmGamPoi", " ML ", "  GLMGAMPOI ")
             @test isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
         end
-        for dispersion in ("shrinkage", "", nothing, 1)
+        for dispersion in ("shrinkage", "", nothing, 1, true, ["ml"])
             @test !isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
         end
     end

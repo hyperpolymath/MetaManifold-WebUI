@@ -131,6 +131,11 @@ factory default; a key whose default is ~ accepts a string, number or boolean.
 """
 function _config_value_error(key::String, value)
     v = value isa JSON3.Array ? collect(value) : value
+    if key == "analysis.differential.dispersion" && v isa AbstractString
+        v = lowercase(strip(v))
+        return v in lowercase.(Differential.DISPERSIONS) ? nothing :
+            "$key must be one of $(join(Differential.DISPERSIONS, ", "))"
+    end
     if haskey(_ENUM_VALUES, key)
         allowed = _ENUM_VALUES[key]
         v in allowed || return "$key must be one of $(join(filter(!isnothing, collect(allowed)), ", "))"
