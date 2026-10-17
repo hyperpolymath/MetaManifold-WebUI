@@ -122,28 +122,9 @@ returns.
 | `untestable⇔fixed` | Constant within every block ⇔ fixed by every within-block permutation. | – | – |
 | `varies-false⇔Constant` | The model of `_varies_within_any_block` returns `false` exactly when no block holds two different values. | `_varies_within_any_block` | lines 47–51 |
 | `withheld⇔never-exchanged` | So `untestable` (the function returned `false`) holds exactly when no within-block permutation exchanges the term's labels. | `untestable`, `withheld` | lines 92–93 |
-| `tested⇔exchanged` | And a p-value is reported (the function returned `true`) exactly when some within-block permutation does. No testable term is withheld. | `untestable`, `withheld` | line 98 |
+| `tested⇔exchanged` | The block-constancy filter admits a term exactly when some within-block permutation changes its labels; this does not guarantee a reported p-value. | `untestable`, `withheld` | line 98 |
 | `constant-in-blocks`, `varies-in-a-block` | The two direct cases in the test, by evaluation. | `_varies_within_any_block` | lines 49–50 |
 | `fixture-group-withheld`, `fixture-run-tested` | On the test's twelve samples (six individuals, two runs each, three individuals per group), `group` is never exchanged and `run` is. | `run_permanova` | lines 83–98 |
-
-### Significance reporting (`Significance`)
-
-The Observational Null Disclosure discipline (hyperpolymath/absolute-zero, OND
-pillar) applied to `run_alpha_significance`'s reporting rule: a test that did
-not run reveals nothing, and must never be published as a null result. The
-numbers exist only in the constructor whose status is `computed`; every other
-status carries a proof it is not `computed` and a reader-facing reason.
-
-| Agda theorem | Plain statement | Julia | Test (`test/unit/test_r_runtime.jl`) |
-|---|---|---|---|
-| `publish` | The omnibus p-value is readable only from a result whose test ran, with evidence it ran; the unrun branch cannot produce a number (the typechecker refuses it). | `was_computed` guards | lines 100–124 |
-| `pairwise-published` | The pairwise table, same discipline. | `was_computed` guards | lines 125–152 |
-| `reason` | The dual: the reader-facing explanation is readable only from a result that did not run. | the `reason` field | lines 153–175 |
-| `unrun-status-not-computed`, `computed-status` | A result is readable as numbers or as a reason, never both: the two constructors cannot meet. | the `AlphaSignificance` struct | lines 176+ |
-
-What is modelled: the four statuses exactly; the omnibus p-value as an exact
-rational; the pairwise table as its list of p-values. What is not: the
-statistics themselves, and the DataFrame shape.
 
 ## Corrections to the requirement wording
 
@@ -159,6 +140,11 @@ statistics themselves, and the DataFrame shape.
   on `[]`, and `bh-length` gives the empty result.
 
 ## What is not proved, and why
+
+- **Statistical validity and successful reporting.** Label exchangeability here
+  characterises only the block-constancy filter. It does not prove model
+  identifiability, assumptions for inference, or that vegan returns a p-value.
+  Julia also withholds missing p-values independently of this filter.
 
 - **Geometric means, `exp` and `log`.** A geometric mean of rationals is in
   general irrational, so `_geomean` cannot be computed over `ℚ`. Wherever
@@ -203,17 +189,3 @@ statistics themselves, and the DataFrame shape.
 
    A concrete counterexample is `p = [0.01, 0.011]`, `n = 2`. Without the
    minimum the scaled values are `0.02` and `0.011`, which are not monotone.
-
-3. **The PERMANOVA proofs refuse a wrong model.** Each of these, planted in
-   a scratch copy of `Permanova.agda`, made Agda reject it:
-   - `variesWithinAnyBlock` never stores a block's first value;
-   - it returns `true` on a match instead of a mismatch;
-   - it never returns `true`;
-   - the p-value drops the `+ 1` from `k + 1`;
-   - the floor is `1/(B + 2)`;
-   - any permutation counts as within-block;
-   - the fixture's `group` differs inside one individual (then
-     `fixture-group-withheld` fails);
-   - the fixture's `run` is constant inside every individual (then
-     `fixture-run-tested` fails);
-   - the 1% claim is made at 2% (`1/50 > 1/64`).

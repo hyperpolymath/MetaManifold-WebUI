@@ -6,7 +6,7 @@
 # required R packages. Writes resolved tool paths to config/tools.yml.
 #
 # Usage via install.sh, or directly by:
-#   julia --project=. scripts/install.jl [--update] [--modify] [--sysimage]
+#   julia --project=. install.jl [--update] [--modify] [--sysimage]
 #
 # Options:
 #   --update    Re-assert the pinned tool versions and refresh managed binaries in bin/
@@ -41,7 +41,7 @@ import Downloads
 const UPDATE_MODE   = "--update"   in ARGS
 const MODIFY_MODE   = "--modify"   in ARGS
 const SYSIMAGE_MODE = "--sysimage" in ARGS
-const PROJECT_ROOT  = normpath(dirname(@__DIR__))
+const PROJECT_ROOT  = @__DIR__
 const BIN_DIR       = joinpath(PROJECT_ROOT, "bin")
 const CONFIG_DIR    = joinpath(PROJECT_ROOT, "config")
 const TOOLS_CONFIG  = joinpath(CONFIG_DIR, "tools.yml")
@@ -869,14 +869,14 @@ function setup_r_packages(; rebuild::Bool=false)::Tuple{Symbol,String}
     # renv's exit code: restore can fail on one leaf package and still leave a
     # working library, or "succeed" against a stale cache.
     probe = raw"""
-        pkgs <- c("dada2", "vegan", "dplyr", "tibble")
+        pkgs <- c("dada2", "vegan", "tibble")
         cat(paste(pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)],
                   collapse = ","))
     """
     bad = try
         strip(read(Cmd(`Rscript -e $probe`; dir = PROJECT_ROOT), String))
     catch
-        "dada2,vegan,dplyr,tibble"
+        "dada2,vegan,tibble"
     end
 
     isempty(bad) ? (:ok, "") : (:incomplete, String(bad))
@@ -1025,7 +1025,7 @@ end
 ## Sysimage creation
 const SYSIMAGE_EXT  = Sys.isapple() ? ".dylib" : ".so"
 const SYSIMAGE_PATH = joinpath(PROJECT_ROOT, "MetaManifold$(SYSIMAGE_EXT)")
-const PRECOMPILE_EXEC_PATH = joinpath(@__DIR__, "precompile_exec.jl")
+const PRECOMPILE_EXEC_PATH = joinpath(PROJECT_ROOT, "precompile_exec.jl")
 
 function build_sysimage()
     # PackageCompiler is a project dependency, installed by Pkg.instantiate().
@@ -1247,7 +1247,7 @@ function main()
             record!("Julia sysimage", STEP_OK, SYSIMAGE_PATH)
         catch e
             @error "Sysimage build failed: $e"
-            record!("Julia sysimage", STEP_FAILED, "rerun: julia --project=. scripts/install.jl --sysimage")
+            record!("Julia sysimage", STEP_FAILED, "rerun: julia --project=. install.jl --sysimage")
         end
     else
         record!("Julia sysimage", STEP_OK, "not requested (pass --sysimage to build one)")
