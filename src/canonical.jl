@@ -46,7 +46,7 @@ The RFC 8785 canonical form of `x`, as bytes. Accepts the JSON-shaped
 values the server produces: `Dict` and `JSON3.Object` (key order is
 irrelevant; it is sorted away), `AbstractVector` and `JSON3.Array` (order
 is preserved, as JCS preserves array order), `AbstractString`, `Integer`,
-`AbstractFloat`, `Bool` and `nothing`. Floats serialize per ECMAScript's
+`Float16`, `Float32`, `Float64`, `Bool` and `nothing`. Floats serialize per ECMAScript's
 Number::toString; integers outside the exact I-JSON range, and NaN or Inf
 floats, throw `ArgumentError`.
 """
@@ -79,14 +79,18 @@ function _write!(io, n::Integer)
     -SAFE_INT_MAX <= n <= SAFE_INT_MAX || throw(ArgumentError(
         "canonical JSON refuses the integer $n: it is outside the exact " *
         "IEEE-754 binary64 range I-JSON allows"))
-    print(io, n)
+    print(io, string(n; base=10))
 end
 
-function _write!(io, x::AbstractFloat)
+function _write!(io, x::Union{Float16,Float32,Float64})
     _write_float!(io, Float64(x))
 end
 
+_write!(io, ::AbstractFloat) = throw(ArgumentError(
+    "canonical JSON supports only Float16, Float32 and Float64"))
+
 function _write!(io, s::AbstractString)
+    isvalid(s) || throw(ArgumentError("canonical JSON refuses invalid Unicode"))
     print(io, '"')
     for c in s
         _write_char!(io, c)
@@ -123,12 +127,24 @@ end
 function _write!(io, d::AbstractDict)
     print(io, '{')
     first = true
-    for k in sort!(collect(String.(keys(d))); by = _utf16_units)
+    entries = Pair{String,Any}[]
+    names = Set{String}()
+    for (key, value) in pairs(d)
+        key isa Union{AbstractString,Symbol} || throw(ArgumentError(
+            "canonical JSON object keys must be strings or symbols"))
+        name = String(key)
+        isvalid(name) || throw(ArgumentError("canonical JSON refuses invalid Unicode keys"))
+        name in names && throw(ArgumentError("canonical JSON refuses duplicate property names"))
+        push!(names, name)
+        push!(entries, name => value)
+    end
+    sort!(entries; by = entry -> _utf16_units(entry.first))
+    for (name, value) in entries
         first || print(io, ',')
         first = false
-        _write!(io, string(k))
+        _write!(io, name)
         print(io, ':')
-        _write!(io, d[k])
+        _write!(io, value)
     end
     print(io, '}')
 end

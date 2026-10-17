@@ -72,3 +72,20 @@ using JSON3, SHA, Test
         @test jcs_sha256(spec) == bytes2hex(sha256(jcs_bytes(spec)))
     end
 end
+
+@testset "canonical input validation regressions" begin
+    @test String(jcs_bytes(Dict(:b => 2, :a => 1))) == "{\"a\":1,\"b\":2}"
+    @test String(jcs_bytes(copy(JSON3.read("{\"a\":1}")))) == "{\"a\":1}"
+    @test_throws ArgumentError jcs_bytes(Dict{Any,Int}(:a => 1, "a" => 2))
+    @test_throws ArgumentError jcs_bytes(JSON3.read("{\"a\":1,\"a\":2}"))
+    @test_throws ArgumentError jcs_bytes(Dict(1 => "not a JSON key"))
+    invalid = String(UInt8[0xff])
+    @test_throws ArgumentError jcs_bytes(invalid)
+    @test_throws ArgumentError jcs_bytes(Dict(invalid => 1))
+    @test_throws ArgumentError jcs_bytes(BigFloat(1) + eps(BigFloat))
+    @test String(jcs_bytes([Float16(1.5), Float32(1.5), Float64(1.5)])) == "[1.5,1.5,1.5]"
+    for T in (UInt8, UInt16, UInt32, UInt64, UInt128)
+        @test String(jcs_bytes(T(1))) == "1"
+    end
+    @test String(jcs_bytes(UInt8[0, 1, 255])) == "[0,1,255]"
+end
