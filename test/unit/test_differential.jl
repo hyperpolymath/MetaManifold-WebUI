@@ -469,6 +469,14 @@ end
             response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", "/api/v1/studies/studyD/config", ["Content-Type"=>"application/json"], JSON3.write(Dict(keyd=>"glmGamPoi"))))
             @test response.status == 400
             @test read(path,String) == before
+            # A batch can change both options together, irrespective of key order.
+            batch = Dict(keyd=>"glmGamPoi", keym=>"nb_glm")
+            response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", "/api/v1/studies/studyD/config", ["Content-Type"=>"application/json"], JSON3.write(batch)))
+            @test response.status == 200
+            before = read(path,String)
+            response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", "/api/v1/studies/studyD/config", ["Content-Type"=>"application/json"], JSON3.write(Dict(keym=>"clr_welch"))))
+            @test response.status == 400
+            @test read(path,String) == before
         end
     end
 
