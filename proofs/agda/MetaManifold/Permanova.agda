@@ -17,8 +17,8 @@
 --      that this happens exactly when every within-block permutation leaves the
 --      term's labels where they were, so the permutations never exchange them.
 --      They also say that when it is true, some within-block permutation does
---      exchange them.  So no testable term is withheld, and no untestable term
---      is reported.
+--      exchange them. This characterises the block-constancy filter only;
+--      it does not establish statistical testability or a reported p-value.
 --
 -- What is NOT modelled, and why:
 --
@@ -58,7 +58,7 @@
 --   withheld⇔never-exchanged  ... so its false answer, which withholds the
 --                          p-value, holds exactly when no within-block
 --                          permutation exchanges the term's labels
---   tested⇔exchanged       ... and its true answer, which reports the p-value,
+--   tested⇔exchanged       ... and its true answer, which passes this filter,
 --                          holds exactly when some within-block permutation
 --                          does
 --   constant-in-blocks, varies-in-a-block
@@ -411,8 +411,8 @@ module Varies {A B : Set} (_≟ᴬ_ : DecidableEquality A) (_≟ᴮ_ : Decidable
                    (Equivalence.from Constant⇔BlockConstant
                      (Equivalence.from untestable⇔fixed fixed)))
 
-    -- Julia reports a term's p-value (`_varies_within_any_block` is true)
-    -- exactly when some within-block permutation exchanges its labels.
+    -- The block-constancy filter admits a term exactly when some within-block
+    -- permutation exchanges its labels. Other checks can still withhold it.
     tested⇔exchanged :
       variesWithinAnyBlock xs ≡ true ⇔ Σ (Permutation′ (length xs)) λ π → WithinBlock π × ¬ Fixes π
     tested⇔exchanged = mk⇔ to from
@@ -465,7 +465,7 @@ module Fixtures where
           Labels.Fixes (blockOf group) (labelOf group) π
   fixture-group-withheld = Equivalence.to (withheld⇔never-exchanged group) refl
 
-  -- run's p-value is reported, and rightly: some within-block permutation
+  -- run passes the block-constancy filter: some within-block permutation
   -- exchanges run labels.
   fixture-run-tested :
     Σ (Permutation′ 12) λ π → Labels.WithinBlock (blockOf run) (labelOf run) π ×

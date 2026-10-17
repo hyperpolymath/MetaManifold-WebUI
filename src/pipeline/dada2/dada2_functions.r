@@ -213,19 +213,41 @@ write_fasta <- function(seq_table, tables_dir, prefix) {
 # taxonomic rank)
 # Returns taxa_df (SeqName + Sequence + taxonomy), used by write_combined_table().
 #
-# dplyr::left_join(x, y, by) keeps x's rows in x's order with x's columns first
-# and then y's (the key once). merge() alone sorts the rows and reorders the
-# columns, so both are restored explicitly: a temporary position column restores
-# x's row order, and the column order is rebuilt from x's columns plus y's non-key
-# ones. The CI oracle checks the written CSVs byte-for-byte against the previous output.
+# Preserve left-row order, right-row order within matches, and the original
+# column order when assembling the taxonomy and count tables.
 base_left_join <- function(x, y, by) {
-  x_cols <- colnames(x)
-  position <- ".left_join_position"
-  while (position %in% c(colnames(x), colnames(y))) position <- paste0(position, "_")
-  x[[position]] <- seq_len(nrow(x))
-  joined <- merge(x, y, by = by, all.x = TRUE, sort = FALSE)
-  joined <- joined[order(joined[[position]]),
-                   c(x_cols, setdiff(colnames(y), by)), drop = FALSE]
+  x_cols <- names(x)
+  y_cols <- names(y)
+  stopifnot(!anyDuplicated(x_cols), !anyDuplicated(y_cols),
+            all(by %in% x_cols), all(by %in% y_cols))
+  suffix_names <- function(values, reserved, suffix) {
+    out <- c(reserved, values)
+    while (anyDuplicated(out)) {
+      duplicate <- which(duplicated(out))
+      out[duplicate] <- paste0(out[duplicate], suffix)
+    }
+    tail(out, length(values))
+  }
+  # Match left_join's repeated suffixing, including names such as Species.x.
+  x_out <- x_cols
+  x_aux <- !x_cols %in% by
+  y_aux <- !y_cols %in% by
+  x_out[x_aux] <- suffix_names(x_cols[x_aux], c(by, y_cols[y_aux]), ".x")
+  y_out <- suffix_names(y_cols, x_cols, ".y")[y_aux]
+
+  # Merge only unique internal names, so character selection can never confuse
+  # a taxonomy column with a sample whose name resembles a generated suffix.
+  x_ids <- paste0(".x", seq_along(x_cols))
+  y_ids <- paste0(".y", seq_along(y_cols))
+  names(x) <- x_ids
+  names(y) <- y_ids
+  x$.left_position <- seq_len(nrow(x))
+  y$.right_position <- seq_len(nrow(y))
+  joined <- merge(x, y, by.x = x_ids[match(by, x_cols)],
+                  by.y = y_ids[match(by, y_cols)], all.x = TRUE, sort = FALSE)
+  joined <- joined[order(joined$.left_position, joined$.right_position),
+                   c(x_ids, y_ids[y_aux]), drop = FALSE]
+  names(joined) <- c(x_out, y_out)
   rownames(joined) <- NULL
   joined
 }

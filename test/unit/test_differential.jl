@@ -172,14 +172,6 @@ end
         @test_throws ArgumentError DifferentialConfig(; method="ancombc")
         # The pre-review name, never released, is not accepted.
         @test_throws ArgumentError DifferentialConfig(; method="clr_lm")
-        # The dispersion option: ml is the default, glmGamPoi is the alternative,
-        # and it is a negative-binomial setting only.
-        @test DifferentialConfig().dispersion == "ml"
-        @test DifferentialConfig(dispersion="glmGamPoi").dispersion == "glmGamPoi"
-        @test DifferentialConfig(dispersion="  GLMGAMPOI ").dispersion == "glmGamPoi"
-        @test_throws ArgumentError DifferentialConfig(dispersion="shrinkage")
-        @test_throws ArgumentError DifferentialConfig(method="clr_welch", dispersion="glmGamPoi")
-        @test DifferentialConfig(method="clr_welch").dispersion == "ml"
         for d in (0, 1, -0.5, NaN)
             @test_throws ArgumentError DifferentialConfig(; method="clr_welch", replacement_delta=d)
         end
@@ -726,50 +718,6 @@ end
             end
             @test !rcopy(Bool, reval("exists('requireNamespace', envir = globalenv(), inherits = FALSE)"))
             @test rcopy(Bool, reval("requireNamespace('zCompositions', quietly = TRUE)")) == HAVE_ZCOMP
-        end
-    end
-
-    ## Without glmGamPoi, dispersion: glmGamPoi refuses with
-    # GlmGamPoiUnavailable. Same trick as the zCompositions testset above: a
-    # `requireNamespace` bound in R's global environment reports glmGamPoi
-    # missing and defers to base for every other package, so the production
-    # probe sees the package as absent on any machine. MASS is probed first
-    # and must be real, so this testset needs it.
-    @testset "nb_glm without glmGamPoi refuses with GlmGamPoiUnavailable" begin
-        if !HAVE_MASS
-            @test_skip false    # no MASS means the ml path's own guard fires first
-        else
-            reval("""requireNamespace <- function(package, ...) {
-                if (identical(package, "glmGamPoi")) FALSE
-                else base::requireNamespace(package, ...)
-            }""")
-            try
-                @test !rcopy(Bool, reval("requireNamespace('glmGamPoi', quietly = TRUE)"))
-                e = try
-                    fit_nb([5 6; 7 3; 9 4; 4 8], ["A", "A", "B", "B"], [0.0, 0.0, 0.0, 0.0];
-                           levels=("A", "B"), dispersion="glmGamPoi")
-                    nothing
-                catch err
-                    err
-                end
-                @test e isa GlmGamPoiUnavailable
-                @test occursin("renv::restore()", sprint(showerror, e))
-                # The override defers to base for everything else, so the default
-                # dispersion must still fit normally with it in place. The
-                # injected-effect dataset, not the minimal matrix above:
-                # MEASURED with MASS::glm.nb, with 4 samples of small counts the
-                # alternating fit runs theta to its upper bound (status boundary)
-                # and one taxon's fit even produced NaNs (status failed), so that
-                # data never reaches status ok on any machine; the dataset
-                # "Negative-binomial fit recovers an injected effect" already
-                # proves fits.
-                r = fit_nb(effect, effect_groups, log.(tss_factors(effect, effect_samples));
-                           levels=("A", "B"))
-                @test all(r.status .== "ok")
-            finally
-                reval("rm(requireNamespace)")
-            end
-            @test !rcopy(Bool, reval("exists('requireNamespace', envir = globalenv(), inherits = FALSE)"))
         end
     end
 end

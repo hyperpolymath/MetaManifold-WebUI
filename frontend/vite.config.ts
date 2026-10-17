@@ -9,9 +9,9 @@ export default defineConfig({
     sourcemap:   false,
     rollupOptions: {
       output: {
-        // vite 8 (rolldown) took only the function form; the old object form
-        // died at "manualChunks is not a function".
-        manualChunks: (id: string) => (id.includes('plotly.js-dist-min') ? 'plotly' : undefined),
+        manualChunks: {
+          plotly: ['plotly.js-dist-min'],
+        },
       },
     },
   },
