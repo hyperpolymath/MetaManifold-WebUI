@@ -36,6 +36,7 @@ _occ_stage(tasks; measured) = OrderedDict{String,Any}(
 
 @testset "empirical checker rejects missing or inconsistent windows" begin
     include(joinpath(@__DIR__, "..", "..", "scripts", "check-occupancy-grades.jl"))
+    @test MemoryProbe === MG # checker must reuse the imported package module
     historical = YAML.load_file(RECORDED_OCCUPANCY)["orders"]
     @test check_records(historical; io=devnull) == 2
     @test check_records(Dict(); io=devnull) == 2
@@ -50,6 +51,17 @@ _occ_stage(tasks; measured) = OrderedDict{String,Any}(
                     Dict("label" => "b", "samples" => 2, "peak_rss_kib" => 60,
                          "first_sample" => 3, "last_sample" => 4)])
     @test check_records(Dict("synthetic" => valid); io=devnull) == 0
+    overlap = deepcopy(valid)
+    overlap["tasks"][2]["first_sample"] = 2
+    overlap["child_peak_rss_kib"] = 120 # below 160: individual maxima need not coincide
+    @test check_records(Dict("noncoincident" => overlap); io=devnull) == 0
+    overlap["child_peak_rss_kib"] = 161
+    @test check_records(Dict("contradiction" => overlap); io=devnull) == 1
+    unsampled = deepcopy(valid)
+    unsampled["tasks"][1]["first_sample"] = 0
+    unsampled["tasks"][1]["last_sample"] = 0
+    unsampled["tasks"][1]["samples"] = 0
+    @test check_records(Dict("unsampled" => unsampled); io=devnull) == 2
 end
 
 @testset "occupancy grades" begin
@@ -188,6 +200,24 @@ end
         @test MG._overlaps((first_task.first_sample, first_task.last_sample),
                            (between.first_sample, between.last_sample))
         @test MG.TaskTrace("never started").first_sample == 0
+    end
+
+    @testset "already-exited children stay unsampled" begin
+        probe = MG.start(Dict("occupancy_probe" => Dict("enabled" => true)))
+        MG.within(probe) do
+            MG.task("already exited") do
+                proc = run(`true`; wait=false)
+                wait(proc)
+                @test MG.watch!(proc) === nothing
+                MG.unwatch!(nothing)
+            end
+        end
+        rec = MG.finish!(probe)
+        t = only(rec["tasks"])
+        @test t["processes"] == 1
+        @test t["samples"] == 0
+        @test (t["first_sample"], t["last_sample"]) == (0, 0)
+        @test check_records(Dict("already exited" => rec); io=devnull) == 2
     end
 
     @testset "the graded record says what it is" begin

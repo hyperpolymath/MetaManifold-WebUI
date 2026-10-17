@@ -277,8 +277,8 @@ function watch!(proc::Base.Process)
     end
     lock(p.lock) do
         t.processes += 1
-        t.processes == 1 && (t.first_sample = p.samples + 1)
         if pid !== nothing
+            t.first_sample == 0 && (t.first_sample = p.samples + 1)
             push!(t.live, pid)
         end
     end
