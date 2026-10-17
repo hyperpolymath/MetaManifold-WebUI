@@ -1195,7 +1195,10 @@ end
     _differential_config(study) -> DifferentialConfig
 
 The study's `analysis.differential` settings, resolved through the config
-cascade.
+cascade. Missing or `nothing` values use the defaults in `DifferentialConfig`,
+including `dispersion="ml"`. Invalid settings propagate the constructor's
+`ArgumentError`; values that cannot be converted to strings or numbers also
+raise their conversion errors.
 """
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)

@@ -61,13 +61,15 @@ have at least one read to be tested. `replacement_delta`, in (0, 1), is the
 above its taxon's smallest observed proportion is lowered to this fraction of it.
 `dispersion` names the per-taxon dispersion `nb_glm` uses (`"ml"` or
 `"glmGamPoi"`): `"ml"` takes the maximum-likelihood theta from `MASS::glm.nb`,
-`"glmGamPoi"` takes the shrunken dispersion from `glmGamPoi::glm_gp` -- fitted
-across all taxa in one call, which is where its shared information helps low-count
-taxa -- and fits each taxon through `MASS::negative.binomial(theta = ...)` so the
-Wald test and its checks are unchanged. It is `nb_glm` only.
-Method and offset names are stripped and lowercased. Throws `ArgumentError`
-for unsupported names or out-of-range fractions, including settings unused by
-the selected method.
+`"glmGamPoi"` uses the `overdispersions` returned by `glmGamPoi::glm_gp` for
+the taxa passing the prevalence filter, with `theta = 1 / dispersion` fixed
+in each negative-binomial GLM. Both options use a Wald test of the group
+coefficient; `"glmGamPoi"` is refused for `clr_welch`.
+Method and offset names are stripped and lowercased; dispersion names are
+stripped and matched without regard to case, then stored as `"ml"` or
+`"glmGamPoi"`. Throws `ArgumentError` for unsupported names, incompatible
+method and dispersion choices, or non-finite or out-of-range fractions,
+including settings unused by the selected method.
 """
 struct DifferentialConfig
     method            :: String
@@ -147,6 +149,12 @@ Raised when the R package glmGamPoi, which provides the shrunken dispersion
 """
 struct GlmGamPoiUnavailable <: Exception end
 
+"""
+    Base.showerror(io::IO, ::GlmGamPoiUnavailable)
+
+Write the missing-package error and guidance to install glmGamPoi or select
+`dispersion: ml` to `io`, without a trailing newline.
+"""
 Base.showerror(io::IO, ::GlmGamPoiUnavailable) = print(io,
     "the R package glmGamPoi is not available, so the shrunken dispersion cannot be " *
     "fitted; install it from Bioconductor (Rscript -e \"BiocManager::install('glmGamPoi')\") " *
@@ -425,19 +433,31 @@ _num(x) = (ismissing(x) || isnothing(x) || !isfinite(x)) ? nothing : Float64(x)
 """
     fit_nb(counts, groups, offset; levels, dispersion="ml") -> DataFrame
 
-Fit `MASS::glm.nb(y ~ group + offset(offset))` to each column of the samples x
-taxa integer matrix `counts`. `levels` is `(reference, contrast)`, so the
-estimate is the natural-log fold change of `contrast` over `reference`.
+Fit a negative-binomial GLM with a log link to each column of the samples x
+taxa integer matrix `counts`. `offset` contains the natural logarithm of each
+sample's size factor. `levels` is `(reference, contrast)`, so the estimate is
+the natural-log fold change of `contrast` over `reference`.
 `dispersion` names where each taxon's theta comes from: `"ml"` (the default)
-takes `glm.nb`'s own maximum-likelihood estimate, `"glmGamPoi"` takes the
-shrunken dispersion `glmGamPoi::glm_gp` fits across all taxa in one call and
-runs each per-taxon fit through `MASS::negative.binomial(theta = 1/phi)`, so
-the Wald test and its checks are unchanged.
+takes `MASS::glm.nb`'s maximum-likelihood estimate; `"glmGamPoi"` uses the
+`overdispersions` returned by `glmGamPoi::glm_gp` on all supplied taxa in one
+call, then fits each taxon with `theta = 1 / dispersion` fixed. Both options
+use a Wald test of the group coefficient. Names are stripped and matched
+without regard to case.
+
 Returns one row per taxon with `status` (`ok`, `boundary` or `failed`), `note`,
 `estimate`, `se`, `statistic`, `pvalue` and `theta`; a failed taxon has
-`nothing` for every statistic. Throws `MASSUnavailable` when MASS cannot be
-loaded, `GlmGamPoiUnavailable` when `dispersion` is `"glmGamPoi"` and glmGamPoi
-cannot be loaded, and `RBusyError` when the R runtime stays busy.
+`nothing` for every statistic. Boundary fits retain their statistics: theta
+at or above 1e7 marks the Poisson end, and theta at or below 1e-8 marks extreme
+variance. Constant counts, complete separation, non-convergence and unusable
+coefficients produce failed rows. Errors caught from the model-fitting calls
+also produce failed rows; a caught `glm_gp` error or an invalid dispersion
+vector fails every taxon, with no fallback to `"ml"`.
+
+Throws `ArgumentError` for an unsupported dispersion name or mismatched sample,
+group and offset lengths, `MASSUnavailable` when MASS cannot be loaded,
+`GlmGamPoiUnavailable` when `"glmGamPoi"` is selected and its package cannot be
+loaded, and `RBusyError` when the R runtime stays busy. R errors outside the
+caught model-fitting calls propagate.
 """
 function fit_nb(counts::AbstractMatrix{<:Integer}, groups::AbstractVector{<:AbstractString},
                 offset::AbstractVector{<:Real}; levels::NTuple{2,String},
@@ -707,7 +727,10 @@ labelled `reference` in `groups`, by `config.method`.
 
 `nb_glm`: size factors are computed on the full matrix by `config.offset` and
 enter each negative-binomial model as `log(factor)`; the estimate is a
-natural-log fold change.
+natural-log fold change. `config.dispersion` selects per-taxon maximum-likelihood
+theta (`"ml"`) or fixed theta from `glmGamPoi::glm_gp`'s `overdispersions`
+(`"glmGamPoi"`), fitted in one call on the taxa passing the prevalence filter.
+The result's `config` includes the selected dispersion name.
 
 `clr_welch`, in this order: (1) `min_prevalence` chooses the taxa, and taxa with
 no reads in any sample are always left out; (2) the zeros of those taxa only
@@ -730,8 +753,11 @@ effect size and its label.
 
 Throws `ArgumentError` for unusable input (including a zero replacement that
 cannot be made), `ScalingRefusal` when the offset cannot be computed,
-`MASSUnavailable` or `ZCompositionsUnavailable` when the R package a method
-needs is missing, and an `ErrorException` when no taxon could be fitted at all.
+`MASSUnavailable`, `GlmGamPoiUnavailable` or `ZCompositionsUnavailable` when a
+required R package is missing, `RBusyError` when the R runtime stays busy, and
+an `ErrorException` when no taxon could be fitted at all, including when the
+`glm_gp` fit fails. Uncaught R errors from the fitting and zero-replacement
+helpers propagate.
 """
 function differential_abundance(counts::AbstractMatrix{<:Real},
                                 samples::AbstractVector{<:AbstractString},
