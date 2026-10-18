@@ -325,14 +325,6 @@ function _set_config_value!(cfg::AbstractDict, dotted_key::String, value)
     cfg
 end
 
-function _write_override(path::String, dotted_key::String, value)
-    lock(_config_file_lock) do
-        cfg = _load_yml(path)
-        _set_config_value!(cfg, dotted_key, value)
-        _atomic_write_yaml(path, cfg)
-    end
-end
-
 function _remove_config_value!(cfg::AbstractDict, dotted_key::String)
     parts = split(dotted_key, ".")
     d = cfg

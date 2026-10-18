@@ -313,6 +313,7 @@ end
 
     @testset "glmGamPoi invalid trends are isolated per taxon" begin
         if !HAVE_GLMGAMPOI
+            @test get(ENV, "CI", "false") != "true" # the pinned dependency is required in CI
             @test_skip false
         else
             MetaManifold.RRuntime.with_r_lock() do
@@ -598,6 +599,28 @@ end
             # A malformed sibling is outside a run edit's affected subtree.
             write(joinpath(root,"data","studyD","runB","pipeline.yml"), "analysis: [broken")
             @test SV._write_config_updates(run_a, Dict(keyd=>"ml")) === nothing
+        end
+    end
+
+    @testset "An unreadable descendant refuses the save" begin
+        SV = MetaManifold.Server
+        keym = "analysis.differential.method"
+        _da_fixture() do
+            root = SV.ServerState._root[]
+            global_path = joinpath(root, "config", "pipeline.yml")
+            YAML.write_file(global_path, Dict("analysis"=>Dict("differential"=>Dict(
+                "method"=>"nb_glm", "dispersion"=>"ml"))))
+            # runB sits in the affected cascade of a global edit, so its
+            # unreadable document must refuse the save rather than be skipped.
+            write(joinpath(root, "data", "studyD", "runB", "pipeline.yml"), "analysis: [broken")
+            before = read(global_path, String)
+            response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", "/api/v1/config",
+                ["Content-Type"=>"application/json"], JSON3.write(Dict(keym=>"clr_welch"))))
+            @test response.status == 400
+            body = JSON3.read(String(response.body))
+            @test body.error == "invalid_config_value"
+            @test occursin("Cannot validate the affected config cascade", body.message)
+            @test read(global_path, String) == before
         end
     end
 
