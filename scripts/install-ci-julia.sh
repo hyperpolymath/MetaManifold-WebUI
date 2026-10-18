@@ -5,6 +5,8 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 pins=config/defaults/tool_versions.yml
 version=$(awk '/^runtimes:/ {r=1;next} r && /^  julia:/ {j=1;next} j && /^    version:/ {gsub(/"/,"",$2);print $2;exit}' "$pins")
+# Print the requested field from the Julia linux-x86_64 pin to stdout.
+# Arguments: $1 is the field name (url or sha256); missing fields print nothing.
 field() {
     awk -v key="$1" '
         /^runtimes:/ {r=1;next}
