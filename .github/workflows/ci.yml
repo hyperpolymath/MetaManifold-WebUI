@@ -59,7 +59,7 @@ jobs:
           # expand against the checkout the runner happens to be standing in.
           patterns=('src/*' 'test/*' 'scripts/*' 'frontend/*' 'config/*'
                     'bench/*' 'data/*' 'proofs/*' 'R/*' 'renv/*' 'Project.toml'
-                    'Manifest.toml' 'renv.lock' '.Rprofile' 'install.sh'
+                    'Manifest.toml' 'renv.lock' '.Rprofile' 'install.sh' 'install.jl'
                     'start.sh' 'docs/occupancy/*' 'docs/occupancy-2026-10.adoc'
                     '.github/workflows/*')
           # The diff goes to a file first because a process substitution hides

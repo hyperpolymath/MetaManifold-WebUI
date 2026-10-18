@@ -308,6 +308,13 @@ end
             git("add", "src"); git("commit", "-m", "analysis only")
             @test verdict("gate") == (true, "relevant=true")
             @test verdict("occupancy_gate") == (true, "relevant=false")
+            for driver in ("install.jl", "install.sh")
+                git("reset", "--hard", base)
+                write(joinpath(dir, driver), "fixture")
+                git("add", driver); git("commit", "-m", "installer only")
+                @test verdict("gate") == (true, "relevant=true")
+                @test verdict("occupancy_gate") == (true, "relevant=false")
+            end
             report = only(jobs["disagreement"]["steps"])["run"]
             for result in ("success", "failure", "cancelled", "skipped")
                 cmd = addenv(`bash -e -c $report`, "TEST_RESULT" => result,
