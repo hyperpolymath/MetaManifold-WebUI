@@ -65,6 +65,22 @@
             r4 = HTTP.get("http://localhost:$port/api/v1/databases"; status_exception=false)
             @test r4.status == 200
 
+            ## Configuration persistence through the real listener/middleware.
+            config_url = "http://localhost:$port/api/v1/config"
+            headers = ["Content-Type"=>"application/json", "Origin"=>"http://localhost:$port"]
+            for (submitted, canonical) in ((" ML ", "ml"), (" GLMGAMPOI ", "glmGamPoi"))
+                response = HTTP.patch(config_url, headers,
+                    JSON3.write(Dict("analysis.differential.method"=>"nb_glm",
+                                     "analysis.differential.dispersion"=>submitted)); status_exception=false)
+                @test response.status == 200
+                @test JSON3.read(String(response.body))["analysis.differential.dispersion"].value == canonical
+                response = HTTP.get(config_url; status_exception=false)
+                @test response.status == 200
+                @test JSON3.read(String(response.body))["analysis.differential.dispersion"].value == canonical
+                saved = YAML.load_file(joinpath(tmp_root, "config", "pipeline.yml"))
+                @test saved["analysis"]["differential"]["dispersion"] == canonical
+            end
+
             ## Path traversal guard -> 403
             r5 = HTTP.get("http://localhost:$port/files/smoke_study/runs/run_A/../../../etc/passwd";
                           status_exception=false)

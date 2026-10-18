@@ -108,6 +108,7 @@ const _ENUM_VALUES = Dict(
     "analysis.beta.normalisation"    => ("hellinger", "none", "rarefy", "srs"),
     "analysis.differential.method"   => Differential.METHODS,
     "analysis.differential.offset"   => Differential.OFFSET_METHODS,
+    "analysis.differential.dispersion" => Differential.DISPERSIONS,
     "phylogeny.reference.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.placement.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.reference.trim.method"    => Validation.PHYLOGENY_TRIM_METHODS,
@@ -130,6 +131,11 @@ factory default; a key whose default is ~ accepts a string, number or boolean.
 """
 function _config_value_error(key::String, value)
     v = value isa JSON3.Array ? collect(value) : value
+    if key == "analysis.differential.dispersion" && v isa AbstractString
+        v = lowercase(strip(v))
+        return v in lowercase.(Differential.DISPERSIONS) ? nothing :
+            "$key must be one of $(join(Differential.DISPERSIONS, ", "))"
+    end
     if haskey(_ENUM_VALUES, key)
         allowed = _ENUM_VALUES[key]
         v in allowed || return "$key must be one of $(join(filter(!isnothing, collect(allowed)), ", "))"
@@ -177,49 +183,171 @@ function _config_value_error(key::String, value)
     nothing
 end
 
+# Validate the effective pair after merging a PATCH, before writing any key.
+# Resolved entries carry source annotations; global defaults are raw values.
+function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
+    keys_ = ("analysis.differential.method", "analysis.differential.dispersion")
+    any(k -> haskey(changes, k), keys_) || return nothing
+    value(k, default) = if haskey(changes, k)
+        changes[k]
+    else
+        current = get(resolved, k, default)
+        current isa NamedTuple ? current.value : current
+    end
+    method = value(keys_[1], "nb_glm")
+    dispersion = value(keys_[2], "ml")
+    if method isa AbstractString && dispersion isa AbstractString &&
+       lowercase(strip(method)) == "clr_welch" && lowercase(strip(dispersion)) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with clr_welch"
+    end
+    nothing
+end
+
+# Resolve every affected study/group/run against the prospective document.
+# Enumerate runnable descendants too: a run need not own a pipeline.yml file.
+# This is validation evidence, so an unreadable cascade must refuse the save.
+function _differential_cascade_error(path::String, document)
+    data = ServerState.data_dir()
+    root = dirname(data)
+    global_path = joinpath(root, "config", "pipeline.yml")
+    prefix = path == global_path ? String[] : splitpath(relpath(dirname(path), data))
+    cache = Dict{String,Any}(path => _flatten(document))
+    flat(file) = get!(cache, file) do
+        _flatten(_load_yml(file))
+    end
+    pair = ("analysis.differential.method", "analysis.differential.dispersion")
+    function check(values, label)
+        effective = Dict(pair[1]=>get(values, pair[1], "nb_glm"),
+                         pair[2]=>get(values, pair[2], "ml"))
+        bad = _differential_pair_error(effective, effective)
+        isnothing(bad) ? nothing : "$label: $bad"
+    end
+    try
+        base = merge(flat(joinpath(root, "config", "defaults", "pipeline.yml")), flat(global_path))
+        if isempty(prefix)
+            bad = check(base, "global config")
+            isnothing(bad) || return bad
+        end
+        targets = Set{String}()
+        isempty(prefix) || push!(targets, joinpath(prefix...))
+        if length(prefix) >= 2
+            # A run edit has no descendants; a group edit can affect its runs.
+            # Inspect only the edited subtree, so malformed siblings cannot block it.
+            if length(prefix) == 2 && !get(document, "pool_children", false)
+                for run in _group_run_names(prefix[1], prefix[2])
+                    push!(targets, joinpath(prefix..., run))
+                end
+            end
+        else
+            for study in _study_names()
+                isempty(prefix) || first(prefix) == study || continue
+                push!(targets, study)
+                for run in _run_names(study)
+                    push!(targets, joinpath(study, run))
+                end
+                for group in _group_names(study)
+                    push!(targets, joinpath(study, group))
+                    for run in _group_run_names(study, group)
+                        push!(targets, joinpath(study, group, run))
+                    end
+                end
+            end
+        end
+        for label in sort!(collect(targets))
+            parts = splitpath(label)
+            length(parts) >= length(prefix) && parts[1:length(prefix)] == prefix || continue
+            effective = copy(base)
+            for i in eachindex(parts)
+                merge!(effective, flat(joinpath(data, parts[1:i]..., "pipeline.yml")))
+            end
+            bad = check(effective, label)
+            isnothing(bad) || return bad
+        end
+        nothing
+    catch e
+        "Cannot validate the affected config cascade: $(sprint(showerror, e))"
+    end
+end
+
+# Validate, prepare the complete document, and publish once under one lock.
+# Readers do not take this lock, so per-key renames would expose partial PATCHes.
+function _write_config_updates(path::String, changes::AbstractDict; remove=())
+    lock(_config_file_lock) do
+        native = Dict{String,Any}(string(k) => _to_plain(v) for (k, v) in changes)
+        key = "analysis.differential.dispersion"
+        if haskey(native, key) && native[key] isa AbstractString
+            i = findfirst(v -> lowercase(v) == lowercase(strip(native[key])), Differential.DISPERSIONS)
+            isnothing(i) || (native[key] = Differential.DISPERSIONS[i])
+        end
+        isempty(native) && isempty(remove) && return nothing
+        cfg = _load_yml(path)
+        for (k, v) in native
+            _set_config_value!(cfg, k, v)
+        end
+        removed = false
+        for k in remove
+            removed |= _remove_config_value!(cfg, k)
+        end
+        isempty(native) && !removed && return nothing
+        pair = ("analysis.differential.method", "analysis.differential.dispersion")
+        if any(k -> haskey(native, k) || k in remove, pair)
+            bad = _differential_cascade_error(path, cfg)
+            isnothing(bad) || return json_error(400, "invalid_config_value", bad)
+        end
+        _atomic_write_yaml(path, cfg)
+        nothing
+    end
+end
+
 function _validate_config_key(dotted_key::String)
     dotted_key in _ALLOWED_CONFIG_KEYS || error(
         "Config key '$dotted_key' is not a recognised pipeline option")
 end
 
-function _write_override(path::String, dotted_key::String, value)
+# Shared in-memory setter. A bad later key must not publish earlier changes.
+function _set_config_value!(cfg::AbstractDict, dotted_key::String, value)
     _validate_config_key(dotted_key)
+    parts = split(dotted_key, ".")
+    d = cfg
+    for p in parts[1:end-1]
+        child = get(d, p, nothing)
+        if child isa Dict
+            d = child
+        elseif isnothing(child)
+            new_dict = Dict()
+            d[p] = new_dict
+            d = new_dict
+        else
+            error("Config key segment '$p' is not a section; cannot set sub-key")
+        end
+    end
+    d[parts[end]] = value
+    cfg
+end
+
+function _write_override(path::String, dotted_key::String, value)
     lock(_config_file_lock) do
         cfg = _load_yml(path)
-        parts = split(dotted_key, ".")
-        d = cfg
-        for p in parts[1:end-1]
-            child = get(d, p, nothing)
-            if child isa Dict
-                d = child
-            elseif isnothing(child)
-                new_dict = Dict()
-                d[p] = new_dict
-                d = new_dict
-            else
-                error("Config key segment '$p' is not a section; cannot set sub-key")
-            end
-        end
-        d[parts[end]] = value
+        _set_config_value!(cfg, dotted_key, value)
         _atomic_write_yaml(path, cfg)
     end
 end
 
-function _delete_override(path::String, dotted_key::String)
-    isfile(path) || return
-    lock(_config_file_lock) do
-        cfg   = _load_yml(path)
-        parts = split(dotted_key, ".")
-        d     = cfg
-        for p in parts[1:end-1]
-            haskey(d, p) || return
-            d = d[p]
-            d isa Dict || return
-        end
-        delete!(d, parts[end])
-        _atomic_write_yaml(path, cfg)
+function _remove_config_value!(cfg::AbstractDict, dotted_key::String)
+    parts = split(dotted_key, ".")
+    d = cfg
+    for p in parts[1:end-1]
+        haskey(d, p) || return false
+        d = d[p]
+        d isa AbstractDict || return false
     end
+    haskey(d, parts[end]) || return false
+    delete!(d, parts[end])
+    true
 end
+
+_delete_override(path::String, dotted_key::String) =
+    _write_config_updates(path, Dict(); remove=(dotted_key,))
 
 ## Routes
 # Default (global) config endpoints
@@ -238,16 +366,16 @@ end
         bad = _config_value_error(string(k), v)
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
-    for (k, v) in body
-        _write_override(user_path, string(k), v)
-    end
+    bad = _write_config_updates(user_path, body)
+    isnothing(bad) || return bad
     json(Dict(k => (; value=v, source="default") for (k, v) in _default_cfg(root)))
 end
 
 @delete "/api/v1/config/{key}" function(req, key::String)
     root      = dirname(ServerState.data_dir())
     user_path = joinpath(root, "config", "pipeline.yml")
-    _delete_override(user_path, key)
+    bad = _delete_override(user_path, key)
+    isnothing(bad) || return bad
     json(Dict(k => (; value=v, source="default") for (k, v) in _default_cfg(root)))
 end
 
@@ -502,9 +630,8 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, "pipeline.yml")
-    for (k, v) in body
-        _write_override(path, string(k), v)
-    end
+    bad = _write_config_updates(path, body)
+    isnothing(bad) || return bad
     json(_resolve_config(study))
 end
 
@@ -512,7 +639,8 @@ end
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
     path = joinpath(ServerState.data_dir(), study, "pipeline.yml")
-    _delete_override(path, key)
+    bad = _delete_override(path, key)
+    isnothing(bad) || return bad
     json(_resolve_config(study))
 end
 
@@ -586,9 +714,8 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, group, "pipeline.yml")
-    for (k, v) in body
-        _write_override(path, string(k), v)
-    end
+    bad = _write_config_updates(path, body)
+    isnothing(bad) || return bad
     json(_resolve_config(study, nothing, group))
 end
 
@@ -600,7 +727,8 @@ end
     group in _group_names(study) || return json_error(404, "group_not_found",
                                                           "Group '$group' not found")
     path = joinpath(ServerState.data_dir(), study, group, "pipeline.yml")
-    _delete_override(path, key)
+    bad = _delete_override(path, key)
+    isnothing(bad) || return bad
     json(_resolve_config(study, nothing, group))
 end
 
@@ -634,9 +762,8 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, run_path, "pipeline.yml")
-    for (k, v) in body
-        _write_override(path, string(k), v)
-    end
+    bad = _write_config_updates(path, body)
+    isnothing(bad) || return bad
     json(_resolve_config(study, run, group))
 end
 
@@ -648,6 +775,7 @@ end
     group = let g = _req_group(req); isnothing(g) ? _run_group(study, run) : g end
     run_path = isnothing(group) ? run : joinpath(group, run)
     path = joinpath(ServerState.data_dir(), study, run_path, "pipeline.yml")
-    _delete_override(path, key)
+    bad = _delete_override(path, key)
+    isnothing(bad) || return bad
     json(_resolve_config(study, run, group))
 end

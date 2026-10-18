@@ -358,6 +358,15 @@ analysis:
     # rle is refused when no taxon is present in every sample.
     # Used by nb_glm only; clr_welch ignores it, since log-ratios carry no library size.
     offset: tss
+    # nb_glm only: where each taxon's negative-binomial theta comes from. ml
+    # (the default) takes the maximum-likelihood estimate MASS::glm.nb fits per
+    # taxon. glmGamPoi uses glmGamPoi::glm_gp
+    # dispersion_trend across the taxa passing min_prevalence, then fits each
+    # taxon through MASS::negative.binomial(theta = 1/dispersion). This is a
+    # plug-in NB Wald test with scale 1, not glmGamPoi quasi-likelihood testing;
+    # trend-estimation uncertainty is not propagated. A zero trend withholds
+    # NB inference. Requires the pinned glmGamPoi R package.
+    dispersion: ml
     # Fraction of samples, 0 to 1, in which a taxon must have reads to be
     # tested. Taxa below it are listed as filtered, without a p-value. For
     # clr_welch it is applied before zero replacement, so on a sparse table it also
