@@ -50,3 +50,17 @@ end
     @test only(PE.mapping(raw,JSON3.write(evidence_fixture(names=Dict("n"=>["other"]))))).target===nothing
     @test_throws ArgumentError PE.mapping(raw,JSON3.write(evidence_fixture(tree="(A{0},B{1},C{2},D{3});")))
 end
+
+@testset "Evidence parser boundaries and mapping ambiguity" begin
+    @test_throws ArgumentError PE.readjplace("{\"tree\":\"(A,B);\",\"tree\":\"(B,C);\",\"fields\":[],\"placements\":[]}")
+    @test_throws ArgumentError PE.readjplace("{\"tree\":\"(A,B);\",\"fields\":[],\"placements\":[],\"metadata\":{\"x\":1,\"x\":2}}")
+    @test PE.treeindex("[&R] ('it''s'{0},\"😀\"{1},C{2});").universe==["C","it's","😀"]
+    raw=evidence_fixture();q=deepcopy(raw["placements"][1]);push!(raw["placements"],q)
+    target=JSON3.write(evidence_fixture(weights=[1]))
+    m=PE.mapping(JSON3.write(raw),target)
+    @test all(isnothing(x.target) for x in m)
+    @test all(occursin("Ambiguous",x.reason) for x in m)
+    unique=evidence_fixture();t=evidence_fixture(weights=[1]);push!(t["placements"],deepcopy(t["placements"][1]))
+    @test isnothing(only(PE.mapping(JSON3.write(unique),JSON3.write(t))).target)
+    @test_throws ArgumentError PE.treeindex("("^514 * "A" * ")"^514 * ";")
+end

@@ -459,19 +459,35 @@ _phylo_slug(name) = let s = strip(first(replace(strip(name), r"[^A-Za-z0-9._-]+"
     isempty(s) ? "placement" : s
 end
 
-function _publish_placement(study::String, name::String, ref_name::String, files)
+function _publish_placement(study::String, name::String, ref_name::String, files; provenance=nothing)
     slug = _phylo_slug(name)
     wanted = ["reference.treefile" => "$(_phylo_slug(ref_name)).treefile",
               "placement.jplace"   => "$slug.jplace",
               "accumulated.jplace" => "$slug-accumulated.jplace"]
     published = String[]
-    for (k, file) in wanted
-        isfile(files[k]) || continue
-        dest = joinpath(_trees_dir(study), file)
-        mkpath(dirname(dest))
-        cp(files[k], dest * ".tmp"; force=true)
-        mv(dest * ".tmp", dest; force=true)
-        push!(published, file)
+    lock(_tree_view_lock) do
+        for (k, file) in wanted
+            isfile(files[k]) || continue
+            dest = joinpath(_trees_dir(study), file)
+            mkpath(dirname(dest))
+            cp(files[k], dest * ".tmp"; force=true)
+            mv(dest * ".tmp", dest; force=true)
+            _forget_tree!(study,file)
+            push!(published, file)
+        end
+        raw = "$slug.jplace"; target = "$slug-accumulated.jplace"
+        raw in published || return published
+        origin = Dict("version"=>1,"study"=>study,"role"=>"raw","raw"=>raw,
+            "raw_sha256"=>_digest(read(joinpath(_trees_dir(study),raw),String)),
+            "accumulated"=>target in published ? target : nothing,
+            "accumulated_sha256"=>target in published ? _digest(read(joinpath(_trees_dir(study),target),String)) : nothing,
+            "provenance"=>something(provenance,Dict("kind"=>"pipeline","run"=>nothing,
+                                                  "config"=>nothing,"seed"=>nothing,"tools"=>nothing)))
+        _sidecar_write(_origin_path(study,raw),origin)
+        target in published && _sidecar_write(_origin_path(study,target),merge(origin,Dict("role"=>"accumulated")))
+        context = "$(_phylo_slug(ref_name)).treefile"
+        context in published && _sidecar_write(_origin_path(study,context),
+            Dict("version"=>1,"study"=>study,"role"=>"context"))
     end
     published
 end
@@ -640,7 +656,11 @@ end
                                    "reference_tree" => ref))
         ref_doc = something(_read_doc(_ref_doc_path(String(ref))), Dict{String,Any}())
         d = _read_doc(_placement_doc_path(study, id))
-        d["published"] = _publish_placement(study, name, string(get(ref_doc, "name", ref)), files)
+        attpath=joinpath(dir,"attestation.yml")
+        provenance=Dict("kind"=>"pipeline","placement"=>id,"reference"=>ref,
+                        "attestation"=>isfile(attpath) ? YAML.load_file(attpath) : nothing,
+                        "reference_sha256"=>_digest(read(files["reference.treefile"],String)))
+        d["published"] = _publish_placement(study, name, string(get(ref_doc, "name", ref)), files; provenance)
         _write_doc(_placement_doc_path(study, id), d)
     end
     json(_job_to_namedtuple(job))

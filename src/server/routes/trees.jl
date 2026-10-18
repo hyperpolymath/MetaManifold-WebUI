@@ -118,7 +118,10 @@ end
     if isfile(path) && get(body, :overwrite, false) != true
         return json_error(409, "exists", "Tree '$file' already exists")
     end
-    _write_atomic(path, String(content))
+    lock(_tree_view_lock) do
+        _write_atomic(path, String(content))
+        _forget_tree!(study, file)
+    end
     json((; file, format = _tree_format(file)))
 end
 
@@ -142,7 +145,10 @@ end
     isnothing(err) || return err
     path = joinpath(_trees_dir(study), file)
     isfile(path) || return json_error(404, "not_found", "Tree '$file' not found")
-    rm(path)
+    lock(_tree_view_lock) do
+        rm(path)
+        _forget_tree!(study, file)
+    end
     vpath = _tree_view_path(study, file)
     isfile(vpath) && rm(vpath)
     json((; deleted = file))

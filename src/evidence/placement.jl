@@ -84,6 +84,7 @@ function treeindex(text::AbstractString)
             else; break; end
         end
         isempty(children) && isempty(name) && throw(ArgumentError("Unnamed tip"))
+        length(nodes) < 100_000 || throw(ArgumentError("Evidence tree exceeds 100,000 nodes"))
         push!(nodes, (; name, edge, children)); length(nodes)
     end
     root = subtree(0); space()
@@ -108,6 +109,7 @@ function treeindex(text::AbstractString)
     for v in reverse(order)
         sides[v] = isempty(nodes[v].children) ? [keys[v]] : reduce(vcat, (sides[c] for c in nodes[v].children))
     end
+    sum(length, sides) <= 2_000_000 || throw(ArgumentError("Evidence tree exceeds topology complexity limit"))
     edges = Dict{Int,NamedTuple}(); splits = Dict{String,Vector{String}}(); seenedges = Set{Int}()
     for (v,n) in enumerate(nodes)
         if !isnothing(n.edge)
@@ -126,9 +128,29 @@ function treeindex(text::AbstractString)
     (; nodes, root, edges, universe, splits)
 end
 
+# Duplicate JSON keys can be interpreted differently by Julia and JavaScript.
+function unique_json_keys(text)
+    stack = Union{Nothing,Set{String}}[]
+    for m in eachmatch(r"\"(?:\\.|[^\"\\])*\"|[{}\[\]]", text)
+        token=m.match
+        if token == "{"; push!(stack,Set{String}())
+        elseif token == "["; push!(stack,nothing)
+        elseif token in ("}","]"); pop!(stack)
+        else
+            after=m.offset+ncodeunits(token)
+            while after<=lastindex(text) && isspace(text[after]); after=nextind(text,after); end
+            if after<=lastindex(text) && text[after]==':' && !isempty(stack) && !isnothing(last(stack))
+                key=JSON3.read(token,String)
+                key in last(stack) && throw(ArgumentError("Duplicate JSON object key"))
+                push!(last(stack),key)
+            end
+        end
+    end
+end
 function readjplace(text)
     d = JSON3.read(text, Dict{String,Any})
     d isa AbstractDict || throw(ArgumentError("Expected a jplace object"))
+    unique_json_keys(text)
     get(d,"tree",nothing) isa String || throw(ArgumentError("Missing tree string"))
     get(d,"fields",nothing) isa AbstractVector || throw(ArgumentError("Missing fields array"))
     all(x->x isa String,d["fields"]) || throw(ArgumentError("Field names must be strings"))
@@ -193,21 +215,24 @@ end
 # Compare actual rooted topology for accumulation, not merely matching split hashes.
 function rootedkey(ix,v=ix.root)
     n=ix.nodes[v]
-    isempty(n.children) && return ("tip", n.name)
-    ("node", sort([repr(rootedkey(ix,c)) for c in n.children]))
+    isempty(n.children) && return JSON3.write(n.name)
+    "(" * join(sort([rootedkey(ix,c) for c in n.children]),",") * ")"
 end
 function mapping(rawtext,targettext)
     raw, target = readjplace(rawtext), readjplace(targettext)
     raw.index.universe == target.index.universe && rootedkey(raw.index)==rootedkey(target.index) ||
         throw(ArgumentError("Accumulated tree has different tips or rooted topology"))
     signature(q) = let a=aliases(q)
-        isnothing(a) ? nothing : sort([(x.name,x.multiplicity) for x in a])
+        isnothing(a) ? nothing : Tuple(sort([(x.name,x.multiplicity) for x in a]))
     end
     rs = signature.(raw.doc["placements"]); ts = signature.(target.doc["placements"])
     ie = findall(==("edge_num"),target.doc["fields"])
+    counts=Dict{Any,Int}(); targets=Dict{Any,Vector{Int}}()
+    for s in rs; counts[s]=get(counts,s,0)+1; end
+    for (j,s) in enumerate(ts); push!(get!(targets,s,Int[]),j); end
     map(enumerate(rs)) do (i,s)
-        matches = isnothing(s) ? Int[] : findall(==(s),ts)
-        reason = isnothing(s) || count(==(s),rs)!=1 ? "Ambiguous raw query identity" :
+        matches = isnothing(s) ? Int[] : get(targets,s,Int[])
+        reason = isnothing(s) || counts[s]!=1 ? "Ambiguous raw query identity" :
                  isempty(matches) ? "Query absent from accumulated file" :
                  length(matches)!=1 ? "Ambiguous accumulated query identity" : ""
         dest = nothing
