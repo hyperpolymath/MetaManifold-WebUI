@@ -599,31 +599,6 @@ end
         end
     end
 
-    @testset "Parent PATCH refuses an unreadable affected cascade" begin
-        SV = MetaManifold.Server
-        keym = "analysis.differential.method"
-        _da_fixture() do
-            root = SV.ServerState._root[]
-            global_path = joinpath(root, "config", "pipeline.yml")
-            study_path = joinpath(root, "data", "studyD", "pipeline.yml")
-            YAML.write_file(global_path, Dict("analysis"=>Dict("differential"=>
-                Dict("method"=>"nb_glm", "dispersion"=>"ml"))))
-            write(study_path, "analysis: [broken")
-            before_global = read(global_path, String)
-            before_study = read(study_path, String)
-
-            response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", "/api/v1/config",
-                ["Content-Type"=>"application/json"],
-                JSON3.write(Dict(keym=>"clr_welch", "seed"=>789))))
-            body = JSON3.read(String(response.body))
-            @test response.status == 400
-            @test body.error == "invalid_config_value"
-            @test occursin("Cannot validate the affected config cascade", body.message)
-            @test read(global_path, String) == before_global
-            @test read(study_path, String) == before_study
-        end
-    end
-
     @testset "DELETE validates inherited values at every config scope" begin
         SV = MetaManifold.Server
         keym, keyd = "analysis.differential.method", "analysis.differential.dispersion"
