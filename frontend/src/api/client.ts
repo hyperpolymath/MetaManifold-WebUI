@@ -23,6 +23,7 @@ import type {
   ReferenceTreeDoc, ReferenceTreeSummary, ReferenceTreeDetail, AlignmentQC, TrimSettings,
 } from './types'
 
+import type { EvidenceResponse } from '../tree/evidence'
 import type { FigureDoc } from '../figure/types'
 import { saveBlob } from '../utils/download'
 
@@ -398,6 +399,10 @@ export const api = {
   },
 
   trees: {
+    evidence: (study: string, file: string) =>
+      get<EvidenceResponse>(`/api/v1/studies/${study}/trees/${encodeURIComponent(file)}/evidence`),
+    generateEvidence: (study: string, file: string, request: { source_sha256: string; threshold: number; confirm_raw: boolean; accumulated_file: string | null }) =>
+      post<EvidenceResponse>(`/api/v1/studies/${study}/trees/${encodeURIComponent(file)}/evidence`, request),
     list:     (study: string) => get<TreeFileInfo[]>(`/api/v1/studies/${study}/trees`),
     get:      (study: string, file: string) =>
       get<TreeFile>(`/api/v1/studies/${study}/trees/${encodeURIComponent(file)}`),

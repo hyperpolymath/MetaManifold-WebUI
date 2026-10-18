@@ -17,6 +17,8 @@ import { DEFAULT_SETTINGS, layoutTree, symbolPath, type Dataset, type SymbolStyl
 import styles from '../tree/Tree.module.css'
 import { mergeSettings, readDoc, type TreeViewDoc } from '../tree/viewDoc'
 import { fmt, PLACE_SELECTED } from '../tree/ui'
+import { EvidencePanel } from '../tree/EvidencePanel'
+import { evidenceMarkers, type EvidenceResponse } from '../tree/evidence'
 import { TreeShapes } from '../tree/TreeShapes'
 import { Legend, legendItems } from '../tree/Legend'
 import { ImportPanel } from '../tree/ImportPanel'
@@ -109,6 +111,7 @@ interface Editing { key: string; side: string; value: string; left: number; top:
 function TreeCanvas({ source, tree, src, toast }: {
   source: TreeSource; tree: TreeFile; src: SourceTree; toast: ReturnType<typeof useToast>
 }) {
+  const [evidence, setEvidence] = useState<EvidenceResponse | null>(null)
   const initial = useMemo(() => readDoc(tree.view), [tree])
   const ix = useMemo(() => indexTree(src), [src])
   const [hist, setHist] = useState<{ ops: TreeOp[]; redo: TreeOp[] }>({ ops: initial.ops ?? [], redo: [] })
@@ -558,6 +561,8 @@ function TreeCanvas({ source, tree, src, toast }: {
         </div>
       </div>
 
+      {source.study && tree.format === 'jplace' && <EvidencePanel study={source.study} file={tree.file}
+        sha256={tree.sha256} onEvidence={setEvidence} />}
       <div className={styles.body}>
         <div className={styles.canvas} ref={scrollRef} onScroll={onScroll}>
           <svg ref={svgRef} width={layout.width} height={layout.height + legendH} className={styles.svg}
@@ -589,6 +594,14 @@ function TreeCanvas({ source, tree, src, toast }: {
                   </path>
                 )
               })}
+              {evidenceMarkers(evidence, layout).map(marker => (
+                <text key={`evidence-${marker.node}`} x={marker.x + 7} y={marker.y + 14}
+                  fill={marker.counts.fails ? '#b42318' : marker.counts.undecided ? '#8a6100' : '#16723c'}
+                  fontSize={11} stroke="white" strokeWidth={3} paintOrder="stroke" pointerEvents="none">
+                  {`✓${marker.counts.holds} ✕${marker.counts.fails} ?${marker.counts.undecided}`}
+                  <title>{`${evidence?.role === 'accumulated' ? 'Raw LWR evidence, mapped here' : 'Raw LWR evidence'}: ${marker.queries.map(q => q.aliases.map(a => a.name).join(', ') + ': ' + q.verdict).join('; ')}. Counts describe queries, not a clade verdict.`}</title>
+                </text>
+              ))}
               {selQuery !== null && layout.placements.filter(p => p.query === selQuery).map((p, k) => (
                 <circle key={`sq${k}`} data-ui="" cx={p.x} cy={p.y} r={4 + 4 * Math.sqrt(p.lwr)}
                   fill="none" stroke={PLACE_SELECTED} strokeWidth={2} pointerEvents="none" />
