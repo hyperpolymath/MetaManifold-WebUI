@@ -203,9 +203,75 @@ function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
     nothing
 end
 
+# Resolve every affected study/group/run against the prospective document.
+# Enumerate runnable descendants too: a run need not own a pipeline.yml file.
+# This is validation evidence, so an unreadable cascade must refuse the save.
+function _differential_cascade_error(path::String, document)
+    data = ServerState.data_dir()
+    root = dirname(data)
+    global_path = joinpath(root, "config", "pipeline.yml")
+    prefix = path == global_path ? String[] : splitpath(relpath(dirname(path), data))
+    cache = Dict{String,Any}(path => _flatten(document))
+    flat(file) = get!(cache, file) do
+        _flatten(_load_yml(file))
+    end
+    pair = ("analysis.differential.method", "analysis.differential.dispersion")
+    function check(values, label)
+        effective = Dict(pair[1]=>get(values, pair[1], "nb_glm"),
+                         pair[2]=>get(values, pair[2], "ml"))
+        bad = _differential_pair_error(effective, effective)
+        isnothing(bad) ? nothing : "$label: $bad"
+    end
+    try
+        base = merge(flat(joinpath(root, "config", "defaults", "pipeline.yml")), flat(global_path))
+        if isempty(prefix)
+            bad = check(base, "global config")
+            isnothing(bad) || return bad
+        end
+        targets = Set{String}()
+        isempty(prefix) || push!(targets, joinpath(prefix...))
+        if length(prefix) >= 2
+            # A run edit has no descendants; a group edit can affect its runs.
+            # Inspect only the edited subtree, so malformed siblings cannot block it.
+            if length(prefix) == 2 && !get(document, "pool_children", false)
+                for run in _group_run_names(prefix[1], prefix[2])
+                    push!(targets, joinpath(prefix..., run))
+                end
+            end
+        else
+            for study in _study_names()
+                isempty(prefix) || first(prefix) == study || continue
+                push!(targets, study)
+                for run in _run_names(study)
+                    push!(targets, joinpath(study, run))
+                end
+                for group in _group_names(study)
+                    push!(targets, joinpath(study, group))
+                    for run in _group_run_names(study, group)
+                        push!(targets, joinpath(study, group, run))
+                    end
+                end
+            end
+        end
+        for label in sort!(collect(targets))
+            parts = splitpath(label)
+            length(parts) >= length(prefix) && parts[1:length(prefix)] == prefix || continue
+            effective = copy(base)
+            for i in eachindex(parts)
+                merge!(effective, flat(joinpath(data, parts[1:i]..., "pipeline.yml")))
+            end
+            bad = check(effective, label)
+            isnothing(bad) || return bad
+        end
+        nothing
+    catch e
+        "Cannot validate the affected config cascade: $(sprint(showerror, e))"
+    end
+end
+
 # Validate, prepare the complete document, and publish once under one lock.
 # Readers do not take this lock, so per-key renames would expose partial PATCHes.
-function _write_config_updates(resolve::Function, path::String, changes::AbstractDict)
+function _write_config_updates(path::String, changes::AbstractDict; remove=())
     lock(_config_file_lock) do
         native = Dict{String,Any}(string(k) => _to_plain(v) for (k, v) in changes)
         key = "analysis.differential.dispersion"
@@ -213,12 +279,20 @@ function _write_config_updates(resolve::Function, path::String, changes::Abstrac
             i = findfirst(v -> lowercase(v) == lowercase(strip(native[key])), Differential.DISPERSIONS)
             isnothing(i) || (native[key] = Differential.DISPERSIONS[i])
         end
-        bad = _differential_pair_error(resolve(), native)
-        isnothing(bad) || return json_error(400, "invalid_config_value", bad)
-        isempty(native) && return nothing
+        isempty(native) && isempty(remove) && return nothing
         cfg = _load_yml(path)
         for (k, v) in native
             _set_config_value!(cfg, k, v)
+        end
+        removed = false
+        for k in remove
+            removed |= _remove_config_value!(cfg, k)
+        end
+        isempty(native) && !removed && return nothing
+        pair = ("analysis.differential.method", "analysis.differential.dispersion")
+        if any(k -> haskey(native, k) || k in remove, pair)
+            bad = _differential_cascade_error(path, cfg)
+            isnothing(bad) || return json_error(400, "invalid_config_value", bad)
         end
         _atomic_write_yaml(path, cfg)
         nothing
@@ -259,21 +333,21 @@ function _write_override(path::String, dotted_key::String, value)
     end
 end
 
-function _delete_override(path::String, dotted_key::String)
-    isfile(path) || return
-    lock(_config_file_lock) do
-        cfg   = _load_yml(path)
-        parts = split(dotted_key, ".")
-        d     = cfg
-        for p in parts[1:end-1]
-            haskey(d, p) || return
-            d = d[p]
-            d isa Dict || return
-        end
-        delete!(d, parts[end])
-        _atomic_write_yaml(path, cfg)
+function _remove_config_value!(cfg::AbstractDict, dotted_key::String)
+    parts = split(dotted_key, ".")
+    d = cfg
+    for p in parts[1:end-1]
+        haskey(d, p) || return false
+        d = d[p]
+        d isa AbstractDict || return false
     end
+    haskey(d, parts[end]) || return false
+    delete!(d, parts[end])
+    true
 end
+
+_delete_override(path::String, dotted_key::String) =
+    _write_config_updates(path, Dict(); remove=(dotted_key,))
 
 ## Routes
 # Default (global) config endpoints
@@ -292,7 +366,7 @@ end
         bad = _config_value_error(string(k), v)
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
-    bad = _write_config_updates(() -> _default_cfg(root), user_path, body)
+    bad = _write_config_updates(user_path, body)
     isnothing(bad) || return bad
     json(Dict(k => (; value=v, source="default") for (k, v) in _default_cfg(root)))
 end
@@ -300,7 +374,8 @@ end
 @delete "/api/v1/config/{key}" function(req, key::String)
     root      = dirname(ServerState.data_dir())
     user_path = joinpath(root, "config", "pipeline.yml")
-    _delete_override(user_path, key)
+    bad = _delete_override(user_path, key)
+    isnothing(bad) || return bad
     json(Dict(k => (; value=v, source="default") for (k, v) in _default_cfg(root)))
 end
 
@@ -555,7 +630,7 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, "pipeline.yml")
-    bad = _write_config_updates(() -> _resolve_config(study), path, body)
+    bad = _write_config_updates(path, body)
     isnothing(bad) || return bad
     json(_resolve_config(study))
 end
@@ -564,7 +639,8 @@ end
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
     path = joinpath(ServerState.data_dir(), study, "pipeline.yml")
-    _delete_override(path, key)
+    bad = _delete_override(path, key)
+    isnothing(bad) || return bad
     json(_resolve_config(study))
 end
 
@@ -638,7 +714,7 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, group, "pipeline.yml")
-    bad = _write_config_updates(() -> _resolve_config(study, nothing, group), path, body)
+    bad = _write_config_updates(path, body)
     isnothing(bad) || return bad
     json(_resolve_config(study, nothing, group))
 end
@@ -651,7 +727,8 @@ end
     group in _group_names(study) || return json_error(404, "group_not_found",
                                                           "Group '$group' not found")
     path = joinpath(ServerState.data_dir(), study, group, "pipeline.yml")
-    _delete_override(path, key)
+    bad = _delete_override(path, key)
+    isnothing(bad) || return bad
     json(_resolve_config(study, nothing, group))
 end
 
@@ -685,7 +762,7 @@ end
         isnothing(bad) || return json_error(400, "invalid_config_value", bad)
     end
     path = joinpath(ServerState.data_dir(), study, run_path, "pipeline.yml")
-    bad = _write_config_updates(() -> _resolve_config(study, run, group), path, body)
+    bad = _write_config_updates(path, body)
     isnothing(bad) || return bad
     json(_resolve_config(study, run, group))
 end
@@ -698,6 +775,7 @@ end
     group = let g = _req_group(req); isnothing(g) ? _run_group(study, run) : g end
     run_path = isnothing(group) ? run : joinpath(group, run)
     path = joinpath(ServerState.data_dir(), study, run_path, "pipeline.yml")
-    _delete_override(path, key)
+    bad = _delete_override(path, key)
+    isnothing(bad) || return bad
     json(_resolve_config(study, run, group))
 end

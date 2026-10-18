@@ -512,27 +512,138 @@ end
             # Both transitions must preserve unrelated fields. Explicit ordering
             # exercises the formerly invalid intermediate clr_welch/glmGamPoi pair.
             path = scopes[2][2]
-            resolve() = SV._resolve_config("studyD")
             for changes in (OrderedDict(keyd=>"ml", keym=>"clr_welch"),
                             OrderedDict(keyd=>"glmGamPoi", keym=>"nb_glm"),
                             OrderedDict(keym=>"clr_welch", keyd=>"ml"))
-                @test SV._write_config_updates(resolve, path, changes) === nothing
+                @test SV._write_config_updates(path, changes) === nothing
                 saved = YAML.load_file(path)
                 @test saved["seed"] == 456
                 @test saved["analysis"]["differential"]["method"] == changes[keym]
                 @test saved["analysis"]["differential"]["dispersion"] == changes[keyd]
             end
             before = read(path, String)
-            bad = SV._write_config_updates(resolve, path, Dict(keyd=>"glmGamPoi"))
+            bad = SV._write_config_updates(path, Dict(keyd=>"glmGamPoi"))
             @test bad.status == 400
             @test read(path, String) == before
+
+            run_url, run_path = scopes[4]
+            before_run = read(run_path, String)
+            response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", run_url,
+                ["Content-Type"=>"application/json"], JSON3.write(Dict(keym=>"clr_welch"))))
+            @test response.status == 400
+            @test read(run_path, String) == before_run
 
             # The first valid key must stay unpublished when a later setter fails.
             YAML.write_file(path, Dict("phylogeny"=>"not-a-section", "seed"=>456))
             before = read(path, String)
-            @test_throws ErrorException SV._write_config_updates(resolve, path,
+            @test_throws ErrorException SV._write_config_updates(path,
                 OrderedDict("seed"=>789, "phylogeny.reference.trim.method"=>"none"))
             @test read(path, String) == before
+        end
+    end
+
+    @testset "Parent PATCH validates affected descendants before publication" begin
+        SV = MetaManifold.Server
+        keym, keyd = "analysis.differential.method", "analysis.differential.dispersion"
+        _da_fixture() do
+            root = SV.ServerState._root[]
+            global_path = joinpath(root, "config", "pipeline.yml")
+            study_path = joinpath(root, "data", "studyD", "pipeline.yml")
+            group_dir = joinpath(dirname(study_path), "groupG")
+            run_dir = joinpath(group_dir, "runG")
+            mkpath(run_dir); touch(joinpath(group_dir, ".group"))
+            touch(joinpath(run_dir, "sample_R1.fastq.gz"))
+            group_path, run_path = joinpath(group_dir, "pipeline.yml"), joinpath(run_dir, "pipeline.yml")
+            save(path, values) = YAML.write_file(path, Dict("analysis"=>Dict("differential"=>values)))
+            patch(url, changes) = SV.Oxygen.internalrequest(HTTP.Request("PATCH", url,
+                ["Content-Type"=>"application/json"], JSON3.write(changes)))
+            save(global_path, Dict("method"=>"nb_glm", "dispersion"=>"ml"))
+            save(study_path, Dict("dispersion"=>"glmGamPoi"))
+            before = read(global_path, String)
+            response = patch("/api/v1/config", Dict(keym=>"clr_welch", "seed"=>789))
+            @test response.status == 400
+            @test occursin("studyD", JSON3.read(String(response.body)).message)
+            @test read(global_path, String) == before
+            # A deeper complete pair shields that subtree from a parent edit.
+            save(study_path, Dict("method"=>"nb_glm", "dispersion"=>"glmGamPoi"))
+            @test patch("/api/v1/config", Dict(keym=>"clr_welch", keyd=>"ml")).status == 200
+
+            save(global_path, Dict("method"=>"nb_glm", "dispersion"=>"ml"))
+            save(study_path, Dict("method"=>"nb_glm", "dispersion"=>"ml"))
+            save(group_path, Dict("dispersion"=>"glmGamPoi"))
+            before = read(study_path, String)
+            @test patch("/api/v1/studies/studyD/config", Dict(keym=>"clr_welch")).status == 400
+            @test read(study_path, String) == before
+            save(group_path, Dict("method"=>"nb_glm", "dispersion"=>"ml"))
+            save(run_path, Dict("dispersion"=>"glmGamPoi"))
+            before = read(group_path, String)
+            group_url = "/api/v1/studies/studyD/groups/groupG/config"
+            response = patch(group_url, Dict(keym=>"clr_welch"))
+            @test response.status == 400
+            @test occursin("runG", JSON3.read(String(response.body)).message)
+            @test read(group_path, String) == before
+            save(run_path, Dict("method"=>"nb_glm", "dispersion"=>"glmGamPoi"))
+            @test patch(group_url, Dict(keym=>"clr_welch")).status == 200
+
+            # A run without an override file still inherits a validated cascade.
+            run_a = joinpath(root, "data", "studyD", "runA", "pipeline.yml")
+            rm(run_a)
+            @test patch("/api/v1/studies/studyD/config", Dict(keyd=>"glmGamPoi")).status == 200
+            response = SV.Oxygen.internalrequest(HTTP.Request("GET", "/api/v1/studies/studyD/runs/runA/config"))
+            @test response.status == 200
+            @test JSON3.read(String(response.body))[keyd].value == "glmGamPoi"
+
+            # A malformed sibling is outside a run edit's affected subtree.
+            write(joinpath(root,"data","studyD","runB","pipeline.yml"), "analysis: [broken")
+            @test SV._write_config_updates(run_a, Dict(keyd=>"ml")) === nothing
+        end
+    end
+
+    @testset "DELETE validates inherited values at every config scope" begin
+        SV = MetaManifold.Server
+        keym, keyd = "analysis.differential.method", "analysis.differential.dispersion"
+        for scope in 1:4, deleted in (keym, keyd, "valid")
+            _da_fixture() do
+                root = SV.ServerState._root[]
+                group_dir = joinpath(root, "data", "studyD", "groupG")
+                run_dir = joinpath(group_dir, "runG")
+                mkpath(run_dir); touch(joinpath(group_dir, ".group"))
+                touch(joinpath(run_dir, "sample_R1.fastq.gz"))
+                factory = joinpath(root, "config", "defaults", "pipeline.yml")
+                mkpath(dirname(factory))
+                paths = [joinpath(root,"config","pipeline.yml"),
+                         joinpath(root,"data","studyD","pipeline.yml"),
+                         joinpath(group_dir,"pipeline.yml"), joinpath(run_dir,"pipeline.yml")]
+                urls = ["/api/v1/config", "/api/v1/studies/studyD/config",
+                        "/api/v1/studies/studyD/groups/groupG/config",
+                        "/api/v1/studies/studyD/runs/runG/config"]
+                query = scope == 4 ? "?group=groupG" : ""
+                method, dispersion = deleted == keym ? ("clr_welch", "ml") :
+                                     deleted == keyd ? ("nb_glm", "glmGamPoi") : ("nb_glm", "ml")
+                doc(m, d, seed) = Dict("seed"=>seed, "analysis"=>Dict("differential"=>Dict("method"=>m, "dispersion"=>d)))
+                for path in [factory; paths]
+                    YAML.write_file(path, doc(method, dispersion, 123))
+                end
+                target_method, target_dispersion = deleted == keym ? ("nb_glm", "glmGamPoi") :
+                                                    deleted == keyd ? ("clr_welch", "ml") : ("nb_glm", "ml")
+                YAML.write_file(paths[scope], doc(target_method, target_dispersion, 456))
+                before = Dict(p=>read(p,String) for p in [factory; paths])
+                if deleted != "valid"
+                    response = SV.Oxygen.internalrequest(HTTP.Request("DELETE", "$(urls[scope])/$deleted$query"))
+                    @test response.status == 400
+                    @test JSON3.read(String(response.body)).error == "invalid_config_value"
+                    @test all(read(p,String) == text for (p,text) in before)
+                else
+                    for (key, expected) in ((keym,"nb_glm"), (keyd,"ml"), ("seed",123))
+                        response = SV.Oxygen.internalrequest(HTTP.Request("DELETE", "$(urls[scope])/$key$query"))
+                        @test response.status == 200
+                        @test JSON3.read(String(response.body))[key].value == expected
+                    end
+                    unchanged = read(paths[scope], String)
+                    @test SV.Oxygen.internalrequest(HTTP.Request("DELETE", "$(urls[scope])/seed$query")).status == 200
+                    @test read(paths[scope], String) == unchanged
+                end
+            end
         end
     end
 
