@@ -10,7 +10,8 @@ using MetaManifold
 using MetaManifold.Differential
 using RCall
 using Test
-using DuckDB, DBInterface, JSON3, HTTP
+using DuckDB, DBInterface, JSON3, HTTP, YAML
+using OrderedCollections: OrderedDict
 
 """
     _r_has(pkg) -> Bool
@@ -477,6 +478,61 @@ end
             response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", "/api/v1/studies/studyD/config", ["Content-Type"=>"application/json"], JSON3.write(Dict(keym=>"clr_welch"))))
             @test response.status == 400
             @test read(path,String) == before
+        end
+    end
+
+    @testset "Config PATCH publishes canonical, complete documents" begin
+        SV = MetaManifold.Server
+        keym, keyd = "analysis.differential.method", "analysis.differential.dispersion"
+        _da_fixture() do
+            root = SV.ServerState._root[]
+            group_dir = joinpath(root, "data", "studyD", "groupG")
+            run_dir = joinpath(group_dir, "runG")
+            mkpath(run_dir)
+            touch(joinpath(group_dir, ".group"))
+            touch(joinpath(run_dir, "sample_R1.fastq.gz"))
+            touch(joinpath(run_dir, "sample_R2.fastq.gz"))
+            scopes = [("/api/v1/config", joinpath(root, "config", "pipeline.yml")),
+                      ("/api/v1/studies/studyD/config", joinpath(root, "data", "studyD", "pipeline.yml")),
+                      ("/api/v1/studies/studyD/groups/groupG/config", joinpath(group_dir, "pipeline.yml")),
+                      ("/api/v1/studies/studyD/runs/runG/config?group=groupG", joinpath(run_dir, "pipeline.yml"))]
+            for (url, path) in scopes
+                for (submitted, expected) in ((" ML ", "ml"), (" GLMGAMPOI ", "glmGamPoi"))
+                    response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", url,
+                        ["Content-Type"=>"application/json"], JSON3.write(Dict(keym=>"nb_glm", keyd=>submitted, "seed"=>456))))
+                    @test response.status == 200
+                    @test JSON3.read(String(response.body))[keyd].value == expected
+                    @test YAML.load_file(path)["analysis"]["differential"]["dispersion"] == expected
+                    response = SV.Oxygen.internalrequest(HTTP.Request("GET", url))
+                    @test response.status == 200
+                    @test JSON3.read(String(response.body))[keyd].value == expected
+                    @test YAML.load_file(path)["seed"] == 456
+                end
+            end
+            # Both transitions must preserve unrelated fields. Explicit ordering
+            # exercises the formerly invalid intermediate clr_welch/glmGamPoi pair.
+            path = scopes[2][2]
+            resolve() = SV._resolve_config("studyD")
+            for changes in (OrderedDict(keyd=>"ml", keym=>"clr_welch"),
+                            OrderedDict(keyd=>"glmGamPoi", keym=>"nb_glm"),
+                            OrderedDict(keym=>"clr_welch", keyd=>"ml"))
+                @test SV._write_config_updates(resolve, path, changes) === nothing
+                saved = YAML.load_file(path)
+                @test saved["seed"] == 456
+                @test saved["analysis"]["differential"]["method"] == changes[keym]
+                @test saved["analysis"]["differential"]["dispersion"] == changes[keyd]
+            end
+            before = read(path, String)
+            bad = SV._write_config_updates(resolve, path, Dict(keyd=>"glmGamPoi"))
+            @test bad.status == 400
+            @test read(path, String) == before
+
+            # The first valid key must stay unpublished when a later setter fails.
+            YAML.write_file(path, Dict("phylogeny"=>"not-a-section", "seed"=>456))
+            before = read(path, String)
+            @test_throws ErrorException SV._write_config_updates(resolve, path,
+                OrderedDict("seed"=>789, "phylogeny.reference.trim.method"=>"none"))
+            @test read(path, String) == before
         end
     end
 

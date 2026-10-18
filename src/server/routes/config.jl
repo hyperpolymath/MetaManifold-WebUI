@@ -203,15 +203,24 @@ function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
     nothing
 end
 
-# Validate against the current cascade and write under the same reentrant lock.
-# Two individually valid concurrent PATCHes must not create an invalid pair.
+# Validate, prepare the complete document, and publish once under one lock.
+# Readers do not take this lock, so per-key renames would expose partial PATCHes.
 function _write_config_updates(resolve::Function, path::String, changes::AbstractDict)
     lock(_config_file_lock) do
-        bad = _differential_pair_error(resolve(), changes)
-        isnothing(bad) || return json_error(400, "invalid_config_value", bad)
-        for (k, v) in changes
-            _write_override(path, string(k), v)
+        native = Dict{String,Any}(string(k) => _to_plain(v) for (k, v) in changes)
+        key = "analysis.differential.dispersion"
+        if haskey(native, key) && native[key] isa AbstractString
+            i = findfirst(v -> lowercase(v) == lowercase(strip(native[key])), Differential.DISPERSIONS)
+            isnothing(i) || (native[key] = Differential.DISPERSIONS[i])
         end
+        bad = _differential_pair_error(resolve(), native)
+        isnothing(bad) || return json_error(400, "invalid_config_value", bad)
+        isempty(native) && return nothing
+        cfg = _load_yml(path)
+        for (k, v) in native
+            _set_config_value!(cfg, k, v)
+        end
+        _atomic_write_yaml(path, cfg)
         nothing
     end
 end
@@ -221,25 +230,31 @@ function _validate_config_key(dotted_key::String)
         "Config key '$dotted_key' is not a recognised pipeline option")
 end
 
-function _write_override(path::String, dotted_key::String, value)
+# Shared in-memory setter. A bad later key must not publish earlier changes.
+function _set_config_value!(cfg::AbstractDict, dotted_key::String, value)
     _validate_config_key(dotted_key)
+    parts = split(dotted_key, ".")
+    d = cfg
+    for p in parts[1:end-1]
+        child = get(d, p, nothing)
+        if child isa Dict
+            d = child
+        elseif isnothing(child)
+            new_dict = Dict()
+            d[p] = new_dict
+            d = new_dict
+        else
+            error("Config key segment '$p' is not a section; cannot set sub-key")
+        end
+    end
+    d[parts[end]] = value
+    cfg
+end
+
+function _write_override(path::String, dotted_key::String, value)
     lock(_config_file_lock) do
         cfg = _load_yml(path)
-        parts = split(dotted_key, ".")
-        d = cfg
-        for p in parts[1:end-1]
-            child = get(d, p, nothing)
-            if child isa Dict
-                d = child
-            elseif isnothing(child)
-                new_dict = Dict()
-                d[p] = new_dict
-                d = new_dict
-            else
-                error("Config key segment '$p' is not a section; cannot set sub-key")
-            end
-        end
-        d[parts[end]] = value
+        _set_config_value!(cfg, dotted_key, value)
         _atomic_write_yaml(path, cfg)
     end
 end
