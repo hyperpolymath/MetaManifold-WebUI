@@ -6,6 +6,12 @@
 [![CI](https://github.com/JoshuaJewell/MetaManifold-WebUI/actions/workflows/ci.yml/badge.svg)](https://github.com/JoshuaJewell/MetaManifold-WebUI/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/JoshuaJewell/MetaManifold-WebUI/graph/badge.svg?token=20F1VLF590)](https://codecov.io/gh/JoshuaJewell/MetaManifold-WebUI)
 
+Fork governance (hyperpolymath/MetaManifold-WebUI only; nothing here is part of upstream):
+[![Governance (fork)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/governance.yml/badge.svg)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/governance.yml)
+[![DEED syntax](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhyperpolymath%2FMetaManifold-WebUI%2Fgovernance-badges%2Fdeed.json)](MetaManifold-WebUI_chora.deed)
+[![Hypatia grid](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhyperpolymath%2FMetaManifold-WebUI%2Fgovernance-badges%2Fhypatia-grid.json)](https://github.com/hyperpolymath/standards/blob/main/docs/VERDICT-GRID-SPEC.adoc)
+The grid grades the worst finding each reporter has (purple critical, red high, yellow medium, blue minor, green clean), with a scanner that did not run in orange and a fleet member not enrolled for this repository in grey; enrolment is in `.gitbot-fleet/enrolment.json`.
+
 MetaManifold wraps standard amplicon sequencing workflows into a single configurable Julia orchestrator: from raw paired-end Next Generation Sequencing reads through denoising, taxonomy assignment and taxonomic filtering, with interactive configuration and analysis in the browser.
 
 <p align="center">

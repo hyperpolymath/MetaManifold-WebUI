@@ -338,3 +338,7 @@ proofs/agda/_build/
 
 # Occupancy proof dependencies and reproduction logs
 /_build/
+
+# Fork governance: the gitbot-fleet enrolment manifest and report-backs are tracked.
+!.gitbot-fleet/
+!.gitbot-fleet/**

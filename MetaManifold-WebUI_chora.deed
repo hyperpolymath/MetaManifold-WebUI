@@ -1,0 +1,29 @@
+;; SPDX-License-Identifier: MPL-2.0
+;; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+(repo-deed
+  :schema-version "1.0.0"
+  :canonical-name "MetaManifold-WebUI"
+  :repo-uuid #u8"gv-clade-index:github.com/hyperpolymath/MetaManifold-WebUI"
+  :beholding-chora #u5"estate/chora"
+  (identity :owner "hyperpolymath" :primary-forge github :fork-of "JoshuaJewell/MetaManifold-WebUI")
+  (front-doors :human "README.md" :agent "CONTRIBUTING.md")
+  (authority
+    :licensing "LICENSE"
+    :contribution "CONTRIBUTING.md"
+    :upstream "https://github.com/JoshuaJewell/MetaManifold-WebUI")
+  (routing
+    :upstream-candidates "upstream/*"
+    :frontend "frontend/"
+    :analysis "src/analysis/"
+    :proofs "proofs/"
+    :enforcement ".github/workflows/")
+  (status
+    :evidence-source ".github/workflows/governance.yml"
+    :evidence-status "Fork governance lane only: DEED syntax and the Hypatia verdict grid with gitbot-fleet report-backs. Upstream owns the code and its CI; this deed describes the fork.")
+  (policies
+    (licensing
+      :initial-assignment "New files the fork authors carry MPL-2.0 with an SPDX header, as upstream CONTRIBUTING.md permits."
+      :existing-declarations "Manual-Only. Upstream AGPL-3.0 and CC BY-SA 4.0 headers, LICENSE and CITATION.cff are never changed on this fork.")
+    (fleet
+      :enrolment ".gitbot-fleet/enrolment.json"
+      :report-backs ".gitbot-fleet/report-backs/")))
