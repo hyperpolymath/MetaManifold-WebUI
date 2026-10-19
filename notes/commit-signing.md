@@ -25,13 +25,20 @@ git fetch upstream main                      # JoshuaJewell/MetaManifold-WebUI
 git switch <branch>
 git rebase upstream/main                     # only if main moved, or when asked
 git rebase --exec 'git commit --amend --no-edit -S' upstream/main
-git log --format='%h %G? %s' upstream/main..HEAD   # every line must not be N
-git push --force-with-lease origin <branch>  # before review starts only
+git log --format='%h %G? %s' upstream/main..HEAD   # see the table below
+git push --force-with-lease origin <branch>  # before review, or after a requested rebase
 ```
 
-`%G?` prints `N` for unsigned. `E` usually means local git cannot check an SSH
-signature (no `gpg.ssh.allowedSignersFile`); GitHub's Verified badge is what
-counts. Re-check on the PR's Commits tab.
+What `%G?` prints, and what to do:
+
+| status | meaning | action |
+| --- | --- | --- |
+| `G` | good signature | pass |
+| `E`, `U` | local git cannot check it, or the key's validity is unknown (`E` is usual for SSH signing without `gpg.ssh.allowedSignersFile`) | push, then confirm Verified on the PR's Commits tab |
+| `N` | unsigned | re-sign |
+| `B`, `X`, `Y`, `R` | bad signature, expired signature, expired key, revoked key | stop; fix the key, then re-sign |
+
+GitHub's Verified badge is what upstream checks.
 
 ## Rules that follow from fast-forward merging
 
