@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "reporters": {
+    "rhodibot": { "title": "rhodibot (RSR compliance)", "enrolled": true },
+    "panicbot": { "title": "panicbot (panic recovery, error handling)", "enrolled": true },
+    "echidnabot": { "title": "echidnabot (formal verification: proofs/)", "enrolled": true },
+    "seambot": { "title": "seambot (integration health: API routes)", "enrolled": true },
+    "finishingbot": { "title": "finishingbot (release readiness)", "enrolled": true },
+    "accessibilitybot": { "title": "accessibilitybot (WCAG on the React UI)", "enrolled": true },
+    "glambot": { "title": "glambot (presentation quality)", "enrolled": true },
+    "cipherbot": { "enrolled": false, "reason": "no cryptography is implemented in this repository" },
+    "sustainabot": { "enrolled": false, "reason": "fleet adapter slot reserved; no adapter exists yet (gitbot-fleet README)" }
+  }
+}
