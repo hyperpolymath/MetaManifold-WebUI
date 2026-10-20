@@ -43,14 +43,20 @@ hashes and signatures:
 ```sh
 git fetch origin <prepared-branch> <pr-branch>      # this fork
 git switch -c <local> origin/<prepared-branch>
-git rebase --exec 'git commit --amend --no-edit -S' <reviewed-head>
+git merge-base --is-ancestor <reviewed-head> HEAD &&
+  git rebase --exec 'git commit --amend --no-edit -S' <reviewed-head>
 git log --format='%h %G? %s' <reviewed-head>..HEAD  # see the table below
 git push origin <local>:<pr-branch>                 # fast-forward: no --force
 ```
 
-`<reviewed-head>` is the PR's head commit when the review was given. A prepared
-branch must start there; if it does not, the push is refused as a non
-fast-forward, and nothing is rewritten.
+`<reviewed-head>` is the PR's head commit when the review was given, and the
+prepared branch must contain it. The `merge-base` check stops the re-sign when
+it does not. Without that check, `git rebase <reviewed-head>` would replay the
+branch onto the reviewed head, along with any upstream commits it carries, and
+the push would then go through as a fast-forward. On `wip/pr62-theta`, for
+example, it would replay Joshua's `78ffc2f` re-signed as yours, together with
+copies of the PR's own commits. When the check stops it, nothing is rewritten,
+and pushing the untouched branch is refused as a non fast-forward.
 
 ### Squash-merging the fork PR instead
 
@@ -62,10 +68,11 @@ forward by that one commit. Three things change:
 - The squash commit's message defaults to the fork PR's title and description,
   fork-internal notes and `(#NNN)` fork references included, and it lands on
   Joshua's `main` unchanged. Replace it in the merge dialog with a message that
-  stands on its own upstream (CONTRIBUTING item 8).
-- The signature is GitHub's key, not yours. It shows Verified, but item 3 asks
-  for a key registered to your account, so this path has not been cleared with
-  Joshua.
+  stands on its own upstream (upstream CONTRIBUTING item 8).
+- The signature is GitHub's key, not yours. It shows Verified, but upstream
+  CONTRIBUTING item 3 asks for a key registered to your account, so this path
+  has not been cleared with Joshua. (This fork's own CONTRIBUTING numbers its
+  items differently.)
 
 This happened with #192: its squash commit `e28e832` on `upstream/glmgampoi-r`
 carries #192's whole description as its message.
@@ -99,7 +106,8 @@ GitHub's Verified badge is what upstream checks.
   ```sh
   git fetch origin pull/192/head:pr62-next upstream/glmgampoi-r
   git switch pr62-next
-  git rebase --exec 'git commit --amend --no-edit -S' efe1df1
+  git merge-base --is-ancestor efe1df1 HEAD &&
+    git rebase --exec 'git commit --amend --no-edit -S' efe1df1
   git log --format='%h %G? %s' efe1df1..HEAD           # see the table above
   git diff --stat origin/upstream/glmgampoi-r HEAD     # expect no output
   git push --force-with-lease=upstream/glmgampoi-r:e28e832fd52466f5192406025fe6b16d9fd99ae1 \
@@ -108,6 +116,11 @@ GitHub's Verified badge is what upstream checks.
 
   The lease names `e28e832`, so the push is refused if anything else has
   landed there since.
+
+## Superseded branches
+
+Kept for the record. Do not re-sign or push them.
+
 - `wip/pr62-theta` is superseded: #192 carried its theta commit on PR 62's
   reviewed head `efe1df1`, and was squash-merged as `e28e832`. Its other two
   commits are PR 62's, rebased onto upstream `78ffc2f` after review had
