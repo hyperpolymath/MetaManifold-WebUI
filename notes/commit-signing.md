@@ -91,8 +91,23 @@ GitHub's Verified badge is what upstream checks.
 
 ## Branches known to need re-signing
 
-None at present.
+- `refs/pull/192/head` (`10e099b`): #192's three unsigned commits on PR 62's
+  reviewed head `efe1df1`. They are to replace the squash commit `e28e832` on
+  `upstream/glmgampoi-r` (owner's call, 2026-10-20); the tree is identical.
+  GitHub keeps a merged PR's head ref after its branch is deleted, so:
 
+  ```sh
+  git fetch origin pull/192/head:pr62-next upstream/glmgampoi-r
+  git switch pr62-next
+  git rebase --exec 'git commit --amend --no-edit -S' efe1df1
+  git log --format='%h %G? %s' efe1df1..HEAD           # see the table above
+  git diff --stat origin/upstream/glmgampoi-r HEAD     # expect no output
+  git push --force-with-lease=upstream/glmgampoi-r:e28e832fd52466f5192406025fe6b16d9fd99ae1 \
+      origin pr62-next:upstream/glmgampoi-r
+  ```
+
+  The lease names `e28e832`, so the push is refused if anything else has
+  landed there since.
 - `wip/pr62-theta` is superseded: #192 carried its theta commit on PR 62's
   reviewed head `efe1df1`, and was squash-merged as `e28e832`. Its other two
   commits are PR 62's, rebased onto upstream `78ffc2f` after review had
