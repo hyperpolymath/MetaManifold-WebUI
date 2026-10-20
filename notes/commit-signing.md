@@ -18,7 +18,8 @@ on 2026-10-19.
 
 ## The routine
 
-On the machine with your key, for a branch a session prepared:
+On the machine with your key, for a branch a session prepared before review
+started, or after Joshua asked for a rebase:
 
 ```sh
 git fetch upstream main                      # JoshuaJewell/MetaManifold-WebUI
@@ -28,6 +29,46 @@ git rebase --exec 'git commit --amend --no-edit -S' upstream/main
 git log --format='%h %G? %s' upstream/main..HEAD   # see the table below
 git push --force-with-lease origin <branch>  # before review, or after a requested rebase
 ```
+
+The `--exec` line replays every commit after `upstream/main` onto its tip, so on
+a branch that started from an older `main` it is itself a rebase, whether or not
+the line before it ran.
+
+### A PR already under review
+
+Once review has started, re-sign only the commits added since the head Joshua
+reviewed, and push them as a fast-forward; the reviewed commits keep their
+hashes and signatures:
+
+```sh
+git fetch origin <prepared-branch> <pr-branch>      # this fork
+git switch -c <local> origin/<prepared-branch>
+git rebase --exec 'git commit --amend --no-edit -S' <reviewed-head>
+git log --format='%h %G? %s' <reviewed-head>..HEAD  # see the table below
+git push origin <local>:<pr-branch>                 # fast-forward: no --force
+```
+
+`<reviewed-head>` is the PR's head commit when the review was given. A prepared
+branch must start there; if it does not, the push is refused as a non
+fast-forward, and nothing is rewritten.
+
+### Squash-merging the fork PR instead
+
+Squash-merging a fork PR into `upstream/<topic>` on GitHub also works: GitHub
+signs the squash commit (Verified, with its own key) and the upstream PR moves
+forward by that one commit. Three things change:
+
+- The prepared commits become one, so their separate messages are lost.
+- The squash commit's message defaults to the fork PR's title and description,
+  fork-internal notes and `(#NNN)` fork references included, and it lands on
+  Joshua's `main` unchanged. Replace it in the merge dialog with a message that
+  stands on its own upstream (CONTRIBUTING item 8).
+- The signature is GitHub's key, not yours. It shows Verified, but item 3 asks
+  for a key registered to your account, so this path has not been cleared with
+  Joshua.
+
+This happened with #192: its squash commit `e28e832` on `upstream/glmgampoi-r`
+carries #192's whole description as its message.
 
 What `%G?` prints, and what to do:
 
@@ -50,4 +91,10 @@ GitHub's Verified badge is what upstream checks.
 
 ## Branches known to need re-signing
 
-- `wip/pr62-theta` (3 unsigned commits, 2026-10-19), if it becomes a PR.
+None at present.
+
+- `wip/pr62-theta` is superseded: #192 carried its theta commit on PR 62's
+  reviewed head `efe1df1`, and was squash-merged as `e28e832`. Its other two
+  commits are PR 62's, rebased onto upstream `78ffc2f` after review had
+  started, so it should not be pushed to `upstream/glmgampoi-r`. Kept, not
+  deleted.
