@@ -16,6 +16,8 @@
 #   * Durable write-ahead journal; immutable DOI/provenance receipts
 #   * DOI insertion never rewrites scientific objects
 
+module DOI
+
 using Dates, SHA, HTTP, JSON3, Logging
 
 export DOIConfig, Deposition, PublicationReceipt,
@@ -678,4 +680,4 @@ function publish_study(config::DOIConfig, study::AbstractString, run::AbstractSt
     return receipt
 end
 
-end
+end # module DOI
