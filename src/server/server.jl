@@ -104,6 +104,9 @@ module Server
     include(joinpath(@__DIR__, "routes", "analysis.jl"))
     include(joinpath(@__DIR__, "routes", "read_funnel.jl"))
     include(joinpath(@__DIR__, "routes", "composition.jl"))
+    # Evidence Mode builds on the composition library (category projections)
+    # and the analysis helpers, so it follows composition.jl.
+    include(joinpath(@__DIR__, "routes", "evidence.jl"))
     include(joinpath(@__DIR__, "routes", "publication_tables.jl"))
     include(joinpath(@__DIR__, "routes", "trees.jl"))
     include(joinpath(@__DIR__, "routes", "report.jl"))
@@ -154,7 +157,7 @@ module Server
     _analysis_source() = get(task_local_storage(), :mm_analysis_source, nothing)
 
     function _request_source(req::HTTP.Request)
-        occursin(r"/(analysis|composition)(/|\?|$)", req.target) || return nothing
+        occursin(r"/(analysis|composition|evidence)(/|\?|$)", req.target) || return nothing
         q = get(HTTP.queryparams(HTTP.URI(req.target)), "source", nothing)
         if isnothing(q) && req.method == "POST" && !isempty(req.body)
             body = try JSON3.read(String(copy(req.body))) catch; nothing end

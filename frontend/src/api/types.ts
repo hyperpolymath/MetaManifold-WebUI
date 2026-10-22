@@ -391,22 +391,31 @@ export interface DifferentialRequest {
   aggregate?: boolean
 }
 
-/** `ok` and `boundary` rows carry statistics; `failed` and `filtered` rows say why not. */
-export type DifferentialStatus = 'ok' | 'boundary' | 'failed' | 'filtered'
+/**
+ * `ok` and `boundary` rows carry statistics; `failed` and `filtered` rows say
+ * why not. `reference` marks the multinomial models' reference taxon, which is
+ * the denominator of every log ratio and so carries no test.
+ */
+export type DifferentialStatus = 'ok' | 'boundary' | 'failed' | 'filtered' | 'reference'
 
 export interface DifferentialRow {
   taxon: string
   status: DifferentialStatus
   note: string
   /**
-   * nb_glm: natural-log fold change, contrast over reference. clr_welch: mean
-   * CLR of contrast minus mean CLR of reference, which is not a fold change.
+   * nb_glm: natural-log fold change, contrast over reference. multinomial and
+   * dirichlet_multinomial: natural-log fold change in relative abundance
+   * against the reference taxon. clr_welch: mean CLR of contrast minus mean CLR
+   * of reference, which is not a fold change.
    */
   estimate: number | null
-  /** nb_glm only; null for clr_welch. */
+  /**
+   * nb_glm, multinomial and dirichlet_multinomial; null for clr_welch and for
+   * the reference taxon's own row.
+   */
   log2_fold_change: number | null
   standard_error: number | null
-  /** z (nb_glm) or Welch's t (clr_welch). */
+  /** z (nb_glm, multinomial, dirichlet_multinomial) or Welch's t (clr_welch). */
   statistic: number | null
   pvalue: number | null
   /** Benjamini-Hochberg adjusted; null outside the tested family. */
@@ -416,7 +425,8 @@ export interface DifferentialRow {
   prevalence: number
 }
 
-export type DifferentialMethod = 'nb_glm' | 'clr_welch'
+export type DifferentialMethod =
+  | 'nb_glm' | 'clr_welch' | 'multinomial' | 'dirichlet_multinomial'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -432,7 +442,10 @@ export interface DifferentialResult {
   groups: { reference: string; contrast: string }
   n_samples: Record<string, number>
   effect: DifferentialEffect
-  /** Empty for clr_welch, which takes no library-size offset. */
+  /**
+   * Empty for clr_welch, multinomial and dirichlet_multinomial, none of which
+   * takes a library-size offset.
+   */
   size_factors: { sample: string; group: string; factor: number }[]
   config: {
     method: DifferentialMethod
@@ -446,6 +459,16 @@ export interface DifferentialResult {
     replacement_delta?: number
     /** Null uses GBM's estimated concentration; positive values override it. */
     bayesian_alpha?: number | null
+    /** multinomial and dirichlet_multinomial: the taxon every ratio is against. */
+    mn_reference_taxon?: string
+    /** multinomial and dirichlet_multinomial: L2 penalty on the log-odds. */
+    mn_penalty?: number
+    /** dirichlet_multinomial only: how the concentration was estimated. */
+    dm_overdispersion_method?: 'mle' | 'mom'
+    /** multinomial and dirichlet_multinomial: the optimiser settings used. */
+    tolerance?: number
+    max_iter?: number
+    max_seconds?: number
   }
   diagnostics: {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
@@ -460,6 +483,15 @@ export interface DifferentialResult {
         family: 'Dirichlet'; prior_mean: string; shape: string; adjustments: string
         concentration: { sample: string; value: number }[]
       }
+    }
+    /** multinomial and dirichlet_multinomial only. */
+    model?: {
+      reference_taxon: string; penalty: number; n_parameters: number; iterations: number
+      converged: boolean; log_likelihood: number; runtime_seconds: number; n_taxa_fitted: number
+    }
+    /** dirichlet_multinomial only: c and theta = 1 / (1 + c) in (0, 1). */
+    overdispersion?: {
+      method: 'mle' | 'mom'; concentration: number; theta: number; at_bound: boolean
     }
   }
   rows: DifferentialRow[]
