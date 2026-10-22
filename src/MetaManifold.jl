@@ -19,6 +19,9 @@ include("core/validate.jl")
 include("core/project.jl")
 include("core/categories.jl")
 include("core/composition_library.jl")
+# Evidence Mode: the epistemic record of a run (claims, fibres, residuals).
+# Reads existing results and provenance; writes only into evidence/.
+include("core/evidence.jl")
 include("core/primers_library.jl")
 include("core/databases_library.jl")
 
