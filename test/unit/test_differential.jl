@@ -173,10 +173,19 @@ end
         @test_throws ArgumentError DifferentialConfig("tss", NaN)
         @test DifferentialConfig().method == "nb_glm"
         @test DifferentialConfig().replacement_delta == 0.65
+        @test DifferentialConfig().replacement_method == "bayesian_multiplicative"
+        @test isnothing(DifferentialConfig().bayesian_alpha)
         @test DifferentialConfig(; method="clr_welch", replacement_delta=0.3).replacement_delta == 0.3
         @test DifferentialConfig(; method="zinb").method == "zinb"
         @test DifferentialConfig(; method="hurdle_nb").method == "hurdle_nb"
-        @test_throws ArgumentError DifferentialConfig(; method="occupancy") # repeated visits use fit_occupancy
+        @test_throws ArgumentError DifferentialConfig(; method="occupancy") # repeat visits use fit_occupancy
+        @test DifferentialConfig(method="clr_welch",
+            replacement_method=" MULTIPLICATIVE_REPLACEMENT ").replacement_method == "multiplicative_replacement"
+        @test DifferentialConfig(method="clr_welch", bayesian_alpha=2.5).bayesian_alpha == 2.5
+        @test_throws ArgumentError DifferentialConfig(replacement_method="pseudocount")
+        for alpha in (0, -1, NaN, Inf, true)
+            @test_throws ArgumentError DifferentialConfig(method="clr_welch", bayesian_alpha=alpha)
+        end
         @test_throws ArgumentError DifferentialConfig(; method="ancombc")
         # The pre-review name, never released, is not accepted.
         @test_throws ArgumentError DifferentialConfig(; method="clr_lm")
@@ -189,9 +198,16 @@ end
         @test_throws ArgumentError DifferentialConfig(method="clr_welch", dispersion="glmGamPoi")
         @test_throws ArgumentError DifferentialConfig(method="zinb", dispersion="glmGamPoi")
         @test DifferentialConfig(method="clr_welch").dispersion == "ml"
-        for d in (0, 1, -0.5, NaN)
+        for d in (0, 1, -0.5, NaN, Inf)
             @test_throws ArgumentError DifferentialConfig(; method="clr_welch", replacement_delta=d)
         end
+        @test occursin("underflow", only(MetaManifold.Differential._delta_warnings(0.005)))
+        @test occursin("substantial mass", only(MetaManifold.Differential._delta_warnings(0.9)))
+        @test isempty(MetaManifold.Differential._delta_warnings(0.65))
+        @test_throws ArgumentError replace_zeros([0 1; 2 3]; frac=0)
+        @test_throws ArgumentError replace_zeros([0 1; 2 3]; frac=1)
+        @test_throws ArgumentError replace_zeros([0 1; 2 3]; alpha=0)
+        @test_throws ArgumentError replace_zeros([0 1; 2 3]; method="pseudocount")
     end
 
     @testset "Input validation" begin
@@ -311,6 +327,46 @@ end
                 @test r["statistic"] ≈ direct[3] rtol=1e-6
                 @test r["pvalue"] ≈ direct[4] rtol=1e-6
                 @test r["dispersion_theta"] ≈ theta rtol=1e-6
+            end
+        end
+    end
+
+    @testset "glmGamPoi dispersion parity on two additional count scales" begin
+        if !HAVE_GLMGAMPOI
+            @test_skip false
+        else
+            # Together with the unscaled fixture above, these are three
+            # independent end-to-end comparisons against the R reference.
+            for counts in (2 .* effect, 3 .* effect)
+                off = log.(tss_factors(counts, effect_samples))
+                rows = fit_nb(counts, effect_groups, off; levels=("A", "B"), dispersion="glmGamPoi")
+                g = effect_groups
+                phi = rcopy(R"""
+                    local({
+                      gp <- glmGamPoi::glm_gp(t($counts),
+                              design = model.matrix(~ factor($g, levels = c("A", "B"))),
+                              size_factors = exp($off), overdispersion_shrinkage = TRUE)
+                      as.numeric(gp$overdispersion_shrinkage_list$dispersion_trend)
+                    })
+                """)
+                for j in axes(counts, 2)
+                    y = counts[:, j]
+                    theta = 1 / phi[j]
+                    direct = rcopy(R"""
+                        local({
+                          fit <- glm($y ~ factor($g, levels = c("A", "B")) + offset($off),
+                                     family = MASS::negative.binomial(theta = $theta),
+                                     control = glm.control(maxit = 100))
+                          unname(summary(fit, dispersion = 1)$coefficients[2, ])
+                        })
+                    """)
+                    @test rows.status[j] == "ok"
+                    @test rows.estimate[j] ≈ direct[1] rtol=1e-6
+                    @test rows.se[j] ≈ direct[2] rtol=1e-6
+                    @test rows.statistic[j] ≈ direct[3] rtol=1e-6
+                    @test rows.pvalue[j] ≈ direct[4] rtol=1e-6
+                    @test rows.theta[j] ≈ theta rtol=1e-6
+                end
             end
         end
     end
@@ -457,6 +513,59 @@ end
         end
         for dispersion in ("shrinkage", "", nothing, 1, true, ["ml"])
             @test !isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
+        end
+        for method in Differential.REPLACEMENT_METHODS
+            @test isnothing(SV._config_value_error("analysis.differential.replacement_method", method))
+            @test isnothing(SV._config_value_error("analysis.differential.replacement_method", "  $(uppercase(method)) "))
+        end
+        @test !isnothing(SV._config_value_error("analysis.differential.replacement_method", "pseudocount"))
+        for delta in (0.01, 0.65, 0.99)
+            @test isnothing(SV._config_value_error("analysis.differential.replacement_delta", delta))
+        end
+        for delta in (0, 1, -0.1, Inf, NaN, true, "0.65", nothing)
+            @test !isnothing(SV._config_value_error("analysis.differential.replacement_delta", delta))
+        end
+        @test isnothing(SV._config_value_error("analysis.differential.bayesian_alpha", nothing))
+        @test isnothing(SV._config_value_error("analysis.differential.bayesian_alpha", 0.5))
+        for alpha in (0, -1, Inf, NaN, true, "1", [])
+            @test !isnothing(SV._config_value_error("analysis.differential.bayesian_alpha", alpha))
+        end
+    end
+
+    @testset "Config PATCH validates and records advanced zero handling" begin
+        SV = MetaManifold.Server
+        _da_fixture() do
+            url = "/api/v1/studies/studyD/config"
+            path = joinpath(SV.ServerState._root[], "data", "studyD", "pipeline.yml")
+            response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", url,
+                ["Content-Type" => "application/json"], JSON3.write(Dict(
+                    "analysis.differential.replacement_method" => " MULTIPLICATIVE_REPLACEMENT ",
+                    "analysis.differential.replacement_delta" => 0.7,
+                    "analysis.differential.bayesian_alpha" => 2.5))))
+            @test response.status == 200
+            body = JSON3.read(String(response.body))
+            @test body["analysis.differential.replacement_method"].value == "multiplicative_replacement"
+            saved = YAML.load_file(path)["analysis"]["differential"]
+            @test saved["replacement_method"] == "multiplicative_replacement"
+            @test saved["replacement_delta"] == 0.7 && saved["bayesian_alpha"] == 2.5
+
+            response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", url,
+                ["Content-Type" => "application/json"], JSON3.write(Dict(
+                    "analysis.differential.bayesian_alpha" => nothing))))
+            @test response.status == 200
+            @test YAML.load_file(path)["analysis"]["differential"]["bayesian_alpha"] === nothing
+
+            before = read(path, String)
+            for (key, value) in (("analysis.differential.replacement_delta", 0),
+                                 ("analysis.differential.replacement_delta", 1),
+                                 ("analysis.differential.bayesian_alpha", -1),
+                                 ("analysis.differential.replacement_method", "pseudocount"))
+                response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", url,
+                    ["Content-Type" => "application/json"], JSON3.write(Dict(key => value))))
+                @test response.status == 400
+                @test JSON3.read(String(response.body)).error == "invalid_config_value"
+                @test read(path, String) == before
+            end
         end
     end
 
@@ -775,35 +884,93 @@ end
             effect_taxa, ["A", "A", "B"]; reference="A", contrast="B", config=clr_config)
     end
 
-    @testset "Zero replacement matches a direct zCompositions::cmultRepl call" begin
+    @testset "Zero replacement matches direct zCompositions calls on three datasets" begin
         if !HAVE_ZCOMP
             @test_skip false
         else
-            x = [0 3 0 12 5; 7 0 1 0 9; 2 2 2 2 2; 0 6 4 30 1; 5 1 0 3 0]
-            out = replace_zeros(x; frac=0.65)
-            direct = rcopy(R"""
-                as.matrix(zCompositions::cmultRepl($(Float64.(x)), label = 0, method = "GBM",
-                          output = "prop", frac = 0.65, z.warning = 1, z.delete = FALSE,
-                          suppress.print = TRUE))
-            """)
-            @test out.proportions ≈ direct rtol=1e-12
-            @test out.zeros_replaced == count(==(0), x)
-            @test all(>(0), out.proportions)
-            @test vec(sum(out.proportions; dims=2)) ≈ ones(5)
-            # The ratios among a sample's observed taxa are kept.
-            @test out.proportions[1, 2] / out.proportions[1, 4] ≈ 3 / 12
-            # A sample without zeros is its closure; it has no imputed mass.
-            @test out.proportions[3, :] ≈ fill(0.2, 5)
-            @test out.imputed_mass[3] == 0.0
-            @test out.imputed_mass[1] ≈ out.proportions[1, 1] + out.proportions[1, 3]
-            # No zero at all: cmultRepl is not called, the closure is returned.
-            @test replace_zeros([1 3; 2 2]).proportions ≈ [0.25 0.75; 0.5 0.5]
+            datasets = (
+                [0 3 0 12 5; 7 0 1 0 9; 2 2 2 2 2; 0 6 4 30 1; 5 1 0 3 0],
+                [0 1 0 4; 2 0 3 1; 5 2 0 0; 1 3 2 2; 0 4 1 3],
+                [0 0 5; 1 0 4; 2 3 0; 0 2 3; 4 1 0; 2 2 2],
+            )
+            scenarios = (("bayesian_multiplicative", nothing),
+                         ("bayesian_multiplicative", 2.5),
+                         ("multiplicative_replacement", nothing))
+            for x in datasets, (method, alpha) in scenarios
+                out = replace_zeros(x; method, frac=0.65, alpha)
+                totals = vec(sum(Float64.(x); dims=1))
+                prior = [(totals[j] - x[i, j]) / (sum(totals) - sum(x[i, :]))
+                         for i in axes(x, 1), j in axes(x, 2)]
+                concentration = [isnothing(alpha) ? exp(-sum(log.(prior[i, :])) / size(x, 2)) :
+                                 Float64(alpha) for i in axes(x, 1)]
+                direct = if method == "multiplicative_replacement"
+                    rcopy(R"""
+                        as.matrix(zCompositions::cmultRepl($(Float64.(x)), label = 0, method = "CZM",
+                                  output = "prop", frac = 0.65, z.warning = 1, z.delete = FALSE,
+                                  suppress.print = TRUE))
+                    """)
+                elseif isnothing(alpha)
+                    rcopy(R"""
+                        as.matrix(zCompositions::cmultRepl($(Float64.(x)), label = 0, method = "GBM",
+                                  output = "prop", frac = 0.65, z.warning = 1, z.delete = FALSE,
+                                  suppress.print = TRUE))
+                    """)
+                else
+                    rcopy(R"""
+                        as.matrix(zCompositions::cmultRepl($(Float64.(x)), label = 0, method = "user",
+                                  output = "prop", frac = 0.65, t = $prior, s = $concentration,
+                                  z.warning = 1, z.delete = FALSE, suppress.print = TRUE))
+                    """)
+                end
+                @test out.proportions ≈ direct rtol=1e-12 atol=1e-14
+                @test out.zeros_replaced == count(==(0), x)
+                @test out.method == method && out.delta == 0.65 && out.alpha == alpha
+                @test all(>(0), out.proportions)
+                @test vec(sum(out.proportions; dims=2)) ≈ ones(size(x, 1))
+                # Every observed pair in every sample keeps its original ratio.
+                for i in axes(x, 1), j in axes(x, 2), k in axes(x, 2)
+                    if x[i, j] > 0 && x[i, k] > 0
+                        @test out.proportions[i, j] / out.proportions[i, k] ≈ x[i, j] / x[i, k] rtol=1e-10
+                    end
+                end
+                if method == "multiplicative_replacement"
+                    @test isnothing(out.posterior)
+                else
+                    @test out.posterior.prior_mean ≈ prior rtol=1e-12
+                    @test out.posterior.concentration ≈ concentration rtol=1e-12
+                    # The returned parameters are sufficient to reconstruct a
+                    # zero's Dirichlet marginal, independently of the output.
+                    i, j = 1, findfirst(==(0), x[1, :])
+                    shape = concentration[i] * prior[i, j]
+                    total_shape = sum(x[i, :]) + concentration[i]
+                    variance = shape * (total_shape - shape) / (total_shape^2 * (total_shape + 1))
+                    @test 0 < variance < 1
+                end
+            end
 
-            msg = try replace_zeros([0 3 4; 1 0 5; 0 2 6]; taxa=["lone", "q", "r"]); "" catch e; e.msg end
+            # A sample without zeros is its closure; it has no imputed mass.
+            first_out = replace_zeros(datasets[1]; frac=0.65)
+            @test first_out.proportions[3, :] ≈ fill(0.2, 5)
+            @test first_out.imputed_mass[3] == 0.0
+            @test first_out.imputed_mass[1] ≈ first_out.proportions[1, 1] + first_out.proportions[1, 3]
+            # No zero at all: cmultRepl is not called, the closure is returned.
+            no_zero = replace_zeros([1 3; 2 2])
+            @test no_zero.proportions ≈ [0.25 0.75; 0.5 0.5]
+            @test isnothing(no_zero.posterior)
+
+            sparse = [0 3 4; 1 0 5; 0 2 6]
+            msg = try replace_zeros(sparse; taxa=["lone", "q", "r"]); "" catch e; e.msg end
             @test occursin("'lone'", msg) && occursin("min_prevalence", msg)
+            # CZM does not use the leave-one-out prior, so a taxon observed in
+            # one sample is valid; a taxon never observed is still refused.
+            @test all(>(0), replace_zeros(sparse; method="multiplicative_replacement").proportions)
+            @test_throws ArgumentError replace_zeros([0 1; 0 2; 0 3]; method="multiplicative_replacement")
             msg = try replace_zeros([0 0; 3 4; 1 2]; samples=["empty", "b", "c"]); "" catch e; e.msg end
             @test occursin("'empty'", msg)
             @test_throws ArgumentError replace_zeros(reshape([1, 2, 3], 3, 1))
+            @test_throws ArgumentError replace_zeros([0 1])
+            @test any(occursin("underflow", w) for w in replace_zeros(datasets[1]; frac=0.005).warnings)
+            @test any(occursin("substantial mass", w) for w in replace_zeros(datasets[1]; frac=0.9).warnings)
         end
     end
 
@@ -867,6 +1034,44 @@ end
 
             @test_throws ArgumentError differential_abundance(x[:, [1, 5]], s, ["p", "ghost"], g;
                 reference="A", contrast="B", config=clr_config)
+        end
+    end
+
+    @testset "CLR: replacement policy and Bayesian alpha are honoured end to end" begin
+        if !HAVE_ZCOMP
+            @test_skip false
+        else
+            x = [10 20 2; 12 18 0; 11 19 3; 30 8 0; 28 9 4; 33 7 5]
+            s = ["s$i" for i in 1:6]
+            taxa = ["p", "q", "r"]
+            g = ["A", "A", "A", "B", "B", "B"]
+            for (method, alpha, r_name) in (("multiplicative_replacement", nothing, "CZM"),
+                                            ("bayesian_multiplicative", 2.5, "user"))
+                config = DifferentialConfig("tss", 0.5; method="clr_welch",
+                    replacement_method=method, bayesian_alpha=alpha)
+                res = differential_abundance(x, s, taxa, g; reference="A", contrast="B", config)
+                @test res["config"]["replacement_method"] == method
+                @test res["config"]["bayesian_alpha"] == alpha
+                @test occursin("($r_name, frac = 0.65", res["method"])
+                zr = res["diagnostics"]["zero_replacement"]
+                @test zr["method"] == "zCompositions::cmultRepl ($r_name)"
+                @test zr["alpha"] == alpha
+                if method == "bayesian_multiplicative"
+                    @test zr["posterior"]["family"] == "Dirichlet"
+                    @test length(zr["posterior"]["concentration"]) == 6
+                    @test all(row -> row["value"] == 2.5, zr["posterior"]["concentration"])
+                else
+                    @test !haskey(zr, "posterior")
+                end
+                replaced = replace_zeros(x; method, alpha)
+                z = clr_transform(replaced.proportions)
+                a = g .== "A"
+                byt = Dict(r["taxon"] => r for r in res["rows"])
+                for (j, taxon) in enumerate(taxa)
+                    expected = sum(z[.!a, j]) / 3 - sum(z[a, j]) / 3
+                    @test byt[taxon]["estimate"] ≈ expected rtol=1e-8
+                end
+            end
         end
     end
 
@@ -995,7 +1200,7 @@ end
         _da_fixture() do
             root = MetaManifold.Server.ServerState._root[]
             write(joinpath(root, "data", "studyD", "pipeline.yml"),
-                  "analysis:\n  differential:\n    method: clr_welch\n    replacement_delta: 0.5\n")
+                  "analysis:\n  differential:\n    method: clr_welch\n    replacement_method: multiplicative_replacement\n    replacement_delta: 0.5\n    bayesian_alpha: ~\n")
             r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
                                         "table" => "merged", "rank" => "Genus"))
             body = JSON3.read(String(r.body))
@@ -1006,6 +1211,9 @@ end
                 @test r.status == 200
                 @test body.effect.key == "estimate" && body.effect.label == "CLR difference"
                 @test body.config.method == "clr_welch" && body.config.replacement_delta == 0.5
+                @test body.config.replacement_method == "multiplicative_replacement"
+                @test body.config.bayesian_alpha === nothing
+                @test body.diagnostics.zero_replacement.method == "zCompositions::cmultRepl (CZM)"
                 @test isempty(body.size_factors)
                 @test body.diagnostics.zero_replacement.zeros_replaced == 0
                 @test body.diagnostics.zero_replacement.median_imputed_fraction == 0
@@ -1013,10 +1221,26 @@ end
                 @test byt["Up"].estimate > 0 && byt["Down"].estimate < 0
                 @test all(x -> x.log2_fold_change === nothing, body.rows)
                 @test occursin("CLR difference", body.figure.layout.xaxis.title)
+
+                write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                      "analysis:\n  differential:\n    method: clr_welch\n    replacement_method: bayesian_multiplicative\n    bayesian_alpha: 2.5\n")
+                response = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                                   "table" => "merged", "rank" => "Genus"))
+                @test response.status == 200
+                custom = JSON3.read(String(response.body))
+                @test custom.config.bayesian_alpha == 2.5
+                @test occursin("(user, frac = 0.65, alpha = 2.5)", custom.method)
             end
 
             write(joinpath(root, "data", "studyD", "pipeline.yml"),
                   "analysis:\n  differential:\n    method: clr_welch\n    replacement_delta: 1.5\n")
+            r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                        "table" => "merged", "rank" => "Genus"))
+            @test r.status == 400
+            @test JSON3.read(String(r.body)).error == "invalid_config"
+
+            write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                  "analysis:\n  differential:\n    method: clr_welch\n    bayesian_alpha: 0\n")
             r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
                                         "table" => "merged", "rank" => "Genus"))
             @test r.status == 400

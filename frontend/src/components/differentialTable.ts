@@ -41,14 +41,18 @@ export function formatStat(value: number | null): string {
 
 /**
  * The settings line of the CSV: the method and the parameters it used. The
- * offset belongs to nb_glm and the replacement delta to clr_welch, so each line
- * names only its own method's parameters.
+ * offset belongs to nb_glm; replacement method, delta and alpha belong to
+ * clr_welch, so each line names only its own method's parameters.
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
-  return c.method === 'clr_welch'
-    ? `method clr_welch, replacement_delta ${c.replacement_delta}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
-    : `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+  if (c.method !== 'clr_welch')
+    return `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+  const replacement = c.replacement_method ?? 'bayesian_multiplicative'
+  const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
+    ? 'estimated' : String(c.bayesian_alpha)
+  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}, ` +
+    `bayesian_alpha ${alpha}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */

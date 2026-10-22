@@ -260,30 +260,30 @@ not exclude samples from this analysis.
 - `nb_glm` (default): a negative-binomial GLM per taxon using `MASS::glm.nb`,
   with a library-size offset. The effect is log2 fold change; positive values
   indicate greater abundance in the second condition. `offset` selects `tss`
-  (default) or `rle` scaling.
+  (default) or `rle`; `dispersion` selects maximum-likelihood theta or a
+  cross-taxon `glmGamPoi` trend.
 - `zinb`: a zero-inflated negative-binomial model with separate logistic
   zero and count components, a count-component library-size offset, a joint
-  two-degree-of-freedom likelihood-ratio test, and BH correction.
+  2-df likelihood-ratio test, and BH correction.
 - `hurdle_nb`: a logistic occurrence model plus zero-truncated NB counts for
   positive observations. It uses the same joint test and offset convention.
+- `clr_welch`: Welch's t-test on centred log-ratios after zero replacement with
+  `zCompositions::cmultRepl`. The effect is a CLR difference, not a fold change.
+  `replacement_method` selects Bayesian-multiplicative (GBM, default) or
+  multiplicative (CZM) replacement; `replacement_delta` sets the replacement
+  fraction and optional `bayesian_alpha` overrides GBM's concentration. The
+  offset is not used. See [zero-handling notes](docs/statistics/zero-handling.md).
 
-ZINB and hurdle models are more flexible than NB and can overfit sparse data;
-prefer them only when diagnostics support excess zeros. They report a count
-process fold change and the zero-process coefficient separately. The public
-`MetaManifold.Differential.fit_occupancy` lower-level estimator is available for
-explicit repeated-visit detection histories (sites × visits × taxa). It refuses
-single-visit histories because occupancy and detection are not separately
-identified from one observation without strong external assumptions. Occupancy
-is not yet selectable in the standard analysis configuration or UI, and the
-current fitter has no detection covariates; do not use it as a substitute for
-the full occupancy workflow tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
+ZINB and hurdle models can overfit sparse data; do not select ZINB solely
+because counts are sparse. Compare against NB diagnostics. The methods report
+a count-process effect and the zero-process coefficient; this is not proof of
+biological structural absence. The public
+`MetaManifold.Differential.fit_occupancy` lower-level estimator accepts
+repeated-visit detection histories (sites × visits × taxa), refuses single-visit
+histories and is not selectable in the standard analysis configuration or UI.
+It currently has no detection covariates. Do not use it as a substitute for
+the full workflow tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
 See [occupancy model notes](docs/occupancy-models.md).
-
-- `clr_welch`: Welch's t-test on centred log-ratios after multiplicative zero
-  replacement with `zCompositions::cmultRepl`. The effect is a CLR difference,
-  not a fold change. `replacement_delta` controls the replacement fraction
-  (default 0.65); `offset` is not used.
-
 Across the differential methods, `min_prevalence` (default 0) filters taxa by the fraction of
 samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
 that produced a p-value. Failed or filtered taxa have no substitute p-value;
@@ -628,6 +628,13 @@ analysis:
   beta:                          # Bray-Curtis for NMDS and PERMANOVA
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
+  differential:
+    method: nb_glm               # nb_glm | clr_welch
+    dispersion: ml               # nb_glm: ml | glmGamPoi
+    replacement_method: bayesian_multiplicative
+                                 # clr_welch: bayesian_multiplicative | multiplicative_replacement
+    replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
+    bayesian_alpha: ~            # clr_welch: null (GBM estimate) or a number > 0
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
 ```
