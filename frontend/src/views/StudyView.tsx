@@ -16,10 +16,11 @@ import { TreesPanel } from '../components/TreesPanel'
 import { PlacementPanel } from '../components/PlacementPanel'
 import { ReportPanel } from '../components/ReportPanel'
 import { useNavRefresh } from '../hooks/useNavRefresh'
+import { CladeCumulusPanel } from '../cladistics/CladeCumulusPanel'
 
 type GroupedRun = Run & { group?: string | null }
 
-const VIEWS = ['runs', 'analysis-dada2', 'analysis-vsearch', 'trees', 'report', 'config'] as const
+const VIEWS = ['runs', 'analysis-dada2', 'analysis-vsearch', 'cladistics', 'trees', 'report', 'config'] as const
 type StudyTab = (typeof VIEWS)[number]
 
 type Dialog =
@@ -91,6 +92,7 @@ export function StudyView() {
     ...(runs ?? []).map(r => ({ run: r.name, group: null, subgroups: r.pooled ? r.subgroups : [] })),
     ...groupRuns.map(r => ({ run: r.name, group: r.group ?? null, subgroups: r.pooled ? r.subgroups : [] })),
   ], [runs, groupRuns])
+  const cladisticsRuns = useMemo(() => placementRuns.map(r => ({ run: r.run, group: r.group })), [placementRuns])
   const [treesVersion, setTreesVersion] = useState(0)
 
   const jobFilter = useMemo(() => ({ study: study! }), [study])
@@ -211,7 +213,7 @@ export function StudyView() {
             disabled={v.startsWith('analysis') && !hasSource(v === 'analysis-dada2' ? 'DADA2' : 'VSEARCH')}
             title={v.startsWith('analysis') && !hasSource(v === 'analysis-dada2' ? 'DADA2' : 'VSEARCH')
               ? `No run has a results table with ${v === 'analysis-dada2' ? 'DADA2' : 'VSEARCH'} taxonomy yet` : undefined}>
-            {v === 'runs' ? 'Runs & Groups' : v === 'analysis-dada2' ? 'DADA2 analysis' : v === 'analysis-vsearch' ? 'VSEARCH analysis' : v === 'trees' ? 'Trees' : v === 'report' ? 'Report' : 'Config'}
+            {v === 'runs' ? 'Runs & Groups' : v === 'analysis-dada2' ? 'DADA2 analysis' : v === 'analysis-vsearch' ? 'VSEARCH analysis' : v === 'cladistics' ? 'Cladistics' : v === 'trees' ? 'Trees' : v === 'report' ? 'Report' : 'Config'}
           </button>
         ))}
       </div>
@@ -294,6 +296,8 @@ export function StudyView() {
         ? <AnalysisWorkspace key={view} study={study!} runs={allComparisonRuns}
             source={analysisSource} />
         : <p className="empty-state">No run has a results table with {analysisSource} taxonomy yet.</p>)}
+
+      {view === 'cladistics' && <CladeCumulusPanel key={study} study={study!} runs={cladisticsRuns} />}
 
       {view === 'trees' && <>
         <PlacementPanel study={study!} runs={placementRuns} onPublished={() => setTreesVersion(v => v + 1)} />

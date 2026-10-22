@@ -1203,10 +1203,8 @@ raise their conversion errors.
 """
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
-    # `something(nothing, nothing)` throws. Nullable settings must be able to
-    # use `nothing` as both their resolved value and their default.
-    val(k, d) = let v = get(get(resolved, k, (; value=d)), :value, d)
-        isnothing(v) ? d : v
+    val(k, d) = let value = get(get(resolved, k, (; value=d)), :value, d)
+        isnothing(value) ? d : value
     end
     alpha = val("analysis.differential.bayesian_alpha", nothing)
     reference = val("analysis.differential.mn_reference_taxon", nothing)
