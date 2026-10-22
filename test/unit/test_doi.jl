@@ -33,10 +33,10 @@
     end
 
     @testset "publish requires an enabled config" begin
-        cfg = load_doi_config()
+        cfg = DOIConfig()
         @test_throws ErrorException DOI.create_deposition(cfg, "study", "run")
         @test_throws ErrorException DOI.publish_deposition(
-            Deposition(1, "10.5281/zenodo.0", false, "", Dict{String,Any}[]); confirm=true)
+            cfg, Deposition(1, "10.5281/zenodo.0", false, "", Dict{String,Any}[]); confirm=true)
     end
 
     @testset "receipt checksum covers attestation content" begin
