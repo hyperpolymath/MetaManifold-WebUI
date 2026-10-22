@@ -54,6 +54,56 @@ describe('formatStat', () => {
   })
 })
 
+describe('multinomial results', () => {
+  const mn: DifferentialResult = {
+    ...result,
+    method: 'Multinomial logistic regression',
+    effect: { key: 'log2_fold_change', label: 'log2 fold change vs Bacteroides' },
+    size_factors: [],
+    config: {
+      method: 'multinomial', min_prevalence: 0.1, mn_reference_taxon: 'Bacteroides',
+      mn_penalty: 0.5, tolerance: 1e-8, max_iter: 500, max_seconds: 300,
+    },
+    diagnostics: {
+      n_taxa: 2, n_tested: 1, n_failed: 0, n_boundary: 0, n_filtered: 0,
+      model: {
+        reference_taxon: 'Bacteroides', penalty: 0.5, n_parameters: 2, iterations: 6,
+        converged: true, log_likelihood: -31.2, runtime_seconds: 0.02, n_taxa_fitted: 2,
+      },
+    },
+    rows: [
+      { ...result.rows[0], taxon: 'Bacteroides', status: 'reference', estimate: 0,
+        log2_fold_change: 0, standard_error: null, statistic: null, pvalue: null, padj: null,
+        dispersion_theta: null,
+        note: 'reference taxon: the denominator of every log ratio; its coefficient is fixed at zero, so it carries no test' },
+      { ...result.rows[1], taxon: 'Prevotella', status: 'ok', estimate: 1.1,
+        log2_fold_change: 1.6, standard_error: 0.2, statistic: 5.5, pvalue: 4e-8, padj: 4e-8, prevalence: 1 },
+    ],
+  }
+
+  test('the settings line names the reference taxon and the penalty', () => {
+    expect(configLine(mn)).toBe(
+      'method multinomial, reference Bacteroides, penalty 0.5, min_prevalence 0.1; ' +
+      'estimates are log2 fold changes against the reference taxon')
+  })
+
+  test('dirichlet_multinomial adds the overdispersion method to the line', () => {
+    const dm: DifferentialResult = {
+      ...mn,
+      config: { ...mn.config, method: 'dirichlet_multinomial', dm_overdispersion_method: 'mom' },
+    }
+    expect(configLine(dm)).toBe(
+      'method dirichlet_multinomial, overdispersion mom, reference Bacteroides, penalty 0.5, ' +
+      'min_prevalence 0.1; estimates are log2 fold changes against the reference taxon')
+  })
+
+  test('the reference taxon is exported with an empty statistic set, never a substitute', () => {
+    const lines = differentialCsv(mn).trimEnd().split('\r\n')
+    expect(lines[4].startsWith('Bacteroides,reference,0,0,,,,,,1,')).toBe(true)
+    expect(effectValue(mn, mn.rows[1])).toBe(1.6)
+  })
+})
+
 describe('clr_welch results', () => {
   const clr: DifferentialResult = {
     ...result,

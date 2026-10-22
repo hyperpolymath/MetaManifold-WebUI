@@ -35,6 +35,9 @@ include("pipeline/phylogeny.jl")
 # Analysis
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
+# The multinomial models are pure Julia and standalone; Differential uses them
+# for its multinomial and dirichlet_multinomial methods.
+include("analysis/compositional.jl")
 include("analysis/differential.jl")
 
 # Canonical JSON: deterministic bytes for hashing and content-addressing.

@@ -35,6 +35,10 @@ HAVE_GLMGAMPOI || @info "R, MASS or glmGamPoi unavailable - the shrunken-dispers
 const HAVE_ZCOMP = HAVE_R && _r_has("zCompositions")
 HAVE_ZCOMP || @info "R or zCompositions unavailable - the clr_welch tests are SKIPPED"
 
+# The multinomial models are a submodule of MetaManifold and need no R, so
+# these tests run everywhere.
+const CM = MetaManifold.CompositionalModels
+
 # Rows per run: Up is split over two ASVs so the route must pool them by genus.
 const _DA_ROWS = Dict(
     "runA" => [("s1", "Up", [3, 5, 4, 4]), ("s2", "Up", [2, 3, 2, 3]),
@@ -894,6 +898,410 @@ end
         end
     end
 
+
+    # ---- Multinomial and Dirichlet-multinomial regression -------------------
+    # The reference values below come from an independent numpy port of
+    # src/analysis/compositional.jl (same Newton steps, same alternation, same
+    # special functions), quoted to 12 digits, and from mpmath at 40 digits for
+    # the special functions themselves. They pin the models without R: MGLM's
+    # MGLMreg is what a reviewer should compare against, and the tables here are
+    # the gate that keeps the Julia and the reference implementation together.
+    #
+    # 6 samples x 4 taxa in two groups, taxon 1 as the reference: the sample is
+    # overdispersed, so the Dirichlet-multinomial beats the multinomial and its
+    # concentration is identifiable deep inside (CONCENTRATION_MIN, MAX).
+    mn_counts = [12 40 8 3; 9 51 11 2; 20 30 5 4; 3 18 22 9; 7 25 15 5; 11 12 9 20]
+    mn_design = [1.0 0.0; 1.0 0.0; 1.0 0.0; 1.0 1.0; 1.0 1.0; 1.0 1.0]
+    # 8 samples x 3 taxa whose counts are multinomial to the eye: nothing to
+    # overdisperse, so the Dirichlet concentration runs to its upper bound.
+    flat_counts = [5 30 50; 8 25 60; 6 35 45; 7 28 55;
+                   40 27 6; 55 33 4; 35 29 9; 60 31 5]
+    flat_design = [1.0 0.0; 1.0 0.0; 1.0 0.0; 1.0 0.0;
+                   1.0 1.0; 1.0 1.0; 1.0 1.0; 1.0 1.0]
+
+    @testset "Multinomial configuration" begin
+        # Both methods are selectable names, and the two are told apart from the
+        # per-taxon models by one tuple.
+        @test Differential.METHODS ==
+              ("nb_glm", "clr_welch", "multinomial", "dirichlet_multinomial")
+        @test Differential.COMPOSITIONAL_METHODS == ("multinomial", "dirichlet_multinomial")
+        c = DifferentialConfig(; method="multinomial")
+        @test c.method == "multinomial"
+        @test c.mn_reference_taxon === nothing
+        @test c.mn_penalty == 0.0
+        @test c.dm_overdispersion_method == "mle"
+        # The optimiser defaults are documented twice: once here, once in
+        # CompositionalModels. They must not drift apart.
+        @test c.max_iter == CM.DEFAULT_MAX_ITER == 500
+        @test c.tol == CM.DEFAULT_TOL == 1e-8
+        @test c.max_seconds == CM.DEFAULT_MAX_SECONDS == 300.0
+        @test CM.DM_METHODS == ("mle", "mom")
+        # Names reach the model canonically, whatever case or padding arrives.
+        @test DifferentialConfig(; method="  MULTINOMIAL ").method == "multinomial"
+        @test DifferentialConfig(; method="Dirichlet_Multinomial").method == "dirichlet_multinomial"
+        @test DifferentialConfig(; method="dirichlet_multinomial",
+                                   dm_overdispersion_method=" MOM ").dm_overdispersion_method == "mom"
+        @test DifferentialConfig(; method="multinomial", mn_penalty=0.5).mn_penalty == 0.5
+        @test DifferentialConfig(; method="multinomial", mn_reference_taxon=" Bacteroides ").mn_reference_taxon ==
+              "Bacteroides"
+        # An empty reference is the automatic one, so clearing it works.
+        @test DifferentialConfig(; method="multinomial", mn_reference_taxon="  ").mn_reference_taxon === nothing
+        @test DifferentialConfig(; method="dirichlet_multinomial", max_iter=12).max_iter == 12
+        @test DifferentialConfig(; method="multinomial", tol=1e-6).tol == 1e-6
+        # Settings that belong to another method are refused, not ignored.
+        e = try
+            DifferentialConfig(; method="nb_glm", mn_reference_taxon="Bacteroides")
+            nothing
+        catch err
+            err
+        end
+        @test e isa ArgumentError
+        @test occursin("mn_reference_taxon", sprint(showerror, e))
+        @test_throws ArgumentError DifferentialConfig(; method="nb_glm", mn_penalty=1.0)
+        @test_throws ArgumentError DifferentialConfig(; method="clr_welch", mn_penalty=1.0)
+        @test_throws ArgumentError DifferentialConfig(; method="multinomial", dispersion="glmGamPoi")
+        @test_throws ArgumentError DifferentialConfig(; method="multinomial",
+                                                       dm_overdispersion_method="mom")
+        @test_throws ArgumentError DifferentialConfig(; method="dirichlet_multinomial",
+                                                       dm_overdispersion_method="reml")
+        # Out-of-range numbers.
+        for bad in (-1.0, NaN, Inf)
+            @test_throws ArgumentError DifferentialConfig(; method="multinomial", mn_penalty=bad)
+        end
+        for bad in (0, -3)
+            @test_throws ArgumentError DifferentialConfig(; method="multinomial", max_iter=bad)
+        end
+        for bad in (0.0, -1.0, NaN)
+            @test_throws ArgumentError DifferentialConfig(; method="multinomial", tol=bad)
+            @test_throws ArgumentError DifferentialConfig(; method="multinomial", max_seconds=bad)
+        end
+        # The config route publishes the new keys with their enum values, so the
+        # editor offers exactly what the model accepts.
+        @test MetaManifold.Server._ENUM_VALUES["analysis.differential.method"] ==
+              Differential.METHODS
+        @test MetaManifold.Server._ENUM_VALUES["analysis.differential.dm_overdispersion_method"] ==
+              Differential.DM_METHODS
+    end
+
+    @testset "Multinomial: coefficients, standard errors and likelihood" begin
+        fit = CM.fit_multinomial(mn_counts, mn_design; reference=1)
+        @test fit.converged
+        @test 1 <= fit.iterations <= 20          # 6 in the reference run
+        @test fit.n_parameters == 6
+        # No concentration and no overdispersion: the multinomial is the c -> Inf
+        # end of the family.
+        @test fit.concentration == Inf
+        @test fit.overdispersion == 0.0
+        @test fit.alternations == 0
+        @test fit.coefficients ≈ [ 1.082218478892 -0.119407731383;
+                                  -0.535518236356  1.319637195122;
+                                  -1.516347489368  1.998185576261] rtol=1e-7
+        @test fit.standard_errors ≈ [0.180706133577 0.313776309675;
+                                     0.257015389751 0.367987891952;
+                                     0.368105086916 0.461012111922] rtol=1e-7
+        @test fit.statistic ≈ [ 5.988830912766 -0.380550499517;
+                                -2.083603775144  3.586088629503;
+                                -4.119333155843  4.334345073780] rtol=1e-7
+        @test fit.pvalue ≈ [2.113547511001e-09 7.035368178484e-01;
+                            3.719622334023e-02 3.356749143897e-04;
+                            3.799704360231e-05 1.461947018922e-05] rtol=1e-6
+        @test fit.loglik ≈ -407.0649687189738 rtol=1e-12
+        # The ridge penalty shrinks every coefficient towards zero, costs
+        # likelihood, and leaves the Wald statistic of the penalised fit.
+        pen = CM.fit_multinomial(mn_counts, mn_design; reference=1, penalty=0.5)
+        @test pen.converged
+        @test maximum(abs.(pen.coefficients)) < maximum(abs.(fit.coefficients))
+        @test pen.loglik < fit.loglik
+        @test pen.loglik ≈ -407.28567750994813 rtol=1e-10
+        @test pen.coefficients ≈ [ 1.118161966957 -0.215012653567;
+                                  -0.460636409664  1.170338505343;
+                                  -1.319158248268  1.713855339132] rtol=1e-7
+        # A penalty of 0 is exactly maximum likelihood; a negative one is refused.
+        @test CM.fit_multinomial(mn_counts, mn_design; reference=1, penalty=0.0).coefficients ≈
+              fit.coefficients rtol=1e-12
+    end
+
+    @testset "Multinomial: observed information matches a numerical Hessian" begin
+        fit = CM.fit_multinomial(mn_counts, mn_design; reference=1)
+        info = CM.observed_information(mn_counts, mn_design, fit.coefficients; reference=1)
+        p = 6
+        @test size(info) == (p, p)
+        @test info ≈ info' rtol=1e-14          # symmetric, so a caller can invert it
+        # Parameters are ordered (taxon, covariate) with the covariate fastest,
+        # the order `statistic` and `pvalue` use.
+        lk(t) = (div(t - 1, 2) + 1, mod(t - 1, 2) + 1)
+        function objective(a, b, da, db)
+            B = copy(fit.coefficients)
+            (la, ka) = lk(a)
+            (lb, kb) = lk(b)
+            B[la, ka] += da
+            B[lb, kb] += db
+            -CM.multinomial_loglik(mn_counts,
+                                   CM.composition_probabilities(mn_design, B; reference=1))
+        end
+        h = 1e-5
+        num = [(objective(a, b, h, h) - objective(a, b, h, -h) -
+                objective(a, b, -h, h) + objective(a, b, -h, -h)) / (4 * h^2)
+               for a in 1:p, b in 1:p]
+        @test maximum(abs.(info - num)) <= 1e-4 * maximum(abs.(num))
+        # The ridge penalty is a diagonal term and nothing else.
+        pen = CM.observed_information(mn_counts, mn_design, fit.coefficients;
+                                      reference=1, penalty=2.0)
+        @test pen - info ≈ [i == j ? 2.0 : 0.0 for i in 1:p, j in 1:p] rtol=1e-12
+        # ... which is why a ridge fit's standard errors are the ridge ones:
+        # smaller than the unpenalised fit's, and finite even where the
+        # likelihood alone is flat.
+        penfit = CM.fit_multinomial(mn_counts, mn_design; reference=1, penalty=2.0)
+        @test all(penfit.standard_errors .< fit.standard_errors)
+    end
+
+    @testset "Dirichlet-multinomial: overdispersion is estimated, not assumed" begin
+        mn = CM.fit_multinomial(mn_counts, mn_design; reference=1)
+        dm = CM.fit_dirichlet_multinomial(mn_counts, mn_design; reference=1)
+        @test dm.converged
+        @test 1 <= dm.alternations <= 20         # 6 in the reference run
+        # The extra parameter has to pay for itself: the Dirichlet-multinomial
+        # likelihood is higher by 2.9 on one degree of freedom.
+        @test dm.loglik > mn.loglik
+        @test dm.n_parameters == mn.n_parameters + 1
+        @test dm.loglik ≈ -404.20997824942896 rtol=1e-10
+        @test dm.concentration ≈ 53.362066917711644 rtol=1e-3
+        @test dm.overdispersion ≈ 0.01839517988735986 rtol=1e-3
+        @test 0.0 < dm.overdispersion < 1.0
+        @test dm.coefficients ≈ [ 1.071032144989 -0.114066335487;
+                                 -0.501173931974  1.275343318453;
+                                 -1.368474581812  1.805519460437] rtol=1e-6
+        @test dm.standard_errors ≈ [0.265587018181 0.441717024040;
+                                    0.368657299554 0.517219391431;
+                                    0.481355112438 0.617114850217] rtol=1e-6
+        @test dm.statistic ≈ [ 4.032697653391 -0.258233958120;
+                              -1.359457503161  2.465768568586;
+                              -2.842962599651  2.925743011698] rtol=1e-6
+        # Between-sample variation widens every standard error: the multinomial's
+        # are too small by the square root of the overdispersion factor.
+        @test all(dm.standard_errors .> mn.standard_errors)
+        # The method of moments is a one-shot alternative: no alternation, a
+        # smaller concentration here, and the same sign and scale of effect.
+        mom = CM.fit_dirichlet_multinomial(mn_counts, mn_design; reference=1,
+                                           overdispersion_method="mom")
+        @test mom.converged
+        @test mom.alternations == 0
+        @test mom.concentration ≈ 42.76597063846098 rtol=1e-4
+        @test mom.overdispersion ≈ 0.02284880205812716 rtol=1e-4
+        @test mom.loglik ≈ -404.2698986845995 rtol=1e-10
+        @test mom.coefficients ≈ [ 1.065395681465 -0.114069708300;
+                                  -0.493938545821  1.262656401027;
+                                  -1.338569035064  1.768148887907] rtol=1e-6
+        @test dm.loglik > mom.loglik             # profiling beats one moment
+        @test sign.(dm.coefficients) == sign.(mn.coefficients)
+    end
+
+    @testset "Dirichlet-multinomial: a table with no overdispersion is multinomial" begin
+        mn = CM.fit_multinomial(flat_counts, flat_design; reference=2)
+        dm = CM.fit_dirichlet_multinomial(flat_counts, flat_design; reference=2)
+        # The concentration runs to the top of its range and the fit is reported
+        # as that bound; the coefficients are the multinomial's exactly, because
+        # a flat Dirichlet is the multinomial at double precision.
+        @test dm.concentration >= CM.CONCENTRATION_MAX * (1 - 1e-6)
+        @test dm.overdispersion < 1e-5
+        @test dm.alternations == 0
+        @test dm.converged
+        @test dm.coefficients == mn.coefficients
+        @test dm.loglik == mn.loglik
+        @test dm.n_parameters == mn.n_parameters + 1
+        # Both references agree with the reference table for this table.
+        @test mn.coefficients ≈ [-1.512588086416 1.972120415794;
+                                  0.576422906252 -2.185860818556] rtol=1e-8
+        @test mn.standard_errors ≈ [0.216647443400 0.246033749636;
+                                     0.115049906706 0.251468648201] rtol=1e-8
+        @test mn.loglik ≈ -600.4014470047102 rtol=1e-12
+    end
+
+    @testset "Multinomial: the reference taxon is only a reparameterisation" begin
+        f1 = CM.fit_multinomial(flat_counts, flat_design; reference=1)
+        f2 = CM.fit_multinomial(flat_counts, flat_design; reference=2)
+        f3 = CM.fit_multinomial(flat_counts, flat_design; reference=3)
+        # The composition, and so the likelihood, does not depend on the choice.
+        @test f1.loglik ≈ f2.loglik rtol=1e-10
+        @test f2.loglik ≈ f3.loglik rtol=1e-10
+        # Swapping the reference negates the log ratio between the two taxa.
+        @test f2.coefficients[1, 2] ≈ -f1.coefficients[1, 2] rtol=1e-8
+        @test f3.coefficients[1, 2] ≈ -f1.coefficients[2, 2] rtol=1e-8
+        # A third taxon's log ratio against the reference is the difference of
+        # the two log ratios through the third, which is why a log ratio is
+        # coherent under compositionality and a raw abundance is not.
+        @test f2.coefficients[2, 2] ≈ f1.coefficients[2, 2] - f1.coefficients[1, 2] rtol=1e-8
+        @test f3.coefficients[2, 2] ≈ f1.coefficients[1, 2] - f1.coefficients[2, 2] rtol=1e-8
+        @test f1.coefficients[1, 2] ≈ -1.972120415794 rtol=1e-8
+        @test f1.coefficients[2, 2] ≈ -4.157981234350 rtol=1e-8
+    end
+
+    @testset "Multinomial: unusable input is refused with its reason" begin
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts, mn_design; reference=0)
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts, mn_design; reference=5)
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts, mn_design; penalty=-1.0)
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts, mn_design; penalty=NaN)
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts, mn_design; max_iter=0)
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts, mn_design; tol=0.0)
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts, mn_design; max_seconds=0.0)
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts .+ 0.5, mn_design)
+        @test_throws ArgumentError CM.fit_multinomial(vcat(zeros(1, 4), mn_counts[2:end, :]),
+                                                      mn_design)
+        @test_throws ArgumentError CM.fit_multinomial(mn_counts, mn_design[1:5, :])
+        e = try
+            CM.fit_dirichlet_multinomial(mn_counts, mn_design; overdispersion_method="reml")
+            nothing
+        catch err
+            err
+        end
+        @test e isa ArgumentError
+        @test occursin("dm_overdispersion_method", sprint(showerror, e))
+        # More taxa than the dense information matrix allows is an explicit
+        # refusal, not an out-of-memory crash.
+        big = ones(Int, 2, CM.MAX_TAXA + 2)
+        e = try
+            CM.fit_multinomial(big, ones(2, 2))
+            nothing
+        catch err
+            err
+        end
+        @test e isa CM.CompositionalRefusal
+        @test occursin(string(CM.MAX_TAXA), sprint(showerror, e))
+        # The wall-clock budget is enforced inside the optimiser and says so.
+        @test_throws CM.RuntimeRefusal CM.fit_multinomial(mn_counts, mn_design; max_seconds=1e-9)
+        # The special functions this module carries are the ones it documents.
+        # The recurrence plus the Stirling series is good to a few times 1e-14
+        # relative, worst near 1 where the recurrence shift is largest and the
+        # subtraction loses the most, so the bound here is 1e-12: it catches a
+        # wrong series or a missing recurrence step without pinning the last
+        # two bits of a Float64.
+        @test CM.compositional_loggamma(0.5) ≈ 0.5723649429247001 rtol=1e-12
+        @test CM.compositional_loggamma(10.0) ≈ 12.801827480081469 rtol=1e-12
+        @test CM.compositional_digamma(1.0) ≈ -0.5772156649015329 rtol=1e-12
+        @test CM.compositional_digamma(10.0) ≈ 2.251752589066721 rtol=1e-12
+        @test CM.compositional_digamma(0.5) ≈ -1.9635100260214235 rtol=1e-12
+    end
+
+    @testset "Multinomial: the DA engine reports a composition, not per-taxon fits" begin
+        taxa3 = ["Up", "Flat", "Down"]
+        samples8 = ["s$i" for i in 1:8]
+        groups8 = vcat(fill("A", 4), fill("B", 4))
+        # Down has reads in group A and none in group B: its log fold change is
+        # unbounded, so the engine refuses it by name and models the rest.
+        sep = [5 30 50; 8 25 60; 6 35 45; 7 28 55;
+               40 27 0; 55 33 0; 35 29 0; 60 31 0]
+        res = differential_abundance(sep, samples8, taxa3, groups8;
+                                     reference="A", contrast="B",
+                                     config=DifferentialConfig(; method="multinomial"))
+        byt = Dict(r["taxon"] => r for r in res["rows"])
+        @test Set(keys(byt)) == Set(taxa3)
+        @test byt["Down"]["status"] == "failed"
+        @test occursin("complete separation", byt["Down"]["note"])
+        @test byt["Down"]["padj"] === nothing
+        @test byt["Down"]["estimate"] === nothing
+        # The automatic reference is the most abundant taxon that is fitted.
+        @test byt["Flat"]["status"] == "reference"
+        @test byt["Flat"]["estimate"] == 0.0
+        @test byt["Flat"]["log2_fold_change"] == 0.0
+        @test byt["Flat"]["pvalue"] === nothing
+        @test byt["Up"]["status"] == "ok"
+        # Dropping a taxon from a multinomial leaves the log ratio between the
+        # others alone: this is the three-taxon fit's Up-vs-Flat coefficient.
+        @test byt["Up"]["estimate"] ≈ 1.972120415794 rtol=1e-6
+        @test byt["Up"]["log2_fold_change"] ≈ 1.972120415794 / log(2) rtol=1e-6
+        @test byt["Up"]["standard_error"] ≈ 0.246033749636 rtol=1e-6
+        # BH is applied to whatever was fitted, and here that is one taxon.
+        @test byt["Up"]["padj"] ≈ byt["Up"]["pvalue"] rtol=1e-12
+        @test res["status"] == "partial"
+        @test res["effect"]["key"] == "log2_fold_change"
+        @test occursin("Flat", res["effect"]["label"])
+        @test occursin("Morton et al. 2019", res["method"])
+        @test isempty(res["size_factors"])
+        @test res["config"]["method"] == "multinomial"
+        @test res["config"]["mn_reference_taxon"] == "Flat"
+        @test res["config"]["mn_penalty"] == 0.0
+        @test res["config"]["max_iter"] == 500
+        @test res["config"]["max_seconds"] == 300.0
+        @test !haskey(res["config"], "dm_overdispersion_method")
+        model = res["diagnostics"]["model"]
+        @test model["reference_taxon"] == "Flat"
+        @test model["n_taxa_fitted"] == 2
+        @test model["n_parameters"] == 2
+        @test model["converged"]
+        @test model["log_likelihood"] ≈ -274.90564883764876 rtol=1e-8
+        @test 0.0 <= model["runtime_seconds"] < 60.0
+        # The same table with the Dirichlet-multinomial is also effectively
+        # multinomial, and the engine says so through the row status.
+        dres = differential_abundance(sep, samples8, taxa3, groups8;
+                                      reference="A", contrast="B",
+                                      config=DifferentialConfig(; method="dirichlet_multinomial"))
+        dbyt = Dict(r["taxon"] => r for r in dres["rows"])
+        @test dbyt["Up"]["status"] == "boundary"
+        @test occursin("upper bound", dbyt["Up"]["note"])
+        @test dbyt["Up"]["estimate"] ≈ 1.972120415794 rtol=1e-6
+        over = dres["diagnostics"]["overdispersion"]
+        @test over["method"] == "mle"
+        @test over["at_bound"]
+        @test over["concentration"] >= CM.CONCENTRATION_MAX * (1 - 1e-6)
+        @test dres["config"]["dm_overdispersion_method"] == "mle"
+    end
+
+    @testset "Multinomial: reference taxon validation in the engine" begin
+        taxa3 = ["Up", "Flat", "Down"]
+        samples8 = ["s$i" for i in 1:8]
+        groups8 = vcat(fill("A", 4), fill("B", 4))
+        base = [5 30 50; 8 25 60; 6 35 45; 7 28 55;
+                40 27 6; 55 33 4; 35 29 9; 60 31 5]
+        kw = (reference="A", contrast="B")
+        cfg(ref) = DifferentialConfig(; method="multinomial", mn_reference_taxon=ref)
+        e = try
+            differential_abundance(base, samples8, taxa3, groups8; kw..., config=cfg("Nope"))
+            nothing
+        catch err
+            err
+        end
+        @test e isa ArgumentError
+        @test occursin("is not a taxon at this rank", sprint(showerror, e))
+        # A reference seen in 2 of 8 samples anchors unstable ratios.
+        thin = copy(base)
+        thin[:, 1] .= 0
+        thin[1, 1] = 1
+        thin[5, 1] = 1
+        e = try
+            differential_abundance(thin, samples8, taxa3, groups8; kw..., config=cfg("Up"))
+            nothing
+        catch err
+            err
+        end
+        @test e isa ArgumentError
+        @test occursin("at least half the samples", sprint(showerror, e))
+        # A reference with no reads at all in one group is separated, so it is
+        # not in the composition and cannot be its reference either.
+        gone = copy(base)
+        gone[:, 3] .= 0
+        gone[1:4, 3] .= 1
+        e = try
+            differential_abundance(gone, samples8, taxa3, groups8; kw..., config=cfg("Down"))
+            nothing
+        catch err
+            err
+        end
+        @test e isa ArgumentError
+        @test occursin("is not fitted", sprint(showerror, e))
+        # Every taxon filtered out is an explicit error, not an empty table.
+        e = try
+            differential_abundance([1 0; 2 3; 0 4; 5 0], ["s1", "s2", "s3", "s4"],
+                                   ["a", "b"], groups8[1:4];
+                                   kw..., config=DifferentialConfig(; method="multinomial",
+                                                                    min_prevalence=1.0))
+            nothing
+        catch err
+            err
+        end
+        @test e isa ArgumentError
+        @test occursin("no composition to model", sprint(showerror, e))
+    end
+
     @testset "Route: two runs through the in-process router" begin
         _da_fixture() do
             r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
@@ -973,6 +1381,62 @@ end
     # `requireNamespace` in R's global environment that reports zCompositions
     # missing and defers to base for every other package. reval evaluates there,
     # so the production probe sees the package as absent on any machine.
+    @testset "Route: multinomial selected by the study config" begin
+        _da_fixture() do
+            root = MetaManifold.Server.ServerState._root[]
+            write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                  "analysis:\n  differential:\n    method: multinomial\n")
+            r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                        "table" => "merged", "rank" => "Genus"))
+            body = JSON3.read(String(r.body))
+            # The multinomial models need no R package, so this route runs even on
+            # a machine without MASS.
+            @test r.status == 200
+            @test body.method isa AbstractString
+            @test occursin("reference taxon", body.method)
+            @test occursin("Morton et al. 2019", body.method)
+            byt = Dict(String(x.taxon) => x for x in body.rows)
+            @test Set(keys(byt)) == Set(["Up", "Flat", "Down"])
+            # Flat carries the largest column total (238 reads against 216 and
+            # 234), so it is the automatic reference.
+            @test byt["Flat"].status == "reference"
+            @test byt["Flat"].estimate == 0.0
+            @test byt["Up"].status == "ok" && byt["Down"].status == "ok"
+            @test byt["Up"].estimate ≈ 1.972120415794 rtol=1e-6
+            @test byt["Down"].estimate ≈ -2.185860818556 rtol=1e-6
+            @test body.config.mn_reference_taxon == "Flat"
+            @test body.diagnostics.model.reference_taxon == "Flat"
+            @test body.diagnostics.model.n_taxa_fitted == 3
+            @test isempty(body.size_factors)
+            # BH adjustment is not optional: every fitted row carries a padj, and
+            # no row carries one without a p-value.
+            @test all(x -> (x.padj !== nothing) == (x.pvalue !== nothing), body.rows)
+            @test all(x -> x.padj !== nothing, body.rows)
+            @test haskey(body, :figure) && length(body.figure.data) >= 1
+            # An explicit reference reparameterises the same fit: the log ratio
+            # between Up and Down (a difference of two coefficients) must not
+            # change with the choice.
+            write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                  "analysis:\n  differential:\n    method: multinomial\n    mn_reference_taxon: Down\n")
+            r2 = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                         "table" => "merged", "rank" => "Genus"))
+            @test r2.status == 200
+            b2 = JSON3.read(String(r2.body))
+            by2 = Dict(String(x.taxon) => x for x in b2.rows)
+            @test by2["Down"].status == "reference"
+            @test by2["Up"].estimate - by2["Down"].estimate ≈
+                  byt["Up"].estimate - byt["Down"].estimate rtol=1e-8
+            @test by2["Up"].estimate ≈ byt["Up"].estimate - byt["Down"].estimate rtol=1e-8
+            # A reference that cannot be found is a 400 with the reason.
+            write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                  "analysis:\n  differential:\n    method: multinomial\n    mn_reference_taxon: Nonexistent\n")
+            r3 = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                         "table" => "merged", "rank" => "Genus"))
+            @test r3.status == 400
+            @test JSON3.read(String(r3.body)).error == "invalid_input"
+        end
+    end
+
     @testset "clr_welch without zCompositions is a 503" begin
         if !HAVE_R
             @test_skip false    # the clr_welch route test above covers this case

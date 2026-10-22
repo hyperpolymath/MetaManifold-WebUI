@@ -343,15 +343,20 @@ analysis:
     normalisation: hellinger
     # Reads per sample for rarefy or srs; 0 uses the smallest non-empty sample.
     depth: 0
-  # Differential abundance: a negative-binomial model per taxon (MASS::glm.nb)
-  # comparing two conditions on the raw read counts, with Benjamini-Hochberg
-  # adjusted p-values.
+  # Differential abundance: a model per taxon or per composition comparing two
+  # conditions on the raw read counts, with Benjamini-Hochberg adjusted p-values.
   differential:
-    # The model fitted to each taxon. nb_glm: a negative-binomial GLM on the read
-    # counts with a library-size offset; the effect is a log2 fold change. clr_welch:
-    # Welch's t-test on centred log-ratios over the taxa passing min_prevalence,
-    # after zCompositions::cmultRepl replaces their zeros; the effect is a
-    # difference in CLR units, not a fold change.
+    # The model fitted to the data. nb_glm: a negative-binomial GLM per taxon on
+    # the read counts with a library-size offset; the effect is a log2 fold
+    # change. clr_welch: Welch's t-test per taxon on centred log-ratios over the
+    # taxa passing min_prevalence, after zCompositions::cmultRepl replaces their
+    # zeros; the effect is a difference in CLR units, not a fold change.
+    # multinomial: one multinomial logistic model for the whole composition
+    # (Songbird's model, Morton et al. 2019), which needs no size factor and no
+    # zero replacement; the effect is a log2 fold change in relative abundance
+    # against mn_reference_taxon. dirichlet_multinomial: the same model plus a
+    # Dirichlet prior that absorbs between-sample overdispersion (La Rosa et al.
+    # 2012), which sharpens the standard errors on overdispersed data.
     method: nb_glm
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).
@@ -376,6 +381,33 @@ analysis:
     # its taxon's smallest observed proportion is lowered to this fraction of it.
     # A replaced zero is not a measurement.
     replacement_delta: 0.65
+    # multinomial and dirichlet_multinomial only: the taxon whose log-odds are the
+    # denominator of every reported log ratio. ~ picks the most abundant taxon that
+    # passes min_prevalence. A reference must have reads in at least half the
+    # samples: every ratio is anchored on it, so a sparse one makes them unstable.
+    mn_reference_taxon: ~
+    # multinomial and dirichlet_multinomial: L2 (ridge) penalty on the log-odds
+    # coefficients, 0 for maximum likelihood. A penalty keeps a taxon with almost
+    # no reads in one group from dominating the joint fit, and its standard errors
+    # are the penalised ones. An L1 (Songbird-style sparsity) penalty is not
+    # implemented: a lasso estimate has no valid Wald standard error.
+    mn_penalty: 0.0
+    # dirichlet_multinomial only: how the Dirichlet concentration is estimated.
+    # mle profiles the likelihood alternately with the coefficients; mom takes one
+    # method-of-moments estimate from the multinomial composition (faster, no
+    # alternation). The result reports the concentration c and theta = 1/(1+c),
+    # the model's intra-sample correlation; theta -> 0 is the multinomial.
+    dm_overdispersion_method: mle
+    # Optimiser settings for the two multinomial models, which are fitted in
+    # Julia: the Newton iteration cap, the convergence tolerance (largest
+    # coefficient update, relative to the coefficients), and the wall-clock
+    # budget in seconds. A fit that exceeds the budget fails with an explicit
+    # error rather than holding the request open. The dense observed information
+    # limits a fit to 1000 taxa; raise min_prevalence or use a coarser rank above
+    # that.
+    max_iter: 500
+    tolerance: 0.00000001
+    max_seconds: 300.0
 
 ## Occupancy probe (MMW-01)
 # Measures each attested stage's memory: Julia's allocation total, and the
