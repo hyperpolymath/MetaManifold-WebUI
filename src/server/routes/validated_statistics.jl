@@ -182,6 +182,16 @@ end
 
 """Read and aggregate an integer-safe run table. Only GROUP BY is done in SQL;
 all count addition is Julia BigInt. No SQL SUM and no Float64 matrix is used."""
+function _reject_float_count_filters(sample_columns::Vector{String}, params::Dict{String,String})
+    for sample in sample_columns, prefix in ("col_min.", "col_max.")
+        key = prefix * sample
+        haskey(params, key) && throw(UnsupportedRepresentationError(
+            "an exact integer count-filter predicate", "$key=$(params[key])",
+            "validated run statistics; legacy col_min/col_max predicates use Float64"))
+    end
+    nothing
+end
+
 function _validated_duckdb_counts(con, table::String, columns::Vector{String};
                                   prefix=nothing, taxonomic_level=nothing,
                                   where_clause::String="", where_params=Any[])
@@ -306,6 +316,8 @@ end
         groups = isnothing(groups_raw) ? nothing : _statistics_labels(groups_raw, "groups")
 
         outcome = _with_analysis_results_table(study, run, table; group, readonly=true) do con, columns
+            candidate_samples = _validated_integer_sample_columns(con, table, columns)
+            _reject_float_count_filters(candidate_samples, params)
             exclusions = _exclusion_conditions(study, run, group, columns;
                 surface="diversity")
             where_clause, where_params = _analysis_where_clause(params, columns;

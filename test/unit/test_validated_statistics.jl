@@ -184,13 +184,13 @@ end
         s1 = only(filter(x -> x.label == "s1", result.samples))
         s2 = only(filter(x -> x.label == "s2", result.samples))
         empty = only(filter(x -> x.label == "Empty", result.samples))
-        @test s1.counts == [3, 4]
+        @test collect(s1.counts) == [3, 4]
         @test s1.total == 7
-        @test s1.proportions == ["3/7", "4/7"]
+        @test collect(s1.proportions) == ["3/7", "4/7"]
         @test s2.counts[1] == string(big(2)^127) # would overflow SQL SUM(HUGEINT)
         @test s2.total == string(big(2)^127 + 1)
         @test empty.total == 0
-        @test empty.proportions == [nothing, nothing]
+        @test collect(empty.proportions) == [nothing, nothing]
         id = String(result.analysis_id)
         @test isfile(joinpath(root, "projects", "studyV", "run1", "derived",
                               "validated-statistics", "$id.json"))
@@ -211,6 +211,8 @@ end
         @test _vs_post(path, merge(request, Dict("table" => "merged_null"))).status == 422
         @test _vs_post(path, merge(request, Dict("taxonomic_level" => "Species"))).status == 400
         @test _vs_post(path, merge(request, Dict("sampleReads" => Dict("min" => 1)))).status == 400
+        @test _vs_post(path, merge(request, Dict(
+            "colFilters" => Dict("s1" => Dict("min" => 1))))).status == 422
         @test _vs_get("/api/v1/statistics/derived/$id").status == 404
     end
 end
@@ -223,7 +225,7 @@ end
         end
         @test all(r -> r.status == 200, responses)
         bodies = [JSON3.read(String(r.body)) for r in responses]
-        @test length(unique(String(b.analysis_id) for b in bodies)) == 1
+        @test length(unique([String(b.analysis_id) for b in bodies])) == 1
         @test count(b -> b.derived_analysis.created, bodies) == 1
     end
 end

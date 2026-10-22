@@ -131,8 +131,10 @@ The implementation intentionally does **not** call the legacy
    overflow.
 
 The legacy `sampleReads` filter is rejected on this endpoint because its current
-implementation uses floating totals and SQL sums. This is an explicit
-unsupported condition, not a silently ignored filter.
+implementation uses floating totals and SQL sums. Numeric `min`/`max` predicates
+on sample-count columns are likewise rejected because their legacy predicate
+path uses `Float64`; metadata predicates retain their existing behavior. These
+are explicit unsupported conditions, not silently ignored filters.
 
 Run results are always persisted beneath the source run at:
 
@@ -179,9 +181,11 @@ and run group. Response-only fields such as `derived_analysis.created` are not
 part of the immutable result hash.
 
 To reproduce a run analysis, send the stored source/configuration against the
-same source data and compare `input_sha256` and `analysis_id`. If the source run
-changes, the new input receives a different fingerprint and derived ID rather
-than overwriting the earlier result.
+same source data and software versions, then compare `input_sha256` and
+`analysis_id`. If the source run changes, the new input receives a different
+fingerprint and derived ID rather than overwriting the earlier result. A software
+version change also creates a new record deliberately; compare its numerical
+content under that new provenance instead of expecting the old content ID.
 
 ## Exact and approximate display values
 
@@ -218,8 +222,8 @@ Full suite (with the repository's integration and server gates):
 julia --project=. -t2 test/runtests.jl --integration --server
 ```
 
-The suite includes known answers, independent high-precision references,
-zero/negative/nonfinite/missing controls, values beyond `2^53`, rational budget
+The suite includes known answers, independent Python `fractions` and
+high-precision `decimal` references, zero/negative/nonfinite/missing controls, values beyond `2^53`, rational budget
 failures, SQL-sum overflow controls, feature-permutation and scale invariance,
 generative count matrices, malformed JSON fuzz cases, serialization round trips,
 concurrent precision scopes, concurrent immutable publication, and tamper
