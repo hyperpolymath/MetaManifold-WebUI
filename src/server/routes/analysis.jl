@@ -1203,7 +1203,9 @@ raise their conversion errors.
 """
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
-    val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    val(k, d) = let value = get(get(resolved, k, (; value=d)), :value, d)
+        isnothing(value) ? d : value
+    end
     alpha = val("analysis.differential.bayesian_alpha", nothing)
     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
                        Float64(val("analysis.differential.min_prevalence", 0.0));
