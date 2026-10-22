@@ -67,7 +67,7 @@ cp "$RECEIPT" "$ASSET_DIR/receipt.json"
 [ -f CITATION.cff ] && cp CITATION.cff "$ASSET_DIR/CITATION.cff"
 
 # Keep the current release notes beside the DOI.
-RELEASE_NOTES="docs/release-notes/v0.1.0.md"
+RELEASE_NOTES="docs/release-notes/${TAG}.md"
 [ -f "$RELEASE_NOTES" ] && cp "$RELEASE_NOTES" "$ASSET_DIR/release-notes.md"
 
 echo "Preserved release assets under $ASSET_DIR"
