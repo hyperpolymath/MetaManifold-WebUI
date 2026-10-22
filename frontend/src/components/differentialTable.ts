@@ -58,10 +58,12 @@ export function configLine(result: DifferentialResult): string {
   if (c.method !== 'clr_welch')
     return `method nb_glm, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
   const replacement = c.replacement_method ?? 'bayesian_multiplicative'
-  const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
-    ? 'estimated' : String(c.bayesian_alpha)
-  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}, ` +
-    `bayesian_alpha ${alpha}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
+  const alpha = replacement === 'bayesian_multiplicative'
+    ? `, bayesian_alpha ${c.bayesian_alpha === null || c.bayesian_alpha === undefined
+      ? 'estimated' : String(c.bayesian_alpha)}`
+    : ''
+  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}` +
+    `${alpha}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */
