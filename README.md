@@ -287,14 +287,21 @@ not exclude samples from this analysis.
 
 `analysis.differential.method` chooses the method:
 
-- `nb_glm` (default): a negative-binomial GLM per taxon using `MASS::glm.nb`,
-  with a library-size offset. The effect is log2 fold change; positive values
-  indicate greater abundance in the second condition. `offset` selects `tss`
-  (default) or `rle` scaling.
-- `clr_welch`: Welch's t-test on centred log-ratios after multiplicative zero
-  replacement with `zCompositions::cmultRepl`. The effect is a CLR difference,
-  not a fold change. `replacement_delta` controls the replacement fraction
-  (default 0.65); `offset` is not used.
+- `nb_glm` (default): a negative-binomial GLM per taxon with a library-size
+  offset. The effect is log2 fold change; positive values indicate greater
+  abundance in the second condition. `offset` selects `tss` (default) or `rle`
+  scaling. `dispersion` selects per-taxon maximum likelihood with
+  `MASS::glm.nb` (default) or a cross-taxon shrinkage trend from R's
+  `glmGamPoi::glm_gp`, followed by fixed-theta NB Wald fits.
+- `clr_welch`: Welch's t-test on centred log-ratios after zero replacement with
+  `zCompositions::cmultRepl`. The effect is a CLR difference, not a fold change.
+  `replacement_method` selects `bayesian_multiplicative` (GBM, the default) or
+  `multiplicative_replacement` (CZM). `replacement_delta` controls the
+  replacement fraction (default 0.65), and optional positive `bayesian_alpha`
+  overrides GBM's estimated Dirichlet concentration; `offset` is not used.
+  [Zero handling, posterior semantics, warnings and references](docs/statistics/zero-handling.md)
+  explain why every replacement is biased and when a count, occupancy or
+  zero-inflated model is preferable.
 
 For either method, `min_prevalence` (default 0) filters taxa by the fraction of
 samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
@@ -640,6 +647,13 @@ analysis:
   beta:                          # Bray-Curtis for NMDS and PERMANOVA
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
+  differential:
+    method: nb_glm               # nb_glm | clr_welch
+    dispersion: ml               # nb_glm: ml | glmGamPoi
+    replacement_method: bayesian_multiplicative
+                                 # clr_welch: bayesian_multiplicative | multiplicative_replacement
+    replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
+    bayesian_alpha: ~            # clr_welch: null (GBM estimate) or a number > 0
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
 ```
