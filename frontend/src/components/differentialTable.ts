@@ -4,7 +4,7 @@ import type { DifferentialResult, DifferentialRow } from '../api/types'
 
 const COLUMNS = [
   'taxon', 'status', 'log2_fold_change', 'estimate', 'standard_error', 'statistic',
-  'pvalue', 'padj', 'dispersion_theta', 'prevalence', 'note',
+  'pvalue', 'padj', 'dispersion_theta', 'zero_process_log_odds', 'prevalence', 'note',
 ] as const
 
 /** Quote one CSV field when it holds a comma, quote or line break (RFC 4180). */
@@ -27,7 +27,7 @@ export function differentialCsv(result: DifferentialResult): string {
     `# ${result.method}`,
     `# ${configLine(result)}`,
   ].map(l => l.replace(/[\r\n]+/g, ' '))
-  const rows = result.rows.map(r => COLUMNS.map(c => csvField(r[c])).join(','))
+  const rows = result.rows.map(r => COLUMNS.map(c => csvField(r[c] ?? null)).join(','))
   return [...header, COLUMNS.join(','), ...rows].join('\r\n') + '\r\n'
 }
 
@@ -48,7 +48,7 @@ export function configLine(result: DifferentialResult): string {
   const c = result.config
   return c.method === 'clr_welch'
     ? `method clr_welch, replacement_delta ${c.replacement_delta}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
-    : `method nb_glm, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+    : `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */

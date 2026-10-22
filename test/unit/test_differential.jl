@@ -10,6 +10,7 @@ using MetaManifold
 using MetaManifold.Differential
 using RCall
 using Test
+using Random
 using DuckDB, DBInterface, JSON3, HTTP, YAML
 using OrderedCollections: OrderedDict
 
@@ -163,6 +164,7 @@ end
     end
 
     @testset "Configuration" begin
+        @test Differential.METHODS == ("nb_glm", "clr_welch", "zinb", "hurdle_nb")
         @test DifferentialConfig().offset == "tss"
         @test DifferentialConfig().min_prevalence == 0.0
         @test DifferentialConfig("rle", 0.5).offset == "rle"
@@ -172,6 +174,9 @@ end
         @test DifferentialConfig().method == "nb_glm"
         @test DifferentialConfig().replacement_delta == 0.65
         @test DifferentialConfig(; method="clr_welch", replacement_delta=0.3).replacement_delta == 0.3
+        @test DifferentialConfig(; method="zinb").method == "zinb"
+        @test DifferentialConfig(; method="hurdle_nb").method == "hurdle_nb"
+        @test_throws ArgumentError DifferentialConfig(; method="occupancy") # repeated visits use fit_occupancy
         @test_throws ArgumentError DifferentialConfig(; method="ancombc")
         # The pre-review name, never released, is not accepted.
         @test_throws ArgumentError DifferentialConfig(; method="clr_lm")
@@ -182,6 +187,7 @@ end
         @test DifferentialConfig(dispersion="  GLMGAMPOI ").dispersion == "glmGamPoi"
         @test_throws ArgumentError DifferentialConfig(dispersion="shrinkage")
         @test_throws ArgumentError DifferentialConfig(method="clr_welch", dispersion="glmGamPoi")
+        @test_throws ArgumentError DifferentialConfig(method="zinb", dispersion="glmGamPoi")
         @test DifferentialConfig(method="clr_welch").dispersion == "ml"
         for d in (0, 1, -0.5, NaN)
             @test_throws ArgumentError DifferentialConfig(; method="clr_welch", replacement_delta=d)
@@ -644,6 +650,57 @@ end
                     @test read(paths[scope], String) == unchanged
                 end
             end
+        end
+    end
+
+    @testset "two-part negative-binomial models" begin
+        if !HAVE_R
+            @test_skip false
+        else
+            rng = MersenneTwister(18)
+            g = vcat(fill("A", 60), fill("B", 60))
+            x = zeros(Int, 120, 2)
+            for i in eachindex(g), j in 1:2
+                pzero = j == 1 ? (g[i] == "A" ? 0.55 : 0.25) : 0.4
+                x[i,j] = rand(rng) < pzero ? 0 : 1 + rand(rng, 0:5) + (j == 1 && g[i] == "B" ? 3 : 0)
+            end
+            for kind in ("zinb", "hurdle_nb")
+                fitted = fit_two_part_nb(x, g, zeros(120); levels=("A", "B"), kind)
+                @test nrow(fitted) == 2
+                @test all(fitted.status .== "ok")
+                @test all(isfinite, fitted.pvalue)
+                @test all((0 .<= fitted.pvalue) .& (fitted.pvalue .<= 1))
+                @test all(isfinite, fitted.zero_estimate)
+                @test fitted.estimate[1] > 0
+            end
+        end
+    end
+
+    @testset "occupancy requires repeated detection histories" begin
+        rng = MersenneTwister(29)
+        history = falses(100, 4, 100)
+        g = vcat(fill("A", 50), fill("B", 50))
+        for i in eachindex(g), j in axes(history,3)
+            occupied = rand(rng) < 0.7
+            for v in 1:4
+                history[i,v,j] = occupied && rand(rng) < 0.55
+            end
+        end
+        taxa = ["taxon_$j" for j in axes(history,3)]
+        @test_throws ArgumentError fit_occupancy(history[:,1:1,:], g, taxa; levels=("A","B"))
+        @test_throws ArgumentError fit_occupancy(history, g[1:end-1], taxa; levels=("A","B"))
+        if !HAVE_R
+            @test_skip false
+        else
+            fitted = fit_occupancy(history, g, taxa; levels=("A","B"))
+            @test nrow(fitted) == 2
+            @test all(fitted.status .== "ok")
+            @test all((0 .<= fitted.detection_probability) .& (fitted.detection_probability .<= 1))
+            @test all((0 .<= fitted.psi_reference) .& (fitted.psi_reference .<= 1))
+            @test all((0 .<= fitted.psi_contrast) .& (fitted.psi_contrast .<= 1))
+            @test sum(fitted.detection_probability) / length(fitted.detection_probability) ≈ 0.55 atol=0.2
+            @test sum(fitted.psi_reference) / length(fitted.psi_reference) ≈ 0.7 atol=0.1
+            @test all((0 .<= fitted.padj) .& (fitted.padj .<= 1))
         end
     end
 

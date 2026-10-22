@@ -261,12 +261,27 @@ not exclude samples from this analysis.
   with a library-size offset. The effect is log2 fold change; positive values
   indicate greater abundance in the second condition. `offset` selects `tss`
   (default) or `rle` scaling.
+- `zinb`: a zero-inflated negative-binomial model with separate logistic
+  zero and count components, a count-component library-size offset, a joint
+  two-degree-of-freedom likelihood-ratio test, and BH correction.
+- `hurdle_nb`: a logistic occurrence model plus zero-truncated NB counts for
+  positive observations. It uses the same joint test and offset convention.
+
+ZINB and hurdle models are more flexible than NB and can overfit sparse data;
+prefer them only when diagnostics support excess zeros. They report a count
+process fold change and the zero-process coefficient separately. The public
+`MetaManifold.Differential.fit_occupancy` lower-level estimator is available for
+explicit repeated-visit detection histories (sites × visits × taxa). It refuses
+single-visit histories because occupancy and detection are not separately
+identified from one observation without strong external assumptions. See
+[occupancy model notes](docs/occupancy-models.md).
+
 - `clr_welch`: Welch's t-test on centred log-ratios after multiplicative zero
   replacement with `zCompositions::cmultRepl`. The effect is a CLR difference,
   not a fold change. `replacement_delta` controls the replacement fraction
   (default 0.65); `offset` is not used.
 
-For either method, `min_prevalence` (default 0) filters taxa by the fraction of
+Across the differential methods, `min_prevalence` (default 0) filters taxa by the fraction of
 samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
 that produced a p-value. Failed or filtered taxa have no substitute p-value;
 inspect their status and note in the results table. Invalid input or an

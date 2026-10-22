@@ -197,8 +197,8 @@ function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
     method = value(keys_[1], "nb_glm")
     dispersion = value(keys_[2], "ml")
     if method isa AbstractString && dispersion isa AbstractString &&
-       lowercase(strip(method)) == "clr_welch" && lowercase(strip(dispersion)) == "glmgampoi"
-        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with clr_welch"
+       lowercase(strip(method)) != "nb_glm" && lowercase(strip(dispersion)) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with $(strip(method))"
     end
     nothing
 end

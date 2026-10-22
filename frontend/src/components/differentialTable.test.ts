@@ -38,9 +38,9 @@ describe('differential CSV', () => {
   test('keeps every taxon, full precision, and leaves missing statistics empty', () => {
     const lines = differentialCsv(result).trimEnd().split('\r\n')
     expect(lines[0]).toContain('run_B vs run_A (reference)')
-    expect(lines[3]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,prevalence,note')
-    expect(lines[4]).toBe('Bacteroides,ok,2,1.3862943611198906,0.25,5.545,2.9e-8,5.8e-8,12.5,1,')
-    expect(lines[5].startsWith('"Odd, ""quoted""",failed,,,,,,,,0.5,')).toBe(true)
+    expect(lines[3]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,zero_process_log_odds,prevalence,note')
+    expect(lines[4]).toBe('Bacteroides,ok,2,1.3862943611198906,0.25,5.545,2.9e-8,5.8e-8,12.5,,1,')
+    expect(lines[5].startsWith('"Odd, ""quoted""",failed,,,,,,,,,0.5,')).toBe(true)
     expect(lines).toHaveLength(6)
   })
 })

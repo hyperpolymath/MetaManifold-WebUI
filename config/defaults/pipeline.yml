@@ -347,16 +347,15 @@ analysis:
   # comparing two conditions on the raw read counts, with Benjamini-Hochberg
   # adjusted p-values.
   differential:
-    # The model fitted to each taxon. nb_glm: a negative-binomial GLM on the read
-    # counts with a library-size offset; the effect is a log2 fold change. clr_welch:
-    # Welch's t-test on centred log-ratios over the taxa passing min_prevalence,
-    # after zCompositions::cmultRepl replaces their zeros; the effect is a
-    # difference in CLR units, not a fold change.
+    # Per-taxon model: nb_glm (negative-binomial GLM), clr_welch (Welch test on
+    # zero-replaced CLR values), zinb (zero-inflated NB), or hurdle_nb (logistic
+    # occurrence plus zero-truncated NB). Two-part models test both group effects
+    # jointly; their count-process fold change is reported separately.
     method: nb_glm
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).
     # rle is refused when no taxon is present in every sample.
-    # Used by nb_glm only; clr_welch ignores it, since log-ratios carry no library size.
+    # Used by count models (nb_glm, zinb, hurdle_nb); clr_welch ignores it.
     offset: tss
     # nb_glm only: where each taxon's negative-binomial theta comes from. ml
     # (the default) takes the maximum-likelihood estimate MASS::glm.nb fits per

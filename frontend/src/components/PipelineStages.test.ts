@@ -7,3 +7,10 @@ test('dispersion uses the enum editor with both supported models', () => {
     kind: 'enum', options: ['ml', 'glmGamPoi'],
   })
 })
+
+
+test('differential model editor exposes supported two-part NB methods', () => {
+  expect(CONFIG_TYPES['analysis.differential.method']).toEqual({
+    kind: 'enum', options: ['nb_glm', 'clr_welch', 'zinb', 'hurdle_nb'],
+  })
+})
