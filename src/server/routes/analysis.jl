@@ -1204,7 +1204,9 @@ raise their conversion errors.
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
     val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
-    alpha = val("analysis.differential.bayesian_alpha", nothing)
+    alpha = get(get(resolved, "analysis.differential.bayesian_alpha", (; value=nothing)), :value, nothing)
+    alpha_val = isnothing(alpha) || alpha isa Real ? alpha : throw(ArgumentError(
+        "analysis.differential.bayesian_alpha must be empty or a finite number greater than 0, not '$alpha'"))
     mc_raw = val("analysis.differential.mc_samples", Differential.DEFAULT_MC_SAMPLES)
     mc_val = mc_raw isa Real ? mc_raw : throw(ArgumentError(
         "analysis.differential.mc_samples must be a whole number in " *
@@ -1216,7 +1218,7 @@ function _differential_config(study::String)
                        dispersion=String(val("analysis.differential.dispersion", "ml")),
                        replacement_method=String(val("analysis.differential.replacement_method",
                                                        "bayesian_multiplicative")),
-                       bayesian_alpha=isnothing(alpha) ? nothing : Float64(alpha),
+                       bayesian_alpha=alpha_val,
                        mc_samples=mc_val)
 end
 
