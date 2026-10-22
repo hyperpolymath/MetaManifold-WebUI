@@ -109,9 +109,9 @@ function validate_policy(spec::NumericPolicySpec)
 end
 
 function assert_mode(spec::NumericPolicySpec, mode::Symbol)
-    spec.mode === mode || throw(UnsupportedRepresentationError(
-        "mode $mode", "policy is $(spec.mode)",
-        "this analysis; select the required mode explicitly or use the existing ordinary workflow"))
+    spec.mode === mode || throw(ArgumentError(
+        "this analysis requires numeric mode '$mode' but the policy is '$(spec.mode)'; " *
+        "select the required mode explicitly or use the existing ordinary workflow"))
     spec
 end
 
