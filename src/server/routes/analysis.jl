@@ -1205,6 +1205,7 @@ function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
     val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
     alpha = val("analysis.differential.bayesian_alpha", nothing)
+    reference = val("analysis.differential.mn_reference_taxon", nothing)
     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
                        Float64(val("analysis.differential.min_prevalence", 0.0));
                        method=String(val("analysis.differential.method", "nb_glm")),
@@ -1212,7 +1213,13 @@ function _differential_config(study::String)
                        dispersion=String(val("analysis.differential.dispersion", "ml")),
                        replacement_method=String(val("analysis.differential.replacement_method",
                                                        "bayesian_multiplicative")),
-                       bayesian_alpha=isnothing(alpha) ? nothing : Float64(alpha))
+                       bayesian_alpha=isnothing(alpha) ? nothing : Float64(alpha),
+                       mn_reference_taxon=isnothing(reference) ? nothing : string(reference),
+                       mn_penalty=Float64(val("analysis.differential.mn_penalty", 0.0)),
+                       dm_overdispersion_method=String(val("analysis.differential.dm_overdispersion_method", "mle")),
+                       max_iter=Int(val("analysis.differential.max_iter", 500)),
+                       tol=Float64(val("analysis.differential.tolerance", 1e-8)),
+                       max_seconds=Float64(val("analysis.differential.max_seconds", 300.0)))
 end
 
 """
@@ -1292,6 +1299,8 @@ function _differential(study::String, body)
         e isa MASSUnavailable  && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa ZCompositionsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa GlmGamPoiUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
+        e isa CompositionalRefusal && return json_error(422, "model_refused", sprint(showerror, e))
+        e isa RuntimeRefusal   && return json_error(422, "runtime_budget_exceeded", sprint(showerror, e))
         e isa ErrorException   && return json_error(422, "no_taxon_fitted", e.msg)
         rethrow()
     end
