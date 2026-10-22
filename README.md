@@ -282,6 +282,40 @@ unavailable required R package produces an explicit error.
 Implementation and reference tests: `src/analysis/differential.jl`,
 `src/server/routes/analysis.jl`, and `test/unit/test_differential.jl`.
 
+### Evidence Mode
+
+The **Evidence** tab turns a run's outputs into a citable epistemic record. A
+claim is a sentence a reader could disagree with, a **scope** naming the part of
+the data it is about (its *fibre*: the rows whose value at a rank, or whose
+category in a set, is one of the named labels), and a **warrant** saying why it
+follows. Claims are stored in `projects/{study}/[<group>/]<run>/evidence/claims.yml`
+and can be downloaded as that exact YAML.
+
+Three views share one record:
+
+- **Claims** — the epistemic editor (avec fibre). A claim cannot be saved
+  without a scope and at least one value, and cannot be marked `supported`
+  without a measurement, citation or inference warrant: a definition alone
+  supports nothing.
+- **Fibre & echo** — the fibre's share of every sample, its largest members, and
+  the same fibre seen through a second projection: the other classifier at the
+  same rank, and the parent rank. Agreement is reported with a verdict;
+  disagreement is a limit on how strongly the claim may be stated, and an echo
+  that cannot be computed says so rather than vanishing.
+- **Residuals** — where the fibre departs from a null you declare, either
+  `proportional` (the fibre distributed across samples as the library is) or a
+  stated `claim_share`, with Pearson residuals, a log2 ratio and a χ² statistic
+  printed without a p-value. The worst departure is shown first.
+
+The tab's Provenance card states whether `attestation.yml` is absent, degraded
+or internally inconsistent before any claim is read. Longer notes on the
+definitions, the schema and the limits are kept in `docs/evidence-mode.md`
+(documentation under `docs/` is kept local by policy — see `.gitignore`).
+
+Implementation: `src/core/evidence.jl` (schema, residuals, verdicts),
+`src/server/routes/evidence.jl` (the SQL), `frontend/src/evidence/`
+(editor, fibre visualiser, residual explorer) and `test/unit/test_evidence.jl`.
+
 ### Figures and report
 
 The Figures tab lays analysis charts out on a page (A4, letter or a journal
@@ -766,6 +800,8 @@ projects/{project_name}/{run}/
 |   |-- taxonomy.tsv             # Top-hit taxonomy assignments (ASV or OTU)
 |   `-- logs/
 `-- merged/
+    |-- evidence/
+    |   `-- claims.yml           # Evidence record: claims, fibres, warrants
     |-- merged.csv               # Merged taxonomy + counts (all taxa)
     |-- protist_filter.csv       # Filtered subset (one per merge_taxa.filters entry)
     `-- results.duckdb           # DuckDB database for API queries
@@ -814,6 +850,7 @@ The server exposes a REST API under `/api/v1/`. Key endpoint groups:
 | Cross-run      | `POST /studies/{study}/analysis/{alpha,chart,chart-facet,nmds,permanova,venn,publication-tables}`             | Comparison, faceted charts, NMDS, PERMANOVA, taxon overlap and publication tables across runs |
 | Composition    | `POST .../runs/{run}/composition/summary`, `POST .../composition/{source}/query`, `POST .../composition/{source}/distinct/{column}` | Organism-composition summaries and tables for a run                             |
 | Composition library | `GET /composition`, `POST/DELETE /composition/{filters,sets}/{name}`, `GET /category-sets`, `POST/DELETE /category-sets/{name}` | Edit the filters and category sets in `config/composition.yml`               |
+| Evidence | `GET .../runs/{run}/evidence`, `GET .../evidence/claims.yml`, `POST .../evidence/claims`, `DELETE .../evidence/claims/{id}`, `POST .../evidence/{fiber,residuals}` | Claims, fibres, echoes and residuals for a run; the record is exportable as YAML |
 | Reference trees | `GET/POST /reference-trees`, `GET/PUT/DELETE /reference-trees/{id}`, `GET/PUT .../fasta`, `POST .../run`, `GET .../log/{step}`, `GET .../qc/{align,trim}`, `GET .../alignment/{raw,trimmed}`, `GET .../treefile`, `POST .../trim-preview` | Build and inspect the shared reference trees |
 | Placements     | `GET/POST /studies/{study}/placements`, `GET/PUT/DELETE .../placements/{id}`, `POST .../placements/preview`, `GET/PUT .../fasta/queries`, `POST .../run`, `GET .../log/{step}`, `GET .../qc/{align,trim}`, `GET .../alignment/{raw,trimmed}`, `POST .../trim-preview` | Place a study's sequences on a reference tree |
 | Trees          | `GET/POST /studies/{study}/trees`, `GET/DELETE /studies/{study}/trees/{file}`, `PUT /studies/{study}/trees/{file}/view` | Upload, read and delete Newick and jplace files; save each tree's view state          |
