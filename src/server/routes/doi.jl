@@ -51,7 +51,7 @@ end
     run = string(get(body, "run", ""))
     isempty(run) && return json_error(400, "missing_run", "Body must include 'run'")
     _valid_name(run) || return json_error(400, "invalid_run", "Invalid run name")
-    confirm = Bool(get(body, "confirm", false))
+    confirm = get(body, "confirm", false) === true
     confirm || return json_error(409, "confirm_required",
         "DOI publication is irreversible: body must include confirm=true")
     raw = get(body, "files", nothing)
