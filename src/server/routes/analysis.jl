@@ -1203,7 +1203,11 @@ raise their conversion errors.
 """
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
-    val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    # `something(nothing, nothing)` throws. Nullable settings must be able to
+    # use `nothing` as both their resolved value and their default.
+    val(k, d) = let v = get(get(resolved, k, (; value=d)), :value, d)
+        isnothing(v) ? d : v
+    end
     alpha = val("analysis.differential.bayesian_alpha", nothing)
     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
                        Float64(val("analysis.differential.min_prevalence", 0.0));

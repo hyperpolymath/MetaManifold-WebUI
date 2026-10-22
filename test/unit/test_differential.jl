@@ -1101,6 +1101,9 @@ end
 
     @testset "Route: two runs through the in-process router" begin
         _da_fixture() do
+            # The factory default is an explicitly null Bayesian alpha. Config
+            # resolution must preserve it rather than something(nothing, nothing).
+            @test MetaManifold.Server._differential_config("studyD").bayesian_alpha === nothing
             r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
                                         "table" => "merged", "rank" => "Genus"))
             body = JSON3.read(String(r.body))

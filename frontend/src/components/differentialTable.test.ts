@@ -79,6 +79,7 @@ describe('clr_welch results', () => {
     }
     expect(configLine(custom)).toContain('replacement_method multiplicative_replacement')
     expect(configLine(custom)).toContain('replacement_delta 0.4')
+    expect(configLine(custom)).not.toContain('bayesian_alpha')
     const alpha: DifferentialResult = {
       ...clr,
       config: { method: 'clr_welch', min_prevalence: 0,
