@@ -21,6 +21,7 @@ import type {
   TreeFileInfo, TreeFile, RunRef, ReadFunnelData, ReportItem, ReportKind,
   PlacementDoc, PlacementSummary, PlacementDetail, PlacementQueries, PhyloStep,
   ReferenceTreeDoc, ReferenceTreeSummary, ReferenceTreeDetail, AlignmentQC, TrimSettings,
+  CladisticsCreateRequest, CladisticsSummary, CladisticsDetail,
 } from './types'
 
 import type { FigureDoc } from '../figure/types'
@@ -353,6 +354,17 @@ export const api = {
       }
       return res.json() as Promise<{ file: string }>
     },
+  },
+
+  cladistics: {
+    list:   (study: string) => get<CladisticsSummary[]>(`/api/v1/studies/${study}/cladistics`),
+    get:    (study: string, id: string) => get<CladisticsDetail>(`/api/v1/studies/${study}/cladistics/${id}`),
+    create: (study: string, body: CladisticsCreateRequest) =>
+      post<{ id: string; job: Job }>(`/api/v1/studies/${study}/cladistics`, body),
+    remove: (study: string, id: string) =>
+      del<{ deleted: string }>(`/api/v1/studies/${study}/cladistics/${id}`),
+    log:    (study: string, id: string, step: 'align' | 'trim' | 'tree') =>
+      getText(`/api/v1/studies/${study}/cladistics/${id}/log/${step}`),
   },
 
   referenceTrees: {

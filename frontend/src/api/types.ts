@@ -597,6 +597,88 @@ export interface TreeFile {
   view:     unknown
 }
 
+export type CountNormalisation = 'none' | 'rarefy' | 'srs'
+
+export interface CladisticsCreateRequest {
+  name: string
+  runs: ComparisonRunSpec[]
+  table: string
+  min_reads: number
+  max_asvs: number
+  normalisation: CountNormalisation
+  /** Zero chooses the smallest positive library size; ignored for `none`. */
+  depth: number
+  colFilters?: Record<string, ColFilter>
+}
+
+export interface CladisticsSummary {
+  id: string
+  name: string
+  created: string
+  modified: string
+  asv_count: number
+  sample_count: number
+  state: PhyloState
+  built: boolean
+  published?: string | null
+}
+
+export interface CladisticsDoc {
+  id: string
+  name: string
+  created: string
+  modified: string
+  source: {
+    runs: ComparisonRunSpec[]
+    table: string
+    min_reads: number
+    max_asvs: number
+    available_asvs: number
+    selection: string
+  }
+  overrides: PhyloSettings
+  asv_count: number
+  sample_count: number
+  counts_sha256: string
+  tree_sha256?: string
+  published?: string
+  warning: string
+}
+
+export interface CumulativeCladeNode {
+  id: string
+  parent_id: string | null
+  label: string
+  branch_length: number | null
+  is_tip: boolean
+  tip_count: number
+  cumulative_count: number
+  cumulative_frequency: number
+}
+
+export interface CladisticsResult {
+  version: number
+  generated: string
+  tree_sha256: string
+  counts_sha256: string
+  nodes: CumulativeCladeNode[]
+  samples: string[]
+  sample_reads: number[]
+  faith_pd: number[]
+  unweighted_unifrac: number[][]
+  weighted_unifrac: number[][]
+  total_branch_length: number
+  normalisation: { method: CountNormalisation; depth: number; seed: number }
+  excluded_samples: string[]
+  weighted_unifrac_definition: string
+}
+
+export interface CladisticsDetail extends WorkflowDetail {
+  doc: CladisticsDoc
+  summary: CladisticsSummary
+  result: CladisticsResult | null
+}
+
 export const REFERENCE_STEPS = ['align', 'trim', 'tree'] as const
 export const PLACEMENT_STEPS = ['align', 'trim', 'place', 'accumulate'] as const
 export type PhyloStep = typeof REFERENCE_STEPS[number] | typeof PLACEMENT_STEPS[number]

@@ -35,6 +35,7 @@ include("pipeline/phylogeny.jl")
 # Analysis
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
+include("analysis/clade_cumulus.jl")
 include("analysis/differential.jl")
 
 # Canonical JSON: deterministic bytes for hashing and content-addressing.

@@ -16,6 +16,7 @@ const RUN_SERVER      = "--server"      in ARGS
 
 const UNIT_FILES = [
     "test_diversity.jl",
+    "test_clade_cumulus.jl",
     "test_merge_taxa.jl",
     "test_config.jl",
     "test_validation.jl",
