@@ -63,9 +63,9 @@ function DOIConfig(; enabled::Bool=false,
                    storage_dir::AbstractString="data/doi_journal")
     origin_s = String(origin)
     valid = origin_s in (ZENODO_SANDBOX_ORIGIN, ZENODO_PRODUCTION_ORIGIN)
-    DOIConfig(enabled, valid ? origin_s : ZENODO_SANDBOX_ORIGIN,
-              String(token), String(storage_dir),
-              origin_s == ZENODO_SANDBOX_ORIGIN)
+    effective = valid ? origin_s : ZENODO_SANDBOX_ORIGIN
+    DOIConfig(enabled, effective, String(token), String(storage_dir),
+              effective == ZENODO_SANDBOX_ORIGIN)
 end
 
 """
