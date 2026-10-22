@@ -157,7 +157,9 @@ function _zenodo_request(config::DOIConfig, method::AbstractString, path::Abstra
         try
             req_body = raw_body ? body : (isnothing(body) ? nothing : JSON3.write(body))
             resp = HTTP.request(method, url, headers, req_body;
-                                connect_timeout=10, readtimeout=60)
+                                connect_timeout=10, readtimeout=60,
+                                status_exception=false, retry=false,
+                                redirect=false)
             status = resp.status
             body_s = String(copy(resp.body))
             # Log only method, path and status - never headers or body.
