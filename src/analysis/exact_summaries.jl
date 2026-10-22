@@ -134,13 +134,13 @@ end
 
 function _fingerprint(columns::Vector{Vector{BigInt}}, labels, features, groups)
     rows = [[string(columns[j][i]) for j in eachindex(labels)] for i in eachindex(features)]
-    jcs_sha256((;
-        schema="metamanifold.exact-count-matrix.v1",
-        orientation="features_by_samples",
-        feature_labels=features,
-        sample_labels=labels,
-        groups=groups,
-        counts=rows,
+    jcs_sha256(Dict{String,Any}(
+        "schema" => "metamanifold.exact-count-matrix.v1",
+        "orientation" => "features_by_samples",
+        "feature_labels" => features,
+        "sample_labels" => labels,
+        "groups" => groups,
+        "counts" => rows,
     ))
 end
 

@@ -218,8 +218,8 @@ function exact_rational_sum(values; policy::NumericPolicySpec=numeric_policy(:ex
             "an exact rational", string(value), "exact_rational_sum"))
         iszero(denominator(value)) && throw(UnsupportedRepresentationError(
             "a finite rational", string(value), "exact_rational_sum"))
-        candidate = Rational{BigInt}(value)
-        acc = isnothing(acc) ? _check_rational_bits(candidate, policy) :
+        candidate = _check_rational_bits(Rational{BigInt}(value), policy)
+        acc = isnothing(acc) ? candidate :
               _check_rational_bits(acc + candidate, policy)
     end
     acc

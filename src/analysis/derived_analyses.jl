@@ -22,7 +22,8 @@ end
 Base.showerror(io::IO, e::DerivedAnalysisError) = print(io, e.reason)
 
 function derived_analysis_id(source, config, result)
-    jcs_sha256((; schema=SCHEMA, source, config, result))
+    jcs_sha256(Dict{String,Any}(
+        "schema" => SCHEMA, "source" => source, "config" => config, "result" => result))
 end
 
 function _record(id::String, source, config, result)
