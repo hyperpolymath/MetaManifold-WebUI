@@ -369,12 +369,19 @@ analysis:
     # Fraction of samples, 0 to 1, in which a taxon must have reads to be
     # tested. Taxa below it are listed as filtered, without a p-value. For
     # clr_welch it is applied before zero replacement, so on a sparse table it also
-    # keeps imputed values for rare taxa out of every sample; clr_welch refuses a
-    # taxon seen in fewer than 2 samples.
+    # keeps imputed values for rare taxa out of every sample. Bayesian replacement
+    # refuses a taxon seen in fewer than 2 samples; CZM requires at least one.
     min_prevalence: 0.0
-    # clr_welch only: cmultRepl's frac, between 0 and 1. An imputed proportion above
-    # its taxon's smallest observed proportion is lowered to this fraction of it.
-    # A replaced zero is not a measurement.
+    # clr_welch only: how cmultRepl replaces zeros before the centred log-ratio.
+    # bayesian_multiplicative uses the geometric Bayesian-multiplicative (GBM)
+    # posterior replacement. multiplicative_replacement uses count zero
+    # multiplicative (CZM) replacement. Both preserve observed-part ratios;
+    # neither turns an imputed zero into a measurement.
+    replacement_method: bayesian_multiplicative
+    # clr_welch only: cmultRepl's frac, strictly between 0 and 1. For CZM this
+    # is the fraction of the 0.5/sample-total threshold; for either method an
+    # imputed proportion above its taxon's smallest observed proportion is
+    # lowered to this fraction of it. Values below 0.01 or at least 0.9 warn.
     replacement_delta: 0.65
   # Exact-arithmetic statistics layer (issue #1), served at
   # /api/v1/studies/{study}/runs/{run}/analysis/statistics. No pipeline stage
