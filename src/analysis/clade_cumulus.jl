@@ -94,16 +94,16 @@ end
 function _label!(p::_Parser)::String
     _skip!(p)
     _done(p) && return ""
-    quote = _peek(p)
-    if quote in (UInt8('\''), UInt8('"'))
+    quote_char = _peek(p)
+    if quote_char in (UInt8('\''), UInt8('"'))
         p.pos += 1
         out = UInt8[]
         while !_done(p)
             b = _peek(p)
             p.pos += 1
-            if b == quote
-                if !_done(p) && _peek(p) == quote  # doubled quote in a quoted label
-                    push!(out, quote)
+            if b == quote_char
+                if !_done(p) && _peek(p) == quote_char  # doubled quote in a quoted label
+                    push!(out, quote_char)
                     p.pos += 1
                 else
                     return String(out)
