@@ -20,6 +20,7 @@ const UNIT_FILES = [
     "test_exact_summaries.jl",
     "test_high_precision.jl",
     "test_derived_analyses.jl",
+    "test_clade_cumulus.jl",
     "test_merge_taxa.jl",
     "test_config.jl",
     "test_validation.jl",

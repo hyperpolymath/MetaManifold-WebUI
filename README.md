@@ -80,6 +80,7 @@ Once a run completes, analysis is performed on request through the web UI, both 
 - Pipeline stage read-count summaries
 - NMDS ordination (Bray-Curtis, via R/vegan)
 - PERMANOVA, with PERMDISP to check for differences in dispersion (via R/vegan)
+- De novo ASV phylogenies with cumulative clade abundances, Faith's phylogenetic diversity, and weighted/unweighted UniFrac (CladeCumulus)
 
 Counts may be normalised before analysis (none, rarefaction to a fixed or auto-resolved depth, or scaling with ranked subsampling (SRS), which reaches the depth by scaling counts and keeps more of the community structure), and contamination-flagged taxa may be included or excluded. Ordinations can also apply a Hellinger transform before the Bray-Curtis dissimilarity. Composition charts can be drawn as a grid faceted on any two of run, group and sub-group. All analysis charts are returned as Plotly JSON and rendered interactively in the browser.
 
@@ -239,6 +240,35 @@ from the library page.
 <p align="center">
   <img src=".github/screenshots/tree-viewer.png" width="800" alt="The tree viewer showing a placement tree with collapsed clades, bootstrap support and placement symbols">
 </p>
+
+### CladeCumulus: ASV phylogenies and phylogenetic diversity
+
+A study's **Cladistics** tab builds a de novo tree directly from ASV sequences,
+rather than treating taxonomic ranks as a phylogeny. Choose whole runs and a
+shared results table with a `Sequence` column, then set an ASV cap (500 by
+default, 2,000 maximum) and a minimum total-read threshold. The highest-abundance
+ASVs are selected deterministically, with sequence ties broken lexicographically.
+The build uses the existing **MAFFT → trimAl → IQ-TREE** workflow and its
+`phylogeny.reference` settings, including local/remote execution and bootstrap
+configuration.
+
+The completed **CladeCumulus** view provides:
+
+- cumulative read counts and frequencies on every phylogenetic clade, with a
+  collapsible tree and a link to the full Newick viewer;
+- Faith's phylogenetic diversity and retained reads per sample;
+- unweighted UniFrac and normalized weighted UniFrac heatmaps, with CSV export;
+- optional rarefaction or SRS before all three analyses, using the same count
+  normalisation as the existing diversity views.
+
+Each build is saved separately with its selected count matrix, ASV FASTA,
+Newick tree, source settings, count/tree SHA-256 hashes and the usual tool
+attestation. Tips use stable sequence-content hashes so their names are safe for
+external tools and reproducible across runs. Metrics share one O(nodes × samples)
+roll-up; pairwise UniFrac is O(samples² × nodes). Tree inference itself can be
+much more expensive, so keep the ASV cap appropriate for the dataset. Run
+`julia --project=. bench/cladistics.jl` for a no-I/O roll-up/UniFrac timing. A tree
+inferred from short amplicons is approximate, particularly along deep branches.
 
 ### Composition
 
