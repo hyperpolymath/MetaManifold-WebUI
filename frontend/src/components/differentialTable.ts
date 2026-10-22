@@ -42,10 +42,19 @@ export function formatStat(value: number | null): string {
 /**
  * The settings line of the CSV: the method and the parameters it used. The
  * offset belongs to nb_glm; replacement method, delta and alpha belong to
- * clr_welch, so each line names only its own method's parameters.
+ * clr_welch; the reference taxon, penalty and overdispersion method to the two
+ * multinomial models, so each line names only its own method's parameters.
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
+  if (c.method === 'multinomial' || c.method === 'dirichlet_multinomial') {
+    const overdispersion = c.method === 'dirichlet_multinomial'
+      ? `, overdispersion ${c.dm_overdispersion_method}`
+      : ''
+    return `method ${c.method}${overdispersion}, reference ${c.mn_reference_taxon}, ` +
+      `penalty ${c.mn_penalty}, min_prevalence ${c.min_prevalence}; estimates are ` +
+      'log2 fold changes against the reference taxon'
+  }
   if (c.method !== 'clr_welch')
     return `method nb_glm, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
   const replacement = c.replacement_method ?? 'bayesian_multiplicative'

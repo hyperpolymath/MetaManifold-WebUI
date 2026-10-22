@@ -42,6 +42,9 @@ include("canonical.jl")
 # Analysis
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
+# The multinomial models are pure Julia and standalone; Differential uses them
+# for its multinomial and dirichlet_multinomial methods.
+include("analysis/compositional.jl")
 include("analysis/differential.jl")
 # Opt-in validated descriptive statistics (issue #1). Ordinary workflows above
 # remain unchanged; these modes must be selected explicitly.
