@@ -376,6 +376,29 @@ analysis:
     # its taxon's smallest observed proportion is lowered to this fraction of it.
     # A replaced zero is not a measurement.
     replacement_delta: 0.65
+  # Exact-arithmetic statistics layer (issue #1), served at
+  # /api/v1/studies/{study}/runs/{run}/analysis/statistics. No pipeline stage
+  # reads this section and no existing analysis calls the layer, so a run that
+  # never asks for it is unaffected. Every stored record carries the policy it
+  # was computed under, so editing these values never rewrites earlier results.
+  statistics:
+    numeric:
+      # float64: IEEE-754 binary64, matching the rest of the application.
+      # bigfloat: MPFR at precision_bits - higher precision, still an approximation.
+      # exact: arbitrary-precision integers and exact rationals only. A statistic
+      # with no exact value (the Shannon index, for example) is refused outright
+      # with unsupported_numeric_mode rather than returned at another precision.
+      mode: float64
+      # Working precision in bits for the bigfloat mode: 53 to 4096. Recorded but
+      # unused by float64 and exact.
+      precision_bits: 256
+      # Largest decimal digits allowed in any exact numerator, denominator or
+      # integer: 16 to 100000. Exceeding it is an explicit resource_limit failure,
+      # never a quiet fallback to floating point.
+      max_digits: 4096
+      # Decimal places in display strings only: 0 to 50. Display values are
+      # rounded and labelled; they never feed a computation.
+      display_digits: 6
 
 ## Occupancy probe (MMW-01)
 # Measures each attested stage's memory: Julia's allocation total, and the

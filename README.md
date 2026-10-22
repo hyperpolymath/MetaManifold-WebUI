@@ -80,6 +80,7 @@ Once a run completes, analysis is performed on request through the web UI, both 
 - Pipeline stage read-count summaries
 - NMDS ordination (Bray-Curtis, via R/vegan)
 - PERMANOVA, with PERMDISP to check for differences in dispersion (via R/vegan)
+- An optional exact-arithmetic statistics layer: descriptive summaries with exact integer counts and rationals, or approximations at a requested precision, each stored as an immutable record with its provenance. It performs no test and no inference; see [docs/statistics-layer.md](docs/statistics-layer.md)
 
 Counts may be normalised before analysis (none, rarefaction to a fixed or auto-resolved depth, or scaling with ranked subsampling (SRS), which reaches the depth by scaling counts and keeps more of the community structure), and contamination-flagged taxa may be included or excluded. Ordinations can also apply a Hellinger transform before the Bray-Curtis dissimilarity. Composition charts can be drawn as a grid faceted on any two of run, group and sub-group. All analysis charts are returned as Plotly JSON and rendered interactively in the browser.
 
@@ -612,6 +613,12 @@ analysis:
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
+  statistics:                    # the optional exact-arithmetic statistics layer
+    numeric:
+      mode: float64              # float64 | bigfloat | exact
+      precision_bits: 256        # MPFR precision for bigfloat mode (53 to 4096)
+      max_digits: 4096           # bound on any exact value (16 to 100000)
+      display_digits: 6          # rounding applied to display strings only (0 to 50)
 ```
 
 ### Configuring taxonomic filtering (`filters:` in `config/composition.yml`)

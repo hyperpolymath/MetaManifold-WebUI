@@ -387,8 +387,11 @@ end
 # The chart surfaces an exclusion may apply to. "diversity" covers alpha, NMDS
 # and PERMANOVA; "taxa" is the rank-tagged chart; "composition" is the
 # category-tagged chart; "venn" the presence/absence sets; "differential" the
-# per-taxon differential abundance test.
-const _EXCLUSION_SURFACES = Set(["diversity", "taxa", "composition", "venn", "differential"])
+# per-taxon differential abundance test; "statistics" the exact-arithmetic
+# statistics layer. No existing exclusion names "statistics", so adding it here
+# changes none of their behaviour: it only makes the surface addressable.
+const _EXCLUSION_SURFACES = Set(["diversity", "taxa", "composition", "venn",
+                                 "differential", "statistics"])
 
 # Resolve the configured `analysis.exclude_categories` for a run into a vector of
 # (set, category, surfaces) specs. Each names a composition category set and the

@@ -32,13 +32,22 @@ include("pipeline/dada2.jl")
 include("pipeline/swarm.jl")
 include("pipeline/phylogeny.jl")
 
+# Canonical JSON: deterministic bytes for hashing and content-addressing.
+# Included before the analysis layer because the statistics records are
+# content-addressed with it (their analysis id is the SHA-256 of their canonical
+# bytes). It depends on SHA only, so nothing else moves.
+include("canonical.jl")
+
 # Analysis
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
 include("analysis/differential.jl")
 
-# Canonical JSON: deterministic bytes for hashing and content-addressing.
-include("canonical.jl")
+# Optional exact-arithmetic statistics layer (issue #1). Its own modules; the
+# code above neither imports nor calls them, so every existing analysis and
+# pipeline path is unchanged when the layer is not selected.
+include("analysis/exact_numeric.jl")
+include("analysis/exact_statistics.jl")
 
 # Web server
 include("server/server.jl")
