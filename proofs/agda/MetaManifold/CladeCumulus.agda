@@ -48,6 +48,9 @@ infix  4 _⊆_
 -- Self-contained non-recursive boolean & arithmetic lemmas
 
 private
+  false≢true : ∀ {A : Set} → false ≡ true → A
+  false≢true ()
+
   +-idʳ : ∀ m → m + zero ≡ m
   +-idʳ zero    = refl
   +-idʳ (suc m) = cong suc (+-idʳ m)
@@ -101,20 +104,22 @@ private
     (a₂ ∨ b₂) ≡ true
   ∨-mono {false} {a₂}    {_} {_} _  gb eq = ∨-right a₂ (gb eq)
   ∨-mono {true}  {true}  {_} {_} _  _  _  = refl
-  ∨-mono {true}  {false} {_} {_} ga _  _  with ga refl
-  ... | ()
+  ∨-mono {true}  {false} {_} {_} ga _  _  = false≢true (ga refl)
 
   ∧-proj₁ : ∀ {a b : Bool} → (a ∧ b) ≡ true → a ≡ true
   ∧-proj₁ {true}  {_} _  = refl
   ∧-proj₁ {false} {_} ()
+
+  not-∧-false : ∀ {b : Bool} c → b ≡ true → (not b ∧ c) ≡ false
+  not-∧-false {true}  _ _ = refl
+  not-∧-false {false} _ ()
 
   if-mono : ∀ len {b₁ b₂ : Bool} →
     (b₁ ≡ true → b₂ ≡ true) →
     (if b₁ then len else zero) ≤ (if b₂ then len else zero)
   if-mono _   {false} {_}     _   = z≤n
   if-mono len {true}  {true}  _   = ≤-refl len
-  if-mono _   {true}  {false} imp with imp refl
-  ... | ()
+  if-mono _   {true}  {false} imp = false≢true (imp refl)
 
 ------------------------------------------------------------------------
 -- Epistemic world admissibility (`present_in_every_admissible_world`)
@@ -147,10 +152,8 @@ every⇒some []       _ ()
 every⇒some (_ ∷ ws) k eq = ∨-left (anyWorld (λ v → v k) ws) (∧-proj₁ eq)
 
 every⇒not-absent : ∀ ws k → presentInEvery ws k ≡ true → absentInEvery ws k ≡ false
-every⇒not-absent []      _ ()
-every⇒not-absent (w ∷ _) k eq with w k | ∧-proj₁ eq
-... | true  | _ = refl
-... | false | ()
+every⇒not-absent []       _ ()
+every⇒not-absent (w ∷ ws) k eq = not-∧-false (allWorlds (λ v → not (v k)) ws) (∧-proj₁ eq)
 
 ------------------------------------------------------------------------
 -- Drag-and-drop clade reassignment gate
@@ -165,15 +168,20 @@ validateMove ws target notSelf acyclic =
   then accepted
   else rejected
 
+private
+  move-helper : ∀ (b : Bool) →
+    (if b then accepted else rejected) ≡ accepted → b ≡ true
+  move-helper true  _  = refl
+  move-helper false ()
+
 validateMove-sound :
   ∀ ws target notSelf acyclic →
   validateMove ws target notSelf acyclic ≡ accepted →
   (notSelf ≡ true) × ((acyclic ≡ true) × (presentInEvery ws target ≡ true))
 validateMove-sound _  _      false _     ()
 validateMove-sound _  _      true  false ()
-validateMove-sound ws target true  true  with presentInEvery ws target
-... | true  = λ _ → refl , (refl , refl)
-... | false = λ ()
+validateMove-sound ws target true  true  eq =
+  refl , (refl , move-helper (presentInEvery ws target) eq)
 
 ------------------------------------------------------------------------
 -- CladeTree topology and bottom-up read aggregation
@@ -269,7 +277,7 @@ mutual
   anyActive-mono : ∀ {S₁ S₂} → S₁ ⊆ S₂ → ∀ cs → anyActive S₁ cs ≡ true → anyActive S₂ cs ≡ true
   anyActive-mono _   empty     ()
   anyActive-mono inc (t ∷ᶠ ts) eq =
-    ∨-mono (active-mono inc t) (anyActive-mono inc ts) eq
+    ∨-mono (λ h → active-mono inc t h) (λ h → anyActive-mono inc ts h) eq
 
 mutual
   faithPD : (ℕ → Bool) → CladeTree → ℕ
@@ -285,9 +293,9 @@ totalTreePD = faithPD allTips
 
 mutual
   faithPD-mono : ∀ {S₁ S₂} → S₁ ⊆ S₂ → ∀ t → faithPD S₁ t ≤ faithPD S₂ t
-  faithPD-mono inc t@(tip _ _ len)    = if-mono len (active-mono inc t)
+  faithPD-mono inc t@(tip _ _ len)    = if-mono len (λ h → active-mono inc t h)
   faithPD-mono inc t@(clade _ len cs) =
-    +-mono-≤ (if-mono len (active-mono inc t)) (forestPD-mono inc cs)
+    +-mono-≤ (if-mono len (λ h → active-mono inc t h)) (forestPD-mono inc cs)
 
   forestPD-mono : ∀ {S₁ S₂} → S₁ ⊆ S₂ → ∀ cs → forestPD S₁ cs ≤ forestPD S₂ cs
   forestPD-mono _   empty     = z≤n

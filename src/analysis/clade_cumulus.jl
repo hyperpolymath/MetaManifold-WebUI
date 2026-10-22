@@ -279,7 +279,7 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
             end
             num_str = strip(String(SubString(s, num_start, pos[] - 1)))
             parsed_len = tryparse(Float64, num_str)
-            parsed_len === nothing &&
+            (parsed_len === nothing || !isfinite(parsed_len)) &&
                 throw(ArgumentError("Invalid branch length $(repr(num_str)) in Newick"))
             if parsed_len < 0.0
                 push!(warnings, "Clamped negative branch length ($parsed_len) to 0.0.")
@@ -929,20 +929,153 @@ function _clean_taxon_value(v)::Union{String,Nothing}
     String(s)
 end
 
-function _row_bootstrap_confidence(row, rank_cols::Vector{String}, all_cols::Set{String})::Float64
+function _row_lineage_and_confidence(
+    row,
+    ranks::Vector{String},
+    all_cols::Set{String},
+)::Tuple{Vector{Union{String,Nothing}},Float64}
+    lin = Union{String,Nothing}[_clean_taxon_value(row[r]) for r in ranks]
     vals = Float64[]
-    for r in rank_cols
-        for cand in (string(r, "_boot"), string("boot_", r))
+    for (ri, r) in enumerate(ranks)
+        primary_val = lin[ri]
+        is_dada2_rank = endswith(lowercase(r), "_dada2")
+        base_r = is_dada2_rank ? r[1:(end - 6)] : r
+        dada2_col = string(base_r, "_dada2")
+        has_separate_dada2 = !is_dada2_rank && (dada2_col in all_cols)
+
+        # In merged tables (`<Rank>` from primary classifier + `<Rank>_dada2` + `<Rank>_boot`
+        # from DADA2), never apply DADA2 bootstrap support to a disagreeing primary label.
+        if has_separate_dada2
+            dada2_val = _clean_taxon_value(row[dada2_col])
+            if primary_val !== nothing && dada2_val !== nothing && primary_val != dada2_val
+                push!(vals, 0.5)
+                continue
+            elseif primary_val !== nothing && dada2_val === nothing
+                continue
+            end
+        end
+
+        for cand in (string(base_r, "_boot"), string("boot_", base_r), string(r, "_boot"), string("boot_", r))
             if cand in all_cols
                 v = row[cand]
                 if !(v === nothing || ismissing(v)) && v isa Real
                     nv = _normalize_support(Float64(v))
                     nv !== nothing && push!(vals, nv)
                 end
+                break
             end
         end
     end
-    isempty(vals) ? 1.0 : minimum(vals)
+    (lin, isempty(vals) ? 1.0 : minimum(vals))
+end
+
+struct _GraftedQuerySpec
+    tip_id :: String
+    qname  :: String
+    share  :: Float64
+    distal :: Float64
+    pendant:: Float64
+    lwr    :: Float64
+end
+
+function _graft_jplace_queries(
+    base_root::PhyloNode,
+    jd::JplaceDocument,
+    asv_reads::OrderedDict{String,Float64},
+    asv_deepest_taxon::Dict{String,Union{String,Nothing}},
+    asv_tax_conf::Dict{String,Float64},
+    query_lwr::Dict{String,Float64},
+)::PhyloNode
+    existing_tips = _collect_tree_tips!(Set{String}(), base_root)
+    by_edge = Dict{Int,Vector{_GraftedQuerySpec}}()
+
+    for q in jd.queries
+        q.status === :valid && !isempty(q.candidates) || continue
+        total_w = sum((c.weight for c in q.candidates); init = 0.0)
+        total_w > 0.0 || continue
+        multi = length(q.candidates) > 1
+        for (qname, mult) in q.names
+            qname in existing_tips && continue
+            base_cnt = get(asv_reads, qname, Float64(mult))
+            tx = get(asv_deepest_taxon, qname, nothing)
+            tconf = get(asv_tax_conf, qname, 1.0)
+            for (ci, cand) in enumerate(q.candidates)
+                share = cand.weight / total_w
+                tip_id = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
+                if multi
+                    asv_reads[tip_id] = get(asv_reads, tip_id, 0.0) + base_cnt * share
+                    asv_deepest_taxon[tip_id] = tx
+                    asv_tax_conf[tip_id] = tconf
+                elseif !haskey(asv_reads, tip_id)
+                    asv_reads[tip_id] = base_cnt
+                end
+                query_lwr[tip_id] = cand.weight
+                push!(get!(by_edge, cand.edge_num, _GraftedQuerySpec[]),
+                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_length), max(0.0, cand.pendant_length), cand.weight))
+            end
+        end
+    end
+
+    isempty(by_edge) && return base_root
+    seq_auto = Ref(0)
+
+    function walk(u::PhyloNode)::PhyloNode
+        rebuilt_kids = PhyloNode[walk(ch) for ch in u.children]
+        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_num, rebuilt_kids)
+        specs = u.edge_num === nothing ? nothing : get(by_edge, u.edge_num, nothing)
+        (specs === nothing || isempty(specs)) && return cur
+
+        # Order grafts from most distal (closest to `cur`, smallest `distal`) to most proximal.
+        ordered = sort(specs; by = s -> s.distal)
+        prev_distal = 0.0
+        total_len = max(0.0, cur.branch_length)
+        sub = cur
+        for sp in ordered
+            d_clamped = clamp(sp.distal, prev_distal, total_len)
+            seg_len = d_clamped - prev_distal
+            prev_distal = d_clamped
+            sub = PhyloNode(sub.id, sub.name, seg_len, sub.support, nothing, sub.children)
+            qtip = PhyloNode(sp.tip_id, sp.tip_id, sp.pendant, sp.lwr, nothing, PhyloNode[])
+            seq_auto[] += 1
+            sub = PhyloNode(string("jplace_clade#", seq_auto[]), "", 0.0, 1.0, nothing, PhyloNode[sub, qtip])
+        end
+        rem_len = max(0.0, total_len - prev_distal)
+        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_num, sub.children)
+    end
+
+    walk(base_root)
+end
+
+function _build_independent_epistemic_case(
+    label::AbstractString,
+    active_ids::Set{String},
+    unanchored_ids::Set{String},
+    node_supports::Dict{String,Float64},
+    node_lwrs::Dict{String,Float64};
+    support_threshold::Float64 = 0.80,
+    lwr_threshold::Float64 = 0.95,
+)::Epistemic.Case
+    perm_sup = max(0.25, 0.5 * support_threshold)
+    perm_lwr = max(0.25, 0.5 * lwr_threshold)
+
+    strict_support_present = Set{String}(
+        id for id in active_ids if get(node_supports, id, 1.0) >= support_threshold
+    )
+    placement_lwr_present = Set{String}(
+        id for id in active_ids if !haskey(node_lwrs, id) || node_lwrs[id] >= lwr_threshold
+    )
+    permissive_present = Set{String}(
+        id for id in active_ids
+        if get(node_supports, id, 1.0) >= perm_sup &&
+           (!haskey(node_lwrs, id) || node_lwrs[id] >= perm_lwr)
+    )
+
+    worlds = Epistemic.WorldCandidate[
+        Epistemic.WorldCandidate("strict_support"; present_ids = strict_support_present),
+        Epistemic.WorldCandidate("placement_lwr"; present_ids = placement_lwr_present),
+        Epistemic.WorldCandidate("permissive_evidence"; present_ids = permissive_present),
+    ]
+    Epistemic.Case(String(label), worlds; unanchored_ids = unanchored_ids, threshold = support_threshold)
 end
 
 function _emit_simple_newick(u::PhyloNode, is_root::Bool)::String
@@ -1003,14 +1136,14 @@ function build_clade_tree(
         rcount = sum((ismissing(row[c]) ? 0.0 : max(0.0, Float64(row[c])) for c in scols); init = 0.0)
         asv_reads[aid] = get(asv_reads, aid, 0.0) + rcount
 
-        lin = Union{String,Nothing}[_clean_taxon_value(row[r]) for r in ranks]
+        lin, rconf = _row_lineage_and_confidence(row, ranks, all_cols)
         asv_lineage[aid] = lin
         deepest = nothing
         for v in lin
             v !== nothing && (deepest = v)
         end
         asv_deepest_taxon[aid] = deepest
-        asv_tax_conf[aid] = _row_bootstrap_confidence(row, ranks, all_cols)
+        asv_tax_conf[aid] = rconf
 
         if seq_col !== nothing && !ismissing(row[seq_col])
             seq_s = strip(string(row[seq_col]))
@@ -1055,7 +1188,10 @@ function build_clade_tree(
             final_newick = mp ? _emit_simple_newick(rooted, true) : String(strip(newick))
             mp && push!(warnings, "Unrooted Newick phylogeny was midpoint-rooted prior to cumulative clade aggregation and diversity calculation.")
         elseif jplace_doc !== nothing
-            rooted, mp = midpoint_root(jplace_doc.root)
+            grafted = _graft_jplace_queries(
+                jplace_doc.root, jplace_doc, asv_reads, asv_deepest_taxon, asv_tax_conf, query_lwr
+            )
+            rooted, mp = midpoint_root(grafted)
             phylo_root = rooted
             did_midpoint = mp
             final_newick = _emit_simple_newick(rooted, true)
@@ -1176,23 +1312,46 @@ function _build_taxonomic_clade_tree(
             ch.conf_weight += max(cnt, 1.0)
             cur = ch
         end
-        # Attach ASV leaf node under deepest resolved taxon
+        # Attach ASV leaf node under deepest resolved taxon without double-counting
+        # unresolved residual on both leaf and parent.
+        has_lwr = haskey(query_lwr, aid)
+        low_evidence = (conf < support_threshold) || (has_lwr && lwr < lwr_threshold)
+        leaf_res = if unresolved_here
+            cnt * (1.0 - 0.5 * eff_conf)
+        elseif low_evidence
+            cnt * (1.0 - eff_conf)
+        else
+            0.0
+        end
         leaf_id = "asv:" * aid
         leaf = _TaxDraft(leaf_id, aid, "ASV", cnt,
-            (unresolved_here || eff_conf < min(support_threshold, lwr_threshold)) ? cnt * (1.0 - eff_conf * (unresolved_here ? 0.5 : 1.0)) : 0.0,
-            eff_conf * max(cnt, 1.0), max(cnt, 1.0), OrderedDict{String,_TaxDraft}())
+            leaf_res,
+            conf * max(cnt, 1.0), max(cnt, 1.0), OrderedDict{String,_TaxDraft}())
         cur.children[leaf_id] = leaf
-        unresolved_here && (cur.unresolved += cnt)
     end
 
     node_supports = Dict{String,Float64}("tax:Root" => 1.0)
+    node_lwrs = Dict{String,Float64}()
     active_ids = Set{String}()
     unanchored = Set{String}()
 
-    function collect_supports!(d::_TaxDraft)::Float64
+    function collect_supports!(d::_TaxDraft)::Tuple{Float64,Union{Float64,Nothing}}
         cum = d.direct_count
+        lwr_sum = 0.0
+        lwr_w = 0.0
+        if d.rank == "ASV" && haskey(query_lwr, d.name)
+            w = max(d.direct_count, 1.0)
+            lwr_sum += query_lwr[d.name] * w
+            lwr_w += w
+        end
         for ch in values(d.children)
-            cum += collect_supports!(ch)
+            cc, clwr = collect_supports!(ch)
+            cum += cc
+            if clwr !== nothing
+                w = max(cc, 1.0)
+                lwr_sum += clwr * w
+                lwr_w += w
+            end
         end
         if cum > 0.0
             push!(active_ids, d.id)
@@ -1201,20 +1360,22 @@ function _build_taxonomic_clade_tree(
             push!(unanchored, d.id)
         end
         node_supports[d.id] = d.conf_weight > 0.0 ? clamp(d.conf_sum / d.conf_weight, 0.0, 1.0) : 1.0
-        cum
+        avg_lwr = lwr_w > 0.0 ? clamp(lwr_sum / lwr_w, 0.0, 1.0) : nothing
+        avg_lwr !== nothing && d.id != "tax:Root" && (node_lwrs[d.id] = avg_lwr)
+        (cum, avg_lwr)
     end
-    total_reads = collect_supports!(root_draft)
+    total_reads, _ = collect_supports!(root_draft)
     node_supports["tax:Root"] = 1.0
     total_reads > 0.0 && push!(active_ids, "tax:Root")
 
-    eff_strict = min(support_threshold, lwr_threshold)
-    case_obj = Epistemic.build_epistemic_case(
+    case_obj = _build_independent_epistemic_case(
         "taxonomic_clade_cumulus",
+        active_ids,
+        unanchored,
         node_supports,
-        active_ids;
-        unanchored_ids = unanchored,
-        support_threshold = eff_strict,
-        permissive_threshold = max(0.25, 0.5 * eff_strict),
+        node_lwrs;
+        support_threshold = support_threshold,
+        lwr_threshold = lwr_threshold,
     )
 
     function freeze(d::_TaxDraft)::Tuple{CladeNode,Float64,Float64}
@@ -1278,14 +1439,16 @@ function _build_phylo_or_combined_tree(
     end
     count_tree_taxa!(phylo_root)
 
+    node_lwrs = Dict{String,Float64}()
+
     function gather!(u::PhyloNode, is_root::Bool)::Float64
         if isempty(u.children)
             cnt = get(asv_reads, u.name, 0.0)
             cnt > 0.0 && push!(active_ids, u.id)
             (u.name in unanchored_queries || !haskey(asv_reads, u.name)) && push!(unanchored, u.id)
             tconf = get(asv_tax_conf, u.name, 1.0)
-            lwr = get(query_lwr, u.name, 1.0)
-            node_supports[u.id] = haskey(query_lwr, u.name) ? min(tconf, lwr) : tconf
+            node_supports[u.id] = tconf
+            haskey(query_lwr, u.name) && (node_lwrs[u.id] = query_lwr[u.name])
             return cnt
         end
         cum = 0.0
@@ -1298,14 +1461,14 @@ function _build_phylo_or_combined_tree(
     end
     total_tree_reads = gather!(phylo_root, true)
 
-    eff_strict = min(support_threshold, lwr_threshold)
-    case_obj = Epistemic.build_epistemic_case(
+    case_obj = _build_independent_epistemic_case(
         string(mode, "_clade_cumulus"),
+        active_ids,
+        unanchored,
         node_supports,
-        active_ids;
-        unanchored_ids = unanchored,
-        support_threshold = eff_strict,
-        permissive_threshold = max(0.25, 0.5 * eff_strict),
+        node_lwrs;
+        support_threshold = support_threshold,
+        lwr_threshold = lwr_threshold,
     )
 
     # Track whether each named taxon has at least one clade containing ALL of its tips purely.
@@ -1319,7 +1482,7 @@ function _build_phylo_or_combined_tree(
         if isempty(u.children)
             cnt = get(asv_reads, u.name, 0.0)
             tx = get(asv_deepest_taxon, u.name, nothing)
-            sup = get(node_supports, u.id, 1.0)
+            sup = min(get(node_supports, u.id, 1.0), get(node_lwrs, u.id, 1.0))
             # Residual on tip reflects placement LWR split uncertainty or unassigned taxon in combined mode.
             unassigned_penalty = (mode === :combined && tx === nothing) ? 0.5 : 0.0
             res = cnt * max(1.0 - sup, unassigned_penalty)
@@ -1480,34 +1643,124 @@ function _reaggregate_after_move(
     case_obj::Epistemic.Case,
     total_reads::Float64,
 )::CladeNode
-    function rebuild(u::CladeNode)::Union{CladeNode,Nothing}
+    # First structurally graft `moving` under `target_id` while detaching its old attachment.
+    function graft(u::CladeNode)::Union{CladeNode,Nothing}
         u.id == moving.id && return nothing
         new_kids = CladeNode[]
         for ch in u.children
-            rc = rebuild(ch)
+            rc = graft(ch)
             rc !== nothing && push!(new_kids, rc)
         end
         if u.id == target_id
             push!(new_kids, moving)
         end
-        if isempty(new_kids) && isempty(u.children) && u.id != target_id
-            return u
-        end
-        cum = u.direct_count + sum((k.cumulative_count for k in new_kids); init = 0.0)
-        res = sum((k.residual_count for k in new_kids); init = 0.0)
-        freq = total_reads > 0.0 ? cum / total_reads : 0.0
-        st = Epistemic.epistemic_status(case_obj, u.id)
         CladeNode(
-            u.id, u.name, u.rank, u.direct_count, cum, freq, res,
-            Epistemic.cloud_size_by_residual(res),
-            u.branch_length, u.support, u.subtree_pd,
-            u.dominant_taxon, u.taxon_purity, u.monophyletic,
-            st, Epistemic.epistemic_colour(st), new_kids,
+            u.id, u.name, u.rank, u.direct_count, u.cumulative_count, u.cumulative_frequency,
+            u.residual_count, u.cloud_size, u.branch_length, u.support, u.subtree_pd,
+            u.dominant_taxon, u.taxon_purity, u.monophyletic, u.epistemic_status, u.colour, new_kids,
         )
     end
-    rebuilt = rebuild(root)
-    rebuilt === nothing && error("Cannot detach root node during drag-and-drop reassignment")
-    rebuilt
+    grafted = graft(root)
+    grafted === nothing && error("Cannot detach root node during drag-and-drop reassignment")
+
+    # Count global occurrences of each leaf taxon across the new topology so monophyly
+    # and purity are exact everywhere on the proposed tree.
+    total_tips_per_taxon = Dict{String,Int}()
+    function count_leaf_taxa!(u::CladeNode)
+        if isempty(u.children)
+            u.dominant_taxon !== nothing &&
+                (total_tips_per_taxon[u.dominant_taxon] = get(total_tips_per_taxon, u.dominant_taxon, 0) + 1)
+        else
+            for ch in u.children
+                count_leaf_taxa!(ch)
+            end
+        end
+    end
+    count_leaf_taxa!(grafted)
+
+    function recompute(u::CladeNode, is_root::Bool)::Tuple{CladeNode,Dict{String,Int},Int,Bool}
+        if isempty(u.children)
+            freq = total_reads > 0.0 ? u.cumulative_count / total_reads : 0.0
+            tmap = Dict{String,Int}()
+            mono = u.monophyletic
+            if u.dominant_taxon !== nothing
+                tmap[u.dominant_taxon] = 1
+                mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
+            end
+            active_here = u.cumulative_count > 0.0
+            st = Epistemic.epistemic_status(case_obj, u.id)
+            leaf_node = CladeNode(
+                u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
+                u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
+                u.branch_length, u.support, 0.0, u.dominant_taxon, u.taxon_purity, mono,
+                st, Epistemic.epistemic_colour(st), CladeNode[],
+            )
+            return (leaf_node, tmap, 1, active_here)
+        end
+
+        rebuilt_kids = CladeNode[]
+        merged_taxa = Dict{String,Int}()
+        n_sub_tips = 0
+        any_active = u.direct_count > 0.0
+        sub_pd = 0.0
+        child_res = 0.0
+        cum = u.direct_count
+
+        for ch in u.children
+            rk, ct, nt, ch_active = recompute(ch, false)
+            push!(rebuilt_kids, rk)
+            cum += rk.cumulative_count
+            child_res += rk.residual_count
+            n_sub_tips += nt
+            if ch_active
+                any_active = true
+                sub_pd += max(0.0, rk.branch_length) + rk.subtree_pd
+            end
+            for (k, v) in ct
+                merged_taxa[k] = get(merged_taxa, k, 0) + v
+            end
+        end
+
+        dom_tx = nothing
+        dom_n = 0
+        for (tx, c) in merged_taxa
+            if c > dom_n || (c == dom_n && (dom_tx === nothing || tx < dom_tx))
+                dom_tx = tx
+                dom_n = c
+            end
+        end
+        purity = if u.rank in ("tip", "ASV")
+            u.taxon_purity
+        elseif dom_tx !== nothing && n_sub_tips > 0
+            dom_n / n_sub_tips
+        elseif isempty(merged_taxa) && u.dominant_taxon !== nothing
+            1.0
+        else
+            nothing
+        end
+        mono = if dom_tx !== nothing && n_sub_tips > 0
+            (dom_n == n_sub_tips) && (dom_n == get(total_tips_per_taxon, dom_tx, 0))
+        else
+            u.monophyletic
+        end
+        eff_dom = dom_tx !== nothing ? dom_tx : u.dominant_taxon
+        branch_sup = is_root ? 1.0 : (u.support === nothing ? 1.0 : u.support)
+        branch_uncert = is_root ? 0.0 : cum * (1.0 - branch_sup)
+        res = max(child_res, branch_uncert)
+        freq = total_reads > 0.0 ? cum / total_reads : 0.0
+        st = Epistemic.epistemic_status(case_obj, u.id)
+        node = CladeNode(
+            u.id, u.name, u.rank, u.direct_count, cum, freq, res,
+            Epistemic.cloud_size_by_residual(res),
+            u.branch_length, u.support, sub_pd,
+            eff_dom, purity, mono,
+            st, Epistemic.epistemic_colour(st), rebuilt_kids,
+        )
+        (node, merged_taxa, n_sub_tips, any_active)
+    end
+
+    updated_root, _, _, _ = recompute(grafted, true)
+    updated_root
 end
 
 """
@@ -1555,6 +1808,19 @@ function validate_drag_drop(
             "target_status" => "missing",
             "target_colour" => "#c62828",
             "reason"        => "Clade '$missing_which' does not exist in the current tree.",
+            "proposed_root" => nothing,
+        )
+    end
+
+    if dst_node.rank in ("tip", "ASV") || isempty(dst_node.children)
+        st = Epistemic.epistemic_status(tree_result.case, dst)
+        return OrderedDict{String,Any}(
+            "allowed"       => false,
+            "source_id"     => src,
+            "target_id"     => dst,
+            "target_status" => String(st),
+            "target_colour" => Epistemic.epistemic_colour(st),
+            "reason"        => "Target '$dst' is a terminal sequence leaf ('$(dst_node.rank)'); select an internal clade target.",
             "proposed_root" => nothing,
         )
     end

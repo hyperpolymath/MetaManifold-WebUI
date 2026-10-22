@@ -52,6 +52,19 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
   const [lwrThreshold, setLwrThreshold] = useState(0.95)
 
   const [result, setResult] = useState<CladeCumulusResponse | null>(null)
+  const [computedSnapshot, setComputedSnapshot] = useState<{
+    run: string
+    group: string | null
+    request: {
+      table: string
+      mode: CladeHierarchyMode
+      treeSource: CladeTreeSource
+      treeFile?: string
+      maxAsvs: number
+      supportThreshold: number
+      lwrThreshold: number
+    }
+  } | null>(null)
   const [loading, setLoading] = useState(false)
   const [computeError, setComputeError] = useState<string | null>(null)
 
@@ -95,6 +108,15 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
   const computeExplorer = useCallback(async () => {
     if (!selectedRun) return
     const ticket = ++reqCounter.current
+    const reqSnapshot = {
+      table,
+      mode,
+      treeSource,
+      treeFile: treeSource === 'study_tree' ? treeFile : undefined,
+      maxAsvs,
+      supportThreshold,
+      lwrThreshold,
+    }
     setLoading(true)
     setComputeError(null)
     setMoveVerdict(null)
@@ -103,19 +125,16 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
       const resp = await api.cladeCumulus.compute(
         study,
         selectedRun.run,
-        {
-          table,
-          mode,
-          treeSource,
-          treeFile: treeSource === 'study_tree' ? treeFile : undefined,
-          maxAsvs,
-          supportThreshold,
-          lwrThreshold,
-        },
+        reqSnapshot,
         selectedRun.group,
       )
       if (ticket !== reqCounter.current) return
       setResult(resp)
+      setComputedSnapshot({
+        run: selectedRun.run,
+        group: selectedRun.group,
+        request: reqSnapshot,
+      })
       setExpandedIds(collectAllCladeIds(resp.root))
     } catch (err) {
       if (ticket !== reqCounter.current) return
@@ -151,9 +170,25 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
     [result],
   )
 
+  const controlsDirty = useMemo(() => {
+    if (!computedSnapshot || !selectedRun) return false
+    const expectedTree = treeSource === 'study_tree' ? treeFile : undefined
+    return (
+      computedSnapshot.run !== selectedRun.run ||
+      computedSnapshot.group !== selectedRun.group ||
+      computedSnapshot.request.table !== table ||
+      computedSnapshot.request.mode !== mode ||
+      computedSnapshot.request.treeSource !== treeSource ||
+      computedSnapshot.request.treeFile !== expectedTree ||
+      computedSnapshot.request.maxAsvs !== maxAsvs ||
+      computedSnapshot.request.supportThreshold !== supportThreshold ||
+      computedSnapshot.request.lwrThreshold !== lwrThreshold
+    )
+  }, [computedSnapshot, selectedRun, table, mode, treeSource, treeFile, maxAsvs, supportThreshold, lwrThreshold])
+
   const submitMoveValidation = useCallback(
     async (sourceId: string, targetId: string, saveProposal = false) => {
-      if (!selectedRun || !result) return
+      if (!computedSnapshot || !result) return
       const pre = preflightCladeMove(result.root, sourceId, targetId)
       if (!pre.structurallyValid) {
         setMoveVerdict({
@@ -172,20 +207,14 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
       try {
         const res = await api.cladeCumulus.validateMove(
           study,
-          selectedRun.run,
+          computedSnapshot.run,
           {
             sourceId,
             targetId,
             saveProposal,
-            table,
-            mode,
-            treeSource,
-            treeFile: treeSource === 'study_tree' ? treeFile : undefined,
-            maxAsvs,
-            supportThreshold,
-            lwrThreshold,
+            ...computedSnapshot.request,
           },
-          selectedRun.group,
+          computedSnapshot.group,
         )
         setMoveVerdict(res)
         if (res.allowed) {
@@ -200,7 +229,7 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
         setValidatingMove(false)
       }
     },
-    [study, selectedRun, result, table, mode, treeSource, treeFile, maxAsvs, supportThreshold, lwrThreshold, toast],
+    [study, computedSnapshot, result, toast],
   )
 
   const toggleExpand = (id: string) => {
@@ -394,6 +423,22 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
 
       {result && (
         <>
+          {controlsDirty && (
+            <div
+              role="status"
+              style={{
+                padding: '8px 12px',
+                marginBottom: 12,
+                borderRadius: 6,
+                border: '1px solid #0969da',
+                background: 'rgba(9, 105, 218, 0.08)',
+                fontSize: '.81rem',
+              }}
+            >
+              Inputs above differ from the currently displayed result ({result.run} / {result.table}). Move checks use the displayed snapshot until you click <strong>Compute CladeCumulus</strong> again.
+            </div>
+          )}
+
           {/* Scientific caveats & approximation warnings */}
           {result.warnings.length > 0 && (
             <div
@@ -498,12 +543,14 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
                 <span>Into target clade</span>
                 <select value={moveTargetId} onChange={e => setMoveTargetId(e.target.value)}>
                   <option value="">Select target…</option>
-                  {allNodesFlat.map(r => (
-                    <option key={r.node.id} value={r.node.id}>
-                      {'· '.repeat(r.depth)}
-                      {r.node.name} [{r.node.epistemic_status}]
-                    </option>
-                  ))}
+                  {allNodesFlat
+                    .filter(r => r.node.children.length > 0 && r.node.rank !== 'tip' && r.node.rank !== 'ASV')
+                    .map(r => (
+                      <option key={r.node.id} value={r.node.id}>
+                        {'· '.repeat(r.depth)}
+                        {r.node.name} [{r.node.epistemic_status}]
+                      </option>
+                    ))}
                 </select>
               </label>
 

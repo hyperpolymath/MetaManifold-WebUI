@@ -109,6 +109,9 @@ export function preflightCladeMove(
   if (!src || !dst) {
     return { structurallyValid: false, reason: 'Source or target clade does not exist in this tree.' }
   }
+  if (dst.rank === 'tip' || dst.rank === 'ASV' || dst.children.length === 0) {
+    return { structurallyValid: false, reason: 'Target must be an internal clade rather than a terminal sequence leaf.' }
+  }
   if (isCladeDescendant(targetId, src)) {
     return { structurallyValid: false, reason: 'Cannot move a clade beneath its own descendant (cycle forbidden).' }
   }

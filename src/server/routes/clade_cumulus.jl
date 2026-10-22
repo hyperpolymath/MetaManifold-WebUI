@@ -222,7 +222,7 @@ end
 
     seed = Int(get(body, :seed, 42))
 
-    df, meta, load_err = _load_run_table_df(study, run, table)
+    df, meta, load_err = _load_run_table_df(study, run, table; group)
     !isnothing(load_err) && return load_err
 
     source_digests = OrderedDict{String,String}(
@@ -250,30 +250,51 @@ end
         return json_error(400, "clade_cumulus_failed", msg)
     end
 
-    # Compute Faith's PD + Unweighted & Weighted UniFrac when a phylogenetic tree is present.
+    # Compute Faith's PD + Unweighted & Weighted UniFrac when a phylogenetic tree is present,
+    # including split `.jplace` query placements (`<qname>@edge<N>#<k>`).
     diversity_payload = nothing
     if cc_res.phylo_root !== nothing && !isempty(meta.sample_cols)
-        tip_set = MetaManifold.CladeCumulus._collect_tree_tips!(Set{String}(), cc_res.phylo_root)
+        tip_list = sort!(collect(MetaManifold.CladeCumulus._collect_tree_tips!(Set{String}(), cc_res.phylo_root)))
         id_col = MetaManifold.CladeCumulus._detect_id_col(df)
-        row_mask = Int[]
-        taxa_vec = String[]
-        seen_tips = Set{String}()
+        scols = meta.sample_cols
+        row_by_id = Dict{String,Int}()
         for (ri, r) in enumerate(eachrow(df))
             tid = String(strip(string(r[id_col])))
-            if (tid in tip_set) && !(tid in seen_tips)
-                push!(seen_tips, tid)
-                push!(row_mask, ri)
+            !haskey(row_by_id, tid) && (row_by_id[tid] = ri)
+        end
+        # Map split `.jplace` tip IDs back to `(base_query_name, share)` weights.
+        tip_weights = Dict{String,Float64}()
+        if jplace_str !== nothing && !isempty(strip(jplace_str))
+            jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
+            for q in jd_div.queries
+                q.status === :valid && !isempty(q.candidates) || continue
+                tw = sum((c.weight for c in q.candidates); init = 0.0)
+                tw > 0.0 || continue
+                multi = length(q.candidates) > 1
+                for (qname, _) in q.names
+                    for (ci, cand) in enumerate(q.candidates)
+                        tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
+                        tip_weights[tid] = cand.weight / tw
+                    end
+                end
+            end
+        end
+        taxa_vec = String[]
+        taxa_rows = Tuple{Int,Float64}[]
+        for tid in tip_list
+            base_id = occursin("@edge", tid) ? first(split(tid, "@edge"; limit = 2)) : tid
+            if haskey(row_by_id, base_id)
                 push!(taxa_vec, tid)
+                push!(taxa_rows, (row_by_id[base_id], get(tip_weights, tid, 1.0)))
             end
         end
         if !isempty(taxa_vec)
-            scols = meta.sample_cols
             mat = zeros(Float64, length(taxa_vec), length(scols))
             for (ci, sc) in enumerate(scols)
                 col_vals = df[!, sc]
-                for (mi, ri) in enumerate(row_mask)
+                for (mi, (ri, w)) in enumerate(taxa_rows)
                     v = col_vals[ri]
-                    mat[mi, ci] = ismissing(v) ? 0.0 : max(0.0, Float64(v))
+                    mat[mi, ci] = ismissing(v) ? 0.0 : max(0.0, Float64(v)) * w
                 end
             end
             pd_by_sample = OrderedDict{String,Float64}(
@@ -315,6 +336,7 @@ end
         source_digests = source_digests,
         tool_records = cc_res.tool_records,
         parameters = OrderedDict{String,Any}(
+            "group"             => group,
             "table"             => table,
             "mode"              => mode_str,
             "max_asvs"          => max_asvs,
@@ -413,15 +435,35 @@ end
     verdict = MetaManifold.CladeCumulus.validate_drag_drop(cc_res, source_id, target_id)
     save_proposal = Bool(get(body, :saveProposal, false))
     proposal_file = nothing
+    proposal_params = OrderedDict{String,Any}(
+        "group"             => group,
+        "table"             => table,
+        "mode"              => mode_str,
+        "tree_method"       => String(tree_method),
+        "max_asvs"          => max_asvs,
+        "support_threshold" => support_threshold,
+        "lwr_threshold"     => lwr_threshold,
+        "seed"              => seed,
+        "source_id"         => source_id,
+        "target_id"         => target_id,
+        "source_digests"    => source_digests,
+    )
     if save_proposal && Bool(verdict["allowed"])
-        proposal_name = string("proposal-", bytes2hex(sha256("$study:$run:$table:$source_id->$target_id"))[1:12], ".json")
+        proposal_key = JSON3.write(OrderedDict{String,Any}(
+            "study" => study,
+            "run"   => run,
+            "params"=> proposal_params,
+        ))
+        proposal_name = string("proposal-", bytes2hex(sha256(proposal_key))[1:16], ".json")
         sidecar_path = joinpath(_clade_cumulus_sidecar_dir(study), proposal_name)
         payload = OrderedDict{String,Any}(
             "schema_version" => 1,
             "study"          => study,
             "run"            => run,
+            "group"          => group,
             "table"          => table,
             "mode"           => mode_str,
+            "parameters"     => proposal_params,
             "source_id"      => source_id,
             "target_id"      => target_id,
             "verdict"        => verdict,

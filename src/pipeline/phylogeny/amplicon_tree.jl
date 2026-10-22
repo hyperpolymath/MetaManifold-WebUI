@@ -181,13 +181,19 @@ function _nw_pairwise(ref::Vector{UInt8}, qry::Vector{UInt8})::Tuple{Vector{UInt
     return (ar, aq)
 end
 
-function _builtin_align(seqs::Vector{Pair{String,String}})::Vector{Pair{String,String}}
+function _builtin_align(
+    seqs::Vector{Pair{String,String}};
+    prealigned::Bool = false,
+)::Vector{Pair{String,String}}
     isempty(seqs) && return Pair{String,String}[]
+    length(seqs) == 1 && return seqs
     lengths = [ncodeunits(s) for (_, s) in seqs]
-    if minimum(lengths) == maximum(lengths)
+    if prealigned && minimum(lengths) == maximum(lengths)
         return seqs
     end
-    # Progressive center-star MSA anchored at the first (highest-abundance) sequence.
+    # Always align raw sequences via progressive center-star Needleman-Wunsch anchored
+    # at the highest-abundance sequence so offsetting insertions/deletions in equal-length
+    # amplicons do not compare non-homologous columns.
     master = Vector{UInt8}(codeunits(seqs[1].second))
     rows = Vector{Vector{UInt8}}(undef, length(seqs))
     rows[1] = copy(master)
@@ -268,29 +274,36 @@ function _neighbor_joining_tree(labels::Vector{String}, D_in::Matrix{Float64})::
         return _NJNode(3, "", [(c1, half), (c2, half)], BitSet([1, 2]))
     end
 
+    max_nodes = 2 * n - 1
     active = collect(1:n)
-    nodes = [_NJNode(i, labels[i], Tuple{_NJNode,Float64}[], BitSet([i])) for i in 1:n]
-    dist = copy(D_in)
+    nodes = Vector{_NJNode}(undef, max_nodes)
+    for i in 1:n
+        nodes[i] = _NJNode(i, labels[i], Tuple{_NJNode,Float64}[], BitSet([i]))
+    end
+    dist = zeros(Float64, max_nodes, max_nodes)
+    @inbounds dist[1:n, 1:n] = D_in
+    row_sums = zeros(Float64, max_nodes)
+    @inbounds for i in 1:n
+        s = 0.0
+        for j in 1:n
+            i == j && continue
+            s += dist[i, j]
+        end
+        row_sums[i] = s
+    end
     next_id = n + 1
 
     while length(active) > 3
         m = length(active)
-        row_sums = zeros(Float64, m)
-        for a in 1:m
-            s = 0.0
-            for b in 1:m
-                a == b && continue
-                s += dist[active[a], active[b]]
-            end
-            row_sums[a] = s
-        end
-
         best_q = Inf
         best_a = 1
         best_b = 2
-        for a in 1:(m - 1)
+        @inbounds for a in 1:(m - 1)
+            ia_c = active[a]
+            ra = row_sums[ia_c]
             for b in (a + 1):m
-                q = (m - 2) * dist[active[a], active[b]] - row_sums[a] - row_sums[b]
+                ib_c = active[b]
+                q = (m - 2) * dist[ia_c, ib_c] - ra - row_sums[ib_c]
                 if q < best_q
                     best_q = q
                     best_a = a
@@ -302,28 +315,26 @@ function _neighbor_joining_tree(labels::Vector{String}, D_in::Matrix{Float64})::
         ia = active[best_a]
         ib = active[best_b]
         dab = dist[ia, ib]
-        delta = (row_sums[best_a] - row_sums[best_b]) / (2.0 * (m - 2))
+        delta = (row_sums[ia] - row_sums[ib]) / (2.0 * (m - 2))
         la = max(0.0, 0.5 * dab + delta)
         lb = max(0.0, dab - la)
 
-        merged_tips = union(nodes[ia].tips, nodes[ib].tips)
-        u_node = _NJNode(next_id, "", [(nodes[ia], la), (nodes[ib], lb)], merged_tips)
+        iu = next_id
         next_id += 1
+        merged_tips = union(nodes[ia].tips, nodes[ib].tips)
+        nodes[iu] = _NJNode(iu, "", [(nodes[ia], la), (nodes[ib], lb)], merged_tips)
 
-        # Expand distance matrix by one row/column for the merged cluster.
-        old_sz = size(dist, 1)
-        new_dist = zeros(Float64, old_sz + 1, old_sz + 1)
-        new_dist[1:old_sz, 1:old_sz] = dist
-        push!(nodes, u_node)
-        iu = old_sz + 1
-        for k_idx in 1:m
+        ru = 0.0
+        @inbounds for k_idx in 1:m
             ik = active[k_idx]
             (ik == ia || ik == ib) && continue
             duk = max(0.0, 0.5 * (dist[ia, ik] + dist[ib, ik] - dab))
-            new_dist[iu, ik] = duk
-            new_dist[ik, iu] = duk
+            dist[iu, ik] = duk
+            dist[ik, iu] = duk
+            row_sums[ik] += duk - dist[ia, ik] - dist[ib, ik]
+            ru += duk
         end
-        dist = new_dist
+        row_sums[iu] = ru
         deleteat!(active, best_b)
         active[best_a] = iu
     end
@@ -393,6 +404,7 @@ function _infer_nj_newick(
     aligned::Vector{Pair{String,String}};
     n_boot::Int = 100,
     seed::Int = 42,
+    warnings::Union{Vector{String},Nothing} = nothing,
 )::String
     labels = [p.first for p in aligned]
     aln_bytes = [Vector{UInt8}(codeunits(p.second)) for p in aligned]
@@ -400,12 +412,20 @@ function _infer_nj_newick(
     D = _jc69_distance_matrix(aln_bytes, 1:L)
     tree = _neighbor_joining_tree(labels, D)
     n_tips = length(labels)
+    # Cap synchronous pure-Julia bootstrap replicates on large ASV counts so interactive
+    # HTTP requests stay sub-second when neither FastTree nor IQ-TREE is installed.
+    max_sync_boot = n_tips > 250 ? 8 : (n_tips > 100 ? 20 : 100)
+    eff_boot = min(n_boot, max_sync_boot)
+    if eff_boot < n_boot && warnings !== nothing
+        push!(warnings,
+            "Pure-Julia Neighbor-Joining fallback capped bootstrap replicates from $n_boot to $eff_boot for $n_tips ASVs; install FastTree or IQ-TREE for full-speed large-scale support estimation.")
+    end
     support_counts = Dict{BitSet,Int}()
-    if n_tips >= 4 && L > 0 && n_boot > 0
+    if n_tips >= 4 && L > 0 && eff_boot > 0
         rng = MersenneTwister(seed)
         cols = Vector{Int}(undef, L)
         splits_buf = BitSet[]
-        for _ in 1:n_boot
+        for _ in 1:eff_boot
             for c in 1:L
                 cols[c] = rand(rng, 1:L)
             end
@@ -419,7 +439,7 @@ function _infer_nj_newick(
         end
     end
     split_support = Dict{BitSet,Float64}(
-        sp => cnt / max(1, n_boot) for (sp, cnt) in support_counts
+        sp => cnt / max(1, eff_boot) for (sp, cnt) in support_counts
     )
     _emit_nj_newick(tree, n_tips, split_support, true) * ";"
 end
@@ -568,7 +588,7 @@ function build_amplicon_phylogeny(
             method_used = "iqtree"
             push!(tool_records, _probe_record_dict("iqtree", iq_path))
         else
-            raw_newick = _infer_nj_newick(aligned_tokens; n_boot = n_boot, seed = seed)
+            raw_newick = _infer_nj_newick(aligned_tokens; n_boot = n_boot, seed = seed, warnings = warnings)
             method_used = "nj_jc69"
             if method === :auto
                 push!(warnings,

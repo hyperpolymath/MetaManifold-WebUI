@@ -87,15 +87,17 @@ describe('CladeCumulus frontend model invariants', () => {
     ])
   })
 
-  test('preflightCladeMove blocks root moves, self drops, and descendant cycles', () => {
+  test('preflightCladeMove blocks root moves, self drops, leaf targets, and descendant cycles', () => {
     const child = makeNode('tip_1', 'ASV_1', 30, 0, 'present_in_every')
     const subClade = makeNode('sub_1', 'Subclade', 30, 0, 'present_in_every', [child])
-    const sibling = makeNode('clade_target', 'Target', 70, 0, 'present_in_every')
+    const leafTip = makeNode('tip_2', 'ASV_2', 70, 0, 'present_in_every')
+    const sibling = makeNode('clade_target', 'Target', 70, 0, 'present_in_every', [leafTip])
     const root = makeNode('root', 'Root', 100, 0, 'present_in_every', [subClade, sibling])
 
     expect(preflightCladeMove(root, 'root', 'clade_target').structurallyValid).toBe(false)
     expect(preflightCladeMove(root, 'sub_1', 'sub_1').structurallyValid).toBe(false)
     expect(preflightCladeMove(root, 'sub_1', 'tip_1').structurallyValid).toBe(false)
+    expect(preflightCladeMove(root, 'sub_1', 'tip_2').structurallyValid).toBe(false)
     expect(preflightCladeMove(root, 'sub_1', 'missing').structurallyValid).toBe(false)
     expect(preflightCladeMove(root, 'sub_1', 'clade_target')).toEqual({ structurallyValid: true })
   })

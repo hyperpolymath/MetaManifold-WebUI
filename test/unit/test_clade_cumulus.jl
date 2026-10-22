@@ -110,34 +110,81 @@ _cc_req(method::String, path::String, body::String = "") =
         @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false) ≈ 2.3276502663333334 atol = 1e-11
         @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = true) ≈ 0.6655215451489284 atol = 1e-11
 
-        # Quoted labels, NHX support, and negative branch clamping
+        # Quoted labels, NHX support, negative branch clamping, and non-finite branch rejection
         warns = String[]
         qtree = CC.parse_newick("[&R] (('Taxon ''alpha''':0.2,ASV_b:-0.05)[&&NHX:B=92]:0.1,ASV_c:0.3);", warnings = warns)
         @test !isempty(warns)
         @test qtree.children[1].support ≈ 0.92 atol = 1e-12
         @test qtree.children[1].children[1].name == "Taxon 'alpha'"
         @test qtree.children[1].children[2].branch_length == 0.0
+        @test_throws ArgumentError CC.parse_newick("(ASV_1:NaN,ASV_2:0.1);")
+        @test_throws ArgumentError CC.parse_newick("(ASV_1:Inf,ASV_2:0.1);")
     end
 
-    @testset "Strict raw jplace evidence reader" begin
+    @testset "Strict raw jplace evidence reader, edge projection, and independent LWR threshold" begin
         raw_jplace = JSON3.write(OrderedDict(
             "version" => 3,
-            "tree" => "((ASV_1:0.1{0},ASV_2:0.2{1})95:0.3{2},ASV_3:0.4{3}){4};",
+            "tree" => "((Ref_1:0.1{0},Ref_2:0.2{1})95:0.3{2},Ref_3:0.4{3}){4};",
             "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
             "placements" => [
                 OrderedDict("n" => ["Q_split"], "p" => [[0, -100.0, 0.60, 0.01, 0.02], [1, -100.4, 0.40, 0.01, 0.03]]),
-                OrderedDict("nm" => [["Q_strong", 2]], "p" => [[3, -98.0, 0.98, 0.01, 0.01], [2, -104.0, 0.02, 0.01, 0.01]]),
+                OrderedDict("nm" => [["Q_borderline", 1]], "p" => [[3, -98.0, 0.85, 0.05, 0.02], [2, -101.0, 0.15, 0.05, 0.02]]),
+                OrderedDict("n" => ["Q_strong"], "p" => [[3, -97.0, 0.98, 0.02, 0.01]]),
                 OrderedDict("n" => ["Q_bad_sum"], "p" => [[0, -100.0, 0.40, 0.01, 0.01]]),
             ],
         ))
         jp = CC.parse_jplace(raw_jplace)
-        @test length(jp.queries) == 3
+        @test length(jp.queries) == 4
         @test jp.queries[1].status === :valid
         @test jp.queries[1].max_lwr ≈ 0.60 atol = 1e-12
         @test jp.queries[2].status === :valid
-        @test jp.queries[2].max_lwr ≈ 0.98 atol = 1e-12
-        @test jp.queries[3].status === :undecided
-        @test startswith(jp.queries[3].reason, "weight_sum_out_of_tolerance")
+        @test jp.queries[2].max_lwr ≈ 0.85 atol = 1e-12
+        @test jp.queries[3].status === :valid
+        @test jp.queries[3].max_lwr ≈ 0.98 atol = 1e-12
+        @test jp.queries[4].status === :undecided
+        @test startswith(jp.queries[4].reason, "weight_sum_out_of_tolerance")
+
+        # Placed query read counts project onto the reference tree edges without losing reads,
+        # and `lwr_threshold = 0.95` marks `Q_borderline` (LWR = 0.85) as `present_in_some`
+        # even when `support_threshold = 0.80`.
+        jdf = DataFrame(
+            SeqName = ["Q_split", "Q_borderline", "Q_strong"],
+            Domain  = ["Bacteria", "Bacteria", "Bacteria"],
+            Genus   = ["GenA", "GenB", "GenC"],
+            Sample1 = [50, 30, 20],
+            Sample2 = [10, 40, 50],
+        )
+        cc_jp = CC.build_clade_tree(
+            jdf;
+            mode = :combined,
+            jplace_json = raw_jplace,
+            support_threshold = 0.80,
+            lwr_threshold = 0.95,
+        )
+        @test cc_jp.root.cumulative_count ≈ 200.0 atol = 1e-9
+
+        # Cross-classifier disagreement + single-counted taxonomic residual invariant
+        merged_tax_df = DataFrame(
+            SeqName     = ["ASV_disagree", "ASV_partial"],
+            Domain      = ["Bacteria", "Bacteria"],
+            Domain_dada2= ["Bacteria", "Bacteria"],
+            Domain_boot = [100, 100],
+            Genus       = ["VsearchGenus", missing],
+            Genus_dada2 = ["Dada2OtherGenus", missing],
+            Genus_boot  = [99, missing],
+            S1          = [60, 40],
+        )
+        cc_tax = CC.build_clade_tree(
+            merged_tax_df;
+            mode = :taxonomic,
+            support_threshold = 0.80,
+            lwr_threshold = 0.95,
+        )
+        @test cc_tax.root.cumulative_count ≈ 100.0 atol = 1e-9
+        @test cc_tax.root.residual_count <= cc_tax.root.cumulative_count
+        disagree_leaf = CC._find_clade(cc_tax.root, "asv:ASV_disagree")
+        @test disagree_leaf !== nothing
+        @test disagree_leaf.epistemic_status === :present_in_some
     end
 
     @testset "Amplicon phylogeny builder, subsampling guard, and FastTree CLI provenance" begin
@@ -290,14 +337,29 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test v_deny.allowed == false
             @test v_deny.target_colour == "#f9a825"
 
-            # Moving ASV_3 into high-support clade succeeds AND saves non-destructive proposal sidecar!
-            r_allow = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
+            # Moving into a terminal sequence tip is rejected even if high support!
+            r_leaf = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
                 "table" => "merged",
                 "mode" => "combined",
                 "treeSource" => "study_tree",
                 "treeFile" => "amplicon.nwk",
                 "supportThreshold" => 0.85,
                 "sourceId" => "ASV_3",
+                "targetId" => "ASV_1",
+            )))
+            @test r_leaf.status == 200
+            @test JSON3.read(String(r_leaf.body)).allowed == false
+
+            # Moving ASV_4 (SplitGenus) into high-support clade (containing ASV_1 SplitGenus)
+            # succeeds, recomputes target subtree_pd upward, AND saves configuration-keyed sidecars!
+            before_target_pd = Float64(high_clade.subtree_pd)
+            r_allow = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "amplicon.nwk",
+                "supportThreshold" => 0.85,
+                "sourceId" => "ASV_4",
                 "targetId" => high_clade.id,
                 "saveProposal" => true,
             )))
@@ -307,6 +369,22 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test v_allow.proposal_file !== nothing
             @test isfile(joinpath(trees_dir, ".clade_cumulus", String(v_allow.proposal_file)))
             @test v_allow.proposed_root.cumulative_count ≈ 110.0 atol = 1e-9
+            @test Float64(v_allow.proposed_root.children[1].subtree_pd) > before_target_pd
+
+            # Re-saving under a different threshold writes a distinct immutable sidecar file
+            r_allow2 = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "amplicon.nwk",
+                "supportThreshold" => 0.90,
+                "sourceId" => "ASV_4",
+                "targetId" => high_clade.id,
+                "saveProposal" => true,
+            )))
+            v_allow2 = JSON3.read(String(r_allow2.body))
+            @test v_allow2.allowed == true
+            @test String(v_allow2.proposal_file) != String(v_allow.proposal_file)
 
             # Canonical DuckDB database is strictly untouched byte-for-byte!
             @test bytes2hex(open(sha256, db_path)) == before_db_sha
