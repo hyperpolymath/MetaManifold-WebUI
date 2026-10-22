@@ -9,8 +9,8 @@
 #   integer read counts, with a library-size offset. There are no pseudocounts.
 # - clr_welch: Welch's two-sample t-test per taxon (stats::t.test) on centred
 #   log-ratios, over the taxa that pass `min_prevalence`, after their zeros are
-#   replaced by zCompositions::cmultRepl (Bayesian-multiplicative, for counts).
-#   The estimate is a difference in CLR units, not a fold change.
+#   replaced by zCompositions::cmultRepl (Bayesian GBM/user or multiplicative
+#   CZM, for counts). The estimate is a difference in CLR units, not a fold change.
 #
 # Count matrices here are samples x taxa, as everywhere else in `Analysis`.
 # Anything that is not a non-negative integer count is refused rather than
@@ -22,9 +22,9 @@ using DataFrames, RCall
 using ..RRuntime: with_r_lock
 using ..Analysis: _palette_hex, R_WAIT_SECONDS
 export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
-       GlmGamPoiUnavailable, OFFSET_METHODS, METHODS, tss_factors, rle_factors,
-       size_factors, bh_adjust, validate_counts, replace_zeros, clr_transform,
-       fit_nb, fit_welch, differential_abundance, volcano_chart
+       GlmGamPoiUnavailable, OFFSET_METHODS, METHODS, DISPERSIONS, REPLACEMENT_METHODS,
+       tss_factors, rle_factors, size_factors, bh_adjust, validate_counts, replace_zeros,
+       clr_transform, fit_nb, fit_welch, differential_abundance, volcano_chart
 
 # Methods accepted under `analysis.differential.method`.
 const METHODS = ("nb_glm", "clr_welch")
@@ -33,6 +33,11 @@ const METHODS = ("nb_glm", "clr_welch")
 # own theta) or glmGamPoi's shrinkage estimator, which shares information
 # across taxa. `"ml"` is the default and keeps #24's results unchanged.
 const DISPERSIONS = ("ml", "glmGamPoi")
+
+# Zero-replacement methods accepted under
+# `analysis.differential.replacement_method`. Both are exact calls to
+# zCompositions::cmultRepl; the Bayesian default is the existing GBM path.
+const REPLACEMENT_METHODS = ("bayesian_multiplicative", "multiplicative_replacement")
 
 # Offset (size factor) methods accepted under `analysis.differential.offset`.
 const OFFSET_METHODS = ("tss", "rle")
@@ -46,9 +51,21 @@ const THETA_LOWER = 1e-8
 # zCompositions::cmultRepl's default `frac`, as in Martín-Fernández et al. (2003).
 const DEFAULT_DELTA = 0.65
 
+# Canonicalise and validate a public replacement-method name in one place, so
+# direct library calls and YAML configuration have identical semantics.
+function _replacement_method(method::AbstractString)
+    m = lowercase(strip(String(method)))
+    m in REPLACEMENT_METHODS || throw(ArgumentError(
+        "analysis.differential.replacement_method must be one of " *
+        "$(join(REPLACEMENT_METHODS, ", ")), not '$method'"))
+    m
+end
+
 """
     DifferentialConfig(offset="tss", min_prevalence=0.0; method="nb_glm",
-                       replacement_delta=0.65, dispersion="ml")
+                       replacement_delta=0.65, dispersion="ml",
+                       replacement_method="bayesian_multiplicative",
+                       bayesian_alpha=nothing)
 
 Settings for one differential abundance analysis, read from
 `analysis.differential` in the pipeline config. `method` is `"nb_glm"` or
@@ -59,6 +76,12 @@ log-ratios, which are already free of library size.
 have at least one read to be tested. `replacement_delta`, in (0, 1), is the
 `frac` passed to `zCompositions::cmultRepl` by `clr_welch`: an imputed proportion
 above its taxon's smallest observed proportion is lowered to this fraction of it.
+`replacement_method` selects `"bayesian_multiplicative"` (the default GBM
+posterior replacement) or `"multiplicative_replacement"` (CZM). For the Bayesian
+method, `bayesian_alpha=nothing` uses GBM's estimated concentration; a finite,
+strictly positive value instead uses that Dirichlet concentration with
+cmultRepl's `method="user"` and the same leave-one-out prior mean. Alpha is
+recorded but not used by CZM.
 `dispersion` names the per-taxon dispersion `nb_glm` uses (`"ml"` or
 `"glmGamPoi"`): `"ml"` takes the maximum-likelihood theta from `MASS::glm.nb`,
 `"glmGamPoi"` uses `overdispersion_shrinkage_list.dispersion_trend` from
@@ -75,15 +98,19 @@ method and dispersion choices, or non-finite or out-of-range fractions,
 including settings unused by the selected method.
 """
 struct DifferentialConfig
-    method            :: String
-    offset            :: String
-    min_prevalence    :: Float64
-    replacement_delta :: Float64
-    dispersion        :: String
+    method             :: String
+    offset             :: String
+    min_prevalence     :: Float64
+    replacement_delta  :: Float64
+    dispersion         :: String
+    replacement_method :: String
+    bayesian_alpha     :: Union{Float64,Nothing}
     function DifferentialConfig(offset::AbstractString="tss", min_prevalence::Real=0.0;
                                 method::AbstractString="nb_glm",
                                 replacement_delta::Real=DEFAULT_DELTA,
-                                dispersion::AbstractString="ml")
+                                dispersion::AbstractString="ml",
+                                replacement_method::AbstractString="bayesian_multiplicative",
+                                bayesian_alpha::Union{Real,Nothing}=nothing)
         m = lowercase(strip(String(method)))
         m in METHODS || throw(ArgumentError(
             "analysis.differential.method must be one of $(join(METHODS, ", ")), not '$method'"))
@@ -102,7 +129,13 @@ struct DifferentialConfig
             "analysis.differential.min_prevalence must be a fraction in [0, 1], not $min_prevalence"))
         (isfinite(replacement_delta) && 0 < replacement_delta < 1) || throw(ArgumentError(
             "analysis.differential.replacement_delta must be in (0, 1), not $replacement_delta"))
-        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d)
+        r = _replacement_method(replacement_method)
+        (isnothing(bayesian_alpha) ||
+         (!(bayesian_alpha isa Bool) && isfinite(bayesian_alpha) && bayesian_alpha > 0)) ||
+            throw(ArgumentError("analysis.differential.bayesian_alpha must be empty or a " *
+                                "finite number greater than 0, not $bayesian_alpha"))
+        a = isnothing(bayesian_alpha) ? nothing : Float64(bayesian_alpha)
+        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d, r, a)
     end
 end
 
@@ -535,16 +568,43 @@ end
 # `min_prevalence` before this runs. Errors and warnings are captured, not raised.
 const _REPLACE_R = raw"""
 da_warns <- character(0)
-da_out <- tryCatch(
+da_posterior_t <- NULL
+da_posterior_s <- NULL
+da_out <- tryCatch({
+  da_args <- list(X = da_counts, label = 0, method = da_method, output = "prop",
+                  frac = da_frac, z.warning = 1, z.delete = FALSE,
+                  suppress.print = TRUE)
+  if (da_method != "CZM") {
+    # The Dirichlet posterior is parameterised by the observed counts plus
+    # s*t. GBM estimates s; method="user" keeps the same leave-one-out t but
+    # takes s from the explicitly configured alpha. Returning t and s lets a
+    # caller reconstruct that posterior without storing posterior draws.
+    da_x <- as.data.frame(da_counts)
+    da_x[da_x == 0] <- NA
+    da_n <- nrow(da_x)
+    da_d <- ncol(da_x)
+    da_prior <- matrix(0, nrow = da_n, ncol = da_d)
+    for (da_i in seq_len(da_n)) {
+      da_prior[da_i, ] <- apply(da_x, 2, function(da_col) sum(da_col[-da_i], na.rm = TRUE))
+    }
+    da_posterior_t <- da_prior / rowSums(da_prior)
+    da_posterior_s <- if (da_method == "user") {
+      rep(da_alpha, da_n)
+    } else {
+      1 / apply(da_posterior_t, 1, function(da_row) exp(mean(log(da_row))))
+    }
+    if (da_method == "user") {
+      da_args$t <- da_posterior_t
+      da_args$s <- da_posterior_s
+    }
+  }
   withCallingHandlers(
-    as.matrix(zCompositions::cmultRepl(da_counts, label = 0, method = "GBM", output = "prop",
-                                       frac = da_frac, z.warning = 1, z.delete = FALSE,
-                                       suppress.print = TRUE)),
+    as.matrix(do.call(zCompositions::cmultRepl, da_args)),
     warning = function(w) {
       da_warns <<- c(da_warns, conditionMessage(w))
       invokeRestart("muffleWarning")
-    }),
-  error = function(e) conditionMessage(e))
+    })
+}, error = function(e) conditionMessage(e))
 """
 
 """
@@ -571,72 +631,122 @@ function _check_compositions(out::AbstractMatrix{<:Real}, zero_mask::AbstractMat
     out
 end
 
-"""
-    replace_zeros(counts; frac=DEFAULT_DELTA, samples, taxa) -> NamedTuple
+# Heuristic numerical cautions, not claims that a particular delta is
+# biologically correct. They travel with the result so exported provenance does
+# not separate the warning from the parameter that caused it.
+function _delta_warnings(frac::Real)
+    warnings = String[]
+    frac < 0.01 && push!(warnings,
+        "replacement_delta < 0.01 can underflow or make imputed proportions numerically indistinguishable from zero")
+    frac >= 0.9 && push!(warnings,
+        "replacement_delta >= 0.9 can give replaced zeros substantial mass relative to observed parts")
+    warnings
+end
 
-Replace the zeros of the samples x taxa read-count matrix `counts` with
-`zCompositions::cmultRepl(counts, label = 0, method = "GBM", output = "prop",
-frac = frac)`, the geometric Bayesian-multiplicative replacement for count
-data. Returns `(proportions, zeros_replaced, imputed_mass, warnings)`:
-`proportions` has the same shape as `counts`, each row summing to 1 with no
-zero left; `imputed_mass` is the share of each sample's total held by replaced
-values; `warnings` is whatever R warned.
+"""
+    replace_zeros(counts; method="bayesian_multiplicative", frac=DEFAULT_DELTA,
+                  alpha=nothing, samples, taxa) -> NamedTuple
+
+Replace zeros in the samples x taxa read-count matrix `counts` through
+`zCompositions::cmultRepl`. `method="multiplicative_replacement"` selects its
+CZM replacement (`frac * 0.5 / sample_total`, followed by the reference's cap
+and multiplicative closure). `method="bayesian_multiplicative"` selects GBM by
+default; a finite, strictly positive `alpha` instead selects `method="user"`
+with the same leave-one-out Dirichlet prior mean and `s=alpha`.
+
+Returns `(proportions, zeros_replaced, imputed_mass, warnings, posterior,
+method, delta, alpha)`. Every output row is a positive composition summing to
+1, and ratios among observed parts are preserved. `warnings` combines R's
+warnings with delta's numerical cautions. For Bayesian replacement with at
+least one zero, `posterior=(prior_mean, concentration)` parameterises each
+sample's pre-adjustment Dirichlet posterior exactly:
+`Dirichlet(counts[i, :] + concentration[i] * prior_mean[i, :])`. It is not a
+posterior draw, and cmultRepl's subsequent `frac` cap and multiplicative closure
+are not part of that Dirichlet distribution. Posterior is `nothing` for CZM or
+when there are no zeros to replace.
 
 The caller chooses the taxa: everything passed in is replaced and kept, none is
-dropped. Throws `ArgumentError` when there are fewer than 2 taxa, when a taxon
-has reads in fewer than 2 samples (the GBM prior is then undefined), when a
-sample has no reads, or when cmultRepl refuses or returns a value that is not a
-positive proportion; the messages name the taxon or sample and point at
+dropped. Throws `ArgumentError` for invalid delta/alpha/method values, fewer
+than 2 taxa, an empty sample, a never-observed taxon, or a taxon seen in fewer
+than 2 samples for Bayesian replacement (whose leave-one-out prior is then
+undefined). Errors name the affected taxon or sample and point at
 `min_prevalence`. Throws `ZCompositionsUnavailable` when zCompositions cannot
 be loaded and `RBusyError` when the R runtime stays busy.
 """
 function replace_zeros(counts::AbstractMatrix{<:Real};
+                       method::AbstractString="bayesian_multiplicative",
                        frac::Real=DEFAULT_DELTA,
+                       alpha::Union{Real,Nothing}=nothing,
                        samples::AbstractVector{<:AbstractString}=["sample $i" for i in axes(counts, 1)],
                        taxa::AbstractVector{<:AbstractString}=["taxon $j" for j in axes(counts, 2)])
+    m = _replacement_method(method)
+    (isfinite(frac) && 0 < frac < 1) || throw(ArgumentError(
+        "replacement delta must be in (0, 1), not $frac"))
+    (isnothing(alpha) || (!(alpha isa Bool) && isfinite(alpha) && alpha > 0)) ||
+        throw(ArgumentError("Bayesian alpha must be empty or a finite number greater than 0, not $alpha"))
+    a = isnothing(alpha) ? nothing : Float64(alpha)
     size(counts) == (length(samples), length(taxa)) || throw(ArgumentError(
         "the table is $(size(counts)) but there are $(length(samples)) samples and $(length(taxa)) taxa"))
     size(counts, 2) >= 2 || throw(ArgumentError(
         "the centred log-ratio needs at least 2 taxa; there are $(size(counts, 2))"))
+    validate_counts(counts, samples, taxa)
     n = size(counts, 1)
-    sparse = [j for j in axes(counts, 2) if count(>(0), view(counts, :, j)) < 2]
-    isempty(sparse) || throw(ArgumentError(
-        "$(length(sparse)) taxa have reads in fewer than 2 samples, so cmultRepl's " *
-        "Bayesian-multiplicative prior cannot be estimated for them (" *
-        join(("'$(taxa[j])'" for j in first(sparse, 5)), ", ") *
-        (length(sparse) > 5 ? ", ..." : "") * "); raise analysis.differential.min_prevalence " *
-        "to at least $(round(2 / n; digits=3)) so that only taxa seen in 2 or more samples are tested"))
+    zero_mask = counts .== 0
+    n_zero = count(zero_mask)
+    n_zero > 0 && n < 2 && throw(ArgumentError(
+        "zCompositions::cmultRepl needs at least 2 samples for zero replacement"))
+
+    minimum_present = m == "bayesian_multiplicative" ? 2 : 1
+    sparse = [j for j in axes(counts, 2) if count(>(0), view(counts, :, j)) < minimum_present]
+    if !isempty(sparse)
+        reason = m == "bayesian_multiplicative" ?
+            "cmultRepl's Bayesian-multiplicative leave-one-out prior cannot be estimated for them" :
+            "cmultRepl's CZM method has no observed proportion for them"
+        throw(ArgumentError(
+            "$(length(sparse)) taxa have reads in fewer than $minimum_present sample" *
+            (minimum_present == 1 ? "" : "s") * ", so $reason (" *
+            join(("'$(taxa[j])'" for j in first(sparse, 5)), ", ") *
+            (length(sparse) > 5 ? ", ..." : "") * "); raise analysis.differential.min_prevalence " *
+            "to at least $(round(minimum_present / n; digits=3)) so that only adequately observed taxa are tested"))
+    end
     for i in axes(counts, 1)
         sum(view(counts, i, :)) > 0 || throw(ArgumentError(
             "sample '$(samples[i])' has no reads in the $(size(counts, 2)) taxa that pass " *
             "min_prevalence, so it has no composition to transform"))
     end
 
-    zero_mask = counts .== 0
-    n_zero = count(zero_mask)
-    out, warns = with_r_lock(; timeout=R_WAIT_SECONDS[]) do
+    r_method = m == "multiplicative_replacement" ? "CZM" : isnothing(a) ? "GBM" : "user"
+    out, warns, posterior = with_r_lock(; timeout=R_WAIT_SECONDS[]) do
         RCall.rcopy(RCall.reval("requireNamespace('zCompositions', quietly = TRUE)")) ||
             throw(ZCompositionsUnavailable())
         # cmultRepl stops when there is no zero to replace; the closure of the
-        # data is then the whole answer.
-        n_zero == 0 && return (Float64.(counts) ./ sum(counts; dims=2), String[])
+        # data is then the whole answer and no posterior replacement is needed.
+        n_zero == 0 && return (Float64.(counts) ./ sum(counts; dims=2), String[], nothing)
         RCall.globalEnv[:da_counts] = Matrix{Float64}(counts)
         RCall.globalEnv[:da_frac] = Float64(frac)
+        RCall.globalEnv[:da_method] = r_method
+        RCall.globalEnv[:da_alpha] = something(a, 0.0)
         try
             RCall.reval(_REPLACE_R)
             res = RCall.rcopy(RCall.reval("da_out"))
             res isa AbstractString && throw(ArgumentError(
                 "zCompositions::cmultRepl refused the table: $res. Raising " *
                 "analysis.differential.min_prevalence leaves fewer, better-observed taxa"))
-            (Matrix{Float64}(res), String.(RCall.rcopy(Vector{String}, RCall.reval("da_warns"))))
+            post = m == "bayesian_multiplicative" ? (
+                prior_mean=Matrix{Float64}(RCall.rcopy(RCall.reval("da_posterior_t"))),
+                concentration=Float64.(RCall.rcopy(RCall.reval("da_posterior_s")))) : nothing
+            (Matrix{Float64}(res), String.(RCall.rcopy(Vector{String}, RCall.reval("da_warns"))), post)
         finally
-            RCall.reval("rm(list = intersect(ls(), c('da_counts', 'da_frac', 'da_out', 'da_warns'))); " *
-                        "invisible(gc())")
+            RCall.reval("rm(list = intersect(ls(), c('da_counts', 'da_frac', 'da_method', 'da_alpha', " *
+                        "'da_out', 'da_warns', 'da_posterior_t', 'da_posterior_s', 'da_args', 'da_x', " *
+                        "'da_n', 'da_d', 'da_prior', 'da_i', 'da_col', 'da_row'))); invisible(gc())")
         end
     end
     _check_compositions(out, zero_mask, samples)
     mass = [sum(out[i, j] for j in axes(out, 2) if zero_mask[i, j]; init=0.0) for i in axes(out, 1)]
-    (proportions=out, zeros_replaced=n_zero, imputed_mass=mass, warnings=unique(warns))
+    append!(warns, _delta_warnings(frac))
+    (proportions=out, zeros_replaced=n_zero, imputed_mass=mass, warnings=unique(warns),
+     posterior=posterior, method=m, delta=Float64(frac), alpha=a)
 end
 
 # The per-taxon Welch t-test loop, with the same `da_` naming and statuses as
@@ -750,10 +860,11 @@ The result's `config` includes the selected dispersion name.
 
 `clr_welch`, in this order: (1) `min_prevalence` chooses the taxa, and taxa with
 no reads in any sample are always left out; (2) the zeros of those taxa only
-are replaced by `zCompositions::cmultRepl` (GBM, `frac =
-config.replacement_delta`), so the rare taxa that are not tested contribute no
-imputed values; (3) each sample is transformed to centred log-ratios over the
-same taxa; (4) each taxon is tested by Welch's t-test. Replacing zeros across
+are replaced by `zCompositions::cmultRepl` using `config.replacement_method`,
+`frac=config.replacement_delta`, and optional `config.bayesian_alpha`, so rare
+taxa that are not tested contribute no imputed values; (3) each sample is
+transformed to centred log-ratios over the same taxa; (4) each taxon is tested
+by Welch's t-test. Replacing zeros across
 every observed taxon first would let imputed values for rare taxa take over
 the samples of a sparse table. The estimate is the difference in mean CLR,
 contrast minus reference: a difference in centred-log-ratio units, not a fold
@@ -845,7 +956,8 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
         length(tested) >= 2 || throw(ArgumentError(
             "the centred log-ratio needs at least 2 taxa with reads at or above " *
             "analysis.differential.min_prevalence = $(config.min_prevalence); there are $(length(tested))"))
-        replaced = replace_zeros(counts[:, tested]; frac=config.replacement_delta,
+        replaced = replace_zeros(counts[:, tested]; method=config.replacement_method,
+                                 frac=config.replacement_delta, alpha=config.bayesian_alpha,
                                  samples, taxa=taxa[tested])
         clr = clr_transform(replaced.proportions)
         fits = fit_welch(clr, groups; levels)
@@ -856,25 +968,42 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
                 "standard_error" => f.se, "statistic" => f.statistic,
                 "pvalue" => f.pvalue))
         end
+        r_fit = config.replacement_method == "multiplicative_replacement" ? "CZM" :
+                isnothing(config.bayesian_alpha) ? "GBM" : "user"
+        alpha_text = r_fit == "user" ? ", alpha = $(config.bayesian_alpha)" : ""
         method_text = "Welch's two-sample t-test per taxon (stats::t.test, var.equal = FALSE) on " *
                       "centred log-ratios over the taxa passing min_prevalence, after their zeros " *
-                      "were replaced by zCompositions::cmultRepl (GBM, frac = $(config.replacement_delta)); " *
+                      "were replaced by zCompositions::cmultRepl ($r_fit, frac = $(config.replacement_delta)$alpha_text); " *
                       "Benjamini-Hochberg adjustment over the fitted taxa. Estimates are " *
                       "differences in CLR units, not fold changes, and replaced zeros are not measurements"
         effect = Dict("key" => "estimate", "label" => "CLR difference")
         size_factor_rows = Dict{String,Any}[]
         config_echo = Dict{String,Any}("method" => config.method,
                                        "min_prevalence" => config.min_prevalence,
-                                       "replacement_delta" => config.replacement_delta)
+                                       "replacement_method" => config.replacement_method,
+                                       "replacement_delta" => config.replacement_delta,
+                                       "bayesian_alpha" => config.bayesian_alpha)
         sorted_mass = sort(replaced.imputed_mass)
-        diagnostics["zero_replacement"] = Dict{String,Any}(
-            "method" => "zCompositions::cmultRepl (GBM)",
-            "delta" => config.replacement_delta, "zeros_replaced" => replaced.zeros_replaced,
+        zero_diagnostics = Dict{String,Any}(
+            "method" => "zCompositions::cmultRepl ($r_fit)",
+            "replacement_method" => config.replacement_method,
+            "delta" => config.replacement_delta, "alpha" => config.bayesian_alpha,
+            "zeros_replaced" => replaced.zeros_replaced,
             "n_taxa_in_composition" => length(tested),
             "n_taxa_unobserved" => count(==(0), present),
             "median_imputed_fraction" => _median(sorted_mass),
             "max_imputed_fraction" => last(sorted_mass),
             "warnings" => replaced.warnings)
+        if !isnothing(replaced.posterior)
+            zero_diagnostics["posterior"] = Dict{String,Any}(
+                "family" => "Dirichlet",
+                "prior_mean" => "leave-one-out taxon profile of the other samples",
+                "shape" => "observed counts + concentration * prior_mean",
+                "adjustments" => "The frac cap and multiplicative closure are applied after this posterior; no posterior draws are used",
+                "concentration" => [Dict("sample" => String(samples[i]), "value" => s)
+                                    for (i, s) in enumerate(replaced.posterior.concentration)])
+        end
+        diagnostics["zero_replacement"] = zero_diagnostics
     end
 
     family = findall(r -> r["status"] in ("ok", "boundary") && !isnothing(r["pvalue"]), rows)

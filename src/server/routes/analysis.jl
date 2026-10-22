@@ -1199,18 +1199,23 @@ end
 
 The study's `analysis.differential` settings, resolved through the config
 cascade. Missing or `nothing` values use the defaults in `DifferentialConfig`,
-including `dispersion="ml"`. Invalid settings propagate the constructor's
+including `dispersion="ml"`, GBM replacement and an estimated Bayesian alpha.
+Invalid settings propagate the constructor's
 `ArgumentError`; values that cannot be converted to strings or numbers also
 raise their conversion errors.
 """
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
     val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    alpha = val("analysis.differential.bayesian_alpha", nothing)
     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
                        Float64(val("analysis.differential.min_prevalence", 0.0));
                        method=String(val("analysis.differential.method", "nb_glm")),
                        replacement_delta=Float64(val("analysis.differential.replacement_delta", 0.65)),
-                       dispersion=String(val("analysis.differential.dispersion", "ml")))
+                       dispersion=String(val("analysis.differential.dispersion", "ml")),
+                       replacement_method=String(val("analysis.differential.replacement_method",
+                                                       "bayesian_multiplicative")),
+                       bayesian_alpha=isnothing(alpha) ? nothing : Float64(alpha))
 end
 
 """
