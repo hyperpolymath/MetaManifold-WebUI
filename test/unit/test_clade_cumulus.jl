@@ -110,7 +110,8 @@ _cc_req(method::String, path::String, body::String = "") =
         @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false) ≈ 2.3276502663333334 atol = 1e-11
         @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = true) ≈ 0.6655215451489284 atol = 1e-11
 
-        # Quoted labels, NHX support, negative branch clamping, and non-finite branch rejection
+        # Quoted labels, NHX support, negative branch clamping, non-finite branch rejection,
+        # and midpoint split-support symmetry across both root children.
         warns = String[]
         qtree = CC.parse_newick("[&R] (('Taxon ''alpha''':0.2,ASV_b:-0.05)[&&NHX:B=92]:0.1,ASV_c:0.3);", warnings = warns)
         @test !isempty(warns)
@@ -119,6 +120,10 @@ _cc_req(method::String, path::String, body::String = "") =
         @test qtree.children[1].children[2].branch_length == 0.0
         @test_throws ArgumentError CC.parse_newick("(ASV_1:NaN,ASV_2:0.1);")
         @test_throws ArgumentError CC.parse_newick("(ASV_1:Inf,ASV_2:0.1);")
+        mp_sym, did_mp = CC.midpoint_root(CC.parse_newick("(ASV_1:0.1,ASV_2:0.1,(ASV_3:0.1,ASV_4:0.1)0.55:2.0);"))
+        @test did_mp
+        @test mp_sym.children[1].support ≈ 0.55 atol = 1e-12
+        @test mp_sym.children[2].support ≈ 0.55 atol = 1e-12
     end
 
     @testset "Strict raw jplace evidence reader, edge projection, and independent LWR threshold" begin
@@ -185,6 +190,26 @@ _cc_req(method::String, path::String, body::String = "") =
         disagree_leaf = CC._find_clade(cc_tax.root, "asv:ASV_disagree")
         @test disagree_leaf !== nothing
         @test disagree_leaf.epistemic_status === :present_in_some
+
+        # Taxonomic mode requires at least one taxonomic rank column
+        no_rank_df = DataFrame(SeqName = ["ASV_1", "ASV_2"], S1 = [10, 20])
+        @test_throws ArgumentError CC.build_clade_tree(no_rank_df; mode = :taxonomic)
+
+        # Partial Newick tree preserves omitted table reads under an explicit sans_fibre clade
+        partial_df = DataFrame(
+            SeqName = ["ASV_1", "ASV_2", "ASV_missing"],
+            Domain  = ["Bacteria", "Bacteria", "Bacteria"],
+            S1      = [30, 20, 50],
+        )
+        cc_partial = CC.build_clade_tree(partial_df; mode = :combined, newick = "(ASV_1:0.1,ASV_2:0.2)Root;")
+        @test cc_partial.subsampled
+        @test cc_partial.retained_asvs == 2
+        @test cc_partial.retained_fraction ≈ 0.5 atol = 1e-12
+        @test cc_partial.root.cumulative_count ≈ 100.0 atol = 1e-9
+        omitted_node = CC._find_clade(cc_partial.root, "unplaced:omitted")
+        @test omitted_node !== nothing
+        @test omitted_node.epistemic_status === :sans_fibre
+        @test omitted_node.colour == "#c62828"
     end
 
     @testset "Amplicon phylogeny builder, subsampling guard, and FastTree CLI provenance" begin
@@ -210,21 +235,21 @@ _cc_req(method::String, path::String, body::String = "") =
         # Verify FastTree invocation path + SHA256 binary provenance via controlled mock executable.
         mktempdir() do tmp
             mock_ft = joinpath(tmp, "FastTree")
-            write(mock_ft, """#!/usr/bin/env bash
-if [ "\$1" = "-help" ]; then
+            write(mock_ft, raw"""#!/usr/bin/env bash
+if [ "$1" = "-help" ]; then
   echo "FastTree 2.2.0 Double precision, OpenMP (2 threads):" >&2
   exit 0
 fi
 OUT=""
-while [ \$# -gt 0 ]; do
-  if [ "\$1" = "-out" ]; then
-    OUT="\$2"
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-out" ]; then
+    OUT="$2"
     shift 2
   else
     shift 1
   fi
 done
-echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "\$OUT"
+echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "$OUT"
 """)
             chmod(mock_ft, 0o755)
             old_ft = get(PH.Tools._tools, "fasttree", nothing)

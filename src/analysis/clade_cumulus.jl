@@ -450,7 +450,7 @@ function midpoint_root(orig_root::PhyloNode)::Tuple{PhyloNode,Bool}
     end
 
     left_child = orient_from(split_u, split_v, w_u, split_sup, nothing)
-    right_child = orient_from(split_v, split_u, w_v, nothing, nothing)
+    right_child = orient_from(split_v, split_u, w_v, split_sup, nothing)
     new_root = PhyloNode("MidpointRoot", "Root", 0.0, nothing, nothing, [left_child, right_child])
     return (new_root, true)
 end
@@ -1117,6 +1117,10 @@ function build_clade_tree(
     id_col = _detect_id_col(df)
     seq_col = _detect_sequence_col(df)
     ranks = _detect_rank_cols(df, rank_cols)
+    if mode === :taxonomic && isempty(ranks)
+        throw(ArgumentError(
+            "Taxonomic hierarchy mode requires at least one taxonomic rank column (Domain..Species) in the selected table"))
+    end
     scols = _detect_sample_cols(df, id_col, seq_col, ranks, sample_cols)
     all_cols = Set(names(df))
 
@@ -1171,12 +1175,14 @@ function build_clade_tree(
         nothing
     end
 
+    table_asv_reads = copy(asv_reads)
+
     phylo_root = nothing
     final_newick = nothing
     did_midpoint = false
     subsampled = false
-    total_in_asvs = length(asv_reads)
-    retained_asvs = length(asv_reads)
+    total_in_asvs = length(table_asv_reads)
+    retained_asvs = length(table_asv_reads)
     retained_frac = 1.0
 
     if mode === :phylogenetic || mode === :combined
@@ -1234,6 +1240,49 @@ function build_clade_tree(
         )
     end
 
+    function rescale_frequencies(u::CladeNode, denom::Float64)::CladeNode
+        kids = CladeNode[rescale_frequencies(c, denom) for c in u.children]
+        CladeNode(
+            u.id, u.name, u.rank, u.direct_count, u.cumulative_count,
+            denom > 0.0 ? u.cumulative_count / denom : 0.0,
+            u.residual_count, u.cloud_size, u.branch_length, u.support, u.subtree_pd,
+            u.dominant_taxon, u.taxon_purity, u.monophyletic, u.epistemic_status, u.colour, kids,
+        )
+    end
+
+    raw_tree_tips = _collect_tree_tips!(Set{String}(), phylo_root::PhyloNode)
+    covered_base_ids = Set{String}(
+        occursin("@edge", t) ? String(first(split(t, "@edge"; limit = 2))) : t
+        for t in raw_tree_tips
+    )
+    total_table_reads = sum(values(table_asv_reads); init = 0.0)
+    matched_asvs = 0
+    matched_reads = 0.0
+    omitted_asvs = 0
+    omitted_reads = 0.0
+    for (aid, cnt) in table_asv_reads
+        if aid in covered_base_ids
+            matched_asvs += 1
+            matched_reads += cnt
+        else
+            omitted_asvs += 1
+            omitted_reads += cnt
+        end
+    end
+    if matched_asvs == 0 && !isempty(table_asv_reads)
+        throw(ArgumentError(
+            "None of the $(length(table_asv_reads)) ASV identifiers in the selected table matched any tip on the supplied tree"))
+    end
+    total_in_asvs = length(table_asv_reads)
+    retained_asvs = matched_asvs
+    retained_frac = total_table_reads > 0.0 ? clamp(matched_reads / total_table_reads, 0.0, 1.0) : 1.0
+    if omitted_asvs > 0
+        subsampled = true
+        push!(warnings,
+            "Tree covers $matched_asvs of $total_in_asvs table ASVs ($(round(retained_frac * 100; digits=2))% of reads); " *
+            "$omitted_asvs unplaced ASV(s) ($(round(omitted_reads; digits=1)) reads) are preserved under 'Unplaced ASVs' (sans_fibre).")
+    end
+
     # Build phylogenetic or combined CladeTree anchored on `phylo_root`.
     root_node, case_obj, dispersed, discordant = _build_phylo_or_combined_tree(
         phylo_root::PhyloNode,
@@ -1246,6 +1295,52 @@ function build_clade_tree(
         support_threshold = Float64(support_threshold),
         lwr_threshold = Float64(lwr_threshold),
     )
+
+    if omitted_asvs > 0
+        push!(case_obj.unanchored_ids, "unplaced:omitted")
+        unplaced_node = CladeNode(
+            "unplaced:omitted",
+            "Unplaced ASVs ($omitted_asvs omitted)",
+            "unplaced",
+            omitted_reads,
+            omitted_reads,
+            total_table_reads > 0.0 ? omitted_reads / total_table_reads : 0.0,
+            omitted_reads,
+            Epistemic.cloud_size_by_residual(omitted_reads),
+            0.0,
+            nothing,
+            0.0,
+            nothing,
+            nothing,
+            nothing,
+            :sans_fibre,
+            Epistemic.epistemic_colour(:sans_fibre),
+            CladeNode[],
+        )
+        rescaled_kids = CladeNode[rescale_frequencies(c, total_table_reads) for c in root_node.children]
+        push!(rescaled_kids, unplaced_node)
+        new_root_cum = root_node.cumulative_count + omitted_reads
+        new_root_res = root_node.residual_count + omitted_reads
+        root_node = CladeNode(
+            root_node.id,
+            root_node.name,
+            root_node.rank,
+            root_node.direct_count,
+            new_root_cum,
+            total_table_reads > 0.0 ? new_root_cum / total_table_reads : 0.0,
+            new_root_res,
+            Epistemic.cloud_size_by_residual(new_root_res),
+            root_node.branch_length,
+            root_node.support,
+            root_node.subtree_pd,
+            root_node.dominant_taxon,
+            root_node.taxon_purity,
+            root_node.monophyletic,
+            root_node.epistemic_status,
+            root_node.colour,
+            rescaled_kids,
+        )
+    end
 
     CladeTreeResult(
         mode,

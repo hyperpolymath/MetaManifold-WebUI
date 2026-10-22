@@ -66,8 +66,11 @@ function _probe_record_dict(tool_key::AbstractString, resolved_path::AbstractStr
 end
 
 function _sanitize_dna(seq::AbstractString)::String
-    uppercase(replace(seq, r"[^ACGTURYKMSWBDHVN-]"i => ""))
+    replace(uppercase(replace(seq, r"[^ACGTURYKMSWBDHVN-]"i => "")), 'U' => 'T')
 end
+
+@inline _is_canonical_acgt(b::UInt8)::Bool =
+    b == UInt8('A') || b == UInt8('C') || b == UInt8('G') || b == UInt8('T')
 
 """
     select_asv_subset(sequences; abundances, max_asvs=500, selection=:top_abundance, seed=42)
@@ -83,20 +86,23 @@ function select_asv_subset(
     seed::Int = 42,
 )
     max_asvs >= 1 || throw(ArgumentError("max_asvs must be >= 1, got $max_asvs"))
-    seen = Set{String}()
+    seen_all = Set{String}()
+    total_reads = 0.0
     cleaned = Pair{String,String}[]
     for (id_raw, seq_raw) in sequences
         id = String(id_raw)
-        id in seen && continue
+        id in seen_all && continue
+        push!(seen_all, id)
+        total_reads += max(0.0, Float64(get(abundances, id, 1.0)))
         s = _sanitize_dna(seq_raw)
         isempty(s) && continue
-        push!(seen, id)
         push!(cleaned, id => s)
     end
 
-    total_reads = sum((Float64(get(abundances, id, 1.0)) for (id, _) in cleaned); init = 0.0)
     if length(cleaned) <= max_asvs
-        return (cleaned, 1.0, false)
+        kept_reads = sum((max(0.0, Float64(get(abundances, id, 1.0))) for (id, _) in cleaned); init = 0.0)
+        frac = total_reads > 0.0 ? clamp(kept_reads / total_reads, 0.0, 1.0) : 1.0
+        return (cleaned, frac, length(cleaned) < length(seen_all))
     end
 
     selected = if selection === :subsample
@@ -113,7 +119,7 @@ function select_asv_subset(
         ordered[1:max_asvs]
     end
 
-    kept_reads = sum((Float64(get(abundances, id, 1.0)) for (id, _) in selected); init = 0.0)
+    kept_reads = sum((max(0.0, Float64(get(abundances, id, 1.0))) for (id, _) in selected); init = 0.0)
     frac = total_reads > 0.0 ? clamp(kept_reads / total_reads, 0.0, 1.0) : 1.0
     return (selected, frac, true)
 end
@@ -229,8 +235,6 @@ function _jc69_distance_matrix(
 )::Matrix{Float64}
     n = length(aln_bytes)
     D = zeros(Float64, n, n)
-    gap = UInt8('-')
-    ambig = UInt8('N')
     for i in 1:(n - 1)
         si = aln_bytes[i]
         for j in (i + 1):n
@@ -240,7 +244,7 @@ function _jc69_distance_matrix(
             @inbounds for c in cols
                 bi = si[c]
                 bj = sj[c]
-                (bi == gap || bj == gap || bi == ambig || bj == ambig) && continue
+                (_is_canonical_acgt(bi) && _is_canonical_acgt(bj)) || continue
                 compared += 1
                 bi != bj && (diffs += 1)
             end
@@ -316,8 +320,8 @@ function _neighbor_joining_tree(labels::Vector{String}, D_in::Matrix{Float64})::
         ib = active[best_b]
         dab = dist[ia, ib]
         delta = (row_sums[ia] - row_sums[ib]) / (2.0 * (m - 2))
-        la = max(0.0, 0.5 * dab + delta)
-        lb = max(0.0, dab - la)
+        la = clamp(0.5 * dab + delta, 0.0, dab)
+        lb = dab - la
 
         iu = next_id
         next_id += 1
