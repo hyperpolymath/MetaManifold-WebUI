@@ -19,6 +19,15 @@ _doi_report_dir(study::String) = joinpath(ServerState.projects_dir(), study, "re
 
 # Resolve a file the caller wants published, strictly inside the study's report
 # directory (blocks path traversal, symlink escapes and hidden files).
+"""
+    _doi_report_file(study, name) -> Union{String,Nothing}
+
+Resolve an existing report file, rejecting empty names, leading dots and `/`.
+Return `nothing` if the report directory or file is absent, or if the resolved
+file path does not start with the resolved report directory path. This is a
+string prefix check, not a directory boundary check. Failed `realpath` calls
+fall back to the unresolved paths.
+"""
 function _doi_report_file(study::String, name::AbstractString)::Union{String,Nothing}
     isempty(name) && return nothing
     startswith(name, ".") && return nothing
@@ -34,6 +43,12 @@ function _doi_report_file(study::String, name::AbstractString)::Union{String,Not
     return cand_real
 end
 
+"""
+    _doi_publish_body(req) -> Dict
+
+Parse a JSON object from the request body with string keys. Return an empty
+dictionary when reading or parsing fails or the JSON value is not an object.
+"""
 function _doi_publish_body(req)::Dict{String,Any}
     body = try JSON3.read(String(req.body)) catch; nothing end
     body isa JSON3.Object || return Dict{String,Any}()

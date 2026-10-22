@@ -57,6 +57,14 @@ struct DOIConfig
     sandbox::Bool
 end
 
+"""
+    DOIConfig(; enabled=false, origin=ZENODO_SANDBOX_ORIGIN, token="",
+               storage_dir="data/doi_journal")
+
+Construct publication settings from the supplied values. An unrecognised
+`origin` falls back to the sandbox; `sandbox` reflects the effective origin.
+The token is stored as supplied, without validation or environment lookup.
+"""
 function DOIConfig(; enabled::Bool=false,
                    origin::AbstractString=ZENODO_SANDBOX_ORIGIN,
                    token::AbstractString="",
@@ -71,14 +79,13 @@ end
 """
     load_doi_config(; storage_dir="data/doi_journal") -> DOIConfig
 
-Read DOI configuration entirely from the environment:
-  DOI_ENABLED      "true" to opt into publication (default false)
-  DOI_ORIGIN       sandbox or production origin (default sandbox)
-  ZENODO_TOKEN     personal access token (required for publication)
-  DOI_STORAGE_DIR  journal/receipt directory (default data/doi_journal)
+Read `DOI_ENABLED`, `DOI_ORIGIN` and `ZENODO_TOKEN` from the environment.
+Whitespace is stripped; only a case-insensitive `"true"` enables the flag.
+An unrecognised origin falls back to the sandbox. `storage_dir` supplies the
+journal and receipt directory; `DOI_STORAGE_DIR` is not read.
 
-A missing or invalid token leaves publication disabled; the absence of a
-token never silently enables it.
+The token is not validated. An empty token makes `publication_enabled`
+false, even when the returned configuration's `enabled` flag is true.
 """
 function load_doi_config(; storage_dir::AbstractString="data/doi_journal")::DOIConfig
     enabled = lowercase(strip(get(ENV, "DOI_ENABLED", "false"))) == "true"
@@ -87,6 +94,12 @@ function load_doi_config(; storage_dir::AbstractString="data/doi_journal")::DOIC
     DOIConfig(; enabled, origin, token, storage_dir=String(storage_dir))
 end
 
+"""
+    publication_enabled(config) -> Bool
+
+Return whether publication is enabled and the configured token is non-empty.
+This does not validate the token with Zenodo.
+"""
 publication_enabled(config::DOIConfig)::Bool = config.enabled && !isempty(config.token)
 
 ## Redaction ----------------------------------------------------------------
@@ -94,8 +107,10 @@ publication_enabled(config::DOIConfig)::Bool = config.enabled && !isempty(config
 """
     redact(msg) -> String
 
-Return `msg` with any `Authorization: Bearer ...` header and any bearer token
-replaced by `[redacted]`, so logs never carry credentials.
+Replace tokens following the case-sensitive text `Authorization: Bearer`
+(with flexible whitespace), or `Bearer` and whitespace followed by ASCII
+letters, digits, `.`, `_` or `-`, with `[redacted]`. Other credential formats
+are left unchanged.
 """
 function redact(msg::AbstractString)::String
     s = String(msg)
@@ -115,6 +130,11 @@ Base.showerror(io::IO, e::_ZenodoError) = print(io,
 
 _ts() = Dates.format(now(UTC), "yyyy-mm-ddTHH:MM:SSZ")
 
+"""
+    _header(resp, name) -> String
+
+Return the first header matching `name` without regard to case, or `""` if absent.
+"""
 function _header(resp::HTTP.Response, name::AbstractString)::String
     for h in resp.headers
         if lowercase(h.first) == lowercase(name)
@@ -125,15 +145,27 @@ function _header(resp::HTTP.Response, name::AbstractString)::String
 end
 
 """
-    _zenodo_request(config, method, path; ...)
+    _zenodo_request(config, method, path; body=nothing, raw_body=false,
+                    extra_headers=Dict{String,String}(), max_retries=3)
 
-Make a JSON request to Zenodo with bounded 429 / Retry-After handling.
+Send an authenticated request to `config.origin * path`. Encode `body` as JSON
+unless `raw_body=true`; `extra_headers` override the default headers. Return
+parsed JSON for a successful non-blank response, or an empty dictionary for a
+blank response. Disabled publication raises `ErrorException` before sending.
 
-Only the method, path and status are logged - never headers or body, so the
-token never reaches the wire log. Ambiguous failures (network errors, timeouts,
-5xx) are NOT replayed: the caller must reconcile via the journal before
-retrying a create or publish, because those are not idempotent safe to blindly
-repeat.
+`max_retries` limits outer attempts, including the first; HTTP.jl can also
+retry within each attempt. Exceptions other than `_ZenodoError`, including
+HTTP and JSON parsing errors, are retried after delays of up to 30 seconds.
+With the pinned HTTP.jl defaults, error statuses raise `HTTP.StatusError` and
+enter this retry path. This can repeat create and publish POSTs after
+ambiguous failures.
+
+If a 429 response is returned without an HTTP exception, a positive numeric
+`Retry-After` is used as a delay in seconds when attempts remain, without an
+upper bound on the delay. Otherwise the 429 raises `_ZenodoError`. Other
+non-success responses returned by HTTP.jl raise `_ZenodoError` immediately.
+Exhaustion outside an active catch context raises `ErrorException` from the
+final rethrow, rather than propagating the last HTTP or JSON error.
 """
 function _zenodo_request(config::DOIConfig, method::AbstractString, path::AbstractString;
                          body=nothing,
@@ -193,6 +225,13 @@ function _zenodo_request(config::DOIConfig, method::AbstractString, path::Abstra
     rethrow(last_err)
 end
 
+"""
+    _retry_after_seconds(resp) -> Float64
+
+Read a numeric `Retry-After` value in seconds. Return `0.0` when absent or
+unparseable, including HTTP dates. Parsed values are not clamped or checked
+for finiteness.
+"""
 function _retry_after_seconds(resp::HTTP.Response)::Float64
     v = _header(resp, "Retry-After")
     isempty(v) && return 0.0
@@ -241,6 +280,12 @@ end
 const RECEIPT_SCHEMA = 1
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024   # bound memory for streamed uploads
 
+"""
+    _plain(x)
+
+Recursively convert JSON3 objects and arrays to dictionaries with string keys
+and vectors, leaving other values unchanged.
+"""
 _plain(x::JSON3.Object) = Dict{String,Any}(string(k) => _plain(v) for (k, v) in x)
 _plain(x::JSON3.Array)  = [_plain(v) for v in x]
 _plain(x) = x
@@ -258,17 +303,16 @@ _deposition_from(resp)::Deposition = Deposition(
 """
     _journal_path(config) -> String
 
-Private journal file, kept outside the study data tree so publication state
-cannot be confused with scientific outputs.
+Return the journal path under `config.storage_dir` without creating it.
 """
 _journal_path(config::DOIConfig) = joinpath(config.storage_dir, "publication_journal.jsonl")
 
 """
     journal_append(config, entry::Dict) -> nothing
 
-Append one write-ahead transition to the journal as a single JSON line. The
-append-and-close makes each line atomic from a reader's perspective, and the
-journal is append-only: transitions are never rewritten.
+Append `entry` as one JSON line, creating `config.storage_dir` if needed.
+Existing transitions are retained. Serialisation and filesystem errors
+propagate; concurrent writes are not synchronised and writes are not fsynced.
 """
 function journal_append(config::DOIConfig, entry::Dict{String,Any})::Nothing
     mkpath(config.storage_dir)
@@ -284,8 +328,10 @@ end
 """
     journal_state(config) -> Vector{Dict}
 
-Read every journal transition in order. The latest entry per deposition id is
-the current known state; callers reconcile against Zenodo before publishing.
+Return journal objects in file order, skipping blank lines, invalid JSON and
+non-object JSON values. A missing journal yields an empty vector; filesystem
+read errors propagate. Entries are not reduced to a latest state or checked
+against Zenodo.
 """
 function journal_state(config::DOIConfig)::Vector{Dict{String,Any}}
     path = _journal_path(config)
@@ -321,11 +367,23 @@ function _receipt_dict(receipt::PublicationReceipt)::Dict{String,Any}
     )
 end
 
+"""
+    _receipt_checksum(d) -> String
+
+Return the hexadecimal SHA-256 of the JSON-encoded attestation fields from
+`_receipt_dict_from_flat`, excluding `checksum` and unrecognised fields.
+"""
 _receipt_checksum(d::Dict{String,Any})::String =
     bytes2hex(sha256(JSON3.write(_receipt_dict_from_flat(d))))
 
 # Build a flat dict (fixed insertion order => deterministic bytes) minus the
 # checksum field, so the checksum covers exactly the attested content.
+"""
+    _receipt_dict_from_flat(d) -> Dict
+
+Select the recognised attestation fields, supplying defaults for missing keys.
+The checksum and any extra fields are omitted; values are not validated.
+"""
 function _receipt_dict_from_flat(d::Dict{String,Any})::Dict{String,Any}
     Dict{String,Any}(
         "schema"         => get(d, "schema", 1),
@@ -344,9 +402,14 @@ end
 """
     record_receipt(config, receipt) -> nothing
 
-Write an immutable receipt next to the journal. The checksum is computed over
-the attestation content (excluding the checksum field itself) so any later
-alteration is detectable on read. Existing receipts are never overwritten.
+Write a receipt under `config.storage_dir/receipts/`, computing the stored
+checksum from the attestation fields instead of `receipt.checksum`. The DOI
+is converted to a filename by replacing characters outside ASCII letters, digits,
+`.`, `_` and `-` with `_`; different DOIs can therefore share a path.
+
+If the path already names a file, return without writing or comparing it.
+This check does not prevent concurrent writers from overwriting one another.
+Serialisation and filesystem errors propagate.
 """
 function record_receipt(config::DOIConfig, receipt::PublicationReceipt)::Nothing
     d = _receipt_dict(receipt)
@@ -365,8 +428,12 @@ end
 """
     read_receipt(config, doi) -> Union{PublicationReceipt,Nothing}
 
-Read and verify a receipt. Returns nothing if absent or if the stored checksum
-no longer matches the attestation content (tamper detection).
+Read a receipt from its DOI-derived path and verify the recognised attestation
+fields against the stored checksum. Return `nothing` for a missing or unreadable
+file, invalid or non-object JSON, or a checksum mismatch. Checksum calculation
+errors and conversion errors in fields of a checksum-matching receipt propagate.
+Extra JSON fields are not covered by the checksum; the stored DOI is not
+compared with the requested DOI.
 """
 function read_receipt(config::DOIConfig, doi::String)::Union{PublicationReceipt,Nothing}
     path = _receipt_path(config, doi)
@@ -396,9 +463,15 @@ end
 """
     create_deposition(config, study, run; metadata=Dict()) -> Deposition
 
-Create an empty Zenodo deposition and reserve a DOI. Sends the metadata as
-application/json (the documented legacy contract). Records a `created` journal
-transition.
+Create a Zenodo deposition using the legacy `application/json` contract and
+return the deposition fields from its response. `metadata` overrides the default
+dataset metadata; the default title includes `study` and `run`. The returned
+DOI is empty if the response omits its top-level `doi` field.
+
+Disabled publication raises `ErrorException`. Request errors follow
+`_zenodo_request`; response conversion and journal errors propagate.
+The `created` journal transition is appended after the remote creation, so a
+journal failure can leave a remote draft without a local transition.
 """
 function create_deposition(config::DOIConfig, study::AbstractString, run::AbstractString;
                            metadata::Dict{String,Any}=Dict{String,Any}())::Deposition
@@ -428,6 +501,13 @@ end
 
 const _BOUNDARY = "----MetaManifoldDOIUpload"
 
+"""
+    _multipart_form(filename, data)
+
+Return multipart body bytes and the matching content type for one `file` part
+with `application/octet-stream` content. `filename` is inserted verbatim into
+the part header and must already be safe to use there.
+"""
 function _multipart_form(filename::AbstractString, data::Vector{UInt8})
     io = IOBuffer()
     write(io, "--$_BOUNDARY\r\n")
@@ -441,8 +521,19 @@ end
 """
     upload_file(config, dep, file_path) -> Deposition
 
-Stream a file into an existing Zenodo deposition as `application/octet-stream`
-bounded by `MAX_UPLOAD_BYTES`. Returns the deposition with the new file entry.
+Upload a local file to an existing deposition as a multipart file part named
+with its basename. The file and multipart body are buffered in memory. Files
+larger than `MAX_UPLOAD_BYTES` (500 MiB, or 524,288,000 bytes) are rejected.
+The local size check permits empty files and files exactly at the limit.
+
+Return a new deposition with the uploaded file entry, including its local
+SHA-256 and size in bytes, without appending to `dep.files`. Append an
+`uploaded` journal transition after the request succeeds.
+
+Disabled publication, a missing file or an excessive size raises
+`ErrorException`. File access, response conversion and journal errors propagate;
+request errors follow `_zenodo_request`. A journal failure does not undo
+the remote upload.
 """
 function upload_file(config::DOIConfig, dep::Deposition, file_path::AbstractString)::Deposition
     publication_enabled(config) || error("DOI publication is disabled")
@@ -479,9 +570,16 @@ end
 """
     publish_deposition(config, dep; confirm=false) -> PublicationReceipt
 
-Publish a deposition, minting its DOI. Requires `confirm=true` (publication is
-irreversible). Refuses to publish an already-published deposition. Records a
-`published` journal transition.
+Publish a deposition, minting its DOI. Disabled publication, `confirm=false`
+or `dep.published=true` raises `ErrorException` before the request. Publication
+is irreversible.
+
+Return a receipt with empty study, run and checksum fields. Both timestamps
+are the local UTC time after the publish response. The receipt is not saved
+by this function. Append a `published` journal transition after publication.
+
+Request errors follow `_zenodo_request`; response conversion and journal
+errors propagate. A journal failure does not undo remote publication.
 """
 function publish_deposition(config::DOIConfig, dep::Deposition;
                             confirm::Bool=false)::PublicationReceipt
@@ -521,8 +619,10 @@ end
 """
     deposition_status(config, deposition_id) -> Deposition
 
-Fetch the current state of a deposition from Zenodo (used for reconciliation
-after an ambiguous failure).
+Fetch the current state of a deposition from Zenodo for reconciliation after
+an ambiguous failure. Disabled publication raises `ErrorException`; request
+errors follow `_zenodo_request` and response conversion errors propagate.
+No journal or receipt is written.
 """
 function deposition_status(config::DOIConfig, deposition_id::Int)::Deposition
     publication_enabled(config) || error("DOI publication is disabled")
@@ -533,9 +633,19 @@ end
 """
     publish_study(config, study, run, files; confirm=false) -> PublicationReceipt
 
-End-to-end publication: create a deposition, upload every file, publish to mint
-the DOI, then record an immutable receipt. The receipt is the citable artefact;
-scientific objects are never rewritten by DOI insertion.
+Create a deposition, upload `files` in order, publish it and save a receipt
+labelled with `study` and `run`, then append a `complete` journal transition.
+The supplied scientific files are not rewritten. The returned receipt has an
+empty checksum; `record_receipt` computes the checksum for the saved copy.
+
+Disabled publication, an empty file list or a missing file raises
+`ErrorException` before creating a draft. `confirm=true` is required to publish,
+but confirmation is checked only after the draft is created and files uploaded.
+Upload size limits are also checked during upload, rather than in advance.
+
+Errors from creation, upload, publication and local persistence propagate with
+no rollback. Failed attempts can leave remote drafts or published records and
+partial local journal state; a new call creates a new draft rather than resuming.
 """
 function publish_study(config::DOIConfig, study::AbstractString, run::AbstractString,
                        files::Vector{<:AbstractString}; confirm::Bool=false)::PublicationReceipt
