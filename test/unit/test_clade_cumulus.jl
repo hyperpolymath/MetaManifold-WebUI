@@ -180,6 +180,10 @@ _cc_json(response) = JSON3.read(String(response.body))
             @test length(result["weighted_unifrac"][1]) == 2
             @test result["nodes"][1].cumulative_count == sum(counts)
 
+            write(files["reference.treefile"], replace(newick, ");" => ",EXTRA:1);"))
+            @test_throws ErrorException _CCS._cc_compute("StudyCC", id)
+            write(files["reference.treefile"], newick)
+
             _CCS._write_atomic(_CCS._clad_results_path("StudyCC", id), JSON3.write(result))
             _CCS._write_atomic(joinpath(_CCS._clad_dir("StudyCC", id), "status.json"),
                                JSON3.write(Dict("state" => "done")))

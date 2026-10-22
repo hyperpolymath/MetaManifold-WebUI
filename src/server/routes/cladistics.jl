@@ -45,16 +45,16 @@ end
 function _cc_integer(value, fallback::Int, label::String, lo::Int, hi::Int)::Int
     isnothing(value) && return fallback
     (value isa Real && !(value isa Bool) && isfinite(value) && isinteger(value)) ||
-        error("$label must be an integer")
+        throw(ArgumentError("$label must be an integer"))
     number = Int(value)
-    lo <= number <= hi || error("$label must be between $lo and $hi")
+    lo <= number <= hi || throw(ArgumentError("$label must be between $lo and $hi"))
     number
 end
 
 function _cc_min_reads(value)::Float64
     isnothing(value) && return 1.0
     (value isa Real && !(value isa Bool) && isfinite(value) && value >= 1) ||
-        error("min_reads must be a finite number of at least 1")
+        throw(ArgumentError("min_reads must be a finite number of at least 1"))
     Float64(value)
 end
 
@@ -206,6 +206,8 @@ function _cc_compute(study::String, id::String)
     counts, tips, samples, counts_doc = _cc_read_counts(study, id)
     tree_text = read(_clad_files(study, id)["reference.treefile"], String)
     tree = CC.parse_newick(tree_text)
+    Set(keys(tree.tips)) == Set(tips) ||
+        error("The inferred tree tips do not exactly match the saved ASV count columns")
     analysed = CC.analyse_phylogeny(tree, counts, tips, samples)
 
     result = Dict{String,Any}(string(k) => v for (k, v) in pairs(analysed))
