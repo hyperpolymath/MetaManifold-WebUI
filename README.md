@@ -83,6 +83,8 @@ Once a run completes, analysis is performed on request through the web UI, both 
 
 Counts may be normalised before analysis (none, rarefaction to a fixed or auto-resolved depth, or scaling with ranked subsampling (SRS), which reaches the depth by scaling counts and keeps more of the community structure), and contamination-flagged taxa may be included or excluded. Ordinations can also apply a Hellinger transform before the Bray-Curtis dissimilarity. Composition charts can be drawn as a grid faceted on any two of run, group and sub-group. All analysis charts are returned as Plotly JSON and rendered interactively in the browser.
 
+Opt-in exact-count and high-precision descriptive summaries are available through a separate validated API without changing these ordinary workflows. Their numeric, zero-depth, DuckDB, persistence, and reproducibility contracts are documented in [Validated descriptive statistics](VALIDATED_STATISTICS.md).
+
 ## Prerequisites
 
 - **Julia** 1.12 (installed by `install.sh` if missing, and pinned to the Manifest version for this directory)

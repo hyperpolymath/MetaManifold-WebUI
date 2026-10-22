@@ -27,6 +27,7 @@ const UNIT_FILES = [
     "test_analysis.jl",
     "test_duckdb_store.jl",
     "test_analysis_duckdb.jl",
+    "test_validated_statistics.jl",
     "test_config_hashing.jl",
     "test_project.jl",
     "test_log.jl",
