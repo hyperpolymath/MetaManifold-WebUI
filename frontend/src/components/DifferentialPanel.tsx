@@ -22,7 +22,7 @@ function csvBlob(result: DifferentialResult): Blob {
 
 /**
  * Differential abundance between exactly two runs or sub-groups: a model per
- * taxon at the chosen rank (negative-binomial GLM or CLR linear model, as
+ * taxon at the chosen rank (negative-binomial GLM or CLR Welch test, as
  * configured), with BH-adjusted p-values, shown as a volcano plot and a table
  * that can be downloaded or added to the report. The first selected condition is the reference.
  */
@@ -135,6 +135,22 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 `and at most ${(100 * z.max_imputed_fraction).toPrecision(2)}% of any, and are not measurements.`
             })()}
           </p>
+
+          {result.diagnostics.zero_replacement && result.diagnostics.zero_replacement.zeros_replaced > 0 && (() => {
+            const z = result.diagnostics.zero_replacement!
+            return (
+              <div role="note" style={{ border: '1px solid var(--color-danger-border)', borderRadius: 4,
+                padding: '8px 10px', margin: '8px 0', color: 'var(--color-danger)', fontSize: '.8rem' }}>
+                <strong>DANGER — zero replacement is biased.</strong> Replaced zeros are model-based imputations,
+                not measurements. Do not try multiple delta or alpha values and report only the most significant result;
+                the selected values are recorded in this result and its CSV provenance.
+                {z.posterior && ' Dirichlet posterior parameters are recorded; the replacements are adjusted posterior estimates, not posterior draws.'}
+                {z.warnings.length > 0 && <ul style={{ margin: '5px 0 0', paddingLeft: 20 }}>
+                  {z.warnings.map(w => <li key={w}>{w}</li>)}
+                </ul>}
+              </div>
+            )
+          })()}
 
           <AnalysisChart study={study} figure={result.figure} />
 
