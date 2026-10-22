@@ -109,6 +109,7 @@ const _ENUM_VALUES = Dict(
     "analysis.differential.method"   => Differential.METHODS,
     "analysis.differential.offset"   => Differential.OFFSET_METHODS,
     "analysis.differential.dispersion" => Differential.DISPERSIONS,
+    "analysis.differential.replacement_method" => Differential.REPLACEMENT_METHODS,
     "phylogeny.reference.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.placement.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.reference.trim.method"    => Validation.PHYLOGENY_TRIM_METHODS,
@@ -121,7 +122,8 @@ const _FILE_NAME_PARTS = ("dada2.output.fasta_prefix", "dada2.output.seq_table_p
                           "dada2.output.taxa_prefix", "cutadapt.r1_suffix", "cutadapt.r2_suffix")
 
 # Numeric keys whose factory default is a number but which also take ~.
-const _NULLABLE_NUMBERS = ("phylogeny.placement.place.heuristic",)
+const _NULLABLE_NUMBERS = ("phylogeny.placement.place.heuristic",
+                           "analysis.differential.bayesian_alpha")
 
 """
     _config_value_error(key, value) -> Union{String,Nothing}
@@ -135,6 +137,20 @@ function _config_value_error(key::String, value)
         v = lowercase(strip(v))
         return v in lowercase.(Differential.DISPERSIONS) ? nothing :
             "$key must be one of $(join(Differential.DISPERSIONS, ", "))"
+    end
+    if key == "analysis.differential.replacement_method" && v isa AbstractString
+        v = lowercase(strip(v))
+        return v in Differential.REPLACEMENT_METHODS ? nothing :
+            "$key must be one of $(join(Differential.REPLACEMENT_METHODS, ", "))"
+    end
+    if key == "analysis.differential.replacement_delta"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && 0 < v < 1) ? nothing :
+            "$key must be a finite number in (0, 1)"
+    end
+    if key == "analysis.differential.bayesian_alpha"
+        isnothing(v) && return nothing
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
+            "$key must be empty or a finite number greater than 0"
     end
     if haskey(_ENUM_VALUES, key)
         allowed = _ENUM_VALUES[key]
@@ -274,10 +290,12 @@ end
 function _write_config_updates(path::String, changes::AbstractDict; remove=())
     lock(_config_file_lock) do
         native = Dict{String,Any}(string(k) => _to_plain(v) for (k, v) in changes)
-        key = "analysis.differential.dispersion"
-        if haskey(native, key) && native[key] isa AbstractString
-            i = findfirst(v -> lowercase(v) == lowercase(strip(native[key])), Differential.DISPERSIONS)
-            isnothing(i) || (native[key] = Differential.DISPERSIONS[i])
+        for (key, allowed) in (("analysis.differential.dispersion", Differential.DISPERSIONS),
+                               ("analysis.differential.replacement_method", Differential.REPLACEMENT_METHODS))
+            if haskey(native, key) && native[key] isa AbstractString
+                i = findfirst(v -> lowercase(v) == lowercase(strip(native[key])), allowed)
+                isnothing(i) || (native[key] = allowed[i])
+            end
         end
         isempty(native) && isempty(remove) && return nothing
         cfg = _load_yml(path)

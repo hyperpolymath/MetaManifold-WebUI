@@ -677,5 +677,3 @@ function publish_study(config::DOIConfig, study::AbstractString, run::AbstractSt
     ))
     return receipt
 end
-
-end
