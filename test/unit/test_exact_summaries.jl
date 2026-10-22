@@ -13,7 +13,7 @@ const EXACT_FEATURES = ["f1", "f2", "f3"]
     @test !s.approximate
     @test s.samples[1].total == 3
     @test s.samples[1].proportions == fill(big(1)//3, 3)
-    @test s.samples[2].proportions == Union{Rational{BigInt},Nothing}[big(1), nothing, nothing]
+    @test s.samples[2].proportions == Union{Rational{BigInt},Nothing}[big(1), big(0), big(0)]
     @test length(s.groups) == 2
     @test s.groups[1].label == "g1"
     @test s.groups[2].counts == BigInt[2, 0, 0]
@@ -27,7 +27,7 @@ const EXACT_FEATURES = ["f1", "f2", "f3"]
     @test storage["input_status"] == "exact"
     @test storage["samples"][1]["proportions"] == ["1/3", "1/3", "1/3"]
     @test storage["samples"][1]["total"] == 3
-    @test storage["samples"][2]["proportions"][2] === nothing
+    @test storage["samples"][2]["proportions"][2] == "0/1"
     @test length(jcs_sha256(storage)) == 64
     display = summary_to_display(s; digits=8)
     @test occursin("exact", display)
@@ -75,8 +75,8 @@ end
     s = exact_summary(Float64.(EXACT_FIXTURE); sample_labels=EXACT_LABELS,
         feature_labels=EXACT_FEATURES)
     @test s.approximate
-    @test all(x.approximate, s.samples)
-    @test all(any(w -> occursin("approximations", w), x.warnings), s.samples)
+    @test all(x -> x.approximate, s.samples)
+    @test all(x -> any(w -> occursin("approximations", w), x.warnings), s.samples)
     @test summary_to_storage(s)["input_status"] == "approximate"
     @test occursin("remain approximate", summary_to_display(s))
     @test_throws UnsupportedRepresentationError exact_summary(Float64.(EXACT_FIXTURE);

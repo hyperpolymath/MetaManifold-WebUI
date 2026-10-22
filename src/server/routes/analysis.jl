@@ -480,7 +480,10 @@ function _alpha_normalisation(study::String;
                               group::Union{String,Nothing}=nothing,
                               config_cache::Union{Dict,Nothing}=nothing)
     resolved = _resolved_run_config(study, run, group, config_cache)
-    val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    val(k, d) = begin
+        value = get(get(resolved, k, (; value=d)), :value, d)
+        isnothing(value) ? d : value
+    end
     (; method = String(val("analysis.alpha.normalisation", "none")),
        depth = Int(val("analysis.alpha.depth", 0)),
        iterations = Int(val("analysis.alpha.rarefaction_iterations", 1)))
