@@ -693,7 +693,7 @@ end
             @test_skip false
         else
             fitted = fit_occupancy(history, g, taxa; levels=("A","B"))
-            @test nrow(fitted) == 2
+            @test nrow(fitted) == length(taxa)
             @test all(fitted.status .== "ok")
             @test all((0 .<= fitted.detection_probability) .& (fitted.detection_probability .<= 1))
             @test all((0 .<= fitted.psi_reference) .& (fitted.psi_reference .<= 1))
