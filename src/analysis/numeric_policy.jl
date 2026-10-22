@@ -68,14 +68,22 @@ struct NumericPolicySpec
     round_digits::Int
 end
 
+function _configuration_int(value::Integer, name::String)
+    typemin(Int) <= value <= typemax(Int) || throw(ArgumentError(
+        "$name does not fit this platform's configuration integer range"))
+    Int(value)
+end
+
 function numeric_policy(; mode::Symbol=:ordinary,
                         precision_bits::Union{Integer,Nothing}=nothing,
                         max_denominator_bits::Integer=DEFAULT_MAX_DENOMINATOR_BITS,
                         round_digits::Integer=6)
     bits = isnothing(precision_bits) ?
            (mode === :high_precision ? DEFAULT_HIGH_PRECISION_BITS : ORDINARY_PRECISION_BITS) :
-           precision_bits
-    spec = NumericPolicySpec(mode, Int(bits), Int(max_denominator_bits), Int(round_digits))
+           _configuration_int(precision_bits, "precision_bits")
+    spec = NumericPolicySpec(mode, Int(bits),
+        _configuration_int(max_denominator_bits, "max_denominator_bits"),
+        _configuration_int(round_digits, "round_digits"))
     validate_policy(spec)
 end
 numeric_policy(mode::Symbol) = numeric_policy(; mode)
@@ -101,9 +109,9 @@ function validate_policy(spec::NumericPolicySpec)
 end
 
 function assert_mode(spec::NumericPolicySpec, mode::Symbol)
-    spec.mode === mode || throw(UnsupportedRepresentationError(
-        "mode $mode", "policy is $(spec.mode)",
-        "this analysis; select the required mode explicitly or use the existing ordinary workflow"))
+    spec.mode === mode || throw(ArgumentError(
+        "this analysis requires numeric mode '$mode' but the policy is '$(spec.mode)'; " *
+        "select the required mode explicitly or use the existing ordinary workflow"))
     spec
 end
 
@@ -144,7 +152,11 @@ function require_count(x)
             "a count", string(x), "counts; NaN and infinity are not counts"))
         isinteger(x) || throw(UnsupportedRepresentationError(
             "a count", string(x), "counts; the value is not an integer"))
-        abs(big(x)) <= MAX_EXACT_FLOAT || throw(UnsupportedRepresentationError(
+        # Do not let a low ambient BigFloat precision round an out-of-range
+        # input down to the limit during validation. 2^53 is exact in Float64
+        # and in every supported MPFR precision.
+        limit = x isa BigFloat ? BigFloat(2)^53 : 2.0^53
+        abs(x) <= limit || throw(UnsupportedRepresentationError(
             "an exactly-known count", string(x),
             "a floating-point input; above 2^53 its integer history cannot be proven"))
         return x isa BigFloat ? BigInt(x) : Int64(x)
@@ -206,8 +218,8 @@ function exact_rational_sum(values; policy::NumericPolicySpec=numeric_policy(:ex
             "an exact rational", string(value), "exact_rational_sum"))
         iszero(denominator(value)) && throw(UnsupportedRepresentationError(
             "a finite rational", string(value), "exact_rational_sum"))
-        candidate = Rational{BigInt}(value)
-        acc = isnothing(acc) ? _check_rational_bits(candidate, policy) :
+        candidate = _check_rational_bits(Rational{BigInt}(value), policy)
+        acc = isnothing(acc) ? candidate :
               _check_rational_bits(acc + candidate, policy)
     end
     acc
@@ -391,15 +403,16 @@ function parse_exact_rational(s::AbstractString;
         throw(UnsupportedRepresentationError("an integer or n/d literal", s,
             "parse_exact_rational; decimal points and exponent notation are refused"))
     parts = split(text, '/'; limit=2)
+    # Apply the configured bit budget to the textual allocation as well as to
+    # the resulting rational; do not parse an unbounded integer first.
+    digit_limit = div(policy.max_denominator_bits, 3) + 3
+    length(parts[1]) <= digit_limit || throw(ResourceLimitError(
+        "rational numerator digits", digit_limit, length(parts[1])))
+    length(parts[end]) <= digit_limit || throw(ResourceLimitError(
+        "rational denominator digits", digit_limit, length(parts[end])))
     den = length(parts) == 2 ? parse(BigInt, parts[2]) : big(1)
     iszero(den) && throw(UnsupportedRepresentationError(
         "a finite rational", s, "parse_exact_rational; zero denominator"))
-    length(parts[1]) <= div(MAX_COUNT_BITS, 3) + 3 ||
-        throw(ResourceLimitError("rational numerator digits", div(MAX_COUNT_BITS, 3) + 3,
-                                 length(parts[1])))
-    length(parts[end]) <= div(MAX_COUNT_BITS, 3) + 3 ||
-        throw(ResourceLimitError("rational denominator digits", div(MAX_COUNT_BITS, 3) + 3,
-                                 length(parts[end])))
     exact_fraction(parse(BigInt, parts[1]), den; policy)
 end
 
@@ -415,6 +428,12 @@ function parse_approximate_decimal(s::AbstractString; bits::Integer=DEFAULT_HIGH
             "parse_approximate_decimal; NaN, infinity, hex and rationals are refused"))
     length(text) <= MAX_COUNT_BITS + 16 || throw(ResourceLimitError(
         "decimal characters", MAX_COUNT_BITS + 16, length(text)))
+    exponent = match(r"[eE]([+-]?[0-9]+)$", text)
+    if !isnothing(exponent)
+        exponent_text = replace(exponent.captures[1], "+" => "", "-" => "")
+        length(exponent_text) <= 9 || throw(ResourceLimitError(
+            "decimal exponent digits", 9, length(exponent_text)))
+    end
     value, achieved = with_precision(() -> BigFloat(text); bits=requested)
     isfinite(value) || throw(UnsupportedRepresentationError(
         "a finite decimal", s, "parse_approximate_decimal"))

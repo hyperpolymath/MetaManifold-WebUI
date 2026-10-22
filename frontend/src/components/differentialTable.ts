@@ -40,9 +40,9 @@ export function formatStat(value: number | null): string {
 }
 
 /**
- * The settings line of the CSV: the method and the parameters it used. The
- * offset belongs to nb_glm; replacement method, delta and alpha belong to
- * clr_welch, so each line names only its own method's parameters.
+ * The settings line of the CSV: the method and the parameters it used. Each
+ * method names only its own parameters and states whether its effect is a
+ * bias-corrected fold change or a relative log-ratio.
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config

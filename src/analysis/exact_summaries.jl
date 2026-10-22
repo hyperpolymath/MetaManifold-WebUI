@@ -134,21 +134,20 @@ end
 
 function _fingerprint(columns::Vector{Vector{BigInt}}, labels, features, groups)
     rows = [[string(columns[j][i]) for j in eachindex(labels)] for i in eachindex(features)]
-    jcs_sha256((;
-        schema="metamanifold.exact-count-matrix.v1",
-        orientation="features_by_samples",
-        feature_labels=features,
-        sample_labels=labels,
-        groups=groups,
-        counts=rows,
+    jcs_sha256(Dict{String,Any}(
+        "schema" => "metamanifold.exact-count-matrix.v1",
+        "orientation" => "features_by_samples",
+        "feature_labels" => features,
+        "sample_labels" => labels,
+        "groups" => groups,
+        "counts" => rows,
     ))
 end
 
 function counts_fingerprint(counts::AbstractMatrix{<:Integer};
                             sample_labels, feature_labels, groups=nothing)
     labels, features = validate_coordinates(counts, sample_labels, feature_labels)
-    columns = [BigInt[BigInt(counts[i, j]) for i in eachindex(features)]
-               for j in eachindex(labels)]
+    columns, _ = validated_count_columns(counts, labels, features; allow_approximate=false)
     _fingerprint(columns, labels, features,
                  isnothing(groups) ? nothing : String[String(g) for g in groups])
 end

@@ -80,8 +80,11 @@ Once a run completes, analysis is performed on request through the web UI, both 
 - Pipeline stage read-count summaries
 - NMDS ordination (Bray-Curtis, via R/vegan)
 - PERMANOVA, with PERMDISP to check for differences in dispersion (via R/vegan)
+- De novo ASV phylogenies with cumulative clade abundances, Faith's phylogenetic diversity, and weighted/unweighted UniFrac (CladeCumulus)
 
 Counts may be normalised before analysis (none, rarefaction to a fixed or auto-resolved depth, or scaling with ranked subsampling (SRS), which reaches the depth by scaling counts and keeps more of the community structure), and contamination-flagged taxa may be included or excluded. Ordinations can also apply a Hellinger transform before the Bray-Curtis dissimilarity. Composition charts can be drawn as a grid faceted on any two of run, group and sub-group. All analysis charts are returned as Plotly JSON and rendered interactively in the browser.
+
+Opt-in exact-count and high-precision descriptive summaries are available through a separate validated API without changing these ordinary workflows. Their numeric, zero-depth, DuckDB, persistence, and reproducibility contracts are documented in [Validated descriptive statistics](VALIDATED_STATISTICS.md).
 
 ## Prerequisites
 
@@ -238,6 +241,35 @@ from the library page.
   <img src=".github/screenshots/tree-viewer.png" width="800" alt="The tree viewer showing a placement tree with collapsed clades, bootstrap support and placement symbols">
 </p>
 
+### CladeCumulus: ASV phylogenies and phylogenetic diversity
+
+A study's **Cladistics** tab builds a de novo tree directly from ASV sequences,
+rather than treating taxonomic ranks as a phylogeny. Choose whole runs and a
+shared results table with a `Sequence` column, then set an ASV cap (500 by
+default, 2,000 maximum) and a minimum total-read threshold. The highest-abundance
+ASVs are selected deterministically, with sequence ties broken lexicographically.
+The build uses the existing **MAFFT → trimAl → IQ-TREE** workflow and its
+`phylogeny.reference` settings, including local/remote execution and bootstrap
+configuration.
+
+The completed **CladeCumulus** view provides:
+
+- cumulative read counts and frequencies on every phylogenetic clade, with a
+  collapsible tree and a link to the full Newick viewer;
+- Faith's phylogenetic diversity and retained reads per sample;
+- unweighted UniFrac and normalized weighted UniFrac heatmaps, with CSV export;
+- optional rarefaction or SRS before all three analyses, using the same count
+  normalisation as the existing diversity views.
+
+Each build is saved separately with its selected count matrix, ASV FASTA,
+Newick tree, source settings, count/tree SHA-256 hashes and the usual tool
+attestation. Tips use stable sequence-content hashes so their names are safe for
+external tools and reproducible across runs. Metrics share one O(nodes × samples)
+roll-up; pairwise UniFrac is O(samples² × nodes). Tree inference itself can be
+much more expensive, so keep the ASV cap appropriate for the dataset. Run
+`julia --project=. bench/cladistics.jl` for a no-I/O roll-up/UniFrac timing. A tree
+inferred from short amplicons is approximate, particularly along deep branches.
+
 ### Composition
 
 The composition view classifies each ASV/OTU into a biological category and renders per-sample or pooled stacked bar charts. Category sets live in `config/composition.yml` (the bundled `default` set covers protozoa, helminths, fungi, host, plants, and invertebrates); each category references a named taxonomic filter from the `filters:` library in that same file. Both are editable from the Compositions page under SYSTEM in the sidebar. A category summary precedes the chart, and a quality filter can cap the number of unresolved taxonomic placeholders admitted.
@@ -291,7 +323,8 @@ inspect their status and note in the results table. Invalid input or an
 unavailable required R package produces an explicit error.
 
 Implementation and reference tests: `src/analysis/differential.jl`,
-`src/server/routes/analysis.jl`, and `test/unit/test_differential.jl`.
+`src/server/routes/analysis.jl`, `bench/compositional_differential/benchmark.jl`,
+and `test/unit/test_differential.jl`.
 
 ### Figures and report
 
@@ -629,12 +662,13 @@ analysis:
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
   differential:
-    method: nb_glm               # nb_glm | clr_welch
+    method: nb_glm               # nb_glm | clr_welch | ancom_bc | aldex2 | songbird
     dispersion: ml               # nb_glm: ml | glmGamPoi
     replacement_method: bayesian_multiplicative
                                  # clr_welch: bayesian_multiplicative | multiplicative_replacement
     replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
     bayesian_alpha: ~            # clr_welch: null (GBM estimate) or a number > 0
+    mc_samples: 128              # aldex2: Dirichlet Monte-Carlo instances in [16, 4096]
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
 ```
@@ -777,6 +811,8 @@ projects/{project_name}/{run}/
 |   |-- taxonomy.tsv             # Top-hit taxonomy assignments (ASV or OTU)
 |   `-- logs/
 `-- merged/
+    |-- evidence/
+    |   `-- claims.yml           # Evidence record: claims, fibres, warrants
     |-- merged.csv               # Merged taxonomy + counts (all taxa)
     |-- protist_filter.csv       # Filtered subset (one per merge_taxa.filters entry)
     `-- results.duckdb           # DuckDB database for API queries
@@ -825,6 +861,7 @@ The server exposes a REST API under `/api/v1/`. Key endpoint groups:
 | Cross-run      | `POST /studies/{study}/analysis/{alpha,chart,chart-facet,nmds,permanova,venn,publication-tables}`             | Comparison, faceted charts, NMDS, PERMANOVA, taxon overlap and publication tables across runs |
 | Composition    | `POST .../runs/{run}/composition/summary`, `POST .../composition/{source}/query`, `POST .../composition/{source}/distinct/{column}` | Organism-composition summaries and tables for a run                             |
 | Composition library | `GET /composition`, `POST/DELETE /composition/{filters,sets}/{name}`, `GET /category-sets`, `POST/DELETE /category-sets/{name}` | Edit the filters and category sets in `config/composition.yml`               |
+| Evidence | `GET .../runs/{run}/evidence`, `GET .../evidence/claims.yml`, `POST .../evidence/claims`, `DELETE .../evidence/claims/{id}`, `POST .../evidence/{fiber,residuals}` | Claims, fibres, echoes and residuals for a run; the record is exportable as YAML |
 | Reference trees | `GET/POST /reference-trees`, `GET/PUT/DELETE /reference-trees/{id}`, `GET/PUT .../fasta`, `POST .../run`, `GET .../log/{step}`, `GET .../qc/{align,trim}`, `GET .../alignment/{raw,trimmed}`, `GET .../treefile`, `POST .../trim-preview` | Build and inspect the shared reference trees |
 | Placements     | `GET/POST /studies/{study}/placements`, `GET/PUT/DELETE .../placements/{id}`, `POST .../placements/preview`, `GET/PUT .../fasta/queries`, `POST .../run`, `GET .../log/{step}`, `GET .../qc/{align,trim}`, `GET .../alignment/{raw,trimmed}`, `POST .../trim-preview` | Place a study's sequences on a reference tree |
 | Trees          | `GET/POST /studies/{study}/trees`, `GET/DELETE /studies/{study}/trees/{file}`, `PUT /studies/{study}/trees/{file}/view` | Upload, read and delete Newick and jplace files; save each tree's view state          |

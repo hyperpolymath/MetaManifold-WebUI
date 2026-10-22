@@ -260,6 +260,7 @@ export const CONFIG_TYPES: Record<string, ConfigType> = {
   'analysis.differential.replacement_method': { kind: 'enum', options: ['bayesian_multiplicative', 'multiplicative_replacement'] },
   'analysis.differential.replacement_delta': { kind: 'float', min: 0, max: 1, step: 0.05 },
   'analysis.differential.bayesian_alpha': { kind: 'float', nullable: true, min: 0, step: 0.1 },
+  'analysis.differential.mc_samples': { kind: 'int' },
   'analysis.alpha.show_points':   { kind: 'boolean' },
   'analysis.alpha.annotate_significance': { kind: 'boolean' },
   'analysis.alpha.pairwise_brackets': { kind: 'boolean' },

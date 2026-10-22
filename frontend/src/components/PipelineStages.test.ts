@@ -23,3 +23,12 @@ test('advanced zero handling exposes both methods, bounded delta and nullable al
   expect(CONFIG_DESCRIPTIONS['analysis.differential.replacement_method']).toContain('every replacement is biased')
   expect(CONFIG_DESCRIPTIONS['analysis.differential.bayesian_alpha']).toContain('no posterior draws')
 })
+
+test('differential method enum lists all five compositional and count models', () => {
+  expect(CONFIG_TYPES['analysis.differential.method']).toEqual({
+    kind: 'enum',
+    options: ['nb_glm', 'clr_welch', 'ancom_bc', 'aldex2', 'songbird'],
+  })
+  expect(CONFIG_TYPES['analysis.differential.mc_samples']).toEqual({ kind: 'int' })
+  expect(CONFIG_DESCRIPTIONS['analysis.differential.mc_samples']).toContain('Dirichlet')
+})

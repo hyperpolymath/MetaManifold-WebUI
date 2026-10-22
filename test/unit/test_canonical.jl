@@ -80,6 +80,11 @@ end
     @test_throws ArgumentError jcs_bytes(invalid)
     @test_throws ArgumentError jcs_bytes(Dict(invalid => 1))
     @test_throws ArgumentError jcs_bytes(BigFloat(1) + eps(BigFloat))
+    # Records in the statistics layer are built as named tuples; a named tuple is
+    # an object with unique keys, so it must hash exactly like the equivalent Dict.
+    @test jcs_bytes((b = 2, a = 1)) == jcs_bytes(Dict("a" => 1, "b" => 2))
+    @test String(jcs_bytes((; a = [1, nothing], b = "s"))) == "{\"a\":[1,null],\"b\":\"s\"}"
+    @test_throws ArgumentError jcs_bytes((a = BigFloat(1) + eps(BigFloat),))
     @test String(jcs_bytes([Float16(1.5), Float32(1.5), Float64(1.5)])) == "[1.5,1.5,1.5]"
     for T in (UInt8, UInt16, UInt32, UInt64, UInt128)
         @test String(jcs_bytes(T(1))) == "1"
