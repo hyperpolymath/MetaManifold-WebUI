@@ -20,7 +20,7 @@ MetaManifold wraps standard amplicon sequencing workflows into a single configur
 
 ## Overview
 
-MetaManifold consists of a Julia backend (pipeline engine + REST API) and a TypeScript/React frontend. The pipeline runs FastQC, MultiQC, cutadapt, DADA2, swarm, vsearch, and cd-hit-est under the hood, and places ASVs on reference trees with MAFFT, trimAl, IQ-TREE, RAxML and gappa; results are stored in per-run DuckDB databases and served to the frontend as interactive Plotly charts and filterable tables. Pipeline configuration is editable in the web UI at every cascade level (see [Configuration](#configuration)).
+MetaManifold consists of a Julia backend (pipeline engine + REST API) and a TypeScript/React frontend. The pipeline runs FastQC, MultiQC, cutadapt, DADA2, swarm, vsearch, and cd-hit-est under the hood, and places ASVs on reference trees with MAFFT, trimAl, IQ-TREE, RAxML and gappa; results are stored in per-run DuckDB databases and served to the frontend as interactive Plotly charts and filterable tables. Pipeline configuration is editable in the web UI at every cascade level (see [Configuration](#configuration)). For analysis-method status and planned work, see [ROADMAP.md](ROADMAP.md); the full occupancy follow-up is tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
 
 **Pipeline stages**
 
@@ -273,8 +273,11 @@ process fold change and the zero-process coefficient separately. The public
 `MetaManifold.Differential.fit_occupancy` lower-level estimator is available for
 explicit repeated-visit detection histories (sites × visits × taxa). It refuses
 single-visit histories because occupancy and detection are not separately
-identified from one observation without strong external assumptions. See
-[occupancy model notes](docs/occupancy-models.md).
+identified from one observation without strong external assumptions. Occupancy
+is not yet selectable in the standard analysis configuration or UI, and the
+current fitter has no detection covariates; do not use it as a substitute for
+the full occupancy workflow tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
+See [occupancy model notes](docs/occupancy-models.md).
 
 - `clr_welch`: Welch's t-test on centred log-ratios after multiplicative zero
   replacement with `zCompositions::cmultRepl`. The effect is a CLR difference,

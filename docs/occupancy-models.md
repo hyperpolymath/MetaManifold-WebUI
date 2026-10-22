@@ -1,5 +1,11 @@
 # Occupancy and two-part abundance models
 
+**Status: partial implementation.** `zinb` and `hurdle_nb` are selectable in
+differential abundance. `fit_occupancy` is a repeated-visit lower-level API,
+not an AnalysisConfig method or the standard endpoint. The full workflow is
+tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205),
+a follow-up to #18.
+
 The differential-abundance configuration supports `zinb` and `hurdle_nb` in
 addition to the existing `nb_glm` and `clr_welch` models. The two new methods
 are fixed-effect, per-taxon models with a two-part negative-binomial likelihood.

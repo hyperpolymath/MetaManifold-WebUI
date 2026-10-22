@@ -55,7 +55,7 @@ function _doi_publish_body(req)::Dict{String,Any}
     Dict{String,Any}(string(k) => v for (k, v) in body)
 end
 
-@post \"/api/v1/studies/{study}/doi/publish\" function(req, study::String)
+@post "/api/v1/studies/{study}/doi/publish" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                   "Study '$study' not found")
     _valid_name(study) || return json_error(400, "invalid_study", "Invalid study name")
@@ -87,7 +87,7 @@ end
             published=receipt.published, created_at=receipt.created_at))
 end
 
-@get \"/api/v1/studies/{study}/doi/status\" function(req, study::String)
+@get "/api/v1/studies/{study}/doi/status" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                   "Study '$study' not found")
     _valid_name(study) || return json_error(400, "invalid_study", "Invalid study name")
