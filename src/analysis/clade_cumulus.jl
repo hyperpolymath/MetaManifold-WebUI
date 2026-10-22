@@ -296,7 +296,7 @@ function unifrac(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real};
     _check_cumulative(tree, cumulative)
     lengths = _lengths(tree)
     samples = size(cumulative, 2)
-    totals = vec(sum(cumulative[tree.root, :] ; dims=1))
+    totals = vec(cumulative[tree.root, :])
     out = zeros(Float64, samples, samples)
     for a in 1:samples, b in a+1:samples
         numerator = 0.0

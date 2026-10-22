@@ -91,7 +91,7 @@ end
 function _cc_prepare!(study::String, id::String, body)
     runs = get(body, :runs, nothing)
     _cc_check_runs(study, runs)
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     isempty(table) && error("Choose a results table")
     max_asvs = _cc_integer(get(body, :max_asvs, nothing), 500, "max_asvs", 4, _CC_MAX_ASVS)
     min_reads = _cc_min_reads(get(body, :min_reads, nothing))
