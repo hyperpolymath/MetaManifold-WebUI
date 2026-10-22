@@ -33,6 +33,9 @@ module Differential
 using DataFrames, RCall
 using ..RRuntime: with_r_lock
 using ..Analysis: _palette_hex, R_WAIT_SECONDS
+using ..CompositionalModels: CompositionalFit, CompositionalRefusal, RuntimeRefusal,
+       DM_METHODS, CONCENTRATION_MIN, CONCENTRATION_MAX, fit_multinomial,
+       fit_dirichlet_multinomial
 export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
        GlmGamPoiUnavailable, RStatsUnavailable, OFFSET_METHODS, METHODS, DISPERSIONS,
        REPLACEMENT_METHODS, MIN_MC_SAMPLES, MAX_MC_SAMPLES, DEFAULT_MC_SAMPLES,
@@ -138,6 +141,33 @@ struct DifferentialConfig
             "analysis.differential.min_prevalence must be a fraction in [0, 1], not $min_prevalence"))
         (isfinite(replacement_delta) && 0 < replacement_delta < 1) || throw(ArgumentError(
             "analysis.differential.replacement_delta must be in (0, 1), not $replacement_delta"))
+        ref = if isnothing(mn_reference_taxon) || isempty(strip(String(mn_reference_taxon)))
+            nothing
+        else
+            String(strip(String(mn_reference_taxon)))
+        end
+        (isfinite(mn_penalty) && mn_penalty >= 0) || throw(ArgumentError(
+            "analysis.differential.mn_penalty must be a finite number >= 0, not $mn_penalty"))
+        dm = lowercase(strip(String(dm_overdispersion_method)))
+        dm in DM_METHODS || throw(ArgumentError(
+            "analysis.differential.dm_overdispersion_method must be one of " *
+            "$(join(DM_METHODS, ", ")), not '$dm_overdispersion_method'"))
+        compositional = m in COMPOSITIONAL_METHODS
+        (isnothing(ref) || compositional) || throw(ArgumentError(
+            "analysis.differential.mn_reference_taxon applies to method multinomial or " *
+            "dirichlet_multinomial, but method is '$m'; only those two models have a reference taxon"))
+        (mn_penalty == 0 || compositional) || throw(ArgumentError(
+            "analysis.differential.mn_penalty applies to method multinomial or " *
+            "dirichlet_multinomial, but method is '$m'; only those two models are penalised"))
+        (dm == "mle" || m == "dirichlet_multinomial") || throw(ArgumentError(
+            "analysis.differential.dm_overdispersion_method is a Dirichlet-multinomial setting, " *
+            "but method is '$m'; set it to mle or select method dirichlet_multinomial"))
+        (max_iter >= 1) || throw(ArgumentError(
+            "analysis.differential.max_iter must be at least 1, not $max_iter"))
+        (isfinite(tol) && tol > 0) || throw(ArgumentError(
+            "analysis.differential.tolerance must be positive and finite, not $tol"))
+        (isfinite(max_seconds) && max_seconds > 0) || throw(ArgumentError(
+            "analysis.differential.max_seconds must be positive and finite, not $max_seconds"))
         r = _replacement_method(replacement_method)
         (isnothing(bayesian_alpha) ||
          (!(bayesian_alpha isa Bool) && isfinite(bayesian_alpha) && bayesian_alpha > 0)) ||
@@ -1764,9 +1794,9 @@ exact delta-method standard errors and two-sided Wald z-tests.
 
 For every method, taxa present in fewer than `config.min_prevalence` of the
 samples are reported as `filtered` and not fitted, and the Benjamini-Hochberg
-family is the fitted taxa that produced a p-value; failed and filtered taxa
-carry `padj = nothing`. The result's `effect` names the row key that holds the
-effect size and its label.
+family is the fitted taxa that produced a p-value; failed, filtered and
+reference taxa carry `padj = nothing`. The result's `effect` names the row key
+that holds the effect size and its label.
 
 Throws `ArgumentError` for unusable input (including a zero replacement that
 cannot be made), `ScalingRefusal` when the offset cannot be computed,

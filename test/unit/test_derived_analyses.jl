@@ -55,7 +55,7 @@ end
                 directory; source, config, result)
         end
         @test count(x -> x.created, outcomes) == 1
-        @test length(unique(x.id for x in outcomes)) == 1
+        @test length(unique([x.id for x in outcomes])) == 1
         @test length(readdir(directory)) == 1
         id = outcomes[1].id
 

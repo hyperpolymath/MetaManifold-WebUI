@@ -1,4 +1,5 @@
 using Test
+using JSON3
 using MetaManifold.NumericPolicy
 using MetaManifold.ExactSummaries
 using MetaManifold.Canonical
@@ -132,5 +133,61 @@ end
             @test permuted.samples[j].proportions == s.samples[j].proportions[order]
             @test permuted.samples[j].total == s.samples[j].total
         end
+    end
+end
+
+@testset "Independent Python fractions reference" begin
+    python = Sys.which("python3")
+    if isnothing(python)
+        @info "Skipping Independent Python fractions reference: python3 is unavailable"
+    else
+        payloads = [
+            Dict{String,Any}(
+                "sample_labels" => ["A", "B", "empty"],
+                "feature_labels" => ["x", "y", "z"],
+                "groups" => ["g1", "g1", "g2"],
+                "counts" => [["4", "2", "0"], ["6", "4", "0"], ["0", "0", "0"]],
+            ),
+            Dict{String,Any}(
+                "sample_labels" => ["large", "small"],
+                "feature_labels" => ["x", "y"],
+                "groups" => nothing,
+                "counts" => [[string(big(2)^80 + 17), "1"], ["1", "3"]],
+            ),
+        ]
+        script = joinpath(@__DIR__, "..", "references", "exact_summary_reference.py")
+        strings(values) = [isnothing(value) ? nothing : string(value) for value in values]
+        for payload in payloads
+            labels = payload["sample_labels"]
+            features = payload["feature_labels"]
+            counts = [parse(BigInt, payload["counts"][i][j])
+                      for i in eachindex(features), j in eachindex(labels)]
+            summary = exact_summary(counts; sample_labels=labels,
+                feature_labels=features, groups=payload["groups"])
+            stored = summary_to_storage(summary)
+            mktempdir() do directory
+                input = joinpath(directory, "input.json")
+                write(input, JSON3.write(payload))
+                reference = JSON3.read(read(`$python $script $input`, String))
+                for kind in ("samples", "groups")
+                    for (i, actual) in enumerate(stored[kind])
+                        expected = reference[kind][i]
+                        @test actual["label"] == expected["label"]
+                        @test string(actual["total"]) == expected["total"]
+                        @test strings(actual["counts"]) == strings(expected["counts"])
+                        @test strings(actual["proportions"]) == strings(expected["proportions"])
+                    end
+                end
+            end
+        end
+    end
+end
+
+@testset "Legacy analysis remains detached from opt-in statistics" begin
+    for file in ("diversity.jl", "analysis.jl", "differential.jl")
+        source = lowercase(read(joinpath(@__DIR__, "..", "..", "src", "analysis", file), String))
+        @test !occursin("exactsummaries", source)
+        @test !occursin("highprecision", source)
+        @test !occursin("numericpolicy", source)
     end
 end

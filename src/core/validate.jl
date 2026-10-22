@@ -521,6 +521,25 @@ export validate_environment, validate_project, ValidationError,
             isnothing(id) || (_is_number(id) && 0 < id <= 1) ||
                 _err(errors, ctx, "swarm.identity must be between 0 and 1 (got: $id)")
         end
+
+        cc = get(cfg, "clade_cumulus", nothing)
+        if cc isa Dict
+            tb = get(cc, "tree_builder", nothing)
+            isnothing(tb) || (tb isa AbstractString && tb in ("fasttree", "iqtree", "nj")) ||
+                _err(errors, ctx, "clade_cumulus.tree_builder must be fasttree, iqtree, or nj (got: $(repr(tb)))")
+            hm = get(cc, "hierarchy_mode", nothing)
+            isnothing(hm) || (hm isa AbstractString && hm in ("phylogenetic", "taxonomic", "combined")) ||
+                _err(errors, ctx, "clade_cumulus.hierarchy_mode must be phylogenetic, taxonomic, or combined (got: $(repr(hm)))")
+            ma = get(cc, "max_asvs", nothing)
+            isnothing(ma) || (ma isa Integer && !(ma isa Bool) && 3 <= ma <= 50_000) ||
+                _err(errors, ctx, "clade_cumulus.max_asvs must be an integer between 3 and 50000 (got: $(repr(ma)))")
+            st = get(cc, "support_threshold", nothing)
+            isnothing(st) || (_is_number(st) && 0 <= st <= 1) ||
+                _err(errors, ctx, "clade_cumulus.support_threshold must be between 0 and 1 (got: $(repr(st)))")
+            lt = get(cc, "lwr_threshold", nothing)
+            isnothing(lt) || (_is_number(lt) && 0 < lt <= 1) ||
+                _err(errors, ctx, "clade_cumulus.lwr_threshold must be in (0, 1] (got: $(repr(lt)))")
+        end
     end
 
     ## Per-project Validation

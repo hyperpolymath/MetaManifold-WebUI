@@ -392,6 +392,33 @@ analysis:
     # imputed proportion above its taxon's smallest observed proportion is
     # lowered to this fraction of it. Values below 0.01 or at least 0.9 warn.
     replacement_delta: 0.65
+    # multinomial and dirichlet_multinomial only: the taxon whose log-odds are the
+    # denominator of every reported log ratio. ~ picks the most abundant taxon that
+    # passes min_prevalence. A reference must have reads in at least half the
+    # samples: every ratio is anchored on it, so a sparse one makes them unstable.
+    mn_reference_taxon: ~
+    # multinomial and dirichlet_multinomial: L2 (ridge) penalty on the log-odds
+    # coefficients, 0 for maximum likelihood. A penalty keeps a taxon with almost
+    # no reads in one group from dominating the joint fit, and its standard errors
+    # are the penalised ones. An L1 (Songbird-style sparsity) penalty is not
+    # implemented: a lasso estimate has no valid Wald standard error.
+    mn_penalty: 0.0
+    # dirichlet_multinomial only: how the Dirichlet concentration is estimated.
+    # mle profiles the likelihood alternately with the coefficients; mom takes one
+    # method-of-moments estimate from the multinomial composition (faster, no
+    # alternation). The result reports the concentration c and theta = 1/(1+c),
+    # the model's intra-sample correlation; theta -> 0 is the multinomial.
+    dm_overdispersion_method: mle
+    # Optimiser settings for the two multinomial models, which are fitted in
+    # Julia: the Newton iteration cap, the convergence tolerance (largest
+    # coefficient update, relative to the coefficients), and the wall-clock
+    # budget in seconds. A fit that exceeds the budget fails with an explicit
+    # error rather than holding the request open. The dense observed information
+    # limits a fit to 1000 taxa; raise min_prevalence or use a coarser rank above
+    # that.
+    max_iter: 500
+    tolerance: 0.00000001
+    max_seconds: 300.0
     # clr_welch with bayesian_multiplicative only: null uses GBM's estimated
     # Dirichlet concentration. A finite value greater than 0 overrides it with
     # cmultRepl(method = "user") and the same leave-one-out prior mean.

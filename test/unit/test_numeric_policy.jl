@@ -14,6 +14,7 @@ using MetaManifold.Canonical
     @test_throws ArgumentError numeric_policy(mode=:high_precision, precision_bits=1)
     @test_throws ArgumentError numeric_policy(max_denominator_bits=31)
     @test_throws ArgumentError numeric_policy(round_digits=-1)
+    @test_throws ArgumentError numeric_policy(precision_bits=big(typemax(UInt128)))
     @test length(policy_fingerprint(numeric_policy(:exact_counts))) == 64
     @test policy_fingerprint(numeric_policy(:exact_counts)) !=
           policy_fingerprint(numeric_policy(:high_precision))
@@ -76,6 +77,9 @@ end
         @test bits == 256
         @test precision(BigFloat) == 128
         @test_throws ArgumentError with_precision(() -> 1; bits=1)
+        setprecision(BigFloat, 16)
+        @test_throws UnsupportedRepresentationError require_count(2.0^53 + 2.0)
+        @test require_count(2.0^53) == Int64(2)^53
     finally
         setprecision(BigFloat, old)
     end

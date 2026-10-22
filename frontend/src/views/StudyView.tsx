@@ -14,12 +14,15 @@ import { carriesSource, expandRunSpecs } from '../api/types'
 import { ConfigAccordion } from '../components/ConfigAccordion'
 import { TreesPanel } from '../components/TreesPanel'
 import { PlacementPanel } from '../components/PlacementPanel'
+import { EvidenceModeToggle } from '../components/EvidenceModeToggle'
+import { CladeCumulusPanel } from '../components/CladeCumulusPanel'
 import { ReportPanel } from '../components/ReportPanel'
 import { useNavRefresh } from '../hooks/useNavRefresh'
+import { CladeCumulusPanel } from '../cladistics/CladeCumulusPanel'
 
 type GroupedRun = Run & { group?: string | null }
 
-const VIEWS = ['runs', 'analysis-dada2', 'analysis-vsearch', 'trees', 'report', 'config'] as const
+const VIEWS = ['runs', 'analysis-dada2', 'analysis-vsearch', 'cladistics', 'trees', 'report', 'config'] as const
 type StudyTab = (typeof VIEWS)[number]
 
 type Dialog =
@@ -36,6 +39,7 @@ export function StudyView() {
   const refreshNav = useNavRefresh()
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [view, setView] = useTabParam<StudyTab>('view', VIEWS, 'runs')
+  const [evidenceMode, setEvidenceMode] = useState(false)
 
   const fetcher = useCallback(() => api.runs.list(study!), [study])
   const { data: runs, loading, error, refetch } = useApi(fetcher)
@@ -91,6 +95,7 @@ export function StudyView() {
     ...(runs ?? []).map(r => ({ run: r.name, group: null, subgroups: r.pooled ? r.subgroups : [] })),
     ...groupRuns.map(r => ({ run: r.name, group: r.group ?? null, subgroups: r.pooled ? r.subgroups : [] })),
   ], [runs, groupRuns])
+  const cladisticsRuns = useMemo(() => placementRuns.map(r => ({ run: r.run, group: r.group })), [placementRuns])
   const [treesVersion, setTreesVersion] = useState(0)
 
   const jobFilter = useMemo(() => ({ study: study! }), [study])
@@ -211,7 +216,7 @@ export function StudyView() {
             disabled={v.startsWith('analysis') && !hasSource(v === 'analysis-dada2' ? 'DADA2' : 'VSEARCH')}
             title={v.startsWith('analysis') && !hasSource(v === 'analysis-dada2' ? 'DADA2' : 'VSEARCH')
               ? `No run has a results table with ${v === 'analysis-dada2' ? 'DADA2' : 'VSEARCH'} taxonomy yet` : undefined}>
-            {v === 'runs' ? 'Runs & Groups' : v === 'analysis-dada2' ? 'DADA2 analysis' : v === 'analysis-vsearch' ? 'VSEARCH analysis' : v === 'trees' ? 'Trees' : v === 'report' ? 'Report' : 'Config'}
+            {v === 'runs' ? 'Runs & Groups' : v === 'analysis-dada2' ? 'DADA2 analysis' : v === 'analysis-vsearch' ? 'VSEARCH analysis' : v === 'cladistics' ? 'Cladistics' : v === 'trees' ? 'Trees' : v === 'report' ? 'Report' : 'Config'}
           </button>
         ))}
       </div>
@@ -295,7 +300,11 @@ export function StudyView() {
             source={analysisSource} />
         : <p className="empty-state">No run has a results table with {analysisSource} taxonomy yet.</p>)}
 
+      {view === 'cladistics' && <CladeCumulusPanel key={study} study={study!} runs={cladisticsRuns} />}
+
       {view === 'trees' && <>
+        <EvidenceModeToggle enabled={evidenceMode} onChange={setEvidenceMode} />
+        {evidenceMode && <CladeCumulusPanel study={study!} runs={placementRuns} />}
         <PlacementPanel study={study!} runs={placementRuns} onPublished={() => setTreesVersion(v => v + 1)} />
         <TreesPanel key={treesVersion} study={study!} />
       </>}

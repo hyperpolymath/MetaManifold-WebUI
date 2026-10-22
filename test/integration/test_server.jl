@@ -65,6 +65,33 @@
             r4 = HTTP.get("http://localhost:$port/api/v1/databases"; status_exception=false)
             @test r4.status == 200
 
+            ## Validated direct statistics through the real listener/middleware.
+            statistics_url = "http://localhost:$port/api/v1/statistics/summaries"
+            statistics_headers = ["Content-Type" => "application/json",
+                                  "Origin" => "http://localhost:$port"]
+            statistics_payload = Dict(
+                "numeric_policy" => Dict("mode" => "exact_counts"),
+                "sample_labels" => ["A", "B"],
+                "feature_labels" => ["f1", "f2"],
+                "counts" => [[1, "9007199254740993"], [3, 1]],
+                "persist" => true,
+            )
+            statistics_response = HTTP.post(statistics_url, statistics_headers,
+                JSON3.write(statistics_payload); status_exception=false)
+            @test statistics_response.status == 200
+            statistics = JSON3.read(String(statistics_response.body))
+            @test statistics.samples[2].total == "9007199254740994"
+            statistics_id = String(statistics.analysis_id)
+            persisted = HTTP.get("http://localhost:$port/api/v1/statistics/derived/$statistics_id";
+                                 status_exception=false)
+            @test persisted.status == 200
+            @test JSON3.read(String(persisted.body)).analysis_id == statistics_id
+            bad_statistics = merge(statistics_payload, Dict(
+                "counts" => [[1.0, 2], [3, 1]], "persist" => false))
+            rejected = HTTP.post(statistics_url, statistics_headers,
+                JSON3.write(bad_statistics); status_exception=false)
+            @test rejected.status == 422
+
             ## Configuration persistence through the real listener/middleware.
             config_url = "http://localhost:$port/api/v1/config"
             headers = ["Content-Type"=>"application/json", "Origin"=>"http://localhost:$port"]
