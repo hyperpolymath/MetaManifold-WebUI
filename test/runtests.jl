@@ -60,13 +60,6 @@ const UNIT_FILES = [
     "test_server_security.jl",
     "test_canonical.jl",
     "test_doi.jl",
-    # The optional exact-arithmetic statistics layer (issue #1). Its arithmetic
-    # is checked against an independent Python reference
-    # (test/fixtures/statistics_known_answers.json, produced by
-    # scripts/statistics-reference.py), and its negative controls are the same
-    # ones scripts/statistics-negative-controls.jl reports.
-    "test_exact_numeric.jl",
-    "test_exact_statistics.jl",
 ]
 
 # The files named on the command line ("test_routes.jl", "routes" or

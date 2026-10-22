@@ -102,9 +102,6 @@ module Server
     include(joinpath(@__DIR__, "routes", "databases.jl"))
     include(joinpath(@__DIR__, "routes", "events.jl"))
     include(joinpath(@__DIR__, "routes", "analysis.jl"))
-    # The optional exact-arithmetic statistics layer's endpoints. After
-    # analysis.jl, whose table/sample helpers it reuses.
-    include(joinpath(@__DIR__, "routes", "statistics.jl"))
     include(joinpath(@__DIR__, "routes", "read_funnel.jl"))
     include(joinpath(@__DIR__, "routes", "composition.jl"))
     include(joinpath(@__DIR__, "routes", "publication_tables.jl"))
