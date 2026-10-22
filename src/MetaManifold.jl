@@ -44,7 +44,11 @@ include("canonical.jl")
 include("analysis/clade_cumulus.jl")
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
-include("analysis/clade_cumulus.jl")
+# CompositionalModels precedes Differential: differential.jl imports
+# CompositionalFit, CompositionalRefusal and RuntimeRefusal from it. It is
+# included once, as is clade_cumulus.jl above; repeating a module include
+# silently redefines the module instead of reusing it.
+include("analysis/compositional.jl")
 include("analysis/differential.jl")
 # Opt-in validated descriptive statistics (issue #1). Ordinary workflows above
 # remain unchanged; these modes must be selected explicitly.
