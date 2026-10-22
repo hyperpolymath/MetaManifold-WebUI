@@ -508,7 +508,13 @@ jobs:
           mkdir -p "$AGDA_DIR"
           echo /usr/share/agda-stdlib/standard-library.agda-lib > "$AGDA_DIR/libraries"
           cd proofs/agda
-          agda MetaManifold/All.agda
+          if ! agda MetaManifold/All.agda >/tmp/agda.log 2>&1; then
+            cat /tmp/agda.log
+            msg="$(awk 'NR > 1 { printf "%%0A" } { gsub(/%/, "%25"); printf "%s", $0 }' /tmp/agda.log | tail -c 3500)"
+            echo "::error file=proofs/agda/MetaManifold/All.agda,title=Agda type-check failed::$msg"
+            exit 1
+          fi
+          cat /tmp/agda.log
 
   occupancy:
     name: Occupancy typed peak

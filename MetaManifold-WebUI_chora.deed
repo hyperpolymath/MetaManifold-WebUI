@@ -15,6 +15,7 @@
     :upstream-candidates "upstream/*"
     :frontend "frontend/"
     :analysis "src/analysis/"
+    :cladistics "docs/cladistics/"
     :proofs "proofs/"
     :enforcement ".github/workflows/")
   (status

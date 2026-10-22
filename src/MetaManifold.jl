@@ -2,6 +2,7 @@ module MetaManifold
 
 # Core
 include("core/types.jl")
+include("core/epistemic.jl")
 include("core/r_runtime.jl")
 # Provenance probes R through the shared runtime lock, so it follows r_runtime.jl.
 include("core/provenance.jl")
@@ -40,6 +41,7 @@ include("pipeline/phylogeny.jl")
 include("canonical.jl")
 
 # Analysis
+include("analysis/clade_cumulus.jl")
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
 include("analysis/clade_cumulus.jl")

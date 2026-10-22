@@ -57,7 +57,8 @@ const ARCH_STR = Sys.ARCH == :x86_64  ? "x86_64"  :
 
 # Canonical binary name for tools whose config key differs from the binary name.
 const BINARY_NAMES = Dict("cd_hit_est" => "cd-hit-est", "iqtree" => "iqtree3",
-                          "raxml" => "raxmlHPC-PTHREADS-SSE3")
+                          "raxml" => "raxmlHPC-PTHREADS-SSE3",
+                          "fasttree" => "FastTree")
 bin_name(key::String) = get(BINARY_NAMES, key, key)
 
 mkpath(BIN_DIR)
@@ -372,6 +373,27 @@ function download_gappa()::String
         isfile(bin) || error("gappa not found at $bin after building.")
         dest = joinpath(BIN_DIR, "gappa")
         cp(bin, dest; force=true)
+        chmod(dest, 0o755)
+        dest
+    end
+end
+
+function download_fasttree()::String
+    found = try_package("fasttree", ["FastTree", "fasttree"])
+    found !== nothing && return found
+    build_pinned_source("fasttree") do src
+        c_file = joinpath(src, "FastTree.c")
+        isfile(c_file) || error("FastTree.c not found at $c_file.")
+        dest = joinpath(BIN_DIR, "FastTree")
+        # Prefer OpenMP multithreading where available; fall back cleanly on Apple Clang.
+        built = try
+            run(`cc -O3 -DOPENMP -fopenmp -finline-functions -funroll-loops $c_file -lm -o $dest`)
+            true
+        catch
+            false
+        end
+        built || run(`cc -O3 -finline-functions -funroll-loops $c_file -lm -o $dest`)
+        isfile(dest) || error("FastTree not found at $dest after building.")
         chmod(dest, 0o755)
         dest
     end
@@ -1164,6 +1186,7 @@ function main()
     resolve_and_record("iqtree",     "IQ-TREE",    () -> download_iqtree())
     resolve_and_record("raxml",      "RAxML",      () -> download_raxml())
     resolve_and_record("gappa",      "gappa",      () -> download_gappa())
+    resolve_and_record("fasttree",   "FastTree",   () -> download_fasttree())
 
     # Frontend. Built on every update, and on install whenever web/dist is
     # missing or older than the sources.

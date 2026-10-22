@@ -62,8 +62,7 @@ const UNIT_FILES = [
     "test_server_security.jl",
     "test_canonical.jl",
     "test_doi.jl",
-    "test_evidence.jl",
-    "test_evidence_routes.jl",
+    "test_clade_cumulus.jl",
 ]
 
 # The files named on the command line ("test_routes.jl", "routes" or

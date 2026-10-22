@@ -1,0 +1,8 @@
+FastTree 2.2.0 Double precision, OpenMP (2 threads):
+  FastTree protein_alignment > tree
+  FastTree < protein_alignment > tree
+  FastTree -out tree protein_alignment
+  FastTree -nt nucleotide_alignment > tree
+  FastTree -nt -gtr < nucleotide_alignment > tree
+  FastTree < nucleotide_alignment > tree
+FastTree accepts alignments in fasta or phylip interleaved formats

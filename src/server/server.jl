@@ -116,7 +116,7 @@ module Server
     include(joinpath(@__DIR__, "routes", "doi.jl"))
     include(joinpath(@__DIR__, "routes", "figures.jl"))
     include(joinpath(@__DIR__, "routes", "phylogeny.jl"))
-    include(joinpath(@__DIR__, "routes", "cladistics.jl"))
+    include(joinpath(@__DIR__, "routes", "clade_cumulus.jl"))
 
     ## Bad request middleware
     # Helpers deep in a route (e.g. `_req_group`) throw this to reject a request.

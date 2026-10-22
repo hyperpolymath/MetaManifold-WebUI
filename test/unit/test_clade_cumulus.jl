@@ -1,215 +1,429 @@
-# © 2026 Joshua Benjamin Jewell. All rights reserved.
-# Licensed under the GNU Affero General Public License version 3 (AGPLv3).
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
 using MetaManifold
-using JSON3, DuckDB, DBInterface, SHA, LinearAlgebra
+using DataFrames
+using DuckDB
+using DBInterface
+using JSON3
+using OrderedCollections
+using SHA
+using Test
 
-const _CC = MetaManifold.CladeCumulus
-const _CCS = MetaManifold.Server
+const EP = MetaManifold.Epistemic
+const CC = MetaManifold.CladeCumulus
+const DM = MetaManifold.DiversityMetrics
+const PH = MetaManifold.Phylogeny
+const SV = MetaManifold.Server
 
-_cc_request(method, path, body="") =
-    _CCS.Oxygen.internalrequest(_CCS.HTTP.Request(method, path,
-        ["Content-Type" => "application/json"], body))
-_cc_json(response) = JSON3.read(String(response.body))
+_cc_req(method::String, path::String, body::String = "") =
+    SV.Oxygen.internalrequest(
+        SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
+        middleware = SV._MIDDLEWARE,
+    )
 
-@testset "CladeCumulus" begin
-    @testset "Newick parsing is strict and keeps labels and lengths" begin
-        tree = _CC.parse_newick("[&R] ((A:1,B:1)90:1,C:2);")
-        @test length(tree.nodes) == 5
-        @test length(tree.tips) == 3
-        @test tree.nodes[2].name == "90"
-        @test tree.nodes[2].children == [3, 4]
-        @test tree.nodes[3].parent == 2
-        @test tree.nodes[5].length == 2.0
+@testset "CladeCumulus & Phylogenetic Integration" begin
 
-        # Support values are internal labels, not taxa, and may legitimately repeat.
-        supported = _CC.parse_newick("((A:1,B:1)95:1,(C:1,D:1)95:1)100;")
-        @test length(supported.tips) == 4
-        @test supported.nodes[2].name == supported.nodes[5].name == "95"
+    @testset "Epistemic world admissibility, colours, cloud sizing, and receipts" begin
+        empty_case = EP.Case("empty", EP.WorldCandidate[])
+        @test !EP.present_in_every_admissible_world(empty_case, "clade_1")
+        @test !EP.present_in_some_admissible_world(empty_case, "clade_1")
+        @test !EP.absent_in_every_admissible_world(empty_case, "clade_1")
+        @test EP.epistemic_status(empty_case, "clade_1") === :sans_fibre
 
-        quoted = _CC.parse_newick("('A ''one''':1e-3,\"λ two\":2.0,plain:3);")
-        @test Set(keys(quoted.tips)) == Set(["A 'one'", "λ two", "plain"])
-        @test quoted.nodes[2].length ≈ 0.001
+        w1 = EP.WorldCandidate("strict"; present_ids = Set(["c_all"]))
+        w2 = EP.WorldCandidate("permissive"; present_ids = Set(["c_all", "c_some"]))
+        c = EP.Case("two_worlds", [w1, w2]; unanchored_ids = Set(["c_unplaced"]), threshold = 0.85)
 
-        @test_throws ArgumentError _CC.parse_newick("((A:1,A:1):1,C:1);")
-        @test_throws ArgumentError _CC.parse_newick("((A:1,B:1):1,C:-1);")
-        @test_throws ArgumentError _CC.parse_newick("((A:1,B:1):1,C:NaN);")
-        @test_throws ArgumentError _CC.parse_newick("((A:1,B:1):1,C:1)")
-        @test_throws ArgumentError _CC.parse_newick("((A:1,B:1):1,C:1); trailing")
-        @test_throws ArgumentError _CC.parse_newick("((A:1,B:1):1,C:1)[unclosed;")
-        @test_throws ArgumentError _CC.parse_newick("((A:1,B:1):1,C:oops);")
+        @test EP.present_in_every_admissible_world(c, "c_all")
+        @test EP.present_in_some_admissible_world(c, "c_all")
+        @test !EP.absent_in_every_admissible_world(c, "c_all")
+        @test EP.epistemic_status(c, "c_all") === :present_in_every
+        @test EP.epistemic_colour(:present_in_every) == "#2e7d32"
 
-        @test _CC.asv_tip_name("ac-gt\n") == _CC.asv_tip_name("ACGT")
-        @test _CC.asv_tip_name("ACGT") != _CC.asv_tip_name("ACGA")
-        @test startswith(_CC.asv_tip_name("ACGT"), "ASV_")
+        @test !EP.present_in_every_admissible_world(c, "c_some")
+        @test EP.present_in_some_admissible_world(c, "c_some")
+        @test EP.epistemic_status(c, "c_some") === :present_in_some
+        @test EP.epistemic_colour(:present_in_some) == "#f9a825"
+
+        @test EP.absent_in_every_admissible_world(c, "c_none")
+        @test EP.epistemic_status(c, "c_none") === :absent
+        @test EP.epistemic_colour(:absent) == "#9e9e9e"
+
+        @test EP.epistemic_status(c, "c_unplaced") === :sans_fibre
+        @test EP.epistemic_colour(:sans_fibre) == "#c62828"
+
+        @test EP.cloud_size_by_residual(0) ≈ 5.0 atol = 1e-12
+        @test EP.cloud_size_by_residual(ℯ - 1.0) ≈ 15.0 atol = 1e-12
+        @test_throws ArgumentError EP.cloud_size_by_residual(-0.5)
+        @test_throws ArgumentError EP.cloud_size_by_residual(NaN)
+
+        rec = EP.create_receipt(;
+            study = "S1",
+            run = "R1",
+            source_digests = OrderedDict("table" => "abc123"),
+            parameters = OrderedDict("mode" => "combined", "max_asvs" => 500),
+            warnings = ["short amplicon caveat"],
+        )
+        @test EP.verify_receipt(rec)
+        tampered = EP.receipt_dict(rec)
+        tampered["study"] = "S2"
+        @test !EP.verify_receipt(tampered)
     end
 
-    @testset "cumulative counts, Faith PD and UniFrac match a hand-worked tree" begin
-        # ((A:1,B:1):1,C:2);
-        # A and B share one unit of internal branch; C has no shared branch.
-        tree = _CC.parse_newick("((A:1,B:1):1,C:2);")
-        counts = [1.0 0 0;       # A
-                  0.0 1 0;       # B
-                  0.0 0 1;       # C
-                  1.0 1 0]       # A + B
-        tips = ["A", "B", "C"]
-        cumulative = _CC.clade_counts(tree, counts, tips)
-        root, ab, a, b, c = 1, 2, 3, 4, 5
-        @test cumulative[root, :] == [1, 1, 1, 2]
-        @test cumulative[ab, :] == [1, 1, 0, 2]
-        @test cumulative[a, :] == [1, 0, 0, 1]
-        @test cumulative[b, :] == [0, 1, 0, 1]
-        @test cumulative[c, :] == [0, 0, 1, 0]
+    @testset "Newick parser, midpoint rooting, and scikit-bio golden reference parity" begin
+        rooted_nwk = "((ASV_1:0.10,ASV_2:0.20)Clade_A:0.30,(ASV_3:0.15,(ASV_4:0.05,ASV_5:0.25)Clade_B2:0.10)Clade_B:0.40)Root;"
+        taxa = ["ASV_1", "ASV_2", "ASV_3", "ASV_4", "ASV_5"]
+        s1 = [10, 20, 0, 0, 0]
+        s2 = [0, 0, 15, 5, 10]
+        s3 = [10, 0, 10, 0, 20]
+        s4 = [5, 5, 5, 5, 5]
 
-        @test _CC.faith_pd(tree, cumulative) == [2, 2, 2, 3]
-        @test _CC.faith_pd(tree, counts, tips) == [2, 2, 2, 3]
-        unweighted = _CC.unifrac(tree, cumulative)
-        @test unweighted[1, 2] ≈ 2 / 3
-        @test unweighted[1, 3] == 1
-        @test unweighted[1, 4] ≈ 1 / 3
-        @test unweighted == transpose(unweighted)
-        @test diag(unweighted) == zeros(4)
+        # Exact Faith's PD parity against scikit-bio 0.7.4
+        @test CC.faith_pd(s1, taxa, rooted_nwk) ≈ 0.60 atol = 1e-12
+        @test CC.faith_pd(s2, taxa, rooted_nwk) ≈ 0.95 atol = 1e-12
+        @test CC.faith_pd(s3, taxa, rooted_nwk) ≈ 1.30 atol = 1e-12
+        @test CC.faith_pd(s4, taxa, rooted_nwk) ≈ 1.55 atol = 1e-12
 
-        weighted = _CC.unifrac(tree, cumulative; weighted=true)
-        @test weighted[1, 2] == 0.5
-        @test weighted[1, 3] == 1
-        @test weighted[1, 4] == 0.25
-        @test all(x -> 0 <= x <= 1, weighted)
-        # Relative-abundance weighted UniFrac does not depend on sequencing depth.
-        @test _CC.unifrac(tree, counts .* [1, 10, 100, 1000], tips; weighted=true) ≈ weighted
+        # Exact Unweighted & Weighted UniFrac parity against scikit-bio 0.7.4
+        @test CC.unweighted_unifrac(s1, s2, taxa, rooted_nwk) ≈ 1.0 atol = 1e-12
+        @test CC.unweighted_unifrac(s1, s3, taxa, rooted_nwk) ≈ (11 / 15) atol = 1e-12
+        @test CC.unweighted_unifrac(s1, s4, taxa, rooted_nwk) ≈ 0.612903225806 atol = 1e-11
+        @test CC.weighted_unifrac(s1, s2, taxa, rooted_nwk; normalized = false) ≈ (13 / 12) atol = 1e-12
+        @test CC.weighted_unifrac(s1, s2, taxa, rooted_nwk; normalized = true) ≈ 1.0 atol = 1e-12
+        @test CC.weighted_unifrac(s1, s3, taxa, rooted_nwk; normalized = false) ≈ 0.879166666667 atol = 1e-11
+        @test CC.weighted_unifrac(s1, s3, taxa, rooted_nwk; normalized = true) ≈ 0.814671814672 atol = 1e-11
 
-        analysed = _CC.analyse_phylogeny(tree, counts, tips, ["A", "B", "C", "AB"])
-        @test analysed.sample_reads == [1, 1, 1, 2]
-        @test analysed.nodes[root].cumulative_frequency == 1
-        @test analysed.nodes[ab].cumulative_frequency ≈ 4 / 5
-        @test analysed.nodes[c].cumulative_frequency ≈ 1 / 5
-        @test analysed.nodes[ab].tip_count == 2
-        @test analysed.total_branch_length == 5
+        # Shared export identity in DiversityMetrics
+        @test DM.faith_pd === CC.faith_pd
+        @test DM.unweighted_unifrac === CC.unweighted_unifrac
+        @test DM.weighted_unifrac === CC.weighted_unifrac
 
-        # A root's optional length is not a branch and must not inflate metrics.
-        rooted = _CC.parse_newick("((A:1,B:1):1,C:2):99;")
-        @test _CC.faith_pd(rooted, counts, tips) == [2, 2, 2, 3]
-        @test _CC.unifrac(rooted, counts, tips) == unweighted
+        # Real FastTree 2.2.0 unrooted 6-tip output midpoint-rooted parity against scikit-bio 0.7.4
+        ft_nwk = "(ASV_1:0.027130892,(ASV_5:0.027116348,(ASV_4:0.000000006,ASV_6:0.091864434)0.685:0.000000006)1.000:3.444768322,(ASV_3:0.027134678,ASV_2:0.000000006)0.071:0.000000006);"
+        ft_taxa = ["ASV_1", "ASV_2", "ASV_3", "ASV_4", "ASV_5", "ASV_6"]
+        fa = [10, 20, 0, 0, 0, 0]
+        fb = [0, 5, 15, 30, 0, 10]
+        @test CC.faith_pd(fa, ft_taxa, ft_nwk) ≈ 1.7818799429999999 atol = 1e-11
+        @test CC.faith_pd(fb, ft_taxa, ft_nwk) ≈ 3.563767458 atol = 1e-11
+        @test CC.unweighted_unifrac(fa, fb, ft_taxa, ft_nwk) ≈ 0.5113342456491424 atol = 1e-11
+        @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false) ≈ 2.3276502663333334 atol = 1e-11
+        @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = true) ≈ 0.6655215451489284 atol = 1e-11
+
+        # Quoted labels, NHX support, negative branch clamping, non-finite branch rejection,
+        # and midpoint split-support symmetry across both root children.
+        warns = String[]
+        qtree = CC.parse_newick("[&R] (('Taxon ''alpha''':0.2,ASV_b:-0.05)[&&NHX:B=92]:0.1,ASV_c:0.3);", warnings = warns)
+        @test !isempty(warns)
+        @test qtree.children[1].support ≈ 0.92 atol = 1e-12
+        @test qtree.children[1].children[1].name == "Taxon 'alpha'"
+        @test qtree.children[1].children[2].branch_length == 0.0
+        @test_throws ArgumentError CC.parse_newick("(ASV_1:NaN,ASV_2:0.1);")
+        @test_throws ArgumentError CC.parse_newick("(ASV_1:Inf,ASV_2:0.1);")
+        mp_sym, did_mp = CC.midpoint_root(CC.parse_newick("(ASV_1:0.1,ASV_2:0.1,(ASV_3:0.1,ASV_4:0.1)0.55:2.0);"))
+        @test did_mp
+        @test mp_sym.children[1].support ≈ 0.55 atol = 1e-12
+        @test mp_sym.children[2].support ≈ 0.55 atol = 1e-12
     end
 
-    @testset "metric guards never discard unmatched counts or missing lengths" begin
-        tree = _CC.parse_newick("((A:1,B:1):1,C:2);")
-        @test_throws ArgumentError _CC.clade_counts(tree, [1.0 0], ["A", "not-in-tree"])
-        @test_throws ArgumentError _CC.clade_counts(tree, [1.0 -1 0], ["A", "B", "C"])
-        @test_throws ArgumentError _CC.clade_counts(tree, [1.0 0 0], ["A", "A", "C"])
-        @test_throws DimensionMismatch _CC.clade_counts(tree, [1.0 0], ["A", "B", "C"])
+    @testset "Strict raw jplace evidence reader, edge projection, and independent LWR threshold" begin
+        raw_jplace = JSON3.write(OrderedDict(
+            "version" => 3,
+            "tree" => "((Ref_1:0.1{0},Ref_2:0.2{1})95:0.3{2},Ref_3:0.4{3}){4};",
+            "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
+            "placements" => [
+                OrderedDict("n" => ["Q_split"], "p" => [[0, -100.0, 0.60, 0.01, 0.02], [1, -100.4, 0.40, 0.01, 0.03]]),
+                OrderedDict("nm" => [["Q_borderline", 1]], "p" => [[3, -98.0, 0.85, 0.05, 0.02], [2, -101.0, 0.15, 0.05, 0.02]]),
+                OrderedDict("n" => ["Q_strong"], "p" => [[3, -97.0, 0.98, 0.02, 0.01]]),
+                OrderedDict("n" => ["Q_bad_sum"], "p" => [[0, -100.0, 0.40, 0.01, 0.01]]),
+            ],
+        ))
+        jp = CC.parse_jplace(raw_jplace)
+        @test length(jp.queries) == 4
+        @test jp.queries[1].status === :valid
+        @test jp.queries[1].max_lwr ≈ 0.60 atol = 1e-12
+        @test jp.queries[2].status === :valid
+        @test jp.queries[2].max_lwr ≈ 0.85 atol = 1e-12
+        @test jp.queries[3].status === :valid
+        @test jp.queries[3].max_lwr ≈ 0.98 atol = 1e-12
+        @test jp.queries[4].status === :undecided
+        @test startswith(jp.queries[4].reason, "weight_sum_out_of_tolerance")
 
-        no_lengths = _CC.parse_newick("((A,B),C);")
-        @test_throws ArgumentError _CC.faith_pd(no_lengths, [1.0 0 0], ["A", "B", "C"])
-        @test_throws ArgumentError _CC.unifrac(no_lengths, [1.0 0 0], ["A", "B", "C"])
+        # Placed query read counts project onto the reference tree edges without losing reads,
+        # and `lwr_threshold = 0.95` marks `Q_borderline` (LWR = 0.85) as `present_in_some`
+        # even when `support_threshold = 0.80`.
+        jdf = DataFrame(
+            SeqName = ["Q_split", "Q_borderline", "Q_strong"],
+            Domain  = ["Bacteria", "Bacteria", "Bacteria"],
+            Genus   = ["GenA", "GenB", "GenC"],
+            Sample1 = [50, 30, 20],
+            Sample2 = [10, 40, 50],
+        )
+        cc_jp = CC.build_clade_tree(
+            jdf;
+            mode = :combined,
+            jplace_json = raw_jplace,
+            support_threshold = 0.80,
+            lwr_threshold = 0.95,
+        )
+        @test cc_jp.root.cumulative_count ≈ 200.0 atol = 1e-9
 
-        # Empty samples have explicit pairwise semantics in the pure API.
-        empty_counts = [0.0 0 0; 1 0 0; 0 0 0]
-        cumulative = _CC.clade_counts(tree, empty_counts, ["A", "B", "C"])
-        @test _CC.faith_pd(tree, cumulative) == [0, 2, 0]
-        @test _CC.unifrac(tree, cumulative; weighted=true)[1, 2] == 1
-        @test _CC.unifrac(tree, cumulative; weighted=true)[1, 3] == 0
+        # Cross-classifier disagreement + single-counted taxonomic residual invariant
+        merged_tax_df = DataFrame(
+            SeqName     = ["ASV_disagree", "ASV_partial"],
+            Domain      = ["Bacteria", "Bacteria"],
+            Domain_dada2= ["Bacteria", "Bacteria"],
+            Domain_boot = [100, 100],
+            Genus       = ["VsearchGenus", missing],
+            Genus_dada2 = ["Dada2OtherGenus", missing],
+            Genus_boot  = [99, missing],
+            S1          = [60, 40],
+        )
+        cc_tax = CC.build_clade_tree(
+            merged_tax_df;
+            mode = :taxonomic,
+            support_threshold = 0.80,
+            lwr_threshold = 0.95,
+        )
+        @test cc_tax.root.cumulative_count ≈ 100.0 atol = 1e-9
+        @test cc_tax.root.residual_count <= cc_tax.root.cumulative_count
+        disagree_leaf = CC._find_clade(cc_tax.root, "asv:ASV_disagree")
+        @test disagree_leaf !== nothing
+        @test disagree_leaf.epistemic_status === :present_in_some
 
-        # With no positive-length branches there is no unique branch length.
-        # Different sequencing depths alone must not manufacture a distance.
-        zero_tree = _CC.parse_newick("((A:0,B:0):0,C:0);")
-        zero_counts = [0.0 0 0; 1 0 0; 2 0 0]
-        for weighted in (false, true)
-            distances = _CC.unifrac(zero_tree, zero_counts, ["A", "B", "C"]; weighted)
-            @test distances[1, 2] == 1
-            @test distances[1, 3] == 1
-            @test distances[2, 3] == 0
+        # Taxonomic mode requires at least one taxonomic rank column
+        no_rank_df = DataFrame(SeqName = ["ASV_1", "ASV_2"], S1 = [10, 20])
+        @test_throws ArgumentError CC.build_clade_tree(no_rank_df; mode = :taxonomic)
+
+        # Partial Newick tree preserves omitted table reads under an explicit sans_fibre clade
+        partial_df = DataFrame(
+            SeqName = ["ASV_1", "ASV_2", "ASV_missing"],
+            Domain  = ["Bacteria", "Bacteria", "Bacteria"],
+            S1      = [30, 20, 50],
+        )
+        cc_partial = CC.build_clade_tree(partial_df; mode = :combined, newick = "(ASV_1:0.1,ASV_2:0.2)Root;")
+        @test cc_partial.subsampled
+        @test cc_partial.retained_asvs == 2
+        @test cc_partial.retained_fraction ≈ 0.5 atol = 1e-12
+        @test cc_partial.root.cumulative_count ≈ 100.0 atol = 1e-9
+        omitted_node = CC._find_clade(cc_partial.root, "unplaced:omitted")
+        @test omitted_node !== nothing
+        @test omitted_node.epistemic_status === :sans_fibre
+        @test omitted_node.colour == "#c62828"
+    end
+
+    @testset "Amplicon phylogeny builder, subsampling guard, and FastTree CLI provenance" begin
+        # 20 synthetic ASVs with vsearch-style semicolon headers; subsampled cleanly to max_asvs = 6.
+        seqs = [
+            "ASV_$(i);size=$(100 - i)" =>
+            (i <= 10 ? "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT" : "TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCA")
+            for i in 1:20
+        ]
+        abund = Dict("ASV_$(i);size=$(100 - i)" => Float64(100 - i) for i in 1:20)
+        res = PH.build_amplicon_phylogeny(seqs; abundances = abund, method = :nj, max_asvs = 6, seed = 7, n_boot = 20)
+        @test res.subsampled
+        @test res.total_input_asvs == 20
+        @test res.retained_asvs == 6
+        @test res.excluded_asvs == 14
+        @test any(w -> occursin("Short amplicon sequences", w), res.warnings)
+        @test any(w -> occursin("exceeded max_asvs", w), res.warnings)
+        parsed = CC.parse_newick(res.newick)
+        tips = CC._collect_tree_tips!(Set{String}(), parsed)
+        @test length(tips) == 6
+        @test "ASV_1;size=99" in tips
+
+        # Verify FastTree invocation path + SHA256 binary provenance via controlled mock executable.
+        mktempdir() do tmp
+            mock_ft = joinpath(tmp, "FastTree")
+            write(mock_ft, raw"""#!/usr/bin/env bash
+if [ "$1" = "-help" ]; then
+  echo "FastTree 2.2.0 Double precision, OpenMP (2 threads):" >&2
+  exit 0
+fi
+OUT=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-out" ]; then
+    OUT="$2"
+    shift 2
+  else
+    shift 1
+  fi
+done
+echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "$OUT"
+""")
+            chmod(mock_ft, 0o755)
+            old_ft = get(PH.Tools._tools, "fasttree", nothing)
+            PH.Tools._tools["fasttree"] = mock_ft
+            try
+                s4 = [
+                    "ASV_1" => "ACGTACGTACGTACGTACGT",
+                    "ASV_2" => "ACGTACGTACGTACGTACGA",
+                    "ASV_3" => "ACGTACGTACGTACGTTCGA",
+                    "ASV_4" => "TGCATGCATGCATGCATGCA",
+                ]
+                ft_res = PH.build_amplicon_phylogeny(s4; method = :fasttree, seed = 11)
+                @test ft_res.method == "fasttree"
+                @test any(r -> r["name"] == "FastTree" && r["version"] == "2.2.0" &&
+                               r["sha256"] == bytes2hex(open(sha256, mock_ft)), ft_res.tool_records)
+            finally
+                if old_ft === nothing
+                    delete!(PH.Tools._tools, "fasttree")
+                else
+                    PH.Tools._tools["fasttree"] = old_ft
+                end
+            end
         end
     end
 
-    @testset "study source persistence and routes" begin
+    @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
-        old_root = _CCS.ServerState._root[]
-        _CCS.ServerState.set_root!(tmp)
-        mkpath(joinpath(tmp, "config", "defaults"))
-        cp(joinpath(@__DIR__, "..", "..", "config", "defaults", "pipeline.yml"),
-           joinpath(tmp, "config", "defaults", "pipeline.yml"))
-        mkpath(joinpath(tmp, "data", "StudyCC", "run1"))
-        touch(joinpath(tmp, "data", "StudyCC", "run1", "s1_R1.fastq.gz"))
-        merged = joinpath(tmp, "projects", "StudyCC", "run1", "merged")
-        mkpath(merged)
-        db = DBInterface.connect(DuckDB.DB, joinpath(merged, "results.duckdb"))
-        DBInterface.execute(db, """CREATE TABLE merged AS SELECT * FROM (VALUES
-            ('a1', 'AAAAAAAA', 10, 0),
-            ('a2', 'CCCCCCCC',  8, 1),
-            ('a3', 'GGGGGGGG',  0, 7),
-            ('a4', 'TTTTTTTT',  2, 2),
-            ('a5', 'ACACACAC',  1, 0)) t(SeqName, Sequence, Caecum_1, Colon_1)""")
-        DBInterface.close!(db)
-
-        id = "abcdef12"
-        body = JSON3.read(JSON3.write(Dict(
-            "name" => "Test ASV tree",
-            "runs" => [Dict("run" => "run1")],
-            "table" => "merged", "min_reads" => 2, "max_asvs" => 4,
-            "normalisation" => "none", "depth" => 0)))
+        old_root = SV.ServerState._root[]
+        SV.ServerState.set_root!(tmp)
         try
-            @test_throws ArgumentError _CCS._cc_integer(3, 500, "max_asvs", 4, 2000)
-            @test_throws ArgumentError _CCS._cc_integer(4.5, 500, "max_asvs", 4, 2000)
-            @test_throws ArgumentError _CCS._cc_min_reads(0)
+            data_dir = joinpath(tmp, "data", "StudyCC", "run1")
+            mkpath(data_dir)
+            touch(joinpath(data_dir, "S1_R1.fastq.gz"))
+            merge_dir = joinpath(tmp, "projects", "StudyCC", "run1", "merged")
+            trees_dir = joinpath(tmp, "projects", "StudyCC", "trees")
+            mkpath(merge_dir)
+            mkpath(trees_dir)
 
-            _CCS._cc_prepare!("StudyCC", id, body)
-            source = _CCS._read_doc(_CCS._clad_doc_path("StudyCC", id))
-            @test source["asv_count"] == 4
-            @test source["sample_count"] == 2
-            @test source["source"]["available_asvs"] == 4  # a5 is below min_reads
-            @test length(source["counts_sha256"]) == 64
+            study_nwk = "((ASV_1:0.10,ASV_2:0.20)0.96:0.30,(ASV_3:0.15,ASV_4:0.25)0.55:0.40)Root;"
+            write(joinpath(trees_dir, "amplicon.nwk"), study_nwk)
 
-            counts, tips, samples, _ = _CCS._cc_read_counts("StudyCC", id)
-            @test size(counts) == (2, 4)
-            @test samples == ["run1 / Caecum_1", "run1 / Colon_1"]
-            @test tips == _CC.asv_tip_name.(["AAAAAAAA", "CCCCCCCC", "GGGGGGGG", "TTTTTTTT"])
-            @test counts[:, 1] == [10, 0]
-            @test counts[:, 4] == [2, 2]
+            # Note: Genus 'SplitGenus' appears on ASV_1 (Clade 1) AND ASV_4 (Clade 2) -> non-monophyletic!
+            df = DataFrame(
+                SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4"],
+                Domain  = ["Bacteria", "Bacteria", "Bacteria", "Bacteria"],
+                Genus   = ["SplitGenus", "MonoGenus", "OtherGenus", "SplitGenus"],
+                Sequence = [
+                    "ACGTACGTACGTACGTACGTACGT",
+                    "ACGTACGTACGTACGTACGTACGA",
+                    "TGCATGCATGCATGCATGCATGCA",
+                    "TGCATGCATGCATGCATGCATGCT",
+                ],
+                SampleA = [40, 10, 0, 5],
+                SampleB = [0, 20, 25, 10],
+            )
+            db_path = joinpath(merge_dir, "results.duckdb")
+            db = DuckDB.DB(db_path)
+            con = DBInterface.connect(db)
+            DuckDB.register_data_frame(con, df, "src_df")
+            DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            DBInterface.close!(con)
+            close(db)
+            before_db_sha = bytes2hex(open(sha256, db_path))
 
-            files = _CCS._clad_files("StudyCC", id)
-            newick = "(($(tips[1]):1,$(tips[2]):1):1,($(tips[3]):1,$(tips[4]):1):1);"
-            mkpath(dirname(files["reference.treefile"]))
-            write(files["reference.treefile"], newick)
-            result = _CCS._cc_compute("StudyCC", id)
-            @test result["tree_sha256"] == bytes2hex(sha256(newick))
-            @test result["counts_sha256"] == source["counts_sha256"]
-            @test length(result["nodes"]) == 7
-            @test length(result["faith_pd"]) == 2
-            @test size(result["weighted_unifrac"]) == (2,)
-            @test length(result["weighted_unifrac"][1]) == 2
-            @test result["nodes"][1].cumulative_count == sum(counts)
+            # 1. GET sources route
+            r_src = _cc_req("GET", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/sources")
+            @test r_src.status == 200
+            src_json = JSON3.read(String(r_src.body))
+            @test any(t -> t.table == "merged" && t.has_sequence == true, src_json.tables)
+            @test any(t -> t.file == "amplicon.nwk", src_json.trees)
 
-            write(files["reference.treefile"], replace(newick, ");" => ",EXTRA:1);"))
-            @test_throws ErrorException _CCS._cc_compute("StudyCC", id)
-            write(files["reference.treefile"], newick)
+            # 2. POST combined mode against study_tree
+            r_comb = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "amplicon.nwk",
+                "supportThreshold" => 0.85,
+                "lwrThreshold" => 0.95,
+            )))
+            @test r_comb.status == 200
+            comb = JSON3.read(String(r_comb.body))
+            @test comb.root.cumulative_count ≈ 110.0 atol = 1e-9
+            @test all(ch -> ch.cumulative_count <= comb.root.cumulative_count, comb.root.children)
+            @test any(dt -> dt.taxon == "SplitGenus" && dt.monophyletic == false, comb.concordance.dispersed_taxa)
+            @test EP.verify_receipt(JSON3.read(JSON3.write(comb.receipt), Dict{String,Any}))
+            @test comb.diversity !== nothing
+            @test length(comb.diversity.samples) == 2
 
-            _CCS._write_atomic(_CCS._clad_results_path("StudyCC", id), JSON3.write(result))
-            _CCS._write_atomic(joinpath(_CCS._clad_dir("StudyCC", id), "status.json"),
-                               JSON3.write(Dict("state" => "done")))
-            source["published"] = _CCS._cc_publish("StudyCC", id, "Test ASV tree")
-            _CCS._write_doc(_CCS._clad_doc_path("StudyCC", id), source)
+            # High-support clade (0.96 >= 0.85) is `present_in_every`; low-support clade (0.55 < 0.85) is `present_in_some`!
+            high_clade = comb.root.children[1]
+            low_clade = comb.root.children[2]
+            @test high_clade.epistemic_status == "present_in_every"
+            @test high_clade.colour == "#2e7d32"
+            @test low_clade.epistemic_status == "present_in_some"
+            @test low_clade.colour == "#f9a825"
 
-            base = "/api/v1/studies/StudyCC/cladistics"
-            listing = _cc_json(_cc_request("GET", base))
-            @test length(listing) == 1
-            @test listing[1].built && listing[1].state == "done"
-            detail = _cc_json(_cc_request("GET", "$base/$id"))
-            @test detail.result.tree_sha256 == result["tree_sha256"]
-            @test detail.summary.asv_count == 4
-            @test _cc_request("GET", "/api/v1/studies/Missing/cladistics").status == 404
-            @test _cc_request("GET", "$base/nothex12").status == 400
-            @test _cc_request("GET", "$base/$id/log/tree").status == 404
+            # 3. Validate drag-and-drop: moving ASV_3 into low-support clade fails warrant check!
+            r_deny = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "amplicon.nwk",
+                "supportThreshold" => 0.85,
+                "sourceId" => "ASV_1",
+                "targetId" => low_clade.id,
+            )))
+            @test r_deny.status == 200
+            v_deny = JSON3.read(String(r_deny.body))
+            @test v_deny.allowed == false
+            @test v_deny.target_colour == "#f9a825"
 
-            bad = JSON3.write(Dict("runs" => [Dict("run" => "run1")], "max_asvs" => 3))
-            @test _cc_request("POST", base, bad).status == 400
-            @test _cc_request("DELETE", "$base/$id").status == 200
-            @test !isdir(_CCS._clad_dir("StudyCC", id))
-            @test !isfile(joinpath(tmp, "projects", "StudyCC", "trees", source["published"]))
-            @test isempty(_cc_json(_cc_request("GET", base)))
+            # Moving into a terminal sequence tip is rejected even if high support!
+            r_leaf = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "amplicon.nwk",
+                "supportThreshold" => 0.85,
+                "sourceId" => "ASV_3",
+                "targetId" => "ASV_1",
+            )))
+            @test r_leaf.status == 200
+            @test JSON3.read(String(r_leaf.body)).allowed == false
+
+            # Moving ASV_4 (SplitGenus) into high-support clade (containing ASV_1 SplitGenus)
+            # succeeds, recomputes target subtree_pd upward, AND saves configuration-keyed sidecars!
+            before_target_pd = Float64(high_clade.subtree_pd)
+            r_allow = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "amplicon.nwk",
+                "supportThreshold" => 0.85,
+                "sourceId" => "ASV_4",
+                "targetId" => high_clade.id,
+                "saveProposal" => true,
+            )))
+            @test r_allow.status == 200
+            v_allow = JSON3.read(String(r_allow.body))
+            @test v_allow.allowed == true
+            @test v_allow.proposal_file !== nothing
+            @test isfile(joinpath(trees_dir, ".clade_cumulus", String(v_allow.proposal_file)))
+            @test v_allow.proposed_root.cumulative_count ≈ 110.0 atol = 1e-9
+            @test Float64(v_allow.proposed_root.children[1].subtree_pd) > before_target_pd
+
+            # Re-saving under a different threshold writes a distinct immutable sidecar file
+            r_allow2 = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "amplicon.nwk",
+                "supportThreshold" => 0.90,
+                "sourceId" => "ASV_4",
+                "targetId" => high_clade.id,
+                "saveProposal" => true,
+            )))
+            v_allow2 = JSON3.read(String(r_allow2.body))
+            @test v_allow2.allowed == true
+            @test String(v_allow2.proposal_file) != String(v_allow.proposal_file)
+
+            # Canonical DuckDB database is strictly untouched byte-for-byte!
+            @test bytes2hex(open(sha256, db_path)) == before_db_sha
+
+            # Path traversal attempts are rejected with 400!
+            @test _cc_req("GET", "/api/v1/studies/..%2Fetc/runs/run1/clade-cumulus/sources").status == 400
+            @test _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus", JSON3.write(Dict(
+                "treeSource" => "study_tree",
+                "treeFile" => "../secret.nwk",
+            ))).status == 400
         finally
-            _CCS.ServerState.set_root!(old_root)
-            rm(tmp; recursive=true, force=true)
+            SV.ServerState._root[] = old_root
+            rm(tmp; recursive = true, force = true)
         end
     end
+
 end

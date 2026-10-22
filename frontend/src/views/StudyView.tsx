@@ -14,6 +14,8 @@ import { carriesSource, expandRunSpecs } from '../api/types'
 import { ConfigAccordion } from '../components/ConfigAccordion'
 import { TreesPanel } from '../components/TreesPanel'
 import { PlacementPanel } from '../components/PlacementPanel'
+import { EvidenceModeToggle } from '../components/EvidenceModeToggle'
+import { CladeCumulusPanel } from '../components/CladeCumulusPanel'
 import { ReportPanel } from '../components/ReportPanel'
 import { useNavRefresh } from '../hooks/useNavRefresh'
 import { CladeCumulusPanel } from '../cladistics/CladeCumulusPanel'
@@ -37,6 +39,7 @@ export function StudyView() {
   const refreshNav = useNavRefresh()
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [view, setView] = useTabParam<StudyTab>('view', VIEWS, 'runs')
+  const [evidenceMode, setEvidenceMode] = useState(false)
 
   const fetcher = useCallback(() => api.runs.list(study!), [study])
   const { data: runs, loading, error, refetch } = useApi(fetcher)
@@ -300,6 +303,8 @@ export function StudyView() {
       {view === 'cladistics' && <CladeCumulusPanel key={study} study={study!} runs={cladisticsRuns} />}
 
       {view === 'trees' && <>
+        <EvidenceModeToggle enabled={evidenceMode} onChange={setEvidenceMode} />
+        {evidenceMode && <CladeCumulusPanel study={study!} runs={placementRuns} />}
         <PlacementPanel study={study!} runs={placementRuns} onPublished={() => setTreesVersion(v => v + 1)} />
         <TreesPanel key={treesVersion} study={study!} />
       </>}
