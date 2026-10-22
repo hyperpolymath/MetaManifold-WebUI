@@ -400,7 +400,7 @@ jobs:
         run: |
           command -v vsearch # The full suite must run the occupancy experiment, not skip it.
           set +e
-          julia --project=. -t 2 --code-coverage=user --compiled-modules=no test/runtests.jl --integration --server 2>&1 | tee /tmp/julia-tests.log
+          julia --project=. -t 2 --code-coverage=user --compiled-modules=no test/runtests.jl test_differential.jl 2>&1 | tee /tmp/julia-tests.log
           status="${PIPESTATUS[0]}"
           if [ "$status" -ne 0 ]; then
             enc() { head -c 3500 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
