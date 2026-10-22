@@ -74,7 +74,8 @@ export cutadapt, vsearch, multiqc, cdhit, tool_bin, _sq, _run_logged, _run_killa
     end
 
     const _BIN_DEFAULTS = Dict("cd_hit_est" => "cd-hit-est", "iqtree" => "iqtree3",
-                               "raxml" => "raxmlHPC-PTHREADS-SSE3")
+                               "raxml" => "raxmlHPC-PTHREADS-SSE3",
+                               "fasttree" => "FastTree")
     tool_bin(key) = get(_tools, key, get(_BIN_DEFAULTS, key, key))
 
     const _tools = load_tools()

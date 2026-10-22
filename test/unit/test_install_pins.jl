@@ -22,7 +22,7 @@ const RENV_LOCK   = joinpath(REPO_ROOT, "renv.lock")
 # The tools the pipeline shells out to. A tool absent from the pin file is a tool
 # nobody has decided the version of.
 const EXPECTED_TOOLS = ["cutadapt", "fastqc", "multiqc", "vsearch", "cd_hit_est", "swarm",
-                        "mafft", "trimal", "iqtree", "raxml", "gappa"]
+                        "mafft", "trimal", "iqtree", "raxml", "gappa", "fasttree"]
 
 # The platforms install.jl can resolve an archive for, as "<OS_TYPE>-<ARCH_STR>".
 const EXPECTED_PLATFORMS = ["linux-x86_64", "linux-aarch64", "macos-x86_64", "macos-aarch64"]
@@ -88,7 +88,7 @@ end
         for tool in ("vsearch", "swarm", "trimal", "iqtree")
             @test sort(collect(keys(pins["tools"][tool]["archives"]))) == sort(EXPECTED_PLATFORMS)
         end
-        for tool in ("fastqc", "cd_hit_est", "mafft", "raxml", "gappa")
+        for tool in ("fastqc", "cd_hit_est", "mafft", "raxml", "gappa", "fasttree")
             @test collect(keys(pins["tools"][tool]["archives"])) == ["any"]
         end
     end

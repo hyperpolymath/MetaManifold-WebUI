@@ -201,3 +201,14 @@ do not establish Julia reporting behavior or statistical validity.
 
 Before integration, specify the Julia-to-model mapping and test all publication
 paths, including failed omnibus tests with retained pairwise results.
+
+## CladeCumulus cladistic & phylogenetic invariants (`CladeCumulus`)
+
+| Agda theorem | Plain statement | Julia function | Test (`test/unit/test_clade_cumulus.jl`) |
+|---|---|---|---|
+| `every⇒some`, `every⇒not-absent` | Universal presence across a non-empty case of admissible worlds entails existential presence and refutes universal absence; empty fibres never vacuously pass. | `Epistemic.present_in_every_admissible_world` | epistemic admissibility suite |
+| `validateMove-sound` | An accepted clade move is non-self, acyclic, and targets a clade warranted in every admissible world. | `CladeCumulus.validate_drag_drop` | drag-and-drop suite |
+| `cumulative-conserves-tips` | Bottom-up `cumulativeCount` over any rooted `CladeTree` equals the total read count of its tips without double counting or read loss. | `CladeCumulus.build_clade_tree` | cumulative conservation suite |
+| `child≤parent` | Every child clade has `cumulativeCount` at most its parent's `cumulativeCount`. | `CladeCumulus.build_clade_tree` | monotonicity suite |
+| `faithPD-mono`, `faithPD-bounded` | Over non-negative integer branch scales, Faith's PD is monotone under tip-set inclusion (`S₁ ⊆ S₂`) and bounded above by total tree branch length. | `CladeCumulus.faith_pd`, `Diversity.faith_pd` | Faith's PD suite |
+| `sharedPD≤unionPD`, `unifracNumerator≤Denominator` | Shared active branch length never exceeds union active branch length, bounding unshared UniFrac branch mass in `[0, unionPD]`. | `CladeCumulus.unweighted_unifrac`, `Diversity.unweighted_unifrac` | UniFrac suite |

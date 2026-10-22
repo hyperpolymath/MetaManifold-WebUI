@@ -21,6 +21,8 @@ import type {
   TreeFileInfo, TreeFile, RunRef, ReadFunnelData, ReportItem, ReportKind,
   PlacementDoc, PlacementSummary, PlacementDetail, PlacementQueries, PhyloStep,
   ReferenceTreeDoc, ReferenceTreeSummary, ReferenceTreeDetail, AlignmentQC, TrimSettings,
+  CladeCumulusSourcesResponse, CladeCumulusRequest, CladeCumulusResponse,
+  CladeMoveValidationRequest, CladeMoveValidationResponse,
 } from './types'
 
 import type { FigureDoc } from '../figure/types'
@@ -407,5 +409,14 @@ export const api = {
       put<{ saved: boolean }>(`/api/v1/studies/${study}/trees/${encodeURIComponent(file)}/view`, view),
     delete:   (study: string, file: string) =>
       del<{ deleted: string }>(`/api/v1/studies/${study}/trees/${encodeURIComponent(file)}`),
+  },
+
+  cladeCumulus: {
+    sources: (study: string, run: string, group?: string | null) =>
+      get<CladeCumulusSourcesResponse>(`/api/v1/studies/${study}/runs/${run}/clade-cumulus/sources${gq(group)}`),
+    compute: (study: string, run: string, body: CladeCumulusRequest, group?: string | null) =>
+      post<CladeCumulusResponse>(`/api/v1/studies/${study}/runs/${run}/clade-cumulus${gq(group)}`, body),
+    validateMove: (study: string, run: string, body: CladeMoveValidationRequest, group?: string | null) =>
+      post<CladeMoveValidationResponse>(`/api/v1/studies/${study}/runs/${run}/clade-cumulus/validate-move${gq(group)}`, body),
   },
 }

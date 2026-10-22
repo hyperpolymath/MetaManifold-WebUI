@@ -199,6 +199,11 @@ parse_raxml_version(text::AbstractString) =
 parse_gappa_version(text::AbstractString) =
     _capture(r"^\s*v([0-9][^\s]*)\s*$"m, text, "gappa")
 
+# FastTree 2.1 prints `FastTree version 2.1.11 ...`; FastTree 2.2 prints
+# `FastTree 2.2.0 Double precision, OpenMP (2 threads):` on stderr under `-help`.
+parse_fasttree_version(text::AbstractString) =
+    _capture(r"FastTree\s+(?:version\s+)?([0-9][^\s:]*)"i, text, "fasttree")
+
 ## The probe registry
 # A declarative table of (component, probe command, parser). `key` is the
 # config/tools.yml key and the name this module answers to; `name` is what the tool
@@ -224,8 +229,9 @@ const TOOL_PROBES = OrderedDict{String,ToolProbe}(
     "mafft"      => ToolProbe("mafft",      "mafft",      ["--version"], :stderr, parse_mafft_version),
     "trimal"     => ToolProbe("trimal",     "trimal",     ["--version"], :stdout, parse_trimal_version),
     "iqtree"     => ToolProbe("iqtree",     "iqtree",     ["--version"], :stdout, parse_iqtree_version),
-    "raxml"      => ToolProbe("raxml",      "raxml",      ["-v"],        :stdout, parse_raxml_version),
-    "gappa"      => ToolProbe("gappa",      "gappa",      ["--version"], :stdout, parse_gappa_version),
+    "raxml"      => ToolProbe("raxml",      "raxml",      ["-v"],         :stdout, parse_raxml_version),
+    "gappa"      => ToolProbe("gappa",      "gappa",      ["--version"],  :stdout, parse_gappa_version),
+    "fasttree"   => ToolProbe("fasttree",   "FastTree",   ["-help"],      :stderr, parse_fasttree_version),
 )
 
 ## Command execution

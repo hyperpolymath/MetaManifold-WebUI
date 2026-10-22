@@ -739,3 +739,159 @@ export interface ReportItem {
   file:  string
   added: string
 }
+
+export type EpistemicStatus = 'present_in_every' | 'present_in_some' | 'absent' | 'sans_fibre'
+
+export type CladeHierarchyMode = 'combined' | 'phylogenetic' | 'taxonomic'
+
+export type CladeTreeSource =
+  | 'auto'
+  | 'study_tree'
+  | 'build_fasttree'
+  | 'build_iqtree'
+  | 'build_nj'
+  | 'inline_newick'
+
+export interface CladeNodeData {
+  id: string
+  name: string
+  rank: string
+  direct_count: number
+  cumulative_count: number
+  cumulative_frequency: number
+  residual_count: number
+  cloud_size: number
+  branch_length: number
+  support: number | null
+  subtree_pd: number
+  dominant_taxon: string | null
+  taxon_purity: number | null
+  monophyletic: boolean | null
+  epistemic_status: EpistemicStatus
+  colour: string
+  children: CladeNodeData[]
+}
+
+export interface CladeCumulusSourcesResponse {
+  study: string
+  run: string
+  tables: {
+    table: string
+    row_count: number
+    sample_count: number
+    has_sequence: boolean
+    ranks: string[]
+  }[]
+  trees: TreeFileInfo[]
+  tools: {
+    key: string
+    available: boolean
+    version: string | null
+    path: string | null
+    sha256: string | null
+  }[]
+  proposals: string[]
+}
+
+export interface CladeCumulusRequest {
+  table?: string
+  mode?: CladeHierarchyMode
+  treeSource?: CladeTreeSource
+  treeFile?: string
+  newick?: string
+  maxAsvs?: number
+  supportThreshold?: number
+  lwrThreshold?: number
+  seed?: number
+}
+
+export interface CladeCumulusDiversity {
+  samples: string[]
+  mapped_tips: number
+  faith_pd: Record<string, number>
+  unweighted_unifrac: number[][]
+  weighted_unifrac: number[][]
+  normalized_weighted_unifrac: number[][]
+  top_branch_contributions: {
+    clade_id: string
+    label: string
+    is_tip: boolean
+    branch_length: number
+    freq_a: number
+    freq_b: number
+    contribution: number
+  }[]
+}
+
+export interface CladeCumulusReceipt {
+  schema_version: number
+  study: string
+  run: string
+  source_digests: Record<string, string>
+  tool_records: {
+    name: string
+    version: string
+    path: string
+    sha256: string
+    probed_by: string
+  }[]
+  parameters: Record<string, unknown>
+  warnings: string[]
+  created_at: string
+  checksum: string
+}
+
+export interface CladeCumulusResponse {
+  study: string
+  run: string
+  table: string
+  mode: CladeHierarchyMode
+  root: CladeNodeData
+  plotly: { data: unknown[]; layout: Record<string, unknown> }
+  phylogeny: {
+    newick: string | null
+    midpoint_rooted: boolean
+    subsampled: boolean
+    total_input_asvs: number
+    retained_asvs: number
+    retained_read_fraction: number
+  }
+  concordance: {
+    dispersed_taxa: {
+      taxon: string
+      tip_count: number
+      monophyletic: boolean
+      note: string
+    }[]
+    discordant_clades: {
+      clade_id: string
+      label: string
+      support: number | null
+      cumulative_reads: number
+      dominant_taxon: string | null
+      taxon_purity: number | null
+      taxa_breakdown: Record<string, number>
+    }[]
+  }
+  diversity: CladeCumulusDiversity | null
+  warnings: string[]
+  receipt: CladeCumulusReceipt
+}
+
+export interface CladeMoveValidationRequest extends CladeCumulusRequest {
+  sourceId: string
+  targetId: string
+  saveProposal?: boolean
+}
+
+export interface CladeMoveValidationResponse {
+  allowed: boolean
+  source_id: string
+  target_id: string
+  target_status: string
+  target_colour: string
+  reason: string
+  proposal_file: string | null
+  proposed_root: CladeNodeData | null
+  proposed_plotly?: { data: unknown[]; layout: Record<string, unknown> }
+}
