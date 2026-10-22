@@ -304,134 +304,37 @@ not exclude samples from this analysis.
   [Zero handling, posterior semantics, warnings and references](docs/statistics/zero-handling.md)
   explain why every replacement is biased and when a count, occupancy or
   zero-inflated model is preferable.
-- `multinomial`: one multinomial logistic model over the whole composition
-  (Songbird's model, Morton et al. 2019). The effect is a log2 fold change in
-  relative abundance against a reference taxon. `offset` is not used and no zero
-  is replaced: a zero count is part of the likelihood. `mn_penalty` sets an L2
-  (ridge) penalty on the log-odds (0 is maximum likelihood); `mn_reference_taxon`
-  names the reference (empty picks the most abundant fitted taxon).
-- `dirichlet_multinomial`: the same model with a Dirichlet prior over the
-  composition, whose concentration absorbs between-sample overdispersion (La
-  Rosa et al. 2012). The result reports the concentration `c` and
-  `theta = 1/(1+c)`; `theta` near 0 is the multinomial. `dm_overdispersion_method`
-  picks the estimator: `mle` (default) profiles the likelihood alternately with
-  the coefficients, `mom` takes one method-of-moments estimate.
+- `ancom_bc`: ANCOM-BC sampling-fraction bias-corrected log-linear model
+  (Lin & Peddada 2020, *Nat. Commun.* 11:3514). Estimates within-group sample
+  offsets and between-group sampling-fraction bias via an E-M Gaussian mixture
+  on `log(counts + 1)`, propagating bias-estimation variance into two-sided Wald
+  tests. The effect is a bias-corrected log2 fold change; recommended when
+  asymmetric shifts or microbial load changes would bias standard CLR centering
+  (requires at least 3 tested taxa; assumes fewer than half are differential).
+- `aldex2`: Dirichlet(`count + 0.5`) Monte-Carlo CLR model (Fernandes et al.
+  2013, 2014). Draws `mc_samples` (default 128, seeded by the study's `seed`)
+  posterior instances per sample and reports standardized CLR effect sizes with
+  consistent-sign posterior predictive Welch's t-test p-values; recommended for
+  sparse or variable-depth cohorts where deterministic zero imputation is
+  undesirable.
+- `songbird`: compositional baseline-category multinomial regression with
+  reference-frame invariant CLR-centred differentials summing to zero across
+  fitted taxa (Morton et al. 2019, *Nat. Commun.* 10:2719; Zhang et al. 2017).
+  Conditions on read totals without extra-multinomial biological overdispersion;
+  completely separated single-group taxa are marked `failed` rather than
+  diverging.
 
 For every method, `min_prevalence` (default 0) filters taxa by the fraction of
-samples with nonzero counts. Benjamini–Hochberg adjustment is applied to every
-fitted taxon and cannot be turned off: it includes only taxa that produced a
-p-value. Failed or filtered taxa have no substitute p-value; inspect their
-status and note in the results table. Invalid input or an unavailable required
-R package produces an explicit error.
+samples with nonzero counts, and Benjamini–Hochberg adjustment is mandatory
+across the fitted taxa that produced a p-value. Failed or filtered taxa have no
+substitute p-value; inspect their status and note in the results table. Invalid
+input or an unavailable required R package produces an explicit error. See
+`bench/compositional_differential/README.md` for method-selection guidance,
+benchmarks, and literature citations.
 
-#### Why a count model rather than a t-test
-
-Sequencing measures a sample of the library, not an absolute quantity: a
-sample of twice the depth has twice every count, and one taxon can only increase
-at another's expense. Comparisons of raw or rarefied abundances therefore carry
-the compositionality problem (Gloor et al. 2017). The multinomial models fit the
-whole composition at once and condition on each sample's total, so each
-coefficient is the log ratio of two taxa. That ratio is unchanged when every
-count in a sample is multiplied by a constant, which is why no size factor and no
-pseudocount is needed. The intercept is the log-odds of the taxon against the
-reference at the reference group; the group coefficient is the change in that
-log-odds, i.e. a log fold change in relative abundance. Because a log ratio is
-the sum of log ratios through any third taxon, every reported effect is coherent
-under compositionality and can be re-expressed against any other taxon.
-
-#### Choosing the reference taxon
-
-Every reported effect is anchored on the reference taxon, so the choice matters
-for interpretability and for stability, but not for the fit: the likelihood and
-the log ratio between two non-reference taxa are the same whichever taxon is the
-reference. An empty `mn_reference_taxon` takes the most abundant taxon that
-passes the prevalence filter. An explicit one must be a taxon at the analysed
-rank with reads in at least half the samples, and reads in both groups; a taxon
-seen in fewer samples makes every ratio it anchors unstable, and a taxon absent
-from one group has no finite log fold change, so both are refused with the
-reason. Taxa with no reads in one group are removed from the composition and
-listed as `failed` with their note, rather than fitted: in a joint model a single
-diverging coefficient would otherwise pull the whole fit with it.
-
-#### Overdispersion
-
-The multinomial treats every read as independent, so its variance is the sampling
-variance and nothing else. Real samples vary more than that: the same community,
-sequenced twice, differs by more than resampling reads from one library. The
-Dirichlet-multinomial adds that between-sample variation as a concentration `c`,
-with `theta = 1/(1+c)` the model's intra-sample correlation; the count variance
-becomes `N p (1 - p) (1 + (N - 1) theta)`. When the data are overdispersed the
-multinomial's standard errors are too small, and the Dirichlet-multinomial
-corrects them; when they are not, `c` runs to its upper bound, the fit collapses
-to the multinomial exactly, and the affected rows are marked `boundary` with a
-note saying so. The two models are otherwise the same model on the same scale,
-so their coefficients are directly comparable.
-
-#### Which model to use
-
-| Data and question | Method |
-| --- | --- |
-| Counts, two groups, few samples, expected overdispersion | `nb_glm` (per-taxon negative binomial; the default) |
-| Counts, many taxa and samples, a joint composition and a single reference | `multinomial` (Songbird's model) |
-| As above, with visible between-sample overdispersion | `dirichlet_multinomial` |
-| Composition already transformed, or a quick robust rank-based check | `clr_welch` |
-
-`nb_glm` fits a negative-binomial GLM per taxon with a library-size offset: it
-tolerates overdispersion through its own dispersion parameter and is the safer
-choice with very few samples per group, but each taxon is fitted independently
-and the offsets are estimated, not modelled. The multinomial models borrow
-strength across taxa by fitting one model, and their effect has a direct
-compositional reading, at the cost of a joint fit that a single separated taxon
-can compromise (hence the separation check and the optional ridge penalty), and
-of a dense information matrix that caps a fit at 1000 taxa. Songbird's L1
-sparsity path is not implemented: a lasso estimate has no valid Wald standard
-error, so this implements the L2-penalised model and Wald inference instead.
-
-The multinomial models are fitted in Julia and need no R package.
-`max_iter`, `tolerance` and `max_seconds` bound one fit; a fit that runs out of
-time fails with an explicit error instead of holding the request open. Runtime
-and memory at 100, 1000 and 10000 taxa are measured by
-`bench/compositional_scaling/scaling.jl`, which writes `results/scaling.csv`.
-
-Implementation and reference tests: `src/analysis/compositional.jl` (the two
-models), `src/analysis/differential.jl`, `src/server/routes/analysis.jl`, and
-`test/unit/test_differential.jl`. The reference values in the tests come from an
-independent implementation and are quoted to 12 digits; the special functions
-are cross-checked against mpmath at 40 digits.
-
-### Evidence Mode
-
-The **Evidence** tab turns a run's outputs into a citable epistemic record. A
-claim is a sentence a reader could disagree with, a **scope** naming the part of
-the data it is about (its *fibre*: the rows whose value at a rank, or whose
-category in a set, is one of the named labels), and a **warrant** saying why it
-follows. Claims are stored in `projects/{study}/[<group>/]<run>/evidence/claims.yml`
-and can be downloaded as that exact YAML.
-
-Three views share one record:
-
-- **Claims** — the epistemic editor (avec fibre). A claim cannot be saved
-  without a scope and at least one value, and cannot be marked `supported`
-  without a measurement, citation or inference warrant: a definition alone
-  supports nothing.
-- **Fibre & echo** — the fibre's share of every sample, its largest members, and
-  the same fibre seen through a second projection: the other classifier at the
-  same rank, and the parent rank. Agreement is reported with a verdict;
-  disagreement is a limit on how strongly the claim may be stated, and an echo
-  that cannot be computed says so rather than vanishing.
-- **Residuals** — where the fibre departs from a null you declare, either
-  `proportional` (the fibre distributed across samples as the library is) or a
-  stated `claim_share`, with Pearson residuals, a log2 ratio and a χ² statistic
-  printed without a p-value. The worst departure is shown first.
-
-The tab's Provenance card states whether `attestation.yml` is absent, degraded
-or internally inconsistent before any claim is read. Longer notes on the
-definitions, the schema and the limits are kept in `docs/evidence-mode.md`
-(documentation under `docs/` is kept local by policy — see `.gitignore`).
-
-Implementation: `src/core/evidence.jl` (schema, residuals, verdicts),
-`src/server/routes/evidence.jl` (the SQL), `frontend/src/evidence/`
-(editor, fibre visualiser, residual explorer) and `test/unit/test_evidence.jl`.
+Implementation and reference tests: `src/analysis/differential.jl`,
+`src/server/routes/analysis.jl`, `bench/compositional_differential/benchmark.jl`,
+and `test/unit/test_differential.jl`.
 
 ### Figures and report
 
@@ -769,12 +672,13 @@ analysis:
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
   differential:
-    method: nb_glm               # nb_glm | clr_welch
+    method: nb_glm               # nb_glm | clr_welch | ancom_bc | aldex2 | songbird
     dispersion: ml               # nb_glm: ml | glmGamPoi
     replacement_method: bayesian_multiplicative
                                  # clr_welch: bayesian_multiplicative | multiplicative_replacement
     replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
     bayesian_alpha: ~            # clr_welch: null (GBM estimate) or a number > 0
+    mc_samples: 128              # aldex2: Dirichlet Monte-Carlo instances in [16, 4096]
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
 ```

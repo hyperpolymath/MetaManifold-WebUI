@@ -403,19 +403,15 @@ export interface DifferentialRow {
   status: DifferentialStatus
   note: string
   /**
-   * nb_glm: natural-log fold change, contrast over reference. multinomial and
-   * dirichlet_multinomial: natural-log fold change in relative abundance
-   * against the reference taxon. clr_welch: mean CLR of contrast minus mean CLR
-   * of reference, which is not a fold change.
+   * nb_glm / ancom_bc: natural-log fold change, contrast over reference.
+   * clr_welch: mean CLR difference. aldex2: standardized CLR effect size.
+   * songbird: CLR-centred multinomial differential.
    */
   estimate: number | null
-  /**
-   * nb_glm, multinomial and dirichlet_multinomial; null for clr_welch and for
-   * the reference taxon's own row.
-   */
+  /** nb_glm and ancom_bc; null for CLR/differential methods. */
   log2_fold_change: number | null
   standard_error: number | null
-  /** z (nb_glm, multinomial, dirichlet_multinomial) or Welch's t (clr_welch). */
+  /** Wald z / W (nb_glm, ancom_bc, songbird) or Welch's t (clr_welch, aldex2). */
   statistic: number | null
   pvalue: number | null
   /** Benjamini-Hochberg adjusted; null outside the tested family. */
@@ -425,8 +421,7 @@ export interface DifferentialRow {
   prevalence: number
 }
 
-export type DifferentialMethod =
-  | 'nb_glm' | 'clr_welch' | 'multinomial' | 'dirichlet_multinomial'
+export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'ancom_bc' | 'aldex2' | 'songbird'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -442,10 +437,7 @@ export interface DifferentialResult {
   groups: { reference: string; contrast: string }
   n_samples: Record<string, number>
   effect: DifferentialEffect
-  /**
-   * Empty for clr_welch, multinomial and dirichlet_multinomial, none of which
-   * takes a library-size offset.
-   */
+  /** Empty for compositional methods, which take no library-size offset. */
   size_factors: { sample: string; group: string; factor: number }[]
   config: {
     method: DifferentialMethod
@@ -459,16 +451,10 @@ export interface DifferentialResult {
     replacement_delta?: number
     /** Null uses GBM's estimated concentration; positive values override it. */
     bayesian_alpha?: number | null
-    /** multinomial and dirichlet_multinomial: the taxon every ratio is against. */
-    mn_reference_taxon?: string
-    /** multinomial and dirichlet_multinomial: L2 penalty on the log-odds. */
-    mn_penalty?: number
-    /** dirichlet_multinomial only: how the concentration was estimated. */
-    dm_overdispersion_method?: 'mle' | 'mom'
-    /** multinomial and dirichlet_multinomial: the optimiser settings used. */
-    tolerance?: number
-    max_iter?: number
-    max_seconds?: number
+    /** aldex2 only. */
+    mc_samples?: number
+    /** aldex2 only. */
+    seed?: number
   }
   diagnostics: {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
@@ -484,14 +470,26 @@ export interface DifferentialResult {
         concentration: { sample: string; value: number }[]
       }
     }
-    /** multinomial and dirichlet_multinomial only. */
-    model?: {
-      reference_taxon: string; penalty: number; n_parameters: number; iterations: number
-      converged: boolean; log_likelihood: number; runtime_seconds: number; n_taxa_fitted: number
+    /** ancom_bc only. */
+    ancom_bc?: {
+      delta: number | null; delta_se: number | null
+      pi0: number | null; pi1: number | null; pi2: number | null
+      em_iterations: number; pseudo_count: number
+      n_taxa_in_composition: number; n_taxa_unobserved: number
+      warnings: string[]
     }
-    /** dirichlet_multinomial only: c and theta = 1 / (1 + c) in (0, 1). */
-    overdispersion?: {
-      method: 'mle' | 'mom'; concentration: number; theta: number; at_bound: boolean
+    /** aldex2 only. */
+    aldex2?: {
+      mc_samples: number; seed: number; dirichlet_prior: number; test: string
+      n_taxa_in_composition: number; n_taxa_unobserved: number
+    }
+    /** songbird only. */
+    songbird?: {
+      reference_taxon: string | null; reference_prevalence?: number
+      n_identifiable_taxa: number; n_separated_taxa: number
+      iterations?: number; loglik?: number; max_abs_gradient?: number; newton_decrement?: number
+      n_taxa_in_composition: number; n_taxa_unobserved: number
+      caveat?: string
     }
   }
   rows: DifferentialRow[]

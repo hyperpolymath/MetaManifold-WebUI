@@ -203,15 +203,21 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 `replaced values hold ${(100 * z.median_imputed_fraction).toPrecision(2)}% of the median sample ` +
                 `and at most ${(100 * z.max_imputed_fraction).toPrecision(2)}% of any, and are not measurements.`
             })()}
-            {result.diagnostics.model && (() => {
-              const m = result.diagnostics.model
-              return ` Reference taxon: ${m.reference_taxon}; ${m.n_parameters} coefficients, ` +
-                `penalty ${m.penalty}, ${m.iterations} Newton steps in ${m.runtime_seconds.toPrecision(2)} s.`
+            {result.diagnostics.ancom_bc && (() => {
+              const b = result.diagnostics.ancom_bc
+              const warn = b.warnings.length > 0 ? ` Warning: ${b.warnings.join('; ')}.` : ''
+              return ` Estimated sampling-fraction shift δ = ${formatStat(b.delta)} (SE ${formatStat(b.delta_se)}, ` +
+                `${b.em_iterations} E-M steps over ${b.n_taxa_in_composition} taxa).${warn}`
             })()}
-            {result.diagnostics.overdispersion && (() => {
-              const o = result.diagnostics.overdispersion
-              return ` Concentration ${o.concentration.toPrecision(3)} by ${o.method}, ` +
-                `theta = ${o.theta.toPrecision(3)}${o.at_bound ? ' (at a bound: see the row notes)' : ''}.`
+            {result.diagnostics.aldex2 && (() => {
+              const a = result.diagnostics.aldex2
+              return ` ${a.mc_samples} Dirichlet(count + ${a.dirichlet_prior}) instances over ` +
+                `${a.n_taxa_in_composition} taxa (seed ${a.seed}); ALDEx2 integrates over posterior draws rather than reporting a single SE.`
+            })()}
+            {result.diagnostics.songbird && (() => {
+              const s = result.diagnostics.songbird
+              const sep = s.n_separated_taxa > 0 ? ` (${s.n_separated_taxa} separated single-group taxa excluded)` : ''
+              return ` Reference frame taxon: ${s.reference_taxon ?? 'none'} over ${s.n_identifiable_taxa} identifiable taxa${sep}.`
             })()}
           </p>
 
@@ -300,7 +306,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
                   <th style={{ ...head, textAlign: 'left' }}>{result.rank}</th>
                   <th style={head}>{result.effect.label}</th>
-                  {result.config.method === 'nb_glm' && <th style={head}>Estimate (ln)</th>}
+                  {result.effect.key === 'log2_fold_change' && <th style={head}>Estimate (ln)</th>}
                   <th style={head}>SE</th>
                   <th style={head}>p</th>
                   <th style={head}>padj (BH)</th>
@@ -312,7 +318,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                   <tr key={r.taxon} style={{ borderBottom: '1px solid var(--color-border)' }}>
                     <td style={{ ...cell, textAlign: 'left' }}>{r.taxon}</td>
                     <td style={cell}>{formatStat(effectValue(result, r))}</td>
-                    {result.config.method === 'nb_glm' && <td style={cell}>{formatStat(r.estimate)}</td>}
+                    {result.effect.key === 'log2_fold_change' && <td style={cell}>{formatStat(r.estimate)}</td>}
                     <td style={cell}>{formatStat(r.standard_error)}</td>
                     <td style={cell}>{formatStat(r.pvalue)}</td>
                     <td style={cell}>{formatStat(r.padj)}</td>

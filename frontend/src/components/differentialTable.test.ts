@@ -138,3 +138,43 @@ describe('clr_welch results', () => {
     expect(configLine(alpha)).toContain('bayesian_alpha 2.5')
   })
 })
+
+describe('advanced compositional methods (ancom_bc, aldex2, songbird)', () => {
+  test('ancom_bc reports bias-corrected log2 fold change and clean CSV config line', () => {
+    const bc: DifferentialResult = {
+      ...result,
+      method: 'ANCOM-BC',
+      effect: { key: 'log2_fold_change', label: 'Bias-corrected log2 FC' },
+      config: { method: 'ancom_bc', min_prevalence: 0.1 },
+      rows: [{ ...result.rows[0], estimate: 1.3862943611198906, log2_fold_change: 2, dispersion_theta: null }],
+    }
+    expect(effectValue(bc, bc.rows[0])).toBe(2)
+    expect(configLine(bc)).toBe('method ancom_bc, min_prevalence 0.1; effect is bias-corrected log2 fold change (Lin & Peddada 2020)')
+  })
+
+  test('aldex2 records mc_samples and seed in CSV metadata and leaves absent SE empty', () => {
+    const ax: DifferentialResult = {
+      ...result,
+      method: 'ALDEx2',
+      effect: { key: 'estimate', label: 'ALDEx2 effect size' },
+      config: { method: 'aldex2', min_prevalence: 0.05, mc_samples: 128, seed: 123 },
+      rows: [{ ...result.rows[0], estimate: 1.85, log2_fold_change: null, standard_error: null, dispersion_theta: null }],
+    }
+    expect(effectValue(ax, ax.rows[0])).toBe(1.85)
+    expect(configLine(ax)).toBe('method aldex2, mc_samples 128, seed 123, min_prevalence 0.05; estimate is an ALDEx2 standardized CLR effect size, not a fold change')
+    const csvRows = differentialCsv(ax).trimEnd().split('\r\n')
+    expect(csvRows[4]).toBe('Bacteroides,ok,,1.85,,5.545,2.9e-8,5.8e-8,,1,')
+  })
+
+  test('songbird reports CLR-centred multinomial differential metadata', () => {
+    const sb: DifferentialResult = {
+      ...result,
+      method: 'Songbird',
+      effect: { key: 'estimate', label: 'Differential (CLR log-ratio)' },
+      config: { method: 'songbird', min_prevalence: 0.2 },
+      rows: [{ ...result.rows[0], estimate: -0.92, log2_fold_change: null, dispersion_theta: null }],
+    }
+    expect(effectValue(sb, sb.rows[0])).toBe(-0.92)
+    expect(configLine(sb)).toBe('method songbird, min_prevalence 0.2; estimate is a CLR-centred multinomial differential, not an absolute fold change')
+  })
+})
