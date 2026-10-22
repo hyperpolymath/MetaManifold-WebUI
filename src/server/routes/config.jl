@@ -152,6 +152,11 @@ function _config_value_error(key::String, value)
         return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
             "$key must be empty or a finite number greater than 0"
     end
+    if key == "analysis.differential.mc_samples"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) &&
+                Differential.MIN_MC_SAMPLES <= v <= Differential.MAX_MC_SAMPLES) ? nothing :
+            "$key must be a whole number in [$(Differential.MIN_MC_SAMPLES), $(Differential.MAX_MC_SAMPLES)]"
+    end
     if haskey(_ENUM_VALUES, key)
         allowed = _ENUM_VALUES[key]
         v in allowed || return "$key must be one of $(join(filter(!isnothing, collect(allowed)), ", "))"
@@ -212,9 +217,11 @@ function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
     end
     method = value(keys_[1], "nb_glm")
     dispersion = value(keys_[2], "ml")
-    if method isa AbstractString && dispersion isa AbstractString &&
-       lowercase(strip(method)) == "clr_welch" && lowercase(strip(dispersion)) == "glmgampoi"
-        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with clr_welch"
+    if method isa AbstractString && dispersion isa AbstractString
+        m = lowercase(strip(method))
+        if m in Differential.METHODS && m != "nb_glm" && lowercase(strip(dispersion)) == "glmgampoi"
+            return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with $m"
+        end
     end
     nothing
 end

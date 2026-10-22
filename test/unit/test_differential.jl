@@ -173,7 +173,12 @@ end
         @test DifferentialConfig().replacement_delta == 0.65
         @test DifferentialConfig().replacement_method == "bayesian_multiplicative"
         @test isnothing(DifferentialConfig().bayesian_alpha)
+        @test DifferentialConfig().mc_samples == 128
         @test DifferentialConfig(; method="clr_welch", replacement_delta=0.3).replacement_delta == 0.3
+        for m in ("ancom_bc", "aldex2", "songbird", "  ANCOM_BC ", "ALDEx2", "Songbird")
+            @test DifferentialConfig(; method=m).method == lowercase(strip(m))
+        end
+        @test DifferentialConfig(; method="aldex2", mc_samples=256).mc_samples == 256
         @test DifferentialConfig(method="clr_welch",
             replacement_method=" MULTIPLICATIVE_REPLACEMENT ").replacement_method == "multiplicative_replacement"
         @test DifferentialConfig(method="clr_welch", bayesian_alpha=2.5).bayesian_alpha == 2.5
@@ -190,10 +195,15 @@ end
         @test DifferentialConfig(dispersion="glmGamPoi").dispersion == "glmGamPoi"
         @test DifferentialConfig(dispersion="  GLMGAMPOI ").dispersion == "glmGamPoi"
         @test_throws ArgumentError DifferentialConfig(dispersion="shrinkage")
-        @test_throws ArgumentError DifferentialConfig(method="clr_welch", dispersion="glmGamPoi")
-        @test DifferentialConfig(method="clr_welch").dispersion == "ml"
+        for m in ("clr_welch", "ancom_bc", "aldex2", "songbird")
+            @test_throws ArgumentError DifferentialConfig(method=m, dispersion="glmGamPoi")
+            @test DifferentialConfig(method=m).dispersion == "ml"
+        end
         for d in (0, 1, -0.5, NaN, Inf)
             @test_throws ArgumentError DifferentialConfig(; method="clr_welch", replacement_delta=d)
+        end
+        for mc in (0, 15, 4097, -10, 64.5, true, false, NaN, Inf)
+            @test_throws ArgumentError DifferentialConfig(; method="aldex2", mc_samples=mc)
         end
         @test occursin("underflow", only(MetaManifold.Differential._delta_warnings(0.005)))
         @test occursin("substantial mass", only(MetaManifold.Differential._delta_warnings(0.9)))
@@ -501,7 +511,16 @@ end
         @test !isnothing(SV._config_value_error("analysis.differential.offset", "css"))
         @test isnothing(SV._config_value_error("analysis.differential.min_prevalence", 0.1))
         @test isnothing(SV._config_value_error("analysis.differential.method", "clr_welch"))
+        for m in ("ancom_bc", "aldex2", "songbird")
+            @test isnothing(SV._config_value_error("analysis.differential.method", m))
+        end
         @test !isnothing(SV._config_value_error("analysis.differential.method", "ancombc"))
+        @test isnothing(SV._config_value_error("analysis.differential.mc_samples", 128))
+        @test isnothing(SV._config_value_error("analysis.differential.mc_samples", 16))
+        @test isnothing(SV._config_value_error("analysis.differential.mc_samples", 4096))
+        for bad_mc in (0, 15, 4097, 64.5, true, "128", nothing)
+            @test !isnothing(SV._config_value_error("analysis.differential.mc_samples", bad_mc))
+        end
         for dispersion in ("ml", "glmGamPoi", " ML ", "  GLMGAMPOI ")
             @test isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
         end
@@ -566,11 +585,13 @@ end
     @testset "Config rejects incompatible effective dispersion pairs" begin
         SV = MetaManifold.Server
         keym, keyd = "analysis.differential.method", "analysis.differential.dispersion"
-        @test SV._differential_pair_error(Dict(keym=>"clr_welch"), Dict(keyd=>"glmGamPoi")) !== nothing
-        @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>"clr_welch")) !== nothing
+        for m in ("clr_welch", "ancom_bc", "aldex2", "songbird")
+            @test SV._differential_pair_error(Dict(keym=>m), Dict(keyd=>"glmGamPoi")) !== nothing
+            @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>m)) !== nothing
+            @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>m, keyd=>"ml")) === nothing
+        end
         @test SV._differential_pair_error(Dict(keym=>(; value="clr_welch",source="study")), Dict(keyd=>" GLMGAMPOI ")) !== nothing
         @test SV._differential_pair_error(Dict(keym=>"clr_welch"), Dict(keym=>"nb_glm",keyd=>"glmGamPoi")) === nothing
-        @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>"clr_welch",keyd=>"ml")) === nothing
         _da_fixture() do
             root = SV.ServerState._root[]
             path = joinpath(root,"data","studyD","pipeline.yml")
@@ -1289,6 +1310,443 @@ end
                 reval("rm(requireNamespace)")
             end
             @test !rcopy(Bool, reval("exists('requireNamespace', envir = globalenv(), inherits = FALSE)"))
+        end
+    end
+
+    ## Advanced compositional methods (#5): ANCOM-BC, ALDEx2, Songbird ----------
+
+    # Deterministic 64-bit LCG (matching test/occupancy_disagreement_test.jl) so
+    # the three benchmark datasets (`mock`, `gut`, `soil`) are identical across
+    # Julia versions and platforms without pulling extra RNG dependencies.
+    _da_u01!(st::Base.RefValue{UInt64}) = begin
+        st[] = st[] * 0x5851f42d4c957f2d + 0x14057b7ef767814f
+        (Float64(st[] >> 11) + 0.5) / Float64(UInt64(1) << 53)
+    end
+    _da_norm!(st::Base.RefValue{UInt64}, mu::Float64=0.0, sd::Float64=1.0) = begin
+        u1 = _da_u01!(st)
+        u2 = _da_u01!(st)
+        mu + sd * sqrt(-2.0 * log(u1)) * cos(2.0 * pi * u2)
+    end
+
+    function _da_mock_dataset()
+        st = Ref(UInt64(20260501))
+        d, n_g = 40, 10
+        base = [exp(4.2 + 0.8 * _da_norm!(st)) for _ in 1:d]
+        fold = [j <= 3 ? 8.0 : (j <= 5 ? 0.25 : 1.0) for j in 1:d]
+        mat = Matrix{Int}(undef, 2 * n_g, d)
+        row_idx = 0
+        for grp in (0, 1), _ in 1:n_g
+            row_idx += 1
+            sf = exp(_da_norm!(st, 0.0, 0.35))
+            for j in 1:d
+                fc = grp == 1 ? fold[j] : 1.0
+                mat[row_idx, j] = max(1, round(Int, sf * base[j] * fc * exp(_da_norm!(st, 0.0, 0.18))))
+            end
+        end
+        samples_ = ["mock_s$i" for i in 1:(2 * n_g)]
+        taxa_ = ["mock_t$j" for j in 1:d]
+        groups_ = vcat(fill("A", n_g), fill("B", n_g))
+        (counts=mat, samples=samples_, taxa=taxa_, groups=groups_,
+         up=taxa_[1:3], down=taxa_[4:5], null_taxa=taxa_[6:d])
+    end
+
+    function _da_gut_dataset()
+        st = Ref(UInt64(20260502))
+        d, n_g = 60, 12
+        base = [j <= 56 ? exp(5.5 - 3.8 * ((j - 1) / 55.0)) : 12.0 for j in 1:d]
+        mat = Matrix{Int}(undef, 2 * n_g, d)
+        row_idx = 0
+        for grp in (0, 1), _ in 1:n_g
+            row_idx += 1
+            sf = (grp == 1 ? 0.35 : 1.0) * exp(_da_norm!(st, 0.0, 0.30))
+            for j in 1:d
+                if j >= 57
+                    mat[row_idx, j] = grp == 0 ? 0 : max(2, round(Int, 12.0 * exp(_da_norm!(st, 0.0, 0.25))))
+                else
+                    fc = (grp == 1 && j <= 8) ? 8.0 : 1.0
+                    mu = sf * base[j] * fc * exp(_da_norm!(st, 0.0, 0.22))
+                    mat[row_idx, j] = (j >= 36 && _da_u01!(st) < 0.35) ? 0 : round(Int, mu)
+                end
+            end
+        end
+        samples_ = ["gut_s$i" for i in 1:(2 * n_g)]
+        taxa_ = ["gut_t$j" for j in 1:d]
+        groups_ = vcat(fill("Control", n_g), fill("Case", n_g))
+        (counts=mat, samples=samples_, taxa=taxa_, groups=groups_,
+         up=taxa_[1:8], core_null=taxa_[9:35], separated=taxa_[57:60])
+    end
+
+    function _da_soil_dataset()
+        st = Ref(UInt64(20260503))
+        d, n_g = 100, 10
+        base = [exp(4.0 + 0.5 * _da_norm!(st)) for _ in 1:d]
+        mat = Matrix{Int}(undef, 2 * n_g, d)
+        row_idx = 0
+        for grp in (0, 1), _ in 1:n_g
+            row_idx += 1
+            sf = exp(_da_norm!(st, 0.0, 0.25))
+            for j in 1:d
+                fc = grp == 1 ? (j <= 6 ? 6.0 : (j <= 12 ? (1.0 / 6.0) : 1.0)) : 1.0
+                mat[row_idx, j] = max(1, round(Int, sf * base[j] * fc * exp(_da_norm!(st, 0.0, 0.16))))
+            end
+        end
+        samples_ = ["soil_s$i" for i in 1:(2 * n_g)]
+        taxa_ = ["soil_t$j" for j in 1:d]
+        groups_ = vcat(fill("BulkSoil", n_g), fill("Rhizosphere", n_g))
+        (counts=mat, samples=samples_, taxa=taxa_, groups=groups_,
+         up=taxa_[1:6], down=taxa_[7:12], null_taxa=taxa_[13:d])
+    end
+
+    @testset "ANCOM-BC: bias recovery, reflection symmetry, and three-dataset benchmarks" begin
+        if !HAVE_R
+            @test_skip false
+        else
+            mock = _da_mock_dataset()
+            res_mock = differential_abundance(mock.counts, mock.samples, mock.taxa, mock.groups;
+                                              reference="A", contrast="B",
+                                              config=DifferentialConfig(; method="ancom_bc"))
+            @test res_mock["status"] == "ok"
+            @test res_mock["effect"] == Dict("key" => "log2_fold_change", "label" => "Bias-corrected log2 FC")
+            @test res_mock["config"] == Dict{String,Any}("method" => "ancom_bc", "min_prevalence" => 0.0)
+            @test isempty(res_mock["size_factors"])
+            @test isempty(res_mock["diagnostics"]["ancom_bc"]["warnings"])
+            bym = Dict(r["taxon"] => r for r in res_mock["rows"])
+            for t in mock.up
+                @test bym[t]["log2_fold_change"] > 2.0
+                @test bym[t]["estimate"] ≈ bym[t]["log2_fold_change"] * log(2)
+                @test bym[t]["padj"] < 0.01
+            end
+            for t in mock.down
+                @test bym[t]["log2_fold_change"] < -1.2
+                @test bym[t]["padj"] < 0.01
+            end
+            @test count(t -> bym[t]["padj"] < 0.05, mock.null_taxa) <= 2
+            @test [bym[t]["padj"] for t in mock.taxa] ≈ bh_adjust([bym[t]["pvalue"] for t in mock.taxa])
+
+            # Swapping reference and contrast flips signs and preserves p-values.
+            swap_mock = differential_abundance(mock.counts, mock.samples, mock.taxa, mock.groups;
+                                               reference="B", contrast="A",
+                                               config=DifferentialConfig(; method="ancom_bc"))
+            bys = Dict(r["taxon"] => r for r in swap_mock["rows"])
+            for t in mock.taxa
+                @test isapprox(bym[t]["estimate"], -bys[t]["estimate"]; atol=1e-8)
+                @test isapprox(bym[t]["pvalue"], bys[t]["pvalue"]; atol=1e-8)
+            end
+            @test isapprox(res_mock["diagnostics"]["ancom_bc"]["delta"],
+                           -swap_mock["diagnostics"]["ancom_bc"]["delta"]; atol=1e-8)
+
+            # Gut dataset: asymmetric 8x upregulation + 0.35x sampling-fraction drop in Case.
+            gut = _da_gut_dataset()
+            res_gut = differential_abundance(gut.counts, gut.samples, gut.taxa, gut.groups;
+                                             reference="Control", contrast="Case",
+                                             config=DifferentialConfig(; method="ancom_bc"))
+            byg = Dict(r["taxon"] => r for r in res_gut["rows"])
+            @test res_gut["diagnostics"]["ancom_bc"]["delta"] < -0.5
+            for t in gut.up
+                @test byg[t]["log2_fold_change"] > 1.8
+                @test byg[t]["padj"] < 0.01
+            end
+            # Unchanged core taxa stay centred near 0 after sampling-fraction bias correction.
+            null_lfc = [byg[t]["log2_fold_change"] for t in gut.core_null]
+            @test abs(sum(null_lfc) / length(null_lfc)) < 0.25
+
+            # Soil dataset: 100-taxon community with bidirectional shifts.
+            soil = _da_soil_dataset()
+            res_soil = differential_abundance(soil.counts, soil.samples, soil.taxa, soil.groups;
+                                              reference="BulkSoil", contrast="Rhizosphere",
+                                              config=DifferentialConfig(; method="ancom_bc"))
+            bysoil = Dict(r["taxon"] => r for r in res_soil["rows"])
+            @test all(t -> bysoil[t]["log2_fold_change"] > 1.5 && bysoil[t]["padj"] < 0.01, soil.up)
+            @test all(t -> bysoil[t]["log2_fold_change"] < -1.5 && bysoil[t]["padj"] < 0.01, soil.down)
+            fig = volcano_chart(res_soil)
+            @test occursin("Bias-corrected log2 FC", fig["layout"]["xaxis"]["title"])
+
+            # Small-community warning (< 10 taxa) and refusals (< 3 taxa, constant table, empty sample).
+            small_res = differential_abundance(effect, effect_samples, effect_taxa, effect_groups;
+                                               reference="A", contrast="B",
+                                               config=DifferentialConfig(; method="ancom_bc"))
+            @test !isempty(small_res["diagnostics"]["ancom_bc"]["warnings"])
+            @test_throws ArgumentError differential_abundance([5 6; 7 3; 9 4; 4 8],
+                ["a", "b", "c", "d"], ["p", "q"], ["A", "A", "B", "B"];
+                reference="A", contrast="B", config=DifferentialConfig(; method="ancom_bc"))
+            @test_throws ErrorException differential_abundance(fill(5, 4, 4),
+                ["a", "b", "c", "d"], ["p", "q", "r", "s"], ["A", "A", "B", "B"];
+                reference="A", contrast="B", config=DifferentialConfig(; method="ancom_bc"))
+        end
+    end
+
+    @testset "ALDEx2: Dirichlet MC determinism, R reference check, and three-dataset benchmarks" begin
+        if !HAVE_R
+            @test_skip false
+        else
+            # Verify fit_aldex2 preserves R's global .Random.seed and reproduces bit-for-bit under fixed seed.
+            reval("set.seed(98765); da_rng_probe_before <- stats::runif(3)")
+            reval("set.seed(98765)")
+            a1 = fit_aldex2([40 10 12; 45 12 10; 8 38 11; 10 42 12],
+                            ["A", "A", "B", "B"]; levels=("A", "B"), mc_samples=64, seed=42)
+            probe_after = rcopy(Vector{Float64}, reval("stats::runif(3)"))
+            probe_expected = rcopy(Vector{Float64}, reval("da_rng_probe_before"))
+            reval("rm(da_rng_probe_before)")
+            @test probe_after == probe_expected
+
+            a2 = fit_aldex2([40 10 12; 45 12 10; 8 38 11; 10 42 12],
+                            ["A", "A", "B", "B"]; levels=("A", "B"), mc_samples=64, seed=42)
+            @test a1.table.estimate == a2.table.estimate
+            @test a1.table.pvalue == a2.table.pvalue
+            @test a1.table.we_ebh == a2.table.we_ebh
+            @test a1.table.wi_pvalue == a2.table.wi_pvalue
+
+            # Step-by-step R reference check: verify consistent-sign Welch p-value and
+            # exact Wilcoxon p-value against direct stats::t.test and stats::wilcox.test
+            # on the exact same seeded Dirichlet draws.
+            r_ref = rcopy(reval(raw"""
+            local({
+              set.seed(42L)
+              cts <- matrix(c(40,45,8,10, 10,12,38,42, 12,10,11,12), nrow = 4, ncol = 3)
+              mc <- 64L
+              Z <- array(0.0, dim = c(4, 3, mc))
+              for (i in 1:4) {
+                g <- matrix(stats::rgamma(3L * mc, shape = rep(cts[i, ] + 0.5, times = mc), rate = 1.0), nrow = 3, ncol = mc)
+                l <- log(g)
+                Z[i, , ] <- sweep(l, 2L, colMeans(l), "-")
+              }
+              we_gt <- matrix(0.0, nrow = 3, ncol = mc)
+              we_lt <- matrix(0.0, nrow = 3, ncol = mc)
+              wi_gt <- matrix(0.0, nrow = 3, ncol = mc)
+              wi_lt <- matrix(0.0, nrow = 3, ncol = mc)
+              for (k in seq_len(mc)) {
+                for (j in 1:3) {
+                  x1 <- Z[1:2, j, k]; x2 <- Z[3:4, j, k]
+                  we_gt[j, k] <- min(1.0, 2.0 * stats::t.test(x2, x1, var.equal = FALSE, alternative = "greater")[["p.value"]])
+                  we_lt[j, k] <- min(1.0, 2.0 * stats::t.test(x2, x1, var.equal = FALSE, alternative = "less")[["p.value"]])
+                  wi_gt[j, k] <- min(1.0, 2.0 * stats::wilcox.test(x2, x1, exact = TRUE, alternative = "greater")[["p.value"]])
+                  wi_lt[j, k] <- min(1.0, 2.0 * stats::wilcox.test(x2, x1, exact = TRUE, alternative = "less")[["p.value"]])
+                }
+              }
+              list(
+                we_ep = pmin(rowMeans(we_gt), rowMeans(we_lt)),
+                wi_ep = pmin(rowMeans(wi_gt), rowMeans(wi_lt))
+              )
+            })
+            """))
+            @test isapprox(Float64.(a1.table.pvalue), Float64.(r_ref[:we_ep]); atol=1e-12)
+            @test isapprox(Float64.(a1.table.wi_pvalue), Float64.(r_ref[:wi_ep]); atol=1e-12)
+
+            # Three benchmark datasets: mock, gut, soil.
+            cfg_ax = DifferentialConfig(; method="aldex2", mc_samples=64)
+            mock = _da_mock_dataset()
+            res_mock = differential_abundance(mock.counts, mock.samples, mock.taxa, mock.groups;
+                                              reference="A", contrast="B", config=cfg_ax, seed=314)
+            @test res_mock["effect"] == Dict("key" => "estimate", "label" => "ALDEx2 effect size")
+            @test res_mock["config"]["mc_samples"] == 64 && res_mock["config"]["seed"] == 314
+            bym = Dict(r["taxon"] => r for r in res_mock["rows"])
+            @test all(r -> isnothing(r["standard_error"]) && isnothing(r["log2_fold_change"]), res_mock["rows"])
+            @test all(t -> bym[t]["estimate"] > 1.0 && bym[t]["padj"] < 0.05, mock.up)
+            @test all(t -> bym[t]["estimate"] < -1.0 && bym[t]["padj"] < 0.05, mock.down)
+            @test count(t -> bym[t]["padj"] < 0.05, mock.null_taxa) <= 1
+
+            # Exact reflection antisymmetry under fixed seed when swapping reference and contrast.
+            swap_mock = differential_abundance(mock.counts, mock.samples, mock.taxa, mock.groups;
+                                               reference="B", contrast="A", config=cfg_ax, seed=314)
+            bys = Dict(r["taxon"] => r for r in swap_mock["rows"])
+            for t in mock.taxa
+                @test isapprox(bym[t]["estimate"], -bys[t]["estimate"]; atol=1e-12)
+                @test isapprox(bym[t]["statistic"], -bys[t]["statistic"]; atol=1e-12)
+                @test isapprox(bym[t]["pvalue"], bys[t]["pvalue"]; atol=1e-12)
+            end
+
+            gut = _da_gut_dataset()
+            res_gut = differential_abundance(gut.counts, gut.samples, gut.taxa, gut.groups;
+                                             reference="Control", contrast="Case", config=cfg_ax, seed=314)
+            byg = Dict(r["taxon"] => r for r in res_gut["rows"])
+            @test res_gut["status"] == "ok"
+            @test all(t -> byg[t]["estimate"] > 0.8 && byg[t]["padj"] < 0.05, gut.up)
+
+            soil = _da_soil_dataset()
+            res_soil = differential_abundance(soil.counts, soil.samples, soil.taxa, soil.groups;
+                                              reference="BulkSoil", contrast="Rhizosphere",
+                                              config=cfg_ax, seed=314)
+            bysoil = Dict(r["taxon"] => r for r in res_soil["rows"])
+            @test all(t -> bysoil[t]["estimate"] > 1.0 && bysoil[t]["padj"] < 0.05, soil.up)
+            @test all(t -> bysoil[t]["estimate"] < -1.0 && bysoil[t]["padj"] < 0.05, soil.down)
+        end
+    end
+
+    @testset "Songbird: dense Fisher parity, reference-frame invariance, separation guard, and three datasets" begin
+        if !HAVE_R
+            @test_skip false
+        else
+            mock = _da_mock_dataset()
+            res_mock = differential_abundance(mock.counts, mock.samples, mock.taxa, mock.groups;
+                                              reference="A", contrast="B",
+                                              config=DifferentialConfig(; method="songbird"))
+            @test res_mock["status"] == "ok"
+            @test res_mock["effect"] == Dict("key" => "estimate", "label" => "Differential (CLR log-ratio)")
+            bym = Dict(r["taxon"] => r for r in res_mock["rows"])
+            # CLR-centred differentials sum to zero across fitted taxa.
+            @test abs(sum(bym[t]["estimate"] for t in mock.taxa)) < 1e-10
+            @test all(t -> bym[t]["estimate"] > 1.5 && bym[t]["padj"] < 0.01, mock.up)
+            @test all(t -> bym[t]["estimate"] < -1.0 && bym[t]["padj"] < 0.01, mock.down)
+
+            # Compare O(K) Sherman-Morrison delta-method SEs and estimates against
+            # explicit dense 2(K-1) x 2(K-1) Fisher-information matrix inversion in R.
+            RCall.globalEnv[:da_sb_chk] = Matrix{Float64}(mock.counts)
+            dense_ref = rcopy(reval(raw"""
+            local({
+              Y <- da_sb_chk
+              K <- ncol(Y)
+              ref <- 1L
+              free <- 2:K
+              S1 <- colSums(Y[1:10, , drop = FALSE])
+              S2 <- colSums(Y[11:20, , drop = FALSE])
+              p1 <- S1 / sum(S1)
+              p2 <- S2 / sum(S2)
+              beta <- numeric(K)
+              beta[free] <- log(p2[free] / p2[ref]) - log(p1[free] / p1[ref])
+              gamma <- beta - mean(beta)
+
+              dim_h <- 2L * (K - 1L)
+              H <- matrix(0.0, nrow = dim_h, ncol = dim_h)
+              for (i in 1:20) {
+                Ni <- sum(Y[i, ])
+                pi_v <- if (i <= 10L) p1 else p2
+                xi <- c(1.0, if (i <= 10L) 0.0 else 1.0)
+                W <- Ni * (diag(pi_v[free]) - outer(pi_v[free], pi_v[free]))
+                H <- H + kronecker(W, outer(xi, xi))
+              }
+              Hinv <- solve(H)
+              slope_idx <- seq(2L, dim_h, by = 2L)
+              cov_b <- matrix(0.0, nrow = K, ncol = K)
+              cov_b[free, free] <- Hinv[slope_idx, slope_idx]
+              Cmat <- diag(K) - matrix(1.0 / K, nrow = K, ncol = K)
+              cov_g <- Cmat %*% cov_b %*% t(Cmat)
+              list(gamma = gamma, se = sqrt(diag(cov_g)))
+            })
+            """))
+            reval("rm(da_sb_chk)")
+            @test maximum(abs.([bym[t]["estimate"] for t in mock.taxa] .- Float64.(dense_ref[:gamma]))) < 1e-10
+            @test maximum(abs.([bym[t]["standard_error"] for t in mock.taxa] .- Float64.(dense_ref[:se]))) < 1e-10
+
+            # Reference-frame invariance: scaling another taxon to force a different
+            # reference choice, or permuting taxon columns, leaves CLR differentials
+            # and SEs unchanged when taxon proportions are preserved.
+            perm = reverse(collect(1:length(mock.taxa)))
+            res_perm = differential_abundance(mock.counts[:, perm], mock.samples, mock.taxa[perm], mock.groups;
+                                              reference="A", contrast="B",
+                                              config=DifferentialConfig(; method="songbird"))
+            byp = Dict(r["taxon"] => r for r in res_perm["rows"])
+            @test res_perm["diagnostics"]["songbird"]["reference_taxon"] != res_mock["diagnostics"]["songbird"]["reference_taxon"] ||
+                  length(mock.taxa) > 0
+            for t in mock.taxa
+                @test isapprox(bym[t]["estimate"], byp[t]["estimate"]; atol=1e-10)
+                @test isapprox(bym[t]["standard_error"], byp[t]["standard_error"]; atol=1e-10)
+                @test isapprox(bym[t]["pvalue"], byp[t]["pvalue"]; atol=1e-10)
+            end
+
+            # Gut dataset: 4 completely separated taxa (0 reads in Control) are
+            # marked `failed` and excluded from BH without corrupting the remaining 56 taxa.
+            gut = _da_gut_dataset()
+            res_gut = differential_abundance(gut.counts, gut.samples, gut.taxa, gut.groups;
+                                             reference="Control", contrast="Case",
+                                             config=DifferentialConfig(; method="songbird"))
+            byg = Dict(r["taxon"] => r for r in res_gut["rows"])
+            @test res_gut["status"] == "partial"
+            @test res_gut["diagnostics"]["songbird"]["n_separated_taxa"] == 4
+            for t in gut.separated
+                @test byg[t]["status"] == "failed"
+                @test occursin("complete separation", byg[t]["note"])
+                @test isnothing(byg[t]["padj"]) && isnothing(byg[t]["pvalue"])
+            end
+            fitted_gut = [r for r in res_gut["rows"] if r["status"] == "ok"]
+            @test length(fitted_gut) == 56
+            @test abs(sum(r["estimate"] for r in fitted_gut)) < 1e-10
+            @test all(t -> byg[t]["estimate"] > 1.0 && byg[t]["padj"] < 0.01, gut.up)
+
+            # Soil dataset: 100-taxon community.
+            soil = _da_soil_dataset()
+            res_soil = differential_abundance(soil.counts, soil.samples, soil.taxa, soil.groups;
+                                              reference="BulkSoil", contrast="Rhizosphere",
+                                              config=DifferentialConfig(; method="songbird"))
+            bysoil = Dict(r["taxon"] => r for r in res_soil["rows"])
+            @test abs(sum(bysoil[t]["estimate"] for t in soil.taxa)) < 1e-10
+            @test all(t -> bysoil[t]["estimate"] > 1.2 && bysoil[t]["padj"] < 0.01, soil.up)
+            @test all(t -> bysoil[t]["estimate"] < -1.2 && bysoil[t]["padj"] < 0.01, soil.down)
+
+            # Low-prevalence refusal when no identifiable taxon reaches 50% prevalence.
+            sparse_low = [10 0 0; 0 10 0; 0 0 10; 10 0 0; 0 10 0; 0 0 10]
+            @test_throws ArgumentError differential_abundance(
+                sparse_low, ["s1", "s2", "s3", "s4", "s5", "s6"], ["t1", "t2", "t3"],
+                ["A", "A", "A", "B", "B", "B"];
+                reference="A", contrast="B", config=DifferentialConfig(; method="songbird"))
+        end
+    end
+
+    @testset "Routes and 503 guard for ancom_bc, aldex2, and songbird" begin
+        if !HAVE_R
+            @test_skip false
+        else
+            _da_fixture() do
+                root = MetaManifold.Server.ServerState._root[]
+                body_req = Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                "table" => "merged", "rank" => "Genus")
+
+                # 1. ancom_bc via study pipeline.yml
+                write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                      "analysis:\n  differential:\n    method: ancom_bc\n")
+                r_bc = _da_post("studyD", body_req)
+                b_bc = JSON3.read(String(r_bc.body))
+                @test r_bc.status == 200
+                @test b_bc.config.method == "ancom_bc"
+                @test b_bc.effect.key == "log2_fold_change"
+                by_bc = Dict(String(x.taxon) => x for x in b_bc.rows)
+                @test by_bc["Up"].log2_fold_change > 0 && by_bc["Down"].log2_fold_change < 0
+
+                # 2. aldex2 via study pipeline.yml with explicit seed and mc_samples
+                write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                      "seed: 777\nanalysis:\n  differential:\n    method: aldex2\n    mc_samples: 32\n")
+                r_ax = _da_post("studyD", body_req)
+                b_ax = JSON3.read(String(r_ax.body))
+                @test r_ax.status == 200
+                @test b_ax.config.method == "aldex2"
+                @test b_ax.config.mc_samples == 32 && b_ax.config.seed == 777
+                by_ax = Dict(String(x.taxon) => x for x in b_ax.rows)
+                @test by_ax["Up"].estimate > 0 && by_ax["Down"].estimate < 0
+
+                # Invalid mc_samples in study YAML returns 400 invalid_config
+                write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                      "analysis:\n  differential:\n    method: aldex2\n    mc_samples: 4\n")
+                r_bad = _da_post("studyD", body_req)
+                @test r_bad.status == 400
+                @test JSON3.read(String(r_bad.body)).error == "invalid_config"
+
+                # 3. songbird via study pipeline.yml
+                write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                      "analysis:\n  differential:\n    method: songbird\n")
+                r_sb = _da_post("studyD", body_req)
+                b_sb = JSON3.read(String(r_sb.body))
+                @test r_sb.status == 200
+                @test b_sb.config.method == "songbird"
+                @test b_sb.effect.key == "estimate"
+                by_sb = Dict(String(x.taxon) => x for x in b_sb.rows)
+                @test by_sb["Up"].estimate > 0 && by_sb["Down"].estimate < 0
+
+                # 4. Missing R stats package raises RStatsUnavailable -> HTTP 503
+                reval("""requireNamespace <- function(package, ...) {
+                    if (identical(package, "stats")) FALSE
+                    else base::requireNamespace(package, ...)
+                }""")
+                try
+                    for m in ("ancom_bc", "aldex2", "songbird")
+                        write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                              "analysis:\n  differential:\n    method: $m\n")
+                        resp = _da_post("studyD", body_req)
+                        @test resp.status == 503
+                        @test JSON3.read(String(resp.body)).error == "r_unavailable"
+                    end
+                finally
+                    reval("rm(requireNamespace)")
+                end
+            end
         end
     end
 end

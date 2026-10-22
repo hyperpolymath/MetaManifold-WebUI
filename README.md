@@ -272,15 +272,37 @@ not exclude samples from this analysis.
   [Zero handling, posterior semantics, warnings and references](docs/statistics/zero-handling.md)
   explain why every replacement is biased and when a count, occupancy or
   zero-inflated model is preferable.
+- `ancom_bc`: ANCOM-BC sampling-fraction bias-corrected log-linear model
+  (Lin & Peddada 2020, *Nat. Commun.* 11:3514). Estimates within-group sample
+  offsets and between-group sampling-fraction bias via an E-M Gaussian mixture
+  on `log(counts + 1)`, propagating bias-estimation variance into two-sided Wald
+  tests. The effect is a bias-corrected log2 fold change; recommended when
+  asymmetric shifts or microbial load changes would bias standard CLR centering
+  (requires at least 3 tested taxa; assumes fewer than half are differential).
+- `aldex2`: Dirichlet(`count + 0.5`) Monte-Carlo CLR model (Fernandes et al.
+  2013, 2014). Draws `mc_samples` (default 128, seeded by the study's `seed`)
+  posterior instances per sample and reports standardized CLR effect sizes with
+  consistent-sign posterior predictive Welch's t-test p-values; recommended for
+  sparse or variable-depth cohorts where deterministic zero imputation is
+  undesirable.
+- `songbird`: compositional baseline-category multinomial regression with
+  reference-frame invariant CLR-centred differentials summing to zero across
+  fitted taxa (Morton et al. 2019, *Nat. Commun.* 10:2719; Zhang et al. 2017).
+  Conditions on read totals without extra-multinomial biological overdispersion;
+  completely separated single-group taxa are marked `failed` rather than
+  diverging.
 
-For either method, `min_prevalence` (default 0) filters taxa by the fraction of
-samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
-that produced a p-value. Failed or filtered taxa have no substitute p-value;
-inspect their status and note in the results table. Invalid input or an
-unavailable required R package produces an explicit error.
+For every method, `min_prevalence` (default 0) filters taxa by the fraction of
+samples with nonzero counts, and Benjamini–Hochberg adjustment is mandatory
+across the fitted taxa that produced a p-value. Failed or filtered taxa have no
+substitute p-value; inspect their status and note in the results table. Invalid
+input or an unavailable required R package produces an explicit error. See
+`bench/compositional_differential/README.md` for method-selection guidance,
+benchmarks, and literature citations.
 
 Implementation and reference tests: `src/analysis/differential.jl`,
-`src/server/routes/analysis.jl`, and `test/unit/test_differential.jl`.
+`src/server/routes/analysis.jl`, `bench/compositional_differential/benchmark.jl`,
+and `test/unit/test_differential.jl`.
 
 ### Figures and report
 
@@ -618,12 +640,13 @@ analysis:
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
   differential:
-    method: nb_glm               # nb_glm | clr_welch
+    method: nb_glm               # nb_glm | clr_welch | ancom_bc | aldex2 | songbird
     dispersion: ml               # nb_glm: ml | glmGamPoi
     replacement_method: bayesian_multiplicative
                                  # clr_welch: bayesian_multiplicative | multiplicative_replacement
     replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
     bayesian_alpha: ~            # clr_welch: null (GBM estimate) or a number > 0
+    mc_samples: 128              # aldex2: Dirichlet Monte-Carlo instances in [16, 4096]
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
 ```

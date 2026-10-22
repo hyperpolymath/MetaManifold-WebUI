@@ -343,20 +343,29 @@ analysis:
     normalisation: hellinger
     # Reads per sample for rarefy or srs; 0 uses the smallest non-empty sample.
     depth: 0
-  # Differential abundance: a negative-binomial model per taxon (MASS::glm.nb)
-  # comparing two conditions on the raw read counts, with Benjamini-Hochberg
-  # adjusted p-values.
+  # Differential abundance: compares two conditions on the raw read counts, with
+  # mandatory Benjamini-Hochberg adjusted p-values across the fitted family.
   differential:
-    # The model fitted to each taxon. nb_glm: a negative-binomial GLM on the read
-    # counts with a library-size offset; the effect is a log2 fold change. clr_welch:
-    # Welch's t-test on centred log-ratios over the taxa passing min_prevalence,
-    # after zCompositions::cmultRepl replaces their zeros; the effect is a
-    # difference in CLR units, not a fold change.
+    # The model fitted across the two conditions.
+    # - nb_glm: negative-binomial GLM on read counts with a library-size offset;
+    #   the effect is a log2 fold change.
+    # - clr_welch: Welch's t-test on centred log-ratios over the taxa passing
+    #   min_prevalence after zCompositions::cmultRepl zero replacement; the
+    #   effect is a CLR difference, not a fold change.
+    # - ancom_bc: bias-corrected log-linear model (Lin & Peddada 2020) that
+    #   estimates sample-specific and between-group sampling-fraction shifts via
+    #   an E-M Gaussian mixture; the effect is a bias-corrected log2 fold change.
+    # - aldex2: Dirichlet(count + 0.5) Monte-Carlo CLR instances with consistent-sign
+    #   Welch's t-test and Fernandes et al. (2014) standardized CLR effect size.
+    # - songbird: compositional baseline-category multinomial regression with
+    #   reference-frame invariant CLR-centred differentials (Morton et al. 2019;
+    #   Zhang et al. 2017); the effect is a CLR log-ratio differential, not an
+    #   absolute fold change.
     method: nb_glm
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).
     # rle is refused when no taxon is present in every sample.
-    # Used by nb_glm only; clr_welch ignores it, since log-ratios carry no library size.
+    # Used by nb_glm only; compositional methods ignore it.
     offset: tss
     # nb_glm only: where each taxon's negative-binomial theta comes from. ml
     # (the default) takes the maximum-likelihood estimate MASS::glm.nb fits per
@@ -364,13 +373,13 @@ analysis:
     # across all taxa in one call -- sharing information across taxa, which
     # steadies low-count taxa -- and fits each taxon through
     # MASS::negative.binomial(theta = 1/dispersion), so the Wald test is
-    # unchanged. Requires the glmGamPoi R package.
+    # unchanged. Requires the glmGamPoi R package; refused for non-nb_glm methods.
     dispersion: ml
     # Fraction of samples, 0 to 1, in which a taxon must have reads to be
-    # tested. Taxa below it are listed as filtered, without a p-value. For
-    # clr_welch it is applied before zero replacement, so on a sparse table it also
-    # keeps imputed values for rare taxa out of every sample. Bayesian replacement
-    # refuses a taxon seen in fewer than 2 samples; CZM requires at least one.
+    # tested. Taxa below it are listed as filtered, without a p-value. Applied
+    # before compositional subcomposition construction in clr_welch, ancom_bc,
+    # aldex2, and songbird. Bayesian replacement refuses a taxon seen in fewer
+    # than 2 samples; CZM requires at least one.
     min_prevalence: 0.0
     # clr_welch only: how cmultRepl replaces zeros before the centred log-ratio.
     # bayesian_multiplicative uses the geometric Bayesian-multiplicative (GBM)
@@ -387,6 +396,9 @@ analysis:
     # Dirichlet concentration. A finite value greater than 0 overrides it with
     # cmultRepl(method = "user") and the same leave-one-out prior mean.
     bayesian_alpha: ~
+    # aldex2 only: number of Dirichlet Monte-Carlo instances drawn per sample
+    # (whole number in [16, 4096]; seeded by the study's top-level seed).
+    mc_samples: 128
 
 ## Occupancy probe (MMW-01)
 # Measures each attested stage's memory: Julia's allocation total, and the
