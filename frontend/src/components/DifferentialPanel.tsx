@@ -22,9 +22,10 @@ function csvBlob(result: DifferentialResult): Blob {
 
 /**
  * Differential abundance between exactly two runs or sub-groups: a model per
- * taxon at the chosen rank (negative-binomial GLM, CLR linear model, or one
- * multinomial / Dirichlet-multinomial model over the whole composition, as
- * configured), with BH-adjusted p-values, shown as a volcano plot and a table
+ * taxon at the chosen rank (negative-binomial GLM, CLR Welch test after zero
+ * replacement, or one multinomial / Dirichlet-multinomial model over the whole
+ * composition, as configured), with BH-adjusted p-values, shown as a volcano
+ * plot and a table
  * that can be downloaded or added to the report. The first selected condition
  * is the reference. The Advanced expander reports the settings the last fit
  * used, lets the reference taxon of the multinomial models be changed (only
@@ -214,6 +215,21 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
             })()}
           </p>
 
+          {result.diagnostics.zero_replacement && result.diagnostics.zero_replacement.zeros_replaced > 0 && (() => {
+            const z = result.diagnostics.zero_replacement!
+            return (
+              <div role="note" style={{ border: '1px solid var(--color-danger-border)', borderRadius: 4,
+                padding: '8px 10px', margin: '8px 0', color: 'var(--color-danger)', fontSize: '.8rem' }}>
+                <strong>DANGER — zero replacement is biased.</strong> Replaced zeros are model-based imputations,
+                not measurements. Do not try multiple delta or alpha values and report only the most significant result;
+                the selected values are recorded in this result and its CSV provenance.
+                {z.posterior && ' Dirichlet posterior parameters are recorded; the replacements are adjusted posterior estimates, not posterior draws.'}
+                {z.warnings.length > 0 && <ul style={{ margin: '5px 0 0', paddingLeft: 20 }}>
+                  {z.warnings.map(w => <li key={w}>{w}</li>)}
+                </ul>}
+              </div>
+            )
+          })()}
           <details style={{ margin: '0 0 12px', fontSize: '.82rem' }}>
             <summary style={{ cursor: 'pointer', color: 'var(--color-muted-fg)' }}>
               Advanced

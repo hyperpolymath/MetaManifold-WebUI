@@ -41,22 +41,27 @@ export function formatStat(value: number | null): string {
 
 /**
  * The settings line of the CSV: the method and the parameters it used. The
- * offset belongs to nb_glm, the replacement delta to clr_welch, and the
- * reference taxon, penalty and overdispersion method to the two multinomial
- * models, so each line names only its own method's parameters.
+ * offset belongs to nb_glm; replacement method, delta and alpha belong to
+ * clr_welch; the reference taxon, penalty and overdispersion method to the two
+ * multinomial models, so each line names only its own method's parameters.
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
-  if (c.method === 'clr_welch') {
-    return `method clr_welch, replacement_delta ${c.replacement_delta}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
-  }
   if (c.method === 'multinomial' || c.method === 'dirichlet_multinomial') {
     const overdispersion = c.method === 'dirichlet_multinomial'
       ? `, overdispersion ${c.dm_overdispersion_method}`
       : ''
-    return `method ${c.method}${overdispersion}, reference ${c.mn_reference_taxon}, penalty ${c.mn_penalty}, min_prevalence ${c.min_prevalence}; estimates are log2 fold changes against the reference taxon`
+    return `method ${c.method}${overdispersion}, reference ${c.mn_reference_taxon}, ` +
+      `penalty ${c.mn_penalty}, min_prevalence ${c.min_prevalence}; estimates are ` +
+      'log2 fold changes against the reference taxon'
   }
-  return `method nb_glm, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+  if (c.method !== 'clr_welch')
+    return `method nb_glm, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+  const replacement = c.replacement_method ?? 'bayesian_multiplicative'
+  const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
+    ? 'estimated' : String(c.bayesian_alpha)
+  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}, ` +
+    `bayesian_alpha ${alpha}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */

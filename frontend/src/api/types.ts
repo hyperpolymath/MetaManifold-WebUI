@@ -454,8 +454,11 @@ export interface DifferentialResult {
     offset?: 'tss' | 'rle'
     /** nb_glm only: where each taxon's theta comes from. */
     dispersion?: 'ml' | 'glmGamPoi'
-    /** clr_welch only. */
+    /** clr_welch only: the reference cmultRepl method and its parameters. */
+    replacement_method?: 'bayesian_multiplicative' | 'multiplicative_replacement'
     replacement_delta?: number
+    /** Null uses GBM's estimated concentration; positive values override it. */
+    bayesian_alpha?: number | null
     /** multinomial and dirichlet_multinomial: the taxon every ratio is against. */
     mn_reference_taxon?: string
     /** multinomial and dirichlet_multinomial: L2 penalty on the log-odds. */
@@ -471,9 +474,15 @@ export interface DifferentialResult {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
     /** clr_welch only. */
     zero_replacement?: {
-      method: string; delta: number; zeros_replaced: number; n_taxa_in_composition: number
+      method: string
+      replacement_method: 'bayesian_multiplicative' | 'multiplicative_replacement'
+      delta: number; alpha: number | null; zeros_replaced: number; n_taxa_in_composition: number
       n_taxa_unobserved: number; median_imputed_fraction: number; max_imputed_fraction: number
       warnings: string[]
+      posterior?: {
+        family: 'Dirichlet'; prior_mean: string; shape: string; adjustments: string
+        concentration: { sample: string; value: number }[]
+      }
     }
     /** multinomial and dirichlet_multinomial only. */
     model?: {

@@ -110,6 +110,7 @@ const _ENUM_VALUES = Dict(
     "analysis.differential.offset"   => Differential.OFFSET_METHODS,
     "analysis.differential.dispersion" => Differential.DISPERSIONS,
     "analysis.differential.dm_overdispersion_method" => Differential.DM_METHODS,
+    "analysis.differential.replacement_method" => Differential.REPLACEMENT_METHODS,
     "phylogeny.reference.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.placement.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.reference.trim.method"    => Validation.PHYLOGENY_TRIM_METHODS,
@@ -122,7 +123,8 @@ const _FILE_NAME_PARTS = ("dada2.output.fasta_prefix", "dada2.output.seq_table_p
                           "dada2.output.taxa_prefix", "cutadapt.r1_suffix", "cutadapt.r2_suffix")
 
 # Numeric keys whose factory default is a number but which also take ~.
-const _NULLABLE_NUMBERS = ("phylogeny.placement.place.heuristic",)
+const _NULLABLE_NUMBERS = ("phylogeny.placement.place.heuristic",
+                           "analysis.differential.bayesian_alpha")
 
 # Text keys whose factory default is ~: an empty value clears the setting.
 const _NULLABLE_STRINGS = ("analysis.differential.mn_reference_taxon",)
@@ -132,6 +134,7 @@ const _NULLABLE_STRINGS = ("analysis.differential.mn_reference_taxon",)
 const _CASE_FOLDED_ENUMS = Dict(
     "analysis.differential.dispersion" => Differential.DISPERSIONS,
     "analysis.differential.dm_overdispersion_method" => Differential.DM_METHODS,
+    "analysis.differential.replacement_method" => Differential.REPLACEMENT_METHODS,
 )
 
 """
@@ -151,6 +154,15 @@ function _config_value_error(key::String, value)
     if key in _NULLABLE_STRINGS
         (isnothing(v) || v isa AbstractString) || return "$key must be text or empty"
         return nothing
+    end
+    if key == "analysis.differential.replacement_delta"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && 0 < v < 1) ? nothing :
+            "$key must be a finite number in (0, 1)"
+    end
+    if key == "analysis.differential.bayesian_alpha"
+        isnothing(v) && return nothing
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
+            "$key must be empty or a finite number greater than 0"
     end
     if haskey(_ENUM_VALUES, key)
         allowed = _ENUM_VALUES[key]

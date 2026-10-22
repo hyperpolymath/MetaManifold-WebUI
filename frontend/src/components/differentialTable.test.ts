@@ -118,9 +118,22 @@ describe('clr_welch results', () => {
     expect(effectValue(result, result.rows[0])).toBe(2)
   })
 
-  test('the settings line names the delta and says the estimate is not a fold change', () => {
-    expect(configLine(clr)).toBe('method clr_welch, replacement_delta 0.65, min_prevalence 0; estimate is a CLR difference, not a fold change')
+  test('the settings line records replacement provenance and says the estimate is not a fold change', () => {
+    expect(configLine(clr)).toBe('method clr_welch, replacement_method bayesian_multiplicative, replacement_delta 0.65, bayesian_alpha estimated, min_prevalence 0; estimate is a CLR difference, not a fold change')
     expect(configLine(result)).toBe('method nb_glm, offset tss, min_prevalence 0')
     expect(differentialCsv(clr).split('\r\n')[2]).toBe(`# ${configLine(clr)}`)
+    const custom: DifferentialResult = {
+      ...clr,
+      config: { method: 'clr_welch', min_prevalence: 0.1,
+        replacement_method: 'multiplicative_replacement', replacement_delta: 0.4, bayesian_alpha: null },
+    }
+    expect(configLine(custom)).toContain('replacement_method multiplicative_replacement')
+    expect(configLine(custom)).toContain('replacement_delta 0.4')
+    const alpha: DifferentialResult = {
+      ...clr,
+      config: { method: 'clr_welch', min_prevalence: 0,
+        replacement_method: 'bayesian_multiplicative', replacement_delta: 0.65, bayesian_alpha: 2.5 },
+    }
+    expect(configLine(alpha)).toContain('bayesian_alpha 2.5')
   })
 })
