@@ -42,9 +42,11 @@ The lower-level Julia entry point
 `MetaManifold.Differential.fit_occupancy(history, groups, taxa; levels)` accepts
 a Boolean array with dimensions **sites × repeat visits × taxa**. It fits an
 occupancy probability `ψ` with an intercept and binary group effect and a
-detection probability `p` shared across visits. A per-taxon likelihood-ratio
-test assesses the group effect in occupancy; p-values are BH-adjusted. The
-returned table includes `ψ` in each group and the estimated `p`.
+detection probability `p` shared across visits. `psi_reference` is the fitted
+occupancy probability for `levels[1]` (the reference); `psi_contrast` is for
+`levels[2]` (the contrast). A per-taxon likelihood-ratio test assesses the
+group effect in occupancy; p-values are BH-adjusted. The returned table also
+includes the estimated `p`.
 
 This is intentionally not selected by `analysis.differential.method` and is
 not called by the single-observation differential endpoint: that endpoint has

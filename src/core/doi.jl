@@ -1,6 +1,8 @@
 # © 2026 Joshua Benjamin Jewell. All rights reserved.
 # Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 
+module DOI
+
 # Zenodo deposition-v1 client for automated DOI minting.
 #
 # Publication is DISABLED by default. Opt-in requires DOI_ENABLED=true and a

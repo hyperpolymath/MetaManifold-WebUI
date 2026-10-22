@@ -527,13 +527,13 @@ da_result <- data.frame(status=rep("ok", da_n), note=rep("", da_n),
   estimate=rep(NA_real_, da_n), se=rep(NA_real_, da_n), statistic=rep(NA_real_, da_n),
   pvalue=rep(NA_real_, da_n), theta=rep(NA_real_, da_n), zero_estimate=rep(NA_real_, da_n))
 da_tp_logspace_add <- function(a,b) { m <- pmax(a,b); m + log(exp(a-m)+exp(b-m)) }
-da_tp_nll <- function(par, y, g, off, kind, null=FALSE) {
+da_tp_nll <- function(par, y, grp, off, kind, null=FALSE) {
   if (null) { b0 <- par[1]; b1 <- 0; z0 <- par[2]; z1 <- 0; lt <- par[3] }
   else { b0 <- par[1]; b1 <- par[2]; z0 <- par[3]; z1 <- par[4]; lt <- par[5] }
   if (!is.finite(lt) || lt < -15 || lt > 15) return(1e100)
   theta <- exp(lt)
-  mu <- exp(pmax(-30, pmin(30, b0 + b1*g + off)))
-  q <- plogis(pmax(-30, pmin(30, z0 + z1*g)))
+  mu <- exp(pmax(-30, pmin(30, b0 + b1*grp + off)))
+  q <- plogis(pmax(-30, pmin(30, z0 + z1*grp)))
   nb <- dnbinom(y, size=theta, mu=mu, log=TRUE)
   nb0 <- dnbinom(0, size=theta, mu=mu)
   if (kind == "zinb") {
@@ -549,11 +549,11 @@ for (da_j in seq_len(da_n)) {
   if (length(unique(da_tp_y)) < 2L) { da_result[da_j,"status"] <- "failed"; da_result[da_j,"note"] <- "counts are constant"; next }
   da_tp_init <- c(log((sum(da_tp_y)+0.5)/sum(exp(da_offset))), 0,
                   qlogis(min(.95,max(.05,mean(da_tp_y==0)*.8))), 0, 0)
-  da_tp_fit <- tryCatch(optim(da_tp_init, da_tp_nll, y=da_tp_y, g=da_g01,
+  da_tp_fit <- tryCatch(optim(da_tp_init, da_tp_nll, y=da_tp_y, grp=da_g01,
     off=da_offset, kind=da_kind, method="BFGS", hessian=TRUE,
     control=list(maxit=1000, reltol=1e-9)), error=function(e)e)
   da_tp_null_init <- da_tp_init[c(1,3,5)]
-  da_tp_nullfit <- tryCatch(optim(da_tp_null_init, da_tp_nll, y=da_tp_y, g=da_g01,
+  da_tp_nullfit <- tryCatch(optim(da_tp_null_init, da_tp_nll, y=da_tp_y, grp=da_g01,
     off=da_offset, kind=da_kind, null=TRUE, method="BFGS",
     control=list(maxit=1000, reltol=1e-9)), error=function(e)e)
   if (inherits(da_tp_fit,"error") || inherits(da_tp_nullfit,"error") ||
@@ -629,13 +629,13 @@ da_occ_result <- data.frame(status=rep("ok",da_n), note=rep("",da_n),
   estimate=rep(NA_real_,da_n), se=rep(NA_real_,da_n), statistic=rep(NA_real_,da_n),
   pvalue=rep(NA_real_,da_n), psi_reference=rep(NA_real_,da_n),
   psi_contrast=rep(NA_real_,da_n), detection_probability=rep(NA_real_,da_n))
-da_occ_nll <- function(par, h, g, null=FALSE) {
+da_occ_nll <- function(par, history, grp, null=FALSE) {
   if (null) { b0 <- par[1]; b1 <- 0; a0 <- par[2] }
   else { b0 <- par[1]; b1 <- par[2]; a0 <- par[3] }
-  psi <- plogis(pmax(-30,pmin(30,b0+b1*g)))
+  psi <- plogis(pmax(-30,pmin(30,b0+b1*grp)))
   p <- plogis(pmax(-30,pmin(30,a0)))
-  k <- ncol(h); detected <- rowSums(h)>0
-  lp_detect <- rowSums(ifelse(h==1,log(p),log1p(-p)))
+  k <- ncol(history); detected <- rowSums(history)>0
+  lp_detect <- rowSums(ifelse(history==1,log(p),log1p(-p)))
   lp_none <- da_occ_logspace_add(log1p(-psi), log(psi)+k*log1p(-p))
   ll <- ifelse(detected,log(psi)+lp_detect,lp_none)
   if(any(!is.finite(ll))) return(1e100)
@@ -648,9 +648,9 @@ for (da_j in seq_len(da_n)) {
   }
   da_occ_init <- c(qlogis(min(.95,max(.05,mean(rowSums(da_occ_h)>0)*1.5))), 0,
                    qlogis(min(.95,max(.05,mean(da_occ_h)))))
-  da_occ_fit <- tryCatch(optim(da_occ_init,da_occ_nll,h=da_occ_h,g=da_g01,
+  da_occ_fit <- tryCatch(optim(da_occ_init,da_occ_nll,history=da_occ_h,grp=da_g01,
     method="BFGS",hessian=TRUE,control=list(maxit=1000,reltol=1e-10)),error=function(e)e)
-  da_occ_nullfit <- tryCatch(optim(da_occ_init[c(1,3)],da_occ_nll,h=da_occ_h,g=da_g01,
+  da_occ_nullfit <- tryCatch(optim(da_occ_init[c(1,3)],da_occ_nll,history=da_occ_h,grp=da_g01,
     null=TRUE,method="BFGS",control=list(maxit=1000,reltol=1e-10)),error=function(e)e)
   if (inherits(da_occ_fit,"error") || inherits(da_occ_nullfit,"error") ||
       da_occ_fit$convergence!=0 || da_occ_nullfit$convergence!=0) {
@@ -683,7 +683,8 @@ Single-species occupancy likelihood with imperfect detection and repeated visits
 required: single-visit histories do not separate occupancy from detection
 without strong external assumptions. Detection probability is constant across
 visits in this initial implementation; occupancy has an intercept and a
-binary reference/contrast effect. Results include ψ estimates, p, the occupancy
+binary reference/contrast effect. Results include `psi_reference` for `levels[1]`,
+`psi_contrast` for `levels[2]`, the shared detection estimate `p`, the occupancy
 log-odds contrast and an LRT p-value. This is a lower-level API; it is not
 silently applied to ordinary one-observation-per-sample count tables.
 """
