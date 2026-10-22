@@ -1,12 +1,12 @@
+using MetaManifold.DOI
+using MetaManifold.DOI: DOIConfig, Deposition, PublicationReceipt,
+    load_doi_config, publication_enabled, redact,
+    journal_append, journal_state
+
+const SANDBOX = "https://sandbox.zenodo.org"
+const PROD    = "https://zenodo.org"
+
 @testset "DOI / Zenodo publication" begin
-
-    using MetaManifold.DOI
-    using MetaManifold.DOI: DOIConfig, Deposition, PublicationReceipt,
-        load_doi_config, publication_enabled, redact,
-        journal_append, journal_state
-
-    const SANDBOX = "https://sandbox.zenodo.org"
-    const PROD    = "https://zenodo.org"
 
     @testset "disabled by default" begin
         cfg = load_doi_config()
