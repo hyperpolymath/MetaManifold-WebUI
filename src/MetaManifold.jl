@@ -8,6 +8,10 @@ include("core/provenance.jl")
 # Tools registers the children it starts with the probe, so it precedes pipeline/.
 include("core/memory_probe.jl")
 include("core/log.jl")
+# DOI / Zenodo publication client. Publication is disabled by default
+# (DOI_ENABLED=true + ZENODO_TOKEN required) and never rewrites scientific
+# objects. See docs/doi-publication.md.
+include("core/doi.jl")
 include("core/config.jl")
 include("core/databases.jl")
 include("core/duckdb_store.jl")
