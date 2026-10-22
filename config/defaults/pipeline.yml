@@ -346,26 +346,15 @@ analysis:
   # Differential abundance: compares two conditions on the raw read counts, with
   # mandatory Benjamini-Hochberg adjusted p-values across the fitted family.
   differential:
-    # The model fitted across the two conditions.
-    # - nb_glm: negative-binomial GLM on read counts with a library-size offset;
-    #   the effect is a log2 fold change.
-    # - clr_welch: Welch's t-test on centred log-ratios over the taxa passing
-    #   min_prevalence after zCompositions::cmultRepl zero replacement; the
-    #   effect is a CLR difference, not a fold change.
-    # - ancom_bc: bias-corrected log-linear model (Lin & Peddada 2020) that
-    #   estimates sample-specific and between-group sampling-fraction shifts via
-    #   an E-M Gaussian mixture; the effect is a bias-corrected log2 fold change.
-    # - aldex2: Dirichlet(count + 0.5) Monte-Carlo CLR instances with consistent-sign
-    #   Welch's t-test and Fernandes et al. (2014) standardized CLR effect size.
-    # - songbird: compositional baseline-category multinomial regression with
-    #   reference-frame invariant CLR-centred differentials (Morton et al. 2019;
-    #   Zhang et al. 2017); the effect is a CLR log-ratio differential, not an
-    #   absolute fold change.
+    # Per-taxon model: nb_glm (negative-binomial GLM), clr_welch (Welch test on
+    # zero-replaced CLR values), zinb (zero-inflated NB), or hurdle_nb (logistic
+    # occurrence plus zero-truncated NB). Two-part models test both group effects
+    # jointly; their count-process fold change is reported separately.
     method: nb_glm
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).
     # rle is refused when no taxon is present in every sample.
-    # Used by nb_glm only; compositional methods ignore it.
+    # Used by count models (nb_glm, zinb, hurdle_nb); clr_welch ignores it.
     offset: tss
     # nb_glm only: where each taxon's negative-binomial theta comes from. ml
     # (the default) takes the maximum-likelihood estimate MASS::glm.nb fits per

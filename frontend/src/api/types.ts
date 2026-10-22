@@ -418,10 +418,12 @@ export interface DifferentialRow {
   padj: number | null
   /** nb_glm only. */
   dispersion_theta: number | null
+  /** Group coefficient in the logistic zero/occurrence component (two-part NB only). */
+  zero_process_log_odds?: number | null
   prevalence: number
 }
 
-export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'ancom_bc' | 'aldex2' | 'songbird'
+export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -437,12 +439,12 @@ export interface DifferentialResult {
   groups: { reference: string; contrast: string }
   n_samples: Record<string, number>
   effect: DifferentialEffect
-  /** Empty for compositional methods, which take no library-size offset. */
+  /** Empty for clr_welch; count models report their size factors. */
   size_factors: { sample: string; group: string; factor: number }[]
   config: {
     method: DifferentialMethod
     min_prevalence: number
-    /** nb_glm only. */
+    /** Count-process offset for nb_glm, zinb and hurdle_nb. */
     offset?: 'tss' | 'rle'
     /** nb_glm only: where each taxon's theta comes from. */
     dispersion?: 'ml' | 'glmGamPoi'
@@ -458,6 +460,8 @@ export interface DifferentialResult {
   }
   diagnostics: {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
+    /** Safety note for two-part models. */
+    model_warning?: string
     /** clr_welch only. */
     zero_replacement?: {
       method: string

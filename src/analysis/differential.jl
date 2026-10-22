@@ -40,11 +40,11 @@ export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavail
        GlmGamPoiUnavailable, RStatsUnavailable, OFFSET_METHODS, METHODS, DISPERSIONS,
        REPLACEMENT_METHODS, MIN_MC_SAMPLES, MAX_MC_SAMPLES, DEFAULT_MC_SAMPLES,
        tss_factors, rle_factors, size_factors, bh_adjust, validate_counts, replace_zeros,
-       clr_transform, fit_nb, fit_welch, fit_ancom_bc, fit_aldex2, fit_songbird,
+       clr_transform, fit_nb, fit_two_part_nb, fit_occupancy, fit_welch,
        differential_abundance, volcano_chart
 
 # Methods accepted under `analysis.differential.method`.
-const METHODS = ("nb_glm", "clr_welch", "ancom_bc", "aldex2", "songbird")
+const METHODS = ("nb_glm", "clr_welch", "zinb", "hurdle_nb")
 
 # The per-taxon dispersion `nb_glm` uses: maximum likelihood (MASS::glm.nb's
 # own theta) or glmGamPoi's shrinkage estimator, which shares information
@@ -101,11 +101,21 @@ have at least one read to be tested. `replacement_delta`, in (0, 1), is the
 `"multiplicative_replacement"` (CZM), with optional positive `bayesian_alpha`
 for `"bayesian_multiplicative"`.
 `dispersion` names the per-taxon dispersion `nb_glm` uses (`"ml"` or
-`"glmGamPoi"`); `"glmGamPoi"` is refused when `method != "nb_glm"`.
-`mc_samples`, a whole number in [`MIN_MC_SAMPLES`, `MAX_MC_SAMPLES`], sets the
-number of Dirichlet Monte-Carlo instances drawn per sample by `aldex2`.
-Throws `ArgumentError` for unsupported names, incompatible method and dispersion
-choices, or non-finite or out-of-range settings.
+`"glmGamPoi"`): `"ml"` takes the maximum-likelihood theta from `MASS::glm.nb`,
+`"glmGamPoi"` uses `overdispersion_shrinkage_list.dispersion_trend` from
+`glmGamPoi::glm_gp` for the taxa passing the prevalence filter, with `theta = 1 / dispersion` fixed
+in each negative-binomial GLM. Both options use a Wald test of the group
+coefficient with fixed scale 1; `"glmGamPoi"` is refused outside `nb_glm`. `zinb` and `hurdle_nb`
+fit a zero-process and negative-binomial count process per taxon, then use a 2-df likelihood-ratio
+test for the group effect in both processes. Their count-component fold change is reported; the zero
+process effect remains in diagnostics.
+The trend is plugged into an NB Wald model; its estimation uncertainty is not
+propagated. This option does not implement glmGamPoi's quasi-likelihood test.
+Method and offset names are stripped and lowercased; dispersion names are
+stripped and matched without regard to case, then stored as `"ml"` or
+`"glmGamPoi"`. Throws `ArgumentError` for unsupported names, incompatible
+method and dispersion choices, or non-finite or out-of-range fractions,
+including settings unused by the selected method.
 """
 struct DifferentialConfig
     method             :: String
@@ -600,6 +610,213 @@ function fit_nb(counts::AbstractMatrix{<:Integer}, groups::AbstractVector{<:Abst
               statistic = _num.(raw.statistic),
               pvalue    = _num.(raw.pvalue),
               theta     = _num.(raw.theta))
+end
+
+# Two-part NB models are implemented with base R's optim/stats likelihoods: no
+# pscl/glmmTMB dependency is introduced. The joint 2-df LRT tests the group term
+# in both components; a count-part Wald estimate alone would miss zero-process
+# changes. The models are deliberately fixed-effect, per-taxon models.
+const _FIT_TWO_PART_R = raw"""
+da_g01 <- as.numeric(da_group == da_levels[2])
+da_n <- ncol(da_counts)
+da_result <- data.frame(status=rep("ok", da_n), note=rep("", da_n),
+  estimate=rep(NA_real_, da_n), se=rep(NA_real_, da_n), statistic=rep(NA_real_, da_n),
+  pvalue=rep(NA_real_, da_n), theta=rep(NA_real_, da_n), zero_estimate=rep(NA_real_, da_n))
+da_tp_logspace_add <- function(a,b) { m <- pmax(a,b); m + log(exp(a-m)+exp(b-m)) }
+da_tp_nll <- function(par, y, grp, off, kind, null=FALSE) {
+  if (null) { b0 <- par[1]; b1 <- 0; z0 <- par[2]; z1 <- 0; lt <- par[3] }
+  else { b0 <- par[1]; b1 <- par[2]; z0 <- par[3]; z1 <- par[4]; lt <- par[5] }
+  if (!is.finite(lt) || lt < -15 || lt > 15) return(1e100)
+  theta <- exp(lt)
+  mu <- exp(pmax(-30, pmin(30, b0 + b1*grp + off)))
+  q <- plogis(pmax(-30, pmin(30, z0 + z1*grp)))
+  nb <- dnbinom(y, size=theta, mu=mu, log=TRUE)
+  nb0 <- dnbinom(0, size=theta, mu=mu)
+  if (kind == "zinb") {
+    ll <- ifelse(y == 0, da_tp_logspace_add(log(q), log1p(-q) + nb), log1p(-q) + nb)
+  } else {
+    ll <- ifelse(y == 0, log(q), log1p(-q) + nb - log1p(-nb0))
+  }
+  if (any(!is.finite(ll))) return(1e100)
+  -sum(ll)
+}
+for (da_j in seq_len(da_n)) {
+  da_tp_y <- da_counts[,da_j]
+  if (length(unique(da_tp_y)) < 2L) { da_result[da_j,"status"] <- "failed"; da_result[da_j,"note"] <- "counts are constant"; next }
+  da_tp_init <- c(log((sum(da_tp_y)+0.5)/sum(exp(da_offset))), 0,
+                  qlogis(min(.95,max(.05,mean(da_tp_y==0)*.8))), 0, 0)
+  da_tp_fit <- tryCatch(optim(da_tp_init, da_tp_nll, y=da_tp_y, grp=da_g01,
+    off=da_offset, kind=da_kind, method="BFGS", hessian=TRUE,
+    control=list(maxit=1000, reltol=1e-9)), error=function(e)e)
+  da_tp_null_init <- da_tp_init[c(1,3,5)]
+  da_tp_nullfit <- tryCatch(optim(da_tp_null_init, da_tp_nll, y=da_tp_y, grp=da_g01,
+    off=da_offset, kind=da_kind, null=TRUE, method="BFGS",
+    control=list(maxit=1000, reltol=1e-9)), error=function(e)e)
+  if (inherits(da_tp_fit,"error") || inherits(da_tp_nullfit,"error") ||
+      da_tp_fit$convergence != 0 || da_tp_nullfit$convergence != 0 ||
+      !is.finite(da_tp_fit$value) || !is.finite(da_tp_nullfit$value)) {
+    da_result[da_j,"status"] <- "failed"; da_result[da_j,"note"] <- "two-part likelihood did not converge"; next
+  }
+  da_tp_info <- tryCatch(solve(da_tp_fit$hessian), error=function(e)NULL)
+  if (is.null(da_tp_info) || any(!is.finite(da_tp_info)) || any(diag(da_tp_info)<=0)) {
+    da_result[da_j,"status"] <- "failed"; da_result[da_j,"note"] <- "singular or non-positive likelihood Hessian"; next
+  }
+  da_tp_delta <- da_tp_nullfit$value-da_tp_fit$value
+  if (da_tp_delta < -1e-6) {
+    da_result[da_j,"status"] <- "failed"; da_result[da_j,"note"] <- "full model did not attain the nested null-model likelihood"; next
+  }
+  da_tp_lrt <- max(0,2*da_tp_delta)
+  da_result[da_j,"estimate"] <- da_tp_fit$par[2]
+  da_result[da_j,"se"] <- sqrt(da_tp_info[2,2])
+  da_result[da_j,"statistic"] <- da_tp_lrt
+  da_result[da_j,"pvalue"] <- pchisq(da_tp_lrt, df=2, lower.tail=FALSE)
+  da_result[da_j,"theta"] <- exp(da_tp_fit$par[5])
+  da_result[da_j,"zero_estimate"] <- da_tp_fit$par[4]
+}
+"""
+
+"""
+    fit_two_part_nb(counts, groups, offset; levels, kind) -> DataFrame
+
+Fit per-taxon zero-inflated (`kind="zinb"`) or hurdle (`kind="hurdle_nb"`)
+negative-binomial likelihoods. `offset` is the log size factor for the NB
+count component. Both logistic components and the count mean include the
+binary group effect. The returned p-value is the joint 2-df likelihood-ratio
+test against a model without either group effect; `estimate` is the count
+log-fold change and `zero_estimate` is the group log-odds coefficient for the
+zero/occurrence component. Requires at least two samples in each group.
+"""
+function fit_two_part_nb(counts::AbstractMatrix{<:Integer}, groups::AbstractVector{<:AbstractString},
+                         offset::AbstractVector{<:Real}; levels::NTuple{2,String}, kind::AbstractString)
+    kind in ("zinb", "hurdle_nb") || throw(ArgumentError("kind must be zinb or hurdle_nb"))
+    size(counts,1) == length(groups) == length(offset) || throw(ArgumentError("counts, groups and offset must align"))
+    all(>=(0), counts) || throw(ArgumentError("counts must be non-negative"))
+    all(isfinite, offset) || throw(ArgumentError("count offsets must be finite"))
+    all(g -> g in levels, groups) || throw(ArgumentError("groups must be exactly $(levels)"))
+    all(g -> count(==(g), groups) >= 2, levels) || throw(ArgumentError("both groups need at least two samples for a two-part model"))
+    raw = with_r_lock(; timeout=R_WAIT_SECONDS[]) do
+        RCall.globalEnv[:da_counts] = Matrix{Int}(counts)
+        RCall.globalEnv[:da_group] = String.(groups)
+        RCall.globalEnv[:da_levels] = collect(levels)
+        RCall.globalEnv[:da_offset] = Float64.(offset)
+        RCall.globalEnv[:da_kind] = kind == "zinb" ? "zinb" : "hurdle"
+        try
+            RCall.reval(_FIT_TWO_PART_R)
+            DataFrame(RCall.rcopy(RCall.reval("da_result")))
+        finally
+            RCall.reval("rm(list=intersect(ls(), c('da_counts','da_group','da_levels','da_offset','da_kind','da_g01','da_n','da_result','da_tp_logspace_add','da_tp_nll','da_tp_y','da_tp_init','da_tp_fit','da_tp_null_init','da_tp_nullfit','da_tp_info','da_tp_delta','da_tp_lrt'))); invisible(gc())")
+        end
+    end
+    DataFrame(status=String.(raw.status), note=String.(raw.note), estimate=_num.(raw.estimate),
+              se=_num.(raw.se), statistic=_num.(raw.statistic), pvalue=_num.(raw.pvalue),
+              theta=_num.(raw.theta), zero_estimate=_num.(raw.zero_estimate))
+end
+
+# Single-visit microbiome tables cannot distinguish true absence from missed
+# detection without external assumptions. This estimator therefore accepts an
+# explicit site × visit × taxon detection-history array and refuses fewer than
+# two visits. Detection is constant across visits in v1; ψ has an intercept and
+# group effect. This is intentionally a separate API from differential_abundance
+# until the UI can collect a repeated-visit design instead of inventing one.
+const _FIT_OCCUPANCY_R = raw"""
+da_occ_logspace_add <- function(a,b) { m <- pmax(a,b); m + log(exp(a-m)+exp(b-m)) }
+da_n <- dim(da_history)[3]
+da_occ_result <- data.frame(status=rep("ok",da_n), note=rep("",da_n),
+  estimate=rep(NA_real_,da_n), se=rep(NA_real_,da_n), statistic=rep(NA_real_,da_n),
+  pvalue=rep(NA_real_,da_n), psi_reference=rep(NA_real_,da_n),
+  psi_contrast=rep(NA_real_,da_n), detection_probability=rep(NA_real_,da_n))
+da_occ_nll <- function(par, history, grp, null=FALSE) {
+  if (null) { b0 <- par[1]; b1 <- 0; a0 <- par[2] }
+  else { b0 <- par[1]; b1 <- par[2]; a0 <- par[3] }
+  psi <- plogis(pmax(-30,pmin(30,b0+b1*grp)))
+  p <- plogis(pmax(-30,pmin(30,a0)))
+  k <- ncol(history); detected <- rowSums(history)>0
+  lp_detect <- rowSums(ifelse(history==1,log(p),log1p(-p)))
+  lp_none <- da_occ_logspace_add(log1p(-psi), log(psi)+k*log1p(-p))
+  ll <- ifelse(detected,log(psi)+lp_detect,lp_none)
+  if(any(!is.finite(ll))) return(1e100)
+  -sum(ll)
+}
+for (da_j in seq_len(da_n)) {
+  da_occ_h <- da_history[,,da_j]; storage.mode(da_occ_h) <- "integer"
+  if (all(rowSums(da_occ_h)==0)) {
+    da_occ_result[da_j,"status"] <- "failed"; da_occ_result[da_j,"note"] <- "no detections in this taxon's history"; next
+  }
+  da_occ_init <- c(qlogis(min(.95,max(.05,mean(rowSums(da_occ_h)>0)*1.5))), 0,
+                   qlogis(min(.95,max(.05,mean(da_occ_h)))))
+  da_occ_fit <- tryCatch(optim(da_occ_init,da_occ_nll,history=da_occ_h,grp=da_g01,
+    method="BFGS",hessian=TRUE,control=list(maxit=1000,reltol=1e-10)),error=function(e)e)
+  da_occ_nullfit <- tryCatch(optim(da_occ_init[c(1,3)],da_occ_nll,history=da_occ_h,grp=da_g01,
+    null=TRUE,method="BFGS",control=list(maxit=1000,reltol=1e-10)),error=function(e)e)
+  if (inherits(da_occ_fit,"error") || inherits(da_occ_nullfit,"error") ||
+      da_occ_fit$convergence!=0 || da_occ_nullfit$convergence!=0) {
+    da_occ_result[da_j,"status"] <- "failed"; da_occ_result[da_j,"note"] <- "occupancy likelihood did not converge"; next
+  }
+  da_occ_vc <- tryCatch(solve(da_occ_fit$hessian),error=function(e)NULL)
+  if (is.null(da_occ_vc) || any(!is.finite(da_occ_vc)) || da_occ_vc[2,2]<=0) {
+    da_occ_result[da_j,"status"] <- "failed"; da_occ_result[da_j,"note"] <- "singular occupancy likelihood Hessian"; next
+  }
+  da_occ_delta <- da_occ_nullfit$value-da_occ_fit$value
+  if (da_occ_delta < -1e-6) {
+    da_occ_result[da_j,"status"] <- "failed"; da_occ_result[da_j,"note"] <- "full occupancy model did not attain the nested null likelihood"; next
+  }
+  da_occ_lrt <- max(0,2*da_occ_delta)
+  da_occ_result[da_j,"estimate"] <- da_occ_fit$par[2]
+  da_occ_result[da_j,"se"] <- sqrt(da_occ_vc[2,2])
+  da_occ_result[da_j,"statistic"] <- da_occ_lrt
+  da_occ_result[da_j,"pvalue"] <- pchisq(da_occ_lrt,df=1,lower.tail=FALSE)
+  da_occ_result[da_j,"psi_reference"] <- plogis(da_occ_fit$par[1])
+  da_occ_result[da_j,"psi_contrast"] <- plogis(da_occ_fit$par[1]+da_occ_fit$par[2])
+  da_occ_result[da_j,"detection_probability"] <- plogis(da_occ_fit$par[3])
+}
+"""
+
+"""
+    fit_occupancy(history, groups, taxa; levels) -> DataFrame
+
+Single-species occupancy likelihood with imperfect detection and repeated visits.
+`history` is a sites × visits × taxa Bool array. At least two visits are
+required: single-visit histories do not separate occupancy from detection
+without strong external assumptions. Detection probability is constant across
+visits in this initial implementation; occupancy has an intercept and a
+binary reference/contrast effect. Results include `psi_reference` for `levels[1]`,
+`psi_contrast` for `levels[2]`, the shared detection estimate `p`, the occupancy
+log-odds contrast and an LRT p-value. This is a lower-level API; it is not
+silently applied to ordinary one-observation-per-sample count tables.
+"""
+function fit_occupancy(history::AbstractArray{Bool,3}, groups::AbstractVector{<:AbstractString},
+                       taxa::AbstractVector{<:AbstractString}; levels::NTuple{2,String})
+    sites, visits, n_taxa = size(history)
+    sites > 0 && n_taxa > 0 || throw(ArgumentError("occupancy needs at least one site and one taxon"))
+    visits >= 2 || throw(ArgumentError("occupancy needs at least two repeat visits per site; single-visit detection and occupancy are not separately identifiable"))
+    length(groups) == sites || throw(ArgumentError("occupancy history has $sites sites but $(length(groups)) group labels"))
+    length(taxa) == n_taxa || throw(ArgumentError("occupancy history has $n_taxa taxa but $(length(taxa)) taxon names"))
+    all(g -> g in levels, groups) || throw(ArgumentError("occupancy groups must be exactly $(levels)"))
+    all(g -> count(==(g), groups) >= 2, levels) || throw(ArgumentError("each occupancy group needs at least two sites"))
+    raw = with_r_lock(; timeout=R_WAIT_SECONDS[]) do
+        RCall.globalEnv[:da_history] = Int.(history)
+        RCall.globalEnv[:da_group] = String.(groups)
+        RCall.globalEnv[:da_levels] = collect(levels)
+        RCall.globalEnv[:da_g01] = Float64.(groups .== levels[2])
+        try
+            RCall.reval(_FIT_OCCUPANCY_R)
+            DataFrame(RCall.rcopy(RCall.reval("da_occ_result")))
+        finally
+            RCall.reval("rm(list=intersect(ls(),c('da_history','da_group','da_levels','da_g01','da_n','da_occ_result','da_occ_logspace_add','da_occ_nll','da_occ_h','da_occ_init','da_occ_fit','da_occ_nullfit','da_occ_vc','da_occ_delta','da_occ_lrt'))); invisible(gc())")
+        end
+    end
+    p = [_num(x) for x in raw.pvalue]
+    family = findall(x -> !isnothing(x) && raw.status[x] == "ok", eachindex(p))
+    adjusted = Union{Nothing,Float64}[nothing for _ in eachindex(p)]
+    if !isempty(family)
+        values = bh_adjust(Float64[p[i] for i in family])
+        for (k,i) in enumerate(family); adjusted[i] = values[k]; end
+    end
+    DataFrame(status=String.(raw.status), note=String.(raw.note),
+      occupancy_log_odds=_num.(raw.estimate), standard_error=_num.(raw.se),
+      statistic=_num.(raw.statistic), pvalue=p, padj=adjusted,
+      psi_reference=_num.(raw.psi_reference), psi_contrast=_num.(raw.psi_contrast),
+      detection_probability=_num.(raw.detection_probability), taxon=String.(taxa))
 end
 
 """
@@ -1774,25 +1991,16 @@ reference, relative to the geometric mean of the tested taxa. Replaced zeros are
 not measurements; `diagnostics.zero_replacement` reports their share of each
 sample. Each group needs at least 2 samples.
 
-`ancom_bc`: filters by `min_prevalence` (excluding unobserved taxa; requires at
-least 3 tested taxa), estimates sample-specific and between-group
-sampling-fraction shifts via Lin & Peddada (2020)'s E-M Gaussian mixture on
-`log(counts + 1)`, and reports bias-corrected log2 fold changes with propagated
-bias-estimation variance.
+`zinb` and `hurdle_nb` use a count-process negative binomial with a library-size
+offset and a group-specific logistic zero/occurrence process. Their reported
+count effect is the NB coefficient; the p-value is a joint 2-df likelihood-ratio
+test over both group coefficients. ZINB treats zeros as a mixture of structural
+and sampling zeros. Hurdle NB assigns all zeros to its logistic component and
+uses a zero-truncated NB for positive counts. These models can overfit; compare
+against NB diagnostics and do not interpret the zero component as biological
+absence without validation.
 
-`aldex2`: filters by `min_prevalence` (excluding unobserved taxa; requires at
-least 2 tested taxa), draws `config.mc_samples` Dirichlet(count + 0.5) CLR
-instances seeded by `seed`, and reports Fernandes et al. (2014)'s standardized
-CLR effect size alongside consistent-sign posterior predictive Welch p-values.
-
-`songbird`: filters by `min_prevalence` (excluding unobserved taxa; requires at
-least 2 identifiable taxa present in both groups and at least one reference
-taxon with prevalence >= 0.5), fits the baseline-category multinomial logit
-model (Morton et al. 2019; Zhang et al. 2017) by damped Newton-Raphson, and
-reports reference-frame invariant CLR-centred differentials (`sum == 0`) with
-exact delta-method standard errors and two-sided Wald z-tests.
-
-For every method, taxa present in fewer than `config.min_prevalence` of the
+For both methods, taxa present in fewer than `config.min_prevalence` of the
 samples are reported as `filtered` and not fitted, and the Benjamini-Hochberg
 family is the fitted taxa that produced a p-value; failed, filtered and
 reference taxa carry `padj = nothing`. The result's `effect` names the row key
@@ -1926,111 +2134,37 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
                                     for (i, s) in enumerate(replaced.posterior.concentration)])
         end
         diagnostics["zero_replacement"] = zero_diagnostics
-    elseif config.method == "ancom_bc"
-        (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
-            "ANCOM-BC needs at least 2 samples in each group to estimate within-group variance; " *
-            "'$reference' has $n_ref and '$contrast' has $n_con"))
-        for j in findall(==(0), present)
-            rows[j]["note"] = "no reads in any sample of either group, so it is not part of the composition"
-        end
-        tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
-        length(tested) >= 3 || throw(ArgumentError(
-            "ancom_bc needs at least 3 taxa with reads at or above " *
-            "analysis.differential.min_prevalence = $(config.min_prevalence) to separate " *
-            "sampling-fraction bias from taxon effects; there are $(length(tested))"))
-        bc = fit_ancom_bc(counts[:, tested], groups; levels, samples)
-        for (k, j) in enumerate(tested)
-            f = bc.table[k, :]
-            merge!(rows[j], Dict{String,Any}(
-                "status" => f.status, "note" => f.note, "estimate" => f.estimate,
-                "log2_fold_change" => isnothing(f.estimate) ? nothing : f.estimate / log(2),
-                "standard_error" => f.se, "statistic" => f.statistic,
-                "pvalue" => f.pvalue))
-        end
-        method_text = "ANCOM-BC bias-corrected log-linear model (Lin & Peddada 2020) over the taxa " *
-                      "passing min_prevalence: within-group sample offsets and between-group " *
-                      "sampling-fraction bias estimated via an E-M Gaussian mixture on log(counts + 1), " *
-                      "with bias variance propagated into two-sided Wald tests and Benjamini-Hochberg " *
-                      "adjustment over the fitted taxa. Assumes fewer than half of the tested taxa " *
-                      "are differentially abundant"
-        effect = Dict("key" => "log2_fold_change", "label" => "Bias-corrected log2 FC")
-        size_factor_rows = Dict{String,Any}[]
-        config_echo = Dict{String,Any}("method" => config.method,
-                                       "min_prevalence" => config.min_prevalence)
-        diagnostics["ancom_bc"] = merge(bc.diagnostics, Dict{String,Any}(
-            "n_taxa_in_composition" => length(tested),
-            "n_taxa_unobserved" => count(==(0), present)))
-    elseif config.method == "aldex2"
-        (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
-            "ALDEx2 needs at least 2 samples in each group to estimate within-group variance; " *
-            "'$reference' has $n_ref and '$contrast' has $n_con"))
-        for j in findall(==(0), present)
-            rows[j]["note"] = "no reads in any sample of either group, so it is not part of the composition"
-        end
-        tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
-        length(tested) >= 2 || throw(ArgumentError(
-            "ALDEx2 needs at least 2 taxa with reads at or above " *
-            "analysis.differential.min_prevalence = $(config.min_prevalence); there are $(length(tested))"))
-        ax = fit_aldex2(counts[:, tested], groups; levels, samples,
-                        mc_samples=config.mc_samples, seed=Int(seed))
-        for (k, j) in enumerate(tested)
-            f = ax.table[k, :]
-            merge!(rows[j], Dict{String,Any}(
-                "status" => f.status, "note" => f.note, "estimate" => f.estimate,
-                "standard_error" => nothing, "statistic" => f.statistic,
-                "pvalue" => f.pvalue))
-        end
-        method_text = "ALDEx2 Dirichlet(count + 0.5) Monte-Carlo CLR model (Fernandes et al. 2014; " *
-                      "$(config.mc_samples) instances, seed = $(Int(seed))) over the taxa passing " *
-                      "min_prevalence: consistent-sign posterior predictive Welch's t-test p-values " *
-                      "with Benjamini-Hochberg adjustment over the fitted taxa. Estimates are " *
-                      "standardized CLR effect sizes (between-group difference over max within-group " *
-                      "dispersion), not absolute fold changes"
-        effect = Dict("key" => "estimate", "label" => "ALDEx2 effect size")
-        size_factor_rows = Dict{String,Any}[]
-        config_echo = Dict{String,Any}("method" => config.method,
-                                       "min_prevalence" => config.min_prevalence,
-                                       "mc_samples" => config.mc_samples,
-                                       "seed" => Int(seed))
-        diagnostics["aldex2"] = merge(ax.diagnostics, Dict{String,Any}(
-            "n_taxa_in_composition" => length(tested),
-            "n_taxa_unobserved" => count(==(0), present)))
-    elseif config.method == "songbird"
-        (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
-            "songbird needs at least 2 samples in each group; " *
-            "'$reference' has $n_ref and '$contrast' has $n_con"))
-        for j in findall(==(0), present)
-            rows[j]["note"] = "no reads in any sample of either group, so it is not part of the composition"
-        end
-        tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
-        length(tested) >= 2 || throw(ArgumentError(
-            "songbird needs at least 2 taxa with reads at or above " *
-            "analysis.differential.min_prevalence = $(config.min_prevalence); there are $(length(tested))"))
-        sb = fit_songbird(counts[:, tested], groups; levels, samples, taxa=taxa[tested])
-        for (k, j) in enumerate(tested)
-            f = sb.table[k, :]
-            merge!(rows[j], Dict{String,Any}(
-                "status" => f.status, "note" => f.note, "estimate" => f.estimate,
-                "standard_error" => f.se, "statistic" => f.statistic,
-                "pvalue" => f.pvalue))
-        end
-        ref_tax = something(sb.diagnostics["reference_taxon"], "none")
-        method_text = "Songbird-style compositional multinomial regression (Morton et al. 2019; " *
-                      "Zhang et al. 2017; reference taxon '$ref_tax') over the identifiable taxa " *
-                      "passing min_prevalence: CLR-centred differentials (summing to zero across " *
-                      "fitted taxa) with delta-method standard errors, two-sided Wald z-tests, and " *
-                      "Benjamini-Hochberg adjustment. Differentials are relative log-ratios, not " *
-                      "absolute fold changes, and multinomial likelihood conditions on read totals " *
-                      "without extra-multinomial overdispersion"
-        effect = Dict("key" => "estimate", "label" => "Differential (CLR log-ratio)")
-        size_factor_rows = Dict{String,Any}[]
-        config_echo = Dict{String,Any}("method" => config.method,
-                                       "min_prevalence" => config.min_prevalence)
-        diagnostics["songbird"] = merge(sb.diagnostics, Dict{String,Any}(
-            "n_taxa_in_composition" => length(tested),
-            "n_taxa_unobserved" => count(==(0), present)))
     else
-        throw(ArgumentError("unsupported differential method '$(config.method)'"))
+        factors = size_factors(counts, samples, config.offset)
+        tested = findall(>=(config.min_prevalence), prevalence)
+        fits = isempty(tested) ? nothing :
+            fit_two_part_nb(Int.(counts[:, tested]), groups, log.(factors); levels,
+                            kind=config.method)
+        if !isnothing(fits)
+            for (k, j) in enumerate(tested)
+                f = fits[k, :]
+                merge!(rows[j], Dict{String,Any}(
+                    "status" => f.status, "note" => f.note, "estimate" => f.estimate,
+                    "log2_fold_change" => isnothing(f.estimate) ? nothing : f.estimate / log(2),
+                    "standard_error" => f.se, "statistic" => f.statistic,
+                    "pvalue" => f.pvalue, "dispersion_theta" => f.theta,
+                    "zero_process_log_odds" => f.zero_estimate))
+            end
+        end
+        model_label = config.method == "zinb" ? "zero-inflated negative-binomial" :
+                      "hurdle negative-binomial"
+        method_text = "$model_label two-part model per taxon with TSS/RLE offset in the count process; " *
+                      "joint 2-df likelihood-ratio test of group effects in the zero and count processes; " *
+                      "Benjamini-Hochberg adjustment over fitted taxa. The reported fold change is the " *
+                      "count-process effect; zero_process_log_odds is the group effect in the zero process."
+        effect = Dict("key" => "log2_fold_change", "label" => "count-process log2 fold change")
+        size_factor_rows = [Dict("sample" => String(samples[i]), "group" => String(groups[i]),
+                                 "factor" => factors[i]) for i in eachindex(samples)]
+        config_echo = Dict{String,Any}("method" => config.method, "offset" => config.offset,
+                                       "min_prevalence" => config.min_prevalence)
+        diagnostics["model_warning"] = config.method == "zinb" ?
+            "Use ZINB only when diagnostics support excess zeros beyond NB; zero inflation and NB overdispersion can be difficult to distinguish." :
+            "Hurdle NB assumes every zero comes from the occurrence process and positive counts follow a zero-truncated NB."
     end
 
 

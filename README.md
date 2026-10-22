@@ -20,7 +20,7 @@ MetaManifold wraps standard amplicon sequencing workflows into a single configur
 
 ## Overview
 
-MetaManifold consists of a Julia backend (pipeline engine + REST API) and a TypeScript/React frontend. The pipeline runs FastQC, MultiQC, cutadapt, DADA2, swarm, vsearch, and cd-hit-est under the hood, and places ASVs on reference trees with MAFFT, trimAl, IQ-TREE, RAxML and gappa; results are stored in per-run DuckDB databases and served to the frontend as interactive Plotly charts and filterable tables. Pipeline configuration is editable in the web UI at every cascade level (see [Configuration](#configuration)).
+MetaManifold consists of a Julia backend (pipeline engine + REST API) and a TypeScript/React frontend. The pipeline runs FastQC, MultiQC, cutadapt, DADA2, swarm, vsearch, and cd-hit-est under the hood, and places ASVs on reference trees with MAFFT, trimAl, IQ-TREE, RAxML and gappa; results are stored in per-run DuckDB databases and served to the frontend as interactive Plotly charts and filterable tables. Pipeline configuration is editable in the web UI at every cascade level (see [Configuration](#configuration)). For analysis-method status and planned work, see [ROADMAP.md](ROADMAP.md); the full occupancy follow-up is tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
 
 **Pipeline stages**
 
@@ -289,48 +289,38 @@ not exclude samples from this analysis.
 
 `analysis.differential.method` chooses the method:
 
-- `nb_glm` (default): a negative-binomial GLM per taxon with a library-size
-  offset. The effect is log2 fold change; positive values indicate greater
-  abundance in the second condition. `offset` selects `tss` (default) or `rle`
-  scaling. `dispersion` selects per-taxon maximum likelihood with
-  `MASS::glm.nb` (default) or a cross-taxon shrinkage trend from R's
-  `glmGamPoi::glm_gp`, followed by fixed-theta NB Wald fits.
+- `nb_glm` (default): a negative-binomial GLM per taxon using `MASS::glm.nb`,
+  with a library-size offset. The effect is log2 fold change; positive values
+  indicate greater abundance in the second condition. `offset` selects `tss`
+  (default) or `rle`; `dispersion` selects maximum-likelihood theta or a
+  cross-taxon `glmGamPoi` trend.
+- `zinb`: a zero-inflated negative-binomial model with separate logistic
+  zero and count components, a count-component library-size offset, a joint
+  2-df likelihood-ratio test, and BH correction.
+- `hurdle_nb`: a logistic occurrence model plus zero-truncated NB counts for
+  positive observations. It uses the same joint test and offset convention.
 - `clr_welch`: Welch's t-test on centred log-ratios after zero replacement with
   `zCompositions::cmultRepl`. The effect is a CLR difference, not a fold change.
-  `replacement_method` selects `bayesian_multiplicative` (GBM, the default) or
-  `multiplicative_replacement` (CZM). `replacement_delta` controls the
-  replacement fraction (default 0.65), and optional positive `bayesian_alpha`
-  overrides GBM's estimated Dirichlet concentration; `offset` is not used.
-  [Zero handling, posterior semantics, warnings and references](docs/statistics/zero-handling.md)
-  explain why every replacement is biased and when a count, occupancy or
-  zero-inflated model is preferable.
-- `ancom_bc`: ANCOM-BC sampling-fraction bias-corrected log-linear model
-  (Lin & Peddada 2020, *Nat. Commun.* 11:3514). Estimates within-group sample
-  offsets and between-group sampling-fraction bias via an E-M Gaussian mixture
-  on `log(counts + 1)`, propagating bias-estimation variance into two-sided Wald
-  tests. The effect is a bias-corrected log2 fold change; recommended when
-  asymmetric shifts or microbial load changes would bias standard CLR centering
-  (requires at least 3 tested taxa; assumes fewer than half are differential).
-- `aldex2`: Dirichlet(`count + 0.5`) Monte-Carlo CLR model (Fernandes et al.
-  2013, 2014). Draws `mc_samples` (default 128, seeded by the study's `seed`)
-  posterior instances per sample and reports standardized CLR effect sizes with
-  consistent-sign posterior predictive Welch's t-test p-values; recommended for
-  sparse or variable-depth cohorts where deterministic zero imputation is
-  undesirable.
-- `songbird`: compositional baseline-category multinomial regression with
-  reference-frame invariant CLR-centred differentials summing to zero across
-  fitted taxa (Morton et al. 2019, *Nat. Commun.* 10:2719; Zhang et al. 2017).
-  Conditions on read totals without extra-multinomial biological overdispersion;
-  completely separated single-group taxa are marked `failed` rather than
-  diverging.
+  `replacement_method` selects Bayesian-multiplicative (GBM, default) or
+  multiplicative (CZM) replacement; `replacement_delta` sets the replacement
+  fraction and optional `bayesian_alpha` overrides GBM's concentration. The
+  offset is not used. See [zero-handling notes](docs/statistics/zero-handling.md).
 
-For every method, `min_prevalence` (default 0) filters taxa by the fraction of
-samples with nonzero counts, and Benjamini–Hochberg adjustment is mandatory
-across the fitted taxa that produced a p-value. Failed or filtered taxa have no
-substitute p-value; inspect their status and note in the results table. Invalid
-input or an unavailable required R package produces an explicit error. See
-`bench/compositional_differential/README.md` for method-selection guidance,
-benchmarks, and literature citations.
+ZINB and hurdle models can overfit sparse data; do not select ZINB solely
+because counts are sparse. Compare against NB diagnostics. The methods report
+a count-process effect and the zero-process coefficient; this is not proof of
+biological structural absence. The public
+`MetaManifold.Differential.fit_occupancy` lower-level estimator accepts
+repeated-visit detection histories (sites × visits × taxa), refuses single-visit
+histories and is not selectable in the standard analysis configuration or UI.
+It currently has no detection covariates. Do not use it as a substitute for
+the full workflow tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
+See [occupancy model notes](docs/occupancy-models.md).
+Across the differential methods, `min_prevalence` (default 0) filters taxa by the fraction of
+samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
+that produced a p-value. Failed or filtered taxa have no substitute p-value;
+inspect their status and note in the results table. Invalid input or an
+unavailable required R package produces an explicit error.
 
 Implementation and reference tests: `src/analysis/differential.jl`,
 `src/server/routes/analysis.jl`, `bench/compositional_differential/benchmark.jl`,

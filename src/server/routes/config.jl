@@ -247,11 +247,9 @@ function _differential_settings_error(effective::AbstractDict)
     end
     method = value(keys_[1], "nb_glm")
     dispersion = value(keys_[2], "ml")
-    if method isa AbstractString && dispersion isa AbstractString
-        m = lowercase(strip(method))
-        if m in Differential.METHODS && m != "nb_glm" && lowercase(strip(dispersion)) == "glmgampoi"
-            return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with $m"
-        end
+    if method isa AbstractString && dispersion isa AbstractString &&
+       lowercase(strip(method)) != "nb_glm" && lowercase(strip(dispersion)) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with $(strip(method))"
     end
     nothing
 end
