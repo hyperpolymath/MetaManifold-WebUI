@@ -40,7 +40,7 @@ const SAFE_INT_MAX = 2^53 - 1
     jcs_bytes(x) -> Vector{UInt8}
 
 The RFC 8785 canonical form of `x`, as bytes. Accepts the JSON-shaped
-values the server produces: `Dict` and `JSON3.Object` (key order is
+values the server produces: `Dict`, `JSON3.Object` and `NamedTuple` (key order is
 irrelevant; it is sorted away), `AbstractVector` and `JSON3.Array` (order
 is preserved, as JCS preserves array order), `AbstractString`, `Integer`,
 `Float16`, `Float32`, `Float64`, `Bool` and `nothing`. Floats serialize per ECMAScript's
@@ -119,6 +119,11 @@ function _write_char!(io, c::Char)
         print(io, c)
     end
 end
+
+# NamedTuple: the same object rules as a Dict. Records in the statistics layer are
+# built as named tuples, and a named tuple has unique symbol keys by construction.
+_write!(io, x::NamedTuple) =
+    _write!(io, Dict{String,Any}(String(k) => v for (k, v) in pairs(x)))
 
 # AbstractDict (Dict and JSON3.Object alike): sorted keys, then each pair.
 function _write!(io, d::AbstractDict)

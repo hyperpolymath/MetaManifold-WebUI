@@ -26,6 +26,10 @@ import type {
 } from './types'
 
 import type { FigureDoc } from '../figure/types'
+import type {
+  EvidenceClaim, EvidenceContext, FibreRequest, FibreResult,
+  ResidualRequest, ResidualResult,
+} from '../evidence/types'
 import { saveBlob } from '../utils/download'
 
 // Base URL for the backend API. Empty string means same-origin.
@@ -357,6 +361,17 @@ export const api = {
     },
   },
 
+  cladistics: {
+    list:   (study: string) => get<CladisticsSummary[]>(`/api/v1/studies/${study}/cladistics`),
+    get:    (study: string, id: string) => get<CladisticsDetail>(`/api/v1/studies/${study}/cladistics/${id}`),
+    create: (study: string, body: CladisticsCreateRequest) =>
+      post<{ id: string; job: Job }>(`/api/v1/studies/${study}/cladistics`, body),
+    remove: (study: string, id: string) =>
+      del<{ deleted: string }>(`/api/v1/studies/${study}/cladistics/${id}`),
+    log:    (study: string, id: string, step: 'align' | 'trim' | 'tree') =>
+      getText(`/api/v1/studies/${study}/cladistics/${id}/log/${step}`),
+  },
+
   referenceTrees: {
     list:    () => get<ReferenceTreeSummary[]>('/api/v1/reference-trees'),
     get:     (id: string) => get<ReferenceTreeDetail>(`/api/v1/reference-trees/${id}`),
@@ -397,6 +412,37 @@ export const api = {
       getText(`/api/v1/studies/${study}/placements/${id}/alignment/${which}`),
     trimPreview: (study: string, id: string, trim: TrimSettings) =>
       post<AlignmentQC>(`/api/v1/studies/${study}/placements/${id}/trim-preview`, trim),
+  },
+
+  /**
+   * Evidence Mode. A run's claims live beside its outputs; the fibre and
+   * residual queries read the results database without writing to it.
+   */
+  evidence: {
+    context: (study: string, run: string, group?: string | null) =>
+      get<EvidenceContext>(`/api/v1/studies/${study}/runs/${run}/evidence${gq(group)}`),
+    saveClaim: (study: string, run: string, claim: EvidenceClaim, group?: string | null) =>
+      post<{ claim: EvidenceClaim; claims: EvidenceClaim[]; updated: string }>(
+        `/api/v1/studies/${study}/runs/${run}/evidence/claims${gq(group)}`, { claim }),
+    deleteClaim: (study: string, run: string, id: string, group?: string | null) =>
+      del<{ deleted: string; claims: EvidenceClaim[]; updated: string }>(
+        `/api/v1/studies/${study}/runs/${run}/evidence/claims/${encodeURIComponent(id)}${gq(group)}`),
+    fiber: (study: string, run: string, body: FibreRequest, group?: string | null) =>
+      post<FibreResult>(`/api/v1/studies/${study}/runs/${run}/evidence/fiber${gq(group)}`, body),
+    residuals: (study: string, run: string, body: ResidualRequest, group?: string | null) =>
+      post<ResidualResult>(`/api/v1/studies/${study}/runs/${run}/evidence/residuals${gq(group)}`, body),
+    /** The record as the YAML that sits on disk, for download. */
+    claimsYaml: async (study: string, run: string, group?: string | null): Promise<Blob> => {
+      const res = await fetch(apiUrl(`/api/v1/studies/${study}/runs/${run}/evidence/claims.yml${gq(group)}`),
+                              { cache: 'no-store' })
+      if (!res.ok) {
+        const err: ApiError = await res.json().catch(() => ({
+          error: 'network_error', message: res.statusText,
+        }))
+        throw Object.assign(new Error(err.message), { apiError: err, status: res.status })
+      }
+      return res.blob()
+    },
   },
 
   trees: {

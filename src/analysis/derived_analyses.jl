@@ -22,7 +22,8 @@ end
 Base.showerror(io::IO, e::DerivedAnalysisError) = print(io, e.reason)
 
 function derived_analysis_id(source, config, result)
-    jcs_sha256((; schema=SCHEMA, source, config, result))
+    jcs_sha256(Dict{String,Any}(
+        "schema" => SCHEMA, "source" => source, "config" => config, "result" => result))
 end
 
 function _record(id::String, source, config, result)
@@ -47,6 +48,8 @@ function _validate_bytes(bytes::Vector{UInt8})
         throw(DerivedAnalysisError("invalid_record",
             "derived analysis is not valid JSON: $(sprint(showerror, err))"))
     end
+    (record isa JSON3.Object || record isa AbstractDict) || throw(DerivedAnalysisError(
+        "invalid_record", "derived analysis root must be a JSON object"))
     _get(record, "schema") == SCHEMA || throw(DerivedAnalysisError(
         "invalid_record", "derived analysis has an unsupported schema"))
     id = _get(record, "analysis_id")
@@ -57,6 +60,8 @@ function _validate_bytes(bytes::Vector{UInt8})
     result = _get(record, "result")
     (isnothing(source) || isnothing(config) || isnothing(result)) &&
         throw(DerivedAnalysisError("invalid_record", "derived analysis is incomplete"))
+    all(x -> x isa JSON3.Object || x isa AbstractDict, (source, config, result)) ||
+        throw(DerivedAnalysisError("invalid_record", "derived source, config and result must be objects"))
     expected = derived_analysis_id(source, config, result)
     expected == id || throw(DerivedAnalysisError("conflict",
         "derived analysis content does not match its ID; refusing a tampered or conflicting record"))
@@ -64,6 +69,8 @@ function _validate_bytes(bytes::Vector{UInt8})
 end
 
 function _existing(path::String, expected_id::String)
+    filesize(path) <= MAX_DERIVED_BYTES || throw(DerivedAnalysisError(
+        "conflict", "existing derived analysis exceeds the read limit; refusing to overwrite it"))
     bytes = try
         read(path)
     catch err
@@ -111,6 +118,7 @@ function persist_derived_analysis(directory::AbstractString; source, config, res
             Base.hardlink(temp, final)
             created = true
         catch err
+            err isa InterruptException && rethrow()
             # A concurrent publisher may have won the race. It is acceptable only
             # if its complete record verifies to the same ID; otherwise fail closed.
             if isfile(final)

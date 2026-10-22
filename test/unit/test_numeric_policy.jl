@@ -14,6 +14,7 @@ using MetaManifold.Canonical
     @test_throws ArgumentError numeric_policy(mode=:high_precision, precision_bits=1)
     @test_throws ArgumentError numeric_policy(max_denominator_bits=31)
     @test_throws ArgumentError numeric_policy(round_digits=-1)
+    @test_throws ArgumentError numeric_policy(precision_bits=big(typemax(UInt128)))
     @test length(policy_fingerprint(numeric_policy(:exact_counts))) == 64
     @test policy_fingerprint(numeric_policy(:exact_counts)) !=
           policy_fingerprint(numeric_policy(:high_precision))
@@ -50,8 +51,10 @@ end
     tight = numeric_policy(mode=:exact_counts, max_denominator_bits=32)
     @test_throws ResourceLimitError exact_fraction(1, big(2)^40; policy=tight)
     @test_throws ResourceLimitError exact_fraction(big(2)^40, 1; policy=tight)
+    # Each addend fits the 32-bit budget on its own; their sum 1/2^31 + 1/3 needs
+    # 33 bits, so the limit must fire on the running total, not only on inputs.
     @test_throws ResourceLimitError exact_rational_sum(
-        [big(1)//big(2)^31, big(1)//big(2)^31 + big(1)//3]; policy=tight)
+        [big(1)//big(2)^31, big(1)//big(3)]; policy=tight)
 end
 
 @testset "Precision scopes and restoration" begin
@@ -74,6 +77,9 @@ end
         @test bits == 256
         @test precision(BigFloat) == 128
         @test_throws ArgumentError with_precision(() -> 1; bits=1)
+        setprecision(BigFloat, 16)
+        @test_throws UnsupportedRepresentationError require_count(2.0^53 + 2.0)
+        @test require_count(2.0^53) == Int64(2)^53
     finally
         setprecision(BigFloat, old)
     end
