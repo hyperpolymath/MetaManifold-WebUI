@@ -107,6 +107,7 @@ module Server
     include(joinpath(@__DIR__, "routes", "publication_tables.jl"))
     include(joinpath(@__DIR__, "routes", "trees.jl"))
     include(joinpath(@__DIR__, "routes", "report.jl"))
+    include(joinpath(@__DIR__, "routes", "doi.jl"))
     include(joinpath(@__DIR__, "routes", "figures.jl"))
     include(joinpath(@__DIR__, "routes", "phylogeny.jl"))
 
