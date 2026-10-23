@@ -218,31 +218,45 @@ function _validated_duckdb_counts(con, table::String, columns::Vector{String};
         "COALESCE(NULLIF(CAST($(_sql_identifier(taxon)) AS VARCHAR), ''), 'Unassigned')"
     end
     count_columns = join([_sql_identifier(c) for c in samples], ", ")
+    # Rows sharing a feature (e.g. several sequences in one genus) are summed
+    # here, in BigInt, not in SQL: DuckDB refuses bare count columns beside
+    # GROUP BY, and SUM over HUGEINT counts would overflow exactly the values
+    # this path exists to keep exact. ORDER BY keeps features sorted and each
+    # feature's rows adjacent.
     sql = "SELECT $feature_expression AS feature, $count_columns FROM $(_sql_identifier(table)) " *
-          "$where_clause GROUP BY $feature_expression ORDER BY feature LIMIT $(MAX_CELLS + 1)"
+          "$where_clause ORDER BY feature LIMIT $(MAX_CELLS + 1)"
     frame = DataFrame(DBInterface.execute(con, sql, where_params))
-    nrow(frame) <= MAX_CELLS || throw(ResourceLimitError("features", MAX_CELLS, nrow(frame)))
+    nrow(frame) <= MAX_CELLS || throw(ResourceLimitError("rows", MAX_CELLS, nrow(frame)))
     nrow(frame) > 0 || throw(ArgumentError("no rows remain after filtering"))
-    nrow(frame) * length(samples) <= MAX_CELLS || throw(ResourceLimitError(
-        "table cells", MAX_CELLS, nrow(frame) * length(samples)))
 
-    features = Vector{String}(undef, nrow(frame))
-    counts = Matrix{BigInt}(undef, nrow(frame), length(samples))
+    features = String[]
+    feature_rows = Vector{BigInt}[]
     for (i, row) in enumerate(eachrow(frame))
         ismissing(row.feature) && throw(UnsupportedRepresentationError(
             "a non-missing feature label", "missing", "validated run statistics row $i"))
-        features[i] = string(row.feature)
+        feature = string(row.feature)
+        if isempty(features) || features[end] != feature
+            push!(features, feature)
+            push!(feature_rows, zeros(BigInt, length(samples)))
+        end
+        target = feature_rows[end]
         for (j, sample) in enumerate(samples)
             value = row[Symbol(sample)]
             ismissing(value) && throw(UnsupportedRepresentationError(
-                "a non-missing integer count", "NULL", "feature '$(features[i])', sample '$sample'"))
+                "a non-missing integer count", "NULL", "feature '$feature', sample '$sample'"))
             (value isa Integer && !(value isa Bool)) || throw(UnsupportedRepresentationError(
-                "an integer count", repr(value), "feature '$(features[i])', sample '$sample'"))
+                "an integer count", repr(value), "feature '$feature', sample '$sample'"))
             value >= 0 || throw(ArgumentError(
-                "negative count $value at feature '$(features[i])', sample '$sample'"))
-            counts[i, j] = BigInt(value) # every addition later is exact BigInt
+                "negative count $value at feature '$feature', sample '$sample'"))
+            target[j] += BigInt(value) # every addition is exact BigInt
         end
     end
+    counts = Matrix{BigInt}(undef, length(features), length(samples))
+    for (i, feature_row) in enumerate(feature_rows)
+        counts[i, :] = feature_row
+    end
+    length(features) * length(samples) <= MAX_CELLS || throw(ResourceLimitError(
+        "table cells", MAX_CELLS, length(features) * length(samples)))
     ExactSummaries.validate_coordinates(counts, samples, features)
     counts, samples, features
 end
