@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: MPL-2.0
+# Preparatory evidence only: this does not approve kyq or migrate any runtime IO.
+name: Format readiness evidence
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reference:
+    name: Format harness and pinned JSON reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test harness failure boundaries
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s scripts/tests -p 'test_format*.py' -v
+      - name: Inventory candidates without declaring compliance
+        run: python3 scripts/formats/inventory.py > "$RUNNER_TEMP/format-boundaries.tsv"
+      - name: Read immutable JSON reference pins
+        id: pins
+        run: |
+          python3 - <<'PY'
+          import os, re, tomllib
+          with open('config/format-tools.toml', 'rb') as stream:
+              pin = tomllib.load(stream)['ijson_jcs']
+          if pin['repository'] != 'https://github.com/hyperpolymath/ijson-jcs':
+              raise SystemExit('unexpected reference repository')
+          if not re.fullmatch(r'[0-9a-f]{40}', pin['revision']):
+              raise SystemExit('reference must be an immutable commit')
+          if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', pin['rust_toolchain']):
+              raise SystemExit('Rust must be an explicit release')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write(f"revision={pin['revision']}\nrust={pin['rust_toolchain']}\n")
+          PY
+      - name: Checkout pinned reference source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: hyperpolymath/ijson-jcs
+          ref: ${{ steps.pins.outputs.revision }}
+          path: .format-reference
+          persist-credentials: false
+      - name: Build the real reference CLI with locked dependencies
+        env:
+          REFERENCE_REVISION: ${{ steps.pins.outputs.revision }}
+          RUST_VERSION: ${{ steps.pins.outputs.rust }}
+        run: |
+          set -euo pipefail
+          test "$(git -C .format-reference rev-parse HEAD)" = "$REFERENCE_REVISION"
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          cargo "+${RUST_VERSION}" install --path .format-reference --locked --root "$RUNNER_TEMP/format-reference"
+      - name: Exercise original bytes against the installed reference
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          PATH="$RUNNER_TEMP/format-reference/bin:$PATH" python3 scripts/formats/conformance.py --adapter reference
+          {
+            echo '## Format migration evidence'
+            echo 'Pinned ijson-jcs raw-byte corpus passed. This is not application-wide conformance.'
+            echo 'kyq compilation, installed CLI conformance, KYAML comment preservation and runtime migration remain blocked/unverified.'
+          } >> "$GITHUB_STEP_SUMMARY"
