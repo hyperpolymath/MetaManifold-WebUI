@@ -162,7 +162,8 @@ end
         @test MG.disagreement(occ) === nothing
         # The bound the expiry sharpens: 201 KiB resident at once is now the
         # disagreement, where before the fix it was the prediction.
-        @test MG.disagreement(_occ_stage(tasks; measured = 201)) isa String
+        msg = MG.disagreement(_occ_stage(tasks; measured = 201))
+        @test occursin("measured 201 KiB", msg) && occursin("predicted 101 KiB", msg)
     end
 
     @testset "registration keeps the first child's sample boundary" begin
@@ -243,8 +244,7 @@ end
         # allows: a sample saw more than the timed timeline can hold.
         rec = _occ_stage([_occ_task(100; first_sample = 1, last_sample = 2)]; measured = 250)
         d = MG.disagreement(rec)
-        @test d isa String
-        @test occursin("250", d) && occursin("100", d)
+        @test occursin("measured 250 KiB", d) && occursin("predicted 100 KiB", d)
         # At or below the bound there is nothing to report.
         @test MG.disagreement(_occ_stage([_occ_task(100; first_sample = 1, last_sample = 2)];
                                          measured = 100)) === nothing

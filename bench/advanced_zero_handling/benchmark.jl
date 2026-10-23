@@ -92,7 +92,14 @@ function main()
     isnothing(output) ? println(rendered) : write(output, rendered * "\n")
 
     if !isnothing(baseline_path)
-        baseline = JSON3.read(read(baseline_path, String))
+        # A baseline is an input like any other: a truncated or hand-edited file
+        # must name itself in the error rather than escape as a JSON3 parse
+        # failure from inside the benchmark loop.
+        baseline = try
+            JSON3.read(read(baseline_path, String))
+        catch err
+            error("could not read benchmark baseline $(baseline_path): $(sprint(showerror, err))")
+        end
         regressions = String[]
         for old in baseline.results
             old.operation in ("replacement/bayesian_multiplicative", "dispersion/ml") || continue
