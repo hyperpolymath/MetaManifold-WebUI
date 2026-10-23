@@ -263,6 +263,7 @@ end
     # Compute Faith's PD + Unweighted & Weighted UniFrac when a phylogenetic tree is present,
     # including split `.jplace` query placements (`<qname>@edge<N>#<k>`).
     diversity_payload = nothing
+    try
     if cc_res.phylo_root !== nothing && !isempty(meta.sample_cols)
         tip_list = sort!(collect(MetaManifold.CladeCumulus._collect_tree_tips!(Set{String}(), cc_res.phylo_root)))
         id_col = MetaManifold.CladeCumulus._detect_id_col(df)
@@ -338,6 +339,9 @@ end
                 "top_branch_contributions"    => top_branches,
             )
         end
+    catch e
+        @error "clade-cumulus diversity computation failed" exception=(e, catch_backtrace())
+        return json_error(500, "clade_cumulus_diversity_failed", sprint(showerror, e))
     end
 
     receipt = MetaManifold.Epistemic.create_receipt(;
