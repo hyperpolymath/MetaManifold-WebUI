@@ -30,23 +30,30 @@ case "$mode" in
     ;;
 esac
 
-if [ -z "${R_APT_VERSION:-}" ]; then
+if [[ -z "${R_APT_VERSION:-}" ]]; then
   echo "R_APT_VERSION is not set; read it from config/defaults/tool_versions.yml" >&2
   exit 2
 fi
 
-# --https-only and an explicit keyring: the repository key is the only trust
-# anchor for the archive, so it is fetched over TLS and never piped into apt's
-# key management unattended.
-wget --https-only -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc |
-  sudo gpg --dearmor -o /usr/share/keyrings/r-project.gpg
+# The repository key is the only trust anchor for the archive, so it is fetched
+# over HTTPS and redirects are pinned to HTTPS as well: a plain `--location`
+# would let a 302 downgrade the download to http and the key would still import.
+# The key goes to a private temporary file first, because a failed download must
+# not leave a truncated keyring behind for apt to trust.
+keyring="$(mktemp)"
+trap 'rm -f "$keyring"' EXIT
+curl --fail --silent --show-error --location \
+  --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 \
+  --output "$keyring" \
+  https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc
+sudo gpg --dearmor -o /usr/share/keyrings/r-project.gpg <"$keyring"
 echo "deb [signed-by=/usr/share/keyrings/r-project.gpg] https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/" |
   sudo tee /etc/apt/sources.list.d/r-project.list >/dev/null
 sudo apt-get update -qq
 
 packages=(r-base-core="$R_APT_VERSION")
 options=()
-if [ "$mode" = "full" ]; then
+if [[ "$mode" == "full" ]]; then
   packages+=(
     r-base-dev="$R_APT_VERSION"
     r-base-html="$R_APT_VERSION"

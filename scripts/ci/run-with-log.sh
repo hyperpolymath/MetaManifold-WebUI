@@ -17,7 +17,7 @@
 # point of the annotation is the reason, not the transcript.
 set -euo pipefail
 
-if [ "$#" -lt 3 ] || [ "$2" != "--" ]; then
+if [[ "$#" -lt 3 || "$2" != "--" ]]; then
   echo "usage: $0 <log-path> -- <command> [args...]" >&2
   exit 2
 fi
@@ -25,7 +25,7 @@ fi
 log="$1"
 shift 2
 
-if [ -z "$log" ]; then
+if [[ -z "$log" ]]; then
   echo "usage: $0 <log-path> -- <command> [args...]" >&2
   exit 2
 fi
@@ -40,12 +40,15 @@ set +e
 status="${PIPESTATUS[0]}"
 set -e
 
-if [ "$status" -ne 0 ]; then
+if [[ "$status" -ne 0 ]]; then
   title="${RUN_LOG_TITLE:-$(basename -- "$1")} failed"
   message="$(tail -c 3000 "$log" |
     sed -e 's/%/%25/g' -e 's/\r//g' |
     awk '{ printf "%s%%0A", $0 }')"
-  echo "::error title=${title}::${message}"
+  # stderr is where a diagnostic belongs, and the runner parses workflow
+  # commands from both streams. Keeping the transcript on stdout means the
+  # annotation never interleaves with the log a reader is scrolling.
+  echo "::error title=${title}::${message}" >&2
 fi
 
 exit "$status"

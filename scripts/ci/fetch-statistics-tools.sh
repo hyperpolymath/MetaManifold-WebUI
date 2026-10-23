@@ -6,7 +6,8 @@
 #
 # Every version is a literal in this file and every download is verified:
 #   - yq is pinned by release tag and by the SHA-256 GitHub publishes for that
-#     exact asset, and curl is restricted to HTTPS with a minimum TLS version.
+#     exact asset, and curl is restricted to HTTPS both for the request and for
+#     any redirect it follows (--proto-redir), so a 302 cannot downgrade it.
 #   - the standards and ijson-jcs checkers are fetched at an exact commit, not a
 #     branch, so a change in either checker arrives as a reviewable bump.
 #
@@ -25,12 +26,12 @@ IJSON_JCS_SHA="3a9a4ee326a968a32b2f152b4faec243a2d00765"
 temp="${RUNNER_TEMP:-$(mktemp -d)}"
 mkdir -p "$temp/bin"
 
-if [ -n "${GITHUB_PATH:-}" ]; then
+if [[ -n "${GITHUB_PATH:-}" ]]; then
   echo "$temp/bin" >> "$GITHUB_PATH"
 fi
 
 curl --fail --silent --show-error --location \
-  --proto '=https' --tlsv1.2 \
+  --proto '=https' --proto-redir '=https' --tlsv1.2 \
   --output "$temp/bin/yq" \
   "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
 
@@ -47,14 +48,14 @@ fetch_commit() {
   git -C "$destination" remote add origin "$repository"
   git -C "$destination" -c protocol.version=2 fetch --quiet --depth 1 origin "$commit"
   git -C "$destination" -c advice.detachedHead=false checkout --quiet FETCH_HEAD
-  test "$(git -C "$destination" rev-parse HEAD)" = "$commit"
+  [[ "$(git -C "$destination" rev-parse HEAD)" == "$commit" ]]
 }
 
 fetch_commit https://github.com/hyperpolymath/standards "$STANDARDS_SHA" "$temp/standards"
 fetch_commit https://github.com/hyperpolymath/ijson-jcs "$IJSON_JCS_SHA" "$temp/ijson-jcs"
 
 cargo build --quiet --release --manifest-path "$temp/ijson-jcs/Cargo.toml"
-if [ -n "${GITHUB_PATH:-}" ]; then
+if [[ -n "${GITHUB_PATH:-}" ]]; then
   echo "$temp/ijson-jcs/target/release" >> "$GITHUB_PATH"
 fi
 

@@ -51,10 +51,12 @@ done
 echo 'ok - run-with-log.sh preserves the producer exit'
 
 # A failure must be annotated, and the annotation must escape line breaks rather
-# than emitting a multi-line command the checks API cannot parse.
+# than emitting a multi-line command the checks API cannot parse. The annotation
+# goes to stderr (the runner parses workflow commands on both streams), so both
+# are captured here.
 log=$(mktemp)
 annotation=$(RUN_LOG_TITLE='Seeded simulation study' bash "$runner" "$log" -- \
-  bash -c 'printf "first\nsecond\n"; exit 7' 2>/dev/null || true)
+  bash -c 'printf "first\nsecond\n"; exit 7' 2>&1 || true)
 grep -Fq '::error title=Seeded simulation study failed::' <<<"$annotation" || {
   echo 'run-with-log.sh did not annotate a failure' >&2
   exit 1
