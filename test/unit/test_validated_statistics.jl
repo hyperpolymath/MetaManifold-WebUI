@@ -92,16 +92,26 @@ end
 
 @testset "Numeric JSON representations fail closed" begin
     _vs_with_root() do _
-        for bad in (1.0, 1.5, -1, 9007199254740993)
+        # JSON3 normalises every integral numeric token - `1`, `1.0` and `1e0`
+        # alike - to Int64 while parsing, so those three are indistinguishable by
+        # the time a route sees them, and the endpoint must not refuse a token
+        # whose value is exactly the integer it denotes. What fails closed is
+        # everything that is not exactly an integer of Int64 size: a fractional
+        # token, a negative count and a token past the JSON-safe integer range.
+        for bad in (1.5, -1, 9007199254740993)
             payload = merge(_VS_EXACT_BODY, Dict("persist" => false,
                 "counts" => [[bad, 1], [1, 0], [1, 0]]))
             response = _vs_post("/api/v1/statistics/summaries", payload)
             @test response.status == 422
             @test JSON3.read(String(response.body)).error == "invalid_numeric_input"
         end
-        # Exponent notation is a float token even though its value is integral.
-        raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1e0]]}"""
-        @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 422
+        # 1e0 is an exactly integral token, so it is read as the count 1.
+        integral = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1e0]]}"""
+        @test _vs_post("/api/v1/statistics/summaries", integral; raw=true).status == 200
+        # 1.0000000001 is not integral, so the value that survives parsing is a
+        # Float64 and the route refuses it rather than rounding.
+        fractional = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1.0000000001]]}"""
+        @test _vs_post("/api/v1/statistics/summaries", fractional; raw=true).status == 422
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))
         @test _vs_post("/api/v1/statistics/summaries", negative_string).status == 422

@@ -95,8 +95,10 @@ function _json_exact_count(value, feature::String, sample::String)
                 "feature '$feature', sample '$sample'; use a canonical whole-number string"))
         end
     end
-    # JSON3 represents a decimal/exponent token as a float even when its value
-    # is mathematically integral. Reject the representation, not just 1.5.
+    # JSON3 normalises an integral decimal or exponent token (`1.0`, `1e0`) to
+    # Int64 while it parses, so the only non-integers that can arrive here are
+    # genuinely fractional or out of Int64 range, and those are refused rather
+    # than rounded.
     (value isa Integer && !(value isa Bool)) || throw(UnsupportedRepresentationError(
         "an integer JSON token or whole-number string", repr(value),
         "feature '$feature', sample '$sample'; floating-point JSON is not exact input"))
