@@ -29,7 +29,7 @@ git -C "$fixture/repo" commit -qm 'clean fixture'
 # Construct a dummy value at runtime; never commit a credential-shaped literal
 # to the application repository or publish the fixture's matching source.
 dummy="synthetic-$(printf '%s' 'credential-fixture-123456789')"
-printf 'SERVICE_TOKEN="%s"\n' "$dummy" > "$fixture/repo/removed.sh"
+printf 'PASSWORD="${LONG_PASSWORD:?}"; SERVICE_TOKEN="%s"\n' "$dummy" > "$fixture/repo/removed.sh"
 rc=0
 (cd "$fixture/repo" && bash "$ROOT/scripts/ci/check-shell-secrets.sh") > "$fixture/log" 2>&1 || rc=$?
 [ "$rc" -eq 1 ] && ! grep -Fq "$dummy" "$fixture/log"
