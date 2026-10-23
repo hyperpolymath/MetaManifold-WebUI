@@ -2181,7 +2181,11 @@ function _build_phylo_or_combined_tree(
                 Epistemic.cloud_size_by_residual(res),
                 is_root ? 0.0 : max(0.0, u.branch_length),
                 u.support === nothing ? sup : u.support,
-                0.0,
+                # Keep the same node-local convention as clade_faith_pd and
+                # _reaggregate_after_move: an active non-root tip carries its
+                # incoming edge. This makes an unchanged tip's PD comparable
+                # before and after an accepted drag-and-drop proposal.
+                cnt > 0.0 && !is_root ? max(0.0, u.branch_length) : 0.0,
                 tx,
                 tx === nothing ? nothing : 1.0,
                 tx === nothing ? nothing : (total_tips_per_taxon[tx] == 1),

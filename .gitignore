@@ -320,6 +320,8 @@ archive/
 ### Exceptions
 !.github
 !.github/**
+!.editorconfig
+!.gitleaks.toml
 !.Rprofile
 
 # Brainstorming visual-companion scratch (mock-ups, server state)

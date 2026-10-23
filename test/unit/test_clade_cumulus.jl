@@ -613,6 +613,18 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test low_clade.epistemic_status == "present_in_some"
             @test low_clade.colour == "#f9a825"
 
+            # Node-local PD has the same meaning on tips as on internal clades:
+            # an active non-root tip includes its incoming branch. Every tip is
+            # active in at least one sample in this fixture.
+            for tip_id in ("ASV_1", "ASV_2", "ASV_3", "ASV_4")
+                tip = _cc_find(comb.root, tip_id)
+                @test tip !== nothing
+                if tip !== nothing
+                    @test Float64(tip.cumulative_count) > 0.0
+                    @test Float64(tip.subtree_pd) ≈ Float64(tip.branch_length) atol = 1e-10
+                end
+            end
+
             # 3. Validate drag-and-drop: moving ASV_3 into low-support clade fails warrant check!
             r_deny = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
                 "table" => "merged",
@@ -678,6 +690,22 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                                    if ch.cumulative_count > 0); init=0.0)
                 @test Float64(proposed_target.subtree_pd) ≈ expected_pd atol = 1e-10
                 @test Float64(proposed_target.subtree_pd) != before_target_pd
+            end
+
+            # Reaggregation must not change the PD stored on a tip merely
+            # because a proposal was accepted. This covers unchanged tips and
+            # the moved tip, whose incoming branch itself is unchanged.
+            for tip_id in ("ASV_1", "ASV_2", "ASV_3", "ASV_4")
+                original_tip = _cc_find(comb.root, tip_id)
+                proposed_tip = _cc_find_dict(v_allow.proposed_root, tip_id)
+                @test original_tip !== nothing
+                @test proposed_tip !== nothing
+                if original_tip !== nothing && proposed_tip !== nothing
+                    @test Float64(proposed_tip["subtree_pd"]) ≈
+                          Float64(original_tip.subtree_pd) atol = 1e-10
+                    @test Float64(proposed_tip["branch_length"]) ≈
+                          Float64(original_tip.branch_length) atol = 1e-10
+                end
             end
 
             # Re-saving under a different threshold writes a distinct immutable sidecar file
@@ -846,6 +874,18 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             if relocated !== nothing
                 @test Float64(relocated["cumulative_count"]) == moved_reads
                 @test Float64(relocated["residual_count"]) == moved_residual
+                # The moved clade's 0.30 incoming branch and its two tip
+                # branches (0.10 and 0.20) each occur exactly once.
+                @test Float64(relocated["subtree_pd"]) ≈ 0.60 atol = 1e-9
+            end
+            proposed_target = _cc_find_dict(proposed_root, String(target.id))
+            @test proposed_target !== nothing
+            if proposed_target !== nothing
+                # The target contributes its own 0.40 edge, two original tip
+                # edges (0.15 and 0.25), and the relocated clade's complete
+                # 0.60 node-local PD. Adding the relocated incoming edge again
+                # at the parent would incorrectly produce 1.70 rather than 1.40.
+                @test Float64(proposed_target["subtree_pd"]) ≈ 1.40 atol = 1e-9
             end
             @test Float64(proposed_root["cumulative_count"]) ≈ before_total atol = 1e-9
             # The emptied wrapper is childless but is not a tip: it must not

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: MPL-2.0
+# Pinned reusable implementation; do not replace with a floating branch tag.
+name: Scorecard
+
+# Scorecard publishes SARIF for the default branch. Keep its required
+# security-events upload permission off pull requests: otherwise Scorecard
+# scans this caller, flags that necessary permission, and creates a blocking
+# code-scanning check on its own security workflow. Scheduled and main-branch
+# scans retain the findings without that self-referential PR gate.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scorecard:
+    name: OpenSSF Scorecard
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      id-token: write
+    uses: hyperpolymath/standards/.github/workflows/scorecard-reusable.yml@75bd5994470661a099df562d6d5ad2fe744dbd66
