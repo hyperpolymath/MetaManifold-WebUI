@@ -137,12 +137,11 @@ module Server
         message::String
     end
 
-    # Parse a request body as JSON, and turn malformed input into a 400 through
-    # `_bad_request_middleware` instead of a 500 carrying a JSON3 stack trace.
-    # A client that sends a truncated body behind a Save button has made a
-    # request error, not found a server bug. `String(::Vector{UInt8})` can
-    # consume the buffer, so copy it: routes that parse and then hash or log
-    # `req.body` still see the original bytes.
+    # Parse a request body as JSON, and turn malformed input into a 400 instead
+    # of a 500 carrying a JSON3 stack trace. A client that sends a truncated
+    # body behind a Save button has made a request error, not found a server
+    # bug. `String(::Vector{UInt8})` can consume the buffer, so copy it: routes
+    # that parse and then hash or log `req.body` still see the original bytes.
     function _request_json(req::HTTP.Request)
         try
             JSON3.read(String(copy(req.body)))
@@ -151,6 +150,14 @@ module Server
             throw(BadRequest("Request body is not valid JSON"))
         end
     end
+
+    # Oxygen's serializer catches whatever a handler throws and answers 500
+    # before the middleware chain sees it, so `_bad_request_middleware` cannot
+    # rescue a `BadRequest` raised inside a route. Its error mapper is the hook
+    # that does run inside the serializer: the same dispatch that answers
+    # Oxygen's own `ValidationError` with a 400. Extending it keeps our JSON
+    # error shape instead of Oxygen's plain `{"message": ...}`.
+    Oxygen.Core.Util.handle_error(err::BadRequest) = json_error(400, "bad_request", err.message)
 
     # Oxygen URL-decodes path parameters, so an encoded '/' would reach a handler
     # as a real separator. No study, run, table, column or file name needs one.
