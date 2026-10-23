@@ -28,11 +28,15 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# Placement tools may truncate a query's candidate list, so retained
-# like-weight ratios can legitimately sum to slightly less than 1 (a single
-# retained placement at 0.98 is complete evidence). Sums far from 1 indicate
-# a malformed or partial record and stay undecided.
+# Placement tools truncate a query's candidate list at a likelihood-weight
+# cutoff, so retained like-weight ratios can legitimately sum to a little
+# under 1 (a single retained placement at 0.98 is complete evidence). A shortfall
+# beyond the tolerance is a missing or discarded placement and stays undecided.
+# A sum over 1 is never legitimate: weights are mutually exclusive placement
+# ratios, so overweight evidence is malformed and is rejected by a tight upper
+# bound while the lower shortfall is tolerated.
 const PLACEMENT_WEIGHT_SUM_TOL = 0.05
+const PLACEMENT_WEIGHT_OVER_TOL = 1e-9
 
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
@@ -573,7 +577,8 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
 
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
-        elseif abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
+        elseif weight_sum > 1.0 + PLACEMENT_WEIGHT_OVER_TOL ||
+               weight_sum < 1.0 - PLACEMENT_WEIGHT_SUM_TOL
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
