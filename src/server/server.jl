@@ -14,6 +14,7 @@ module Server
     using Oxygen, HTTP, JSON3, YAML, Logging
     using PrecompileTools: @setup_workload, @compile_workload
 
+    using ..Canonical: ijson_read, jcs_bytes
     using ..PipelineTypes, ..PipelineLog, ..Config
     using ..Databases, ..DuckDBStore, ..Validation
     using ..Tools, ..TaxonomyTableTools, ..ProjectSetup
@@ -63,11 +64,22 @@ module Server
     using .JobQueue
 
     ## Shared helpers (available to all included route files)
+    function jcs_json(payload; status::Int=200)
+        HTTP.Response(status, ["Content-Type" => "application/json"], body=jcs_bytes(payload))
+    end
+
     function json_error(status::Int, code::String, message::String; detail=nothing)
         body = isnothing(detail) ? (; error=code, message) : (; error=code, message, detail)
-        HTTP.Response(status,
-            ["Content-Type" => "application/json"],
-            body = JSON3.write(body))
+        bytes = try
+            jcs_bytes(body)
+        catch e
+            e isa ArgumentError || rethrow()
+            # Error messages can interpolate untrusted path/query segments.
+            # If they contain invalid I-JSON Unicode, still return the intended
+            # HTTP status rather than turning a client error into a server error.
+            jcs_bytes((; error=code, message="Invalid request"))
+        end
+        HTTP.Response(status, ["Content-Type" => "application/json"], body=bytes)
     end
 
     ## Route registration

@@ -101,6 +101,8 @@ input matrix as strings, making the direct derived record self-contained.
 - Stored approximate `BigFloat` values use a decimal string that can be parsed
   directly at the recorded precision without an intermediate `Float64`.
 
+Validated-statistics requests are also checked against the strict I-JSON profile on the raw request bytes (duplicate keys, unsafe integer tokens and invalid Unicode are rejected with HTTP 400). Float-form count tokens still fail with HTTP 422. Responses and persisted derived records use JCS bytes; see [the migration notes](docs/ijson-jcs.md).
+
 The request body is limited to 16 MiB and a validated matrix to 100,000 cells.
 Other reviewed limits are defined in `src/analysis/numeric_policy.jl`; exceeding
 one returns an explicit resource error rather than a float fallback.

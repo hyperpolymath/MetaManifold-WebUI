@@ -417,7 +417,25 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test v_allow.proposal_file !== nothing
             @test isfile(joinpath(trees_dir, ".clade_cumulus", String(v_allow.proposal_file)))
             @test v_allow.proposed_root.cumulative_count ≈ 110.0 atol = 1e-9
-            @test Float64(v_allow.proposed_root.children[1].subtree_pd) > before_target_pd
+            # Subtree PD includes each active edge exactly once, including the
+            # target's own incoming edge (main's node-local PD convention).
+            function proposed_node(u, id)
+                u.id == id && return u
+                for child in u.children
+                    found = proposed_node(child, id)
+                    found !== nothing && return found
+                end
+                nothing
+            end
+            proposed_target = proposed_node(v_allow.proposed_root, high_clade.id)
+            @test proposed_target !== nothing
+            if proposed_target !== nothing
+                expected_pd = max(0.0, Float64(proposed_target.branch_length)) +
+                              sum((Float64(ch.subtree_pd) for ch in proposed_target.children
+                                   if ch.cumulative_count > 0); init=0.0)
+                @test Float64(proposed_target.subtree_pd) ≈ expected_pd atol = 1e-10
+                @test Float64(proposed_target.subtree_pd) != before_target_pd
+            end
 
             # Re-saving under a different threshold writes a distinct immutable sidecar file
             r_allow2 = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(

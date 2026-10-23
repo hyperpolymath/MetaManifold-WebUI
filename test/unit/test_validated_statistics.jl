@@ -92,7 +92,7 @@ end
 
 @testset "Numeric JSON representations fail closed" begin
     _vs_with_root() do _
-        for bad in (1.5, -1, 9007199254740993)
+        for bad in (1.5, -1)
             payload = merge(_VS_EXACT_BODY, Dict("persist" => false,
                 "counts" => [[bad, 1], [1, 0], [1, 0]]))
             response = _vs_post("/api/v1/statistics/summaries", payload)
@@ -112,6 +112,17 @@ end
             integer_raw = replace(raw, token => "1")
             @test _vs_post("/api/v1/statistics/summaries",
                 Vector{UInt8}(codeunits(integer_raw)); raw=true).status == 200
+        end
+
+        # Fractional input stays invalid as well, even when it is nearly 1.
+        fractional = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1.0000000001]]}"""
+        @test _vs_post("/api/v1/statistics/summaries", fractional; raw=true).status == 422
+        # Strict I-JSON is checked on the raw body, before JSON3 can collapse
+        # duplicate keys or normalise an oversized integer token. Unlike a
+        # negative count, an oversized JSON number is invalid at parse time.
+        for raw in ("""{"numeric_policy":{"mode":"exact_counts","mode":"high_precision"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1]]}""",
+                    """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[9007199254740992]]}""")
+            @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 400
         end
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))

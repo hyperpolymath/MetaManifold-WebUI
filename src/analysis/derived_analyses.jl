@@ -7,7 +7,7 @@
 module DerivedAnalyses
 
 using JSON3
-using ..Canonical: jcs_bytes, jcs_sha256
+using ..Canonical: jcs_bytes, jcs_sha256, ijson_read
 
 export DerivedAnalysisError, derived_analysis_id, persist_derived_analysis,
        load_derived_analysis, MAX_DERIVED_BYTES
@@ -43,13 +43,15 @@ function _validate_bytes(bytes::Vector{UInt8})
     length(bytes) <= MAX_DERIVED_BYTES || throw(DerivedAnalysisError(
         "invalid_record", "derived analysis exceeds the $MAX_DERIVED_BYTES-byte read limit"))
     record = try
-        JSON3.read(bytes)
+        ijson_read(bytes)
     catch err
         throw(DerivedAnalysisError("invalid_record",
             "derived analysis is not valid JSON: $(sprint(showerror, err))"))
     end
     (record isa JSON3.Object || record isa AbstractDict) || throw(DerivedAnalysisError(
         "invalid_record", "derived analysis root must be a JSON object"))
+    jcs_bytes(record) == bytes || throw(DerivedAnalysisError(
+        "invalid_record", "derived analysis is not canonical I-JSON/JCS"))
     _get(record, "schema") == SCHEMA || throw(DerivedAnalysisError(
         "invalid_record", "derived analysis has an unsupported schema"))
     id = _get(record, "analysis_id")
