@@ -19,7 +19,7 @@ module Server
     using ..Databases, ..DuckDBStore, ..Validation
     using ..Tools, ..TaxonomyTableTools, ..ProjectSetup
     using ..DADA2, ..OTUPipeline
-    using ..DiversityMetrics, ..Analysis, ..Differential
+    using ..DiversityMetrics, ..Analysis, ..Differential, ..Ordination
 
     ## EPIPE log filter
     # HTTP.jl logs every broken-pipe error from SSE streams as @error
@@ -155,6 +155,7 @@ module Server
     include(joinpath(@__DIR__, "routes", "phylogeny.jl"))
     include(joinpath(@__DIR__, "routes", "cladistics.jl"))
     include(joinpath(@__DIR__, "routes", "clade_cumulus.jl"))
+    include(joinpath(@__DIR__, "routes", "ordination.jl"))
 
     ## Bad request middleware
     # Helpers deep in a route (e.g. `_req_group`) throw this to reject a request.

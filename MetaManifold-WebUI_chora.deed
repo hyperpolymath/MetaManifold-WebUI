@@ -16,6 +16,8 @@
     :frontend "frontend/"
     :analysis "src/analysis/"
     :cladistics "docs/cladistics/"
+    :statistics "docs/statistics/"
+    :schemas "docs/schemas/"
     :proofs "proofs/"
     :contractiles ".machine_readable/contractiles/"
     :enforcement ".github/workflows/")

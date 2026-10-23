@@ -57,12 +57,17 @@ K9!
         surface = "test/unit/test_install_pins.jl",
         rule = "Workflow actions and bioinformatics tool versions remain pinned and verified by unit tests.",
       },
+      {
+        id = "constrained-ordination-formula-and-compatibility-gate",
+        surface = "src/analysis/ordination.jl",
+        rule = "Constrained ordination routes enforce a strict covariate-only formula AST (rejecting arbitrary R expressions), method/distance compatibility (rejecting non-Euclidean RDA combinations such as rda + bray), permutations in [99, 9999], scaling in {1, 2}, and serialized R execution under with_r_lock.",
+      },
     ],
   },
 
   validation = {
     request_limit_positive = config.max_statistics_request_bytes > 0,
     safe_integer_bound = config.max_ieee754_safe_integer == 9007199254740991,
-    boundary_count_positive = std.array.length config.boundaries >= 4,
+    boundary_count_positive = std.array.length config.boundaries >= 5,
   },
 }

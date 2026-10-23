@@ -55,6 +55,12 @@ K9!
         summary = "Keep CladeCumulus topology proposals support-warranted, immutable as sidecars, and invariant in tip-level Faith PD across reaggregation.",
       },
       {
+        id = "compositional-constrained-ordination",
+        area = "src/analysis/ordination.jl",
+        status = "verified",
+        summary = "Provide RDA, CCA, CAP, and dbRDA constrained ordinations with Condition(...) partial ordination, seeded vegan::anova.cca permutation inference, adjusted-R2 variance partitioning, and KYAML/JCS provenance.",
+      },
+      {
         id = "honest-fleet-evidence",
         area = ".gitbot-fleet/enrolment.json",
         status = "in_progress",
@@ -64,6 +70,6 @@ K9!
   },
 
   validation = {
-    commitment_count_positive = std.array.length config.commitments >= 4,
+    commitment_count_positive = std.array.length config.commitments >= 5,
   },
 }
