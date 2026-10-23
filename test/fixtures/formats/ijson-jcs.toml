@@ -1,0 +1,185 @@
+# SPDX-License-Identifier: MPL-2.0
+# Raw-text characterization of the pinned ijson-jcs `canon` protocol.
+# Deliberately not a JSON file: malformed bytes/tokens must survive fixture loading.
+schema = 1
+
+[[case]]
+id = "object-order"
+input = '{"z":0,"a":1}'
+valid = true
+canonical = '{"a":1,"z":0}'
+
+[[case]]
+id = "nested-order-array-preserved"
+input = '{"b":[3,1,2],"a":{"z":false,"a":null}}'
+valid = true
+canonical = '{"a":{"a":null,"z":false},"b":[3,1,2]}'
+
+[[case]]
+id = "utf16-not-utf8-order"
+input = '{"Ａ":1,"😀":2}'
+valid = true
+canonical = '{"😀":2,"Ａ":1}'
+
+[[case]]
+id = "surrogate-pair"
+input = '{"s":"\ud83d\ude00"}'
+valid = true
+canonical = '{"s":"😀"}'
+
+[[case]]
+id = "escaped-controls-are-valid"
+input = '{"s":"\u0001\t\n\r"}'
+valid = true
+canonical = '{"s":"\u0001\t\n\r"}'
+
+[[case]]
+id = "negative-zero"
+input = '[-0.0,0.0]'
+valid = true
+canonical = '[0,0]'
+
+[[case]]
+id = "exponent-thresholds"
+input = '[1e-6,1e-7,1e21]'
+valid = true
+canonical = '[0.000001,1e-7,1e+21]'
+
+[[case]]
+id = "integer-bounds"
+input = '[-9007199254740991,9007199254740991]'
+valid = true
+canonical = '[-9007199254740991,9007199254740991]'
+
+[[case]]
+id = "exact-large-count-string"
+input = '{"count":"18446744073709551617"}'
+valid = true
+canonical = '{"count":"18446744073709551617"}'
+
+[[case]]
+id = "scalar-is-format-valid"
+input = 'true'
+valid = true
+canonical = 'true'
+
+[[case]]
+id = "insignificant-whitespace"
+input = " \t[1]\r\n"
+valid = true
+canonical = '[1]'
+
+[[case]]
+id = "duplicate-key"
+input = '{"a":1,"a":2}'
+valid = false
+
+[[case]]
+id = "escaped-equivalent-key"
+input = '{"a":1,"\u0061":2}'
+valid = false
+
+[[case]]
+id = "nested-duplicate"
+input = '{"a":[{"b":1,"b":2}]}'
+valid = false
+
+[[case]]
+id = "unsafe-positive-integer"
+input = '[9007199254740992]'
+valid = false
+
+[[case]]
+id = "unsafe-negative-integer"
+input = '[-9007199254740992]'
+valid = false
+
+[[case]]
+id = "integer-beyond-uint64"
+input = '{"n":18446744073709551617}'
+valid = false
+
+[[case]]
+id = "overflow"
+input = '[1e400]'
+valid = false
+
+[[case]]
+id = "nan"
+input = '[NaN]'
+valid = false
+
+[[case]]
+id = "infinity"
+input = '[Infinity]'
+valid = false
+
+[[case]]
+id = "lone-high-surrogate"
+input = '["\ud800"]'
+valid = false
+
+[[case]]
+id = "lone-low-surrogate"
+input = '["\udc00"]'
+valid = false
+
+[[case]]
+id = "noncharacter-value"
+input = '["\ufdd0"]'
+valid = false
+
+[[case]]
+id = "noncharacter-key"
+input = '{"\uffff":0}'
+valid = false
+
+[[case]]
+id = "invalid-utf8"
+hex = '5b22ff225d'
+valid = false
+
+[[case]]
+id = "utf8-encoded-surrogate"
+hex = '5b22eda080225d'
+valid = false
+
+[[case]]
+id = "raw-control"
+hex = '5b2201225d'
+valid = false
+
+[[case]]
+id = "leading-zero"
+input = '[01]'
+valid = false
+
+[[case]]
+id = "incomplete-number"
+input = '[1.]'
+valid = false
+
+[[case]]
+id = "trailing-comma"
+input = '[1,]'
+valid = false
+
+[[case]]
+id = "trailing-junk"
+input = '[1] garbage'
+valid = false
+
+[[case]]
+id = "concatenated-documents"
+input = '{"a":1}{"b":2}'
+valid = false
+
+[[case]]
+id = "truncated-body"
+input = '{"a":'
+valid = false
+
+[[case]]
+id = "empty-body"
+input = ''
+valid = false

@@ -37,7 +37,7 @@ jobs:
       # further back still.
       - name: Checkout the change
         if: github.event_name == 'pull_request'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false   # nothing here pushes
           fetch-depth: 0
@@ -103,7 +103,7 @@ jobs:
       # both, and a stacked PR's merge base sits further back still.
       - name: Checkout the change
         if: github.event_name == 'pull_request'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false   # nothing here pushes
           fetch-depth: 0
@@ -191,7 +191,7 @@ jobs:
       RENV_CONFIG_AUTOLOADER_ENABLED: "FALSE"
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # The required "SonarCloud Code Analysis" check is the GitHub App's
       # automatic analysis -- nothing in this repository configures or runs it,
@@ -209,7 +209,7 @@ jobs:
         run: julia scripts/check-julia-syntax.jl
 
       - name: Cache Julia packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.julia/artifacts
@@ -479,7 +479,7 @@ jobs:
 
       - name: Retain validated-statistics benchmark
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: validated-statistics-benchmark
           path: ${{ runner.temp }}/validated-statistics-benchmark.json
@@ -495,7 +495,7 @@ jobs:
         run: julia scripts/process-ci-coverage.jl
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v6.0.2
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -620,7 +620,7 @@ jobs:
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Agda and the standard library
         run: |
@@ -659,7 +659,7 @@ jobs:
     container: debian:trixie-20250929-slim@sha256:1caf1c703c8f7e15dcf2e7769b35000c764e6f50e4d7401c355fb0248f3ddfdb
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install proof tools
         run: |
           apt-get update -qq
