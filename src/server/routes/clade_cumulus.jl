@@ -224,7 +224,7 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
     !isnothing(err) && return err
 
     body = try
-        isempty(req.body) ? Dict{Symbol,Any}() : JSON3.read(String(req.body))
+        isempty(req.body) ? Dict{Symbol,Any}() : _request_json(req)
     catch
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
@@ -454,7 +454,7 @@ end
     !isnothing(err) && return err
 
     body = try
-        isempty(req.body) ? Dict{Symbol,Any}() : JSON3.read(String(req.body))
+        isempty(req.body) ? Dict{Symbol,Any}() : _request_json(req)
     catch
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end

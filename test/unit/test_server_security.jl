@@ -172,6 +172,32 @@ end
             @test JSON3.read(String(copy(r.body))).error == "bad_request"
         end
 
+        @testset "Malformed JSON bodies are client errors" begin
+            host = "Host" => "127.0.0.1:8080"
+            json = "Content-Type" => "application/json"
+            # Every JSON route parses through `Server._request_json`, so a
+            # truncated body is a 400 with a JSON error instead of a 500 that
+            # carries a JSON3 stack trace. `_bad_request_middleware` turns the
+            # thrown `BadRequest` into the response.
+            for (method, path) in (
+                ("POST", "/api/v1/studies"),
+                ("POST", "/api/v1/studies/StudyS/runs"),
+                ("PATCH", "/api/v1/config"),
+                ("POST", "/api/v1/studies/StudyS/analysis/alpha"),
+            )
+                r = _ss_request(method, path, [host, json], "{\"name\": ")
+                @test r.status == 400
+                @test JSON3.read(String(copy(r.body))).error == "bad_request"
+            end
+            # A well-formed body still parses, and a byte-backed body survives:
+            # `String(::Vector{UInt8})` can consume the vector, so the helper
+            # copies it before handing it to JSON3.
+            bytes = Vector{UInt8}(codeunits("{\"name\":\"FromBytes\"}"))
+            req = SV.HTTP.Request("POST", "/api/v1/studies", [json], bytes)
+            @test SV._request_json(req).name == "FromBytes"
+            @test String(copy(req.body)) == "{\"name\":\"FromBytes\"}"
+        end
+
         @testset "Report uploads are served inert" begin
             host = "Host" => "127.0.0.1:8080"
             base = "/api/v1/studies/StudyS/report"

@@ -101,7 +101,7 @@ end
     isnothing(dir) && return json_error(404, "no_results",
                                              "No results database for run '$run' - run the pipeline first")
 
-    body = length(req.body) > 0 ? JSON3.read(String(req.body)) : (;)
+    body = length(req.body) > 0 ? _request_json(req) : (;)
 
     with_results_db(dir) do con
         _duckdb_distinct(con, table, column, body)
@@ -121,7 +121,7 @@ end
     isnothing(dir) && return json_error(404, "no_results",
                                              "No results database for run '$run' - run the pipeline first")
 
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
 
     with_results_db(dir) do con
         _duckdb_paginated_query(con, table, body)
@@ -208,7 +208,7 @@ end
     isnothing(dir) && return json_error(404, "no_results",
                                              "No results database for run '$run' - run the pipeline first")
 
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     preset_file = get(body, :preset, nothing)
     isnothing(preset_file) && return json_error(400, "missing_preset", "Body must include 'preset'")
     preset_file = string(preset_file)
@@ -318,7 +318,7 @@ end
     filename = endswith(name, ".yml") ? name : name * ".yml"
     path = joinpath(dir, filename)
 
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     filters = get(body, :filters, nothing)
     isnothing(filters) && return json_error(400, "missing_filters", "Body must include 'filters'")
     description = get(body, :description, "Saved from WebUI")
@@ -417,7 +417,7 @@ const _PIPELINE_TABLES = ("merged", "merged_otu", "merged_cdhit", "cluster_membe
     isnothing(dir) && return json_error(404, "no_results",
                                              "No results database for run '$run' - run the pipeline first")
 
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     save_name = get(body, :name, nothing)
     isnothing(save_name) && return json_error(400, "missing_name", "Body must include 'name'")
     save_name = string(save_name)
@@ -464,7 +464,7 @@ end
     isnothing(dir) && return json_error(404, "no_results",
                                              "No results database for run '$run' - run the pipeline first")
 
-    body   = JSON3.read(String(req.body))
+    body   = _request_json(req)
     params = _body_filter_params(body)
     sort_by  = get(params, "sort",     nothing)
     sort_dir = get(params, "sort_dir", "asc")

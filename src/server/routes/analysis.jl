@@ -38,7 +38,7 @@ end
     dir, err = _require_run_results(study, run; group)
     !isnothing(err) && return err
 
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     table = get(body, :table, "merged")
     params = _body_filter_params(body)
     cfg_cache = Dict{Tuple{String,String,String}, Any}()
@@ -235,7 +235,7 @@ end
     dir, err = _require_run_results(study, run; group)
     !isnothing(err) && return err
 
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     table    = string(get(body, :table, "merged"))
     tag      = string(get(body, :tag, "rank"))
     value    = string(get(body, :value, ""))
@@ -695,7 +695,7 @@ end
 @post "/api/v1/studies/{study}/analysis/alpha" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     runs_spec = get(body, :runs, [])
     isempty(runs_spec) && return json_error(400, "no_runs", "Provide at least one run")
     table = get(body, :table, "merged")
@@ -777,7 +777,7 @@ end
                                                      "Study '$study' not found")
     !r_available() && return json_error(503, "r_unavailable",
                                              "R/vegan is not available - install R and the vegan package")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     runs_spec = get(body, :runs, [])
     length(runs_spec) < 2 && return json_error(400, "too_few_runs",
                                                     "NMDS requires at least 2 runs")
@@ -834,7 +834,7 @@ end
                                                      "Study '$study' not found")
     !r_available() && return json_error(503, "r_unavailable",
                                              "R/vegan is not available")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     runs_spec = get(body, :runs, [])
     length(runs_spec) < 2 && return json_error(400, "too_few_runs",
                                                     "PERMANOVA requires at least 2 runs")
@@ -877,7 +877,7 @@ end
 @post "/api/v1/studies/{study}/analysis/chart" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     runs_spec = get(body, :runs, [])
     isempty(runs_spec) && return json_error(400, "no_runs", "Provide at least one run")
     table    = string(get(body, :table, "merged"))
@@ -1022,7 +1022,7 @@ end
 @post "/api/v1/studies/{study}/analysis/chart-facet" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     runs_spec = get(body, :runs, [])
     isempty(runs_spec) && return json_error(400, "no_runs", "Provide at least one run")
 
@@ -1141,7 +1141,7 @@ end
 @post "/api/v1/studies/{study}/analysis/venn" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body   = JSON3.read(String(req.body))
+    body   = _request_json(req)
     runs_spec = get(body, :runs, [])
     isempty(runs_spec) && return json_error(400, "no_runs", "Provide at least one run")
     table  = string(get(body, :table, "merged"))
@@ -1345,5 +1345,5 @@ end
 
 ## Cross-run differential abundance (negative binomial + BH)
 @post "/api/v1/studies/{study}/analysis/differential" function(req, study::String)
-    _differential(study, JSON3.read(String(req.body)))
+    _differential(study, _request_json(req))
 end

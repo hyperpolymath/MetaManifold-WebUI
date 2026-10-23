@@ -188,7 +188,7 @@ end
 
 ## Study management
 @post "/api/v1/studies" function(req)
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     name = get(body, :name, nothing)
     isnothing(name) && return json_error(400, "missing_name", "Body must include 'name'")
     name = string(name)
@@ -212,7 +212,7 @@ end
 @post "/api/v1/studies/{study}/rename" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     new_name = get(body, :name, nothing)
     isnothing(new_name) && return json_error(400, "missing_name", "Body must include 'name'")
     new_name = string(new_name)
@@ -242,7 +242,7 @@ end
 @post "/api/v1/studies/{study}/groups" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     name = get(body, :name, nothing)
     isnothing(name) && return json_error(400, "missing_name", "Body must include 'name'")
     name = string(name)
@@ -263,7 +263,7 @@ end
                                                      "Study '$study' not found")
     group in _group_names(study) || return json_error(404, "group_not_found",
                                                           "Group '$group' not found")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     new_name = get(body, :name, nothing)
     isnothing(new_name) && return json_error(400, "missing_name", "Body must include 'name'")
     new_name = string(new_name)

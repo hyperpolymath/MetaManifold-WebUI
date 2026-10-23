@@ -137,6 +137,21 @@ module Server
         message::String
     end
 
+    # Parse a request body as JSON, and turn malformed input into a 400 through
+    # `_bad_request_middleware` instead of a 500 carrying a JSON3 stack trace.
+    # A client that sends a truncated body behind a Save button has made a
+    # request error, not found a server bug. `String(::Vector{UInt8})` can
+    # consume the buffer, so copy it: routes that parse and then hash or log
+    # `req.body` still see the original bytes.
+    function _request_json(req::HTTP.Request)
+        try
+            JSON3.read(String(copy(req.body)))
+        catch e
+            e isa InterruptException && rethrow()
+            throw(BadRequest("Request body is not valid JSON"))
+        end
+    end
+
     # Oxygen URL-decodes path parameters, so an encoded '/' would reach a handler
     # as a real separator. No study, run, table, column or file name needs one.
     function _unsafe_path_segment(target::AbstractString)

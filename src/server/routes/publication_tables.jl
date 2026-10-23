@@ -442,7 +442,7 @@ _pub_filename(study, ext) = replace("$(study)_table.$ext", r"[^\w._-]" => "_")
 @post "/api/v1/studies/{study}/analysis/publication-tables" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body = JSON3.read(String(req.body))
+    body = _request_json(req)
     tbl = _publication_table(study, body)
     tbl isa NamedTuple && return tbl.error
 
