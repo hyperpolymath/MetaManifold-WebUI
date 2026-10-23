@@ -149,6 +149,28 @@ _cc_req(method::String, path::String, body::String = "") =
         @test jp.queries[4].status === :undecided
         @test startswith(jp.queries[4].reason, "weight_sum_out_of_tolerance")
 
+        _lwr_doc(ps) = JSON3.write(OrderedDict(
+            "version" => 3,
+            "tree" => "((Ref_1:0.1{0},Ref_2:0.2{1})95:0.3{2},Ref_3:0.4{3}){4};",
+            "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
+            "placements" => ps,
+        ))
+        _single_at(w) = CC.parse_jplace(_lwr_doc([
+            OrderedDict("n" => ["Q"], "p" => [[0, -100.0, w, 0.01, 0.02]]),
+        ])).queries[1]
+        _partition(a, b) = CC.parse_jplace(_lwr_doc([
+            OrderedDict("n" => ["Q"], "p" => [[0, -100.0, a, 0.01, 0.02], [1, -100.4, b, 0.01, 0.03]]),
+        ])).queries[1]
+
+        @test _single_at(0.60).status === :valid
+        @test _single_at(0.60).max_lwr ≈ 0.60 atol = 1e-12
+        @test _single_at(CC.PLACEMENT_SINGLE_MIN_LWR).status === :valid
+        @test _single_at(0.49).status === :undecided
+        @test _partition(0.70, 0.30).status === :valid
+        @test _partition(0.80, 0.16).status === :undecided
+        @test _partition(0.80, 0.24).status === :undecided
+        @test _partition(0.60, 0.60).status === :undecided
+
         # Placed query read counts project onto the reference tree edges without losing reads,
         # and `lwr_threshold = 0.95` marks `Q_borderline` (LWR = 0.85) as `present_in_some`
         # even when `support_threshold = 0.80`.
@@ -252,8 +274,8 @@ done
 echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "$OUT"
 """)
             chmod(mock_ft, 0o755)
-            old_ft = get(PH.Tools._tools, "fasttree", nothing)
-            PH.Tools._tools["fasttree"] = mock_ft
+            old_ft = get(MetaManifold.Tools._tools, "fasttree", nothing)
+            MetaManifold.Tools._tools["fasttree"] = mock_ft
             try
                 s4 = [
                     "ASV_1" => "ACGTACGTACGTACGTACGT",
@@ -267,9 +289,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                                r["sha256"] == bytes2hex(open(sha256, mock_ft)), ft_res.tool_records)
             finally
                 if old_ft === nothing
-                    delete!(PH.Tools._tools, "fasttree")
+                    delete!(MetaManifold.Tools._tools, "fasttree")
                 else
-                    PH.Tools._tools["fasttree"] = old_ft
+                    MetaManifold.Tools._tools["fasttree"] = old_ft
                 end
             end
         end
@@ -434,6 +456,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test r_jp.status == 200
             jp_body = JSON3.read(String(r_jp.body))
             @test jp_body.diversity !== nothing
+            @test jp_body.diversity.unplaced_reads.SampleA ≈ 0.05 atol = 1e-9
+            @test jp_body.diversity.unplaced_reads.SampleB ≈ 0.10 atol = 1e-9
 
             # Path traversal attempts are rejected with 400!
             @test _cc_req("GET", "/api/v1/studies/..%2Fetc/runs/run1/clade-cumulus/sources").status == 400

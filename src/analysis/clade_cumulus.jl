@@ -28,10 +28,12 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# Placement writers truncate tail candidates below their own LWR cutoff, so a
-# retained candidate list summing to >= 0.95 (e.g. a single placement at 0.98)
-# is treated as complete evidence while larger shortfalls remain `:undecided`.
-const PLACEMENT_WEIGHT_SUM_TOL = 0.05
+# Multi-candidate placements partition probability mass across kept edges and
+# must sum to 1 within floating-point tolerance; single-candidate placements
+# leave unplaced mass off the tree and require at least half the mass at the
+# reported site (`PLACEMENT_SINGLE_MIN_LWR`).
+const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
+const PLACEMENT_SINGLE_MIN_LWR = 0.5
 
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
@@ -205,10 +207,12 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
         end
     end
 
-    function read_label_and_quoted()::Tuple{String,Bool}
-        while pos[] <= n && bytes[pos[]] in (UInt8(' '), UInt8('\t'), UInt8('\r'), UInt8('\n'))
-            pos[] += 1
-        end
+    function read_label_and_quoted(; capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
+                                     capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing)::Tuple{String,Bool}
+        # An NHX comment immediately after ')' precedes the (usually empty)
+        # label, so the capture refs must be threaded through this first skip
+        # or the support tag is consumed as an anonymous comment.
+        skip_ws_and_leading_comments!(capture_nhx = capture_nhx, capture_edge = capture_edge)
         pos[] > n && return ("", false)
         if bytes[pos[]] == UInt8('\'')
             pos[] += 1
@@ -265,7 +269,7 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
 
         nhx_sup = Ref{Union{Float64,Nothing}}(nothing)
         edge_num = Ref{Union{Int,Nothing}}(nothing)
-        raw_lbl, was_quoted = read_label_and_quoted()
+        raw_lbl, was_quoted = read_label_and_quoted(capture_nhx = nhx_sup, capture_edge = edge_num)
         skip_ws_and_leading_comments!(capture_nhx = nhx_sup, capture_edge = edge_num)
 
         branch_len = 0.0
@@ -570,7 +574,10 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
 
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
-        elseif abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
+        elseif length(cands) == 1 && cands[1].like_weight < PLACEMENT_SINGLE_MIN_LWR
+            push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
+                "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
+        elseif length(cands) > 1 && abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
