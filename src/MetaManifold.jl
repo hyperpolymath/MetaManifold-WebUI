@@ -41,10 +41,10 @@ include("pipeline/phylogeny.jl")
 include("canonical.jl")
 
 # Analysis
-include("analysis/clade_cumulus.jl")
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
 include("analysis/clade_cumulus.jl")
+include("analysis/compositional.jl")
 include("analysis/differential.jl")
 # Opt-in validated descriptive statistics (issue #1). Ordinary workflows above
 # remain unchanged; these modes must be selected explicitly.
