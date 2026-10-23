@@ -749,6 +749,7 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         df = DataFrame(
             SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4"],
             Domain  = fill("Bacteria", 4),
+            Genus   = ["MovedGenus", "MovedGenus", "OtherGenus", "OtherGenus"],
             SampleA = [10.0, 20.0, 30.0, 40.0],
         )
         # `wrapper` has exactly one child (the ASV_1/ASV_2 clade); the other
@@ -801,8 +802,42 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             if relocated !== nothing
                 @test Float64(relocated["cumulative_count"]) == moved_reads
                 @test Float64(relocated["residual_count"]) == moved_residual
+                @test relocated["monophyletic"] == true
             end
+            # The vacated wrapper retains its taxon label but is no longer a
+            # tip: the two genera still each account for two of the four tips.
+            @test proposed_root["taxon_purity"] ≈ 0.5 atol = 1e-12
+            @test _cc_find_dict(proposed_root, String(target.id))["taxon_purity"] ≈ 0.5 atol = 1e-12
             @test Float64(proposed_root["cumulative_count"]) ≈ before_total atol = 1e-9
+        end
+    end
+
+    @testset "Zero-read terminal nodes remain tips after a move" begin
+        function node(id, rank, count, taxon, children = CC.CladeNode[])
+            cumulative = count + sum(ch.cumulative_count for ch in children; init = 0.0)
+            CC.CladeNode(
+                id, id, rank, count, cumulative, 0.0, 0.0, 5.0, 0.1, 1.0, 0.0,
+                taxon, taxon === nothing ? nothing : 1.0, nothing,
+                :present_in_every, "#2e7d32", children,
+            )
+        end
+        for rank in ("tip", "ASV")
+            positive = node("positive", rank, 10.0, "GenusA")
+            zero = node("zero", rank, 0.0, "GenusA")
+            unassigned = node("unassigned", rank, 0.0, nothing)
+            moving = node("moving", rank, 20.0, "GenusB")
+            target = node("target", "clade", 0.0, "GenusA", [positive, zero, unassigned])
+            root = node("root", "root", 0.0, "GenusA", [target, moving])
+            proposed = CC._reaggregate_after_move(root, moving, target.id, EP.Case("test", EP.WorldCandidate[]), 30.0)
+
+            # Both zero-read terminals count toward purity, including the
+            # unassigned tip, and the two GenusA tips prevent singleton monophyly.
+            @test proposed.taxon_purity ≈ 0.5 atol = 1e-12
+            @test CC._find_clade(proposed, target.id).taxon_purity ≈ 0.5 atol = 1e-12
+            @test CC._find_clade(proposed, positive.id).monophyletic == false
+            @test CC._find_clade(proposed, zero.id).monophyletic == false
+            @test CC._find_clade(proposed, zero.id).subtree_pd == 0.0
+            @test proposed.cumulative_count == 30.0
         end
     end
 

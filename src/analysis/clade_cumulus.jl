@@ -2277,10 +2277,13 @@ function _reaggregate_after_move(
 
     # Count global occurrences of each leaf taxon across the new topology so monophyly
     # and purity are exact everywhere on the proposed tree.
+    # An emptied internal clade can retain its taxon label, but only sequence
+    # terminals or childless nodes with their own reads count as tips.
+    counts_as_tip(u::CladeNode) = u.direct_count > 0.0 || u.rank in ("tip", "ASV")
     total_tips_per_taxon = Dict{String,Int}()
     function count_leaf_taxa!(u::CladeNode)
         if isempty(u.children)
-            u.dominant_taxon !== nothing &&
+            counts_as_tip(u) && u.dominant_taxon !== nothing &&
                 (total_tips_per_taxon[u.dominant_taxon] = get(total_tips_per_taxon, u.dominant_taxon, 0) + 1)
         else
             for ch in u.children
@@ -2308,9 +2311,10 @@ function _reaggregate_after_move(
             # residual is derived from the same count as everything else here.
             own_residual = own_count > 0.0 ? u.residual_count : 0.0
             freq = total_reads > 0.0 ? own_count / total_reads : 0.0
+            n_tips = counts_as_tip(u) ? 1 : 0
             tmap = Dict{String,Int}()
             mono = u.monophyletic
-            if u.dominant_taxon !== nothing
+            if n_tips > 0 && u.dominant_taxon !== nothing
                 tmap[u.dominant_taxon] = 1
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
@@ -2323,7 +2327,7 @@ function _reaggregate_after_move(
                 u.branch_length, u.support, sub_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
-            return (leaf_node, tmap, 1, active_here)
+            return (leaf_node, tmap, n_tips, active_here)
         end
 
         rebuilt_kids = CladeNode[]
