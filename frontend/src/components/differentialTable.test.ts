@@ -121,6 +121,11 @@ describe('clr_welch results', () => {
   test('the settings line records replacement provenance and says the estimate is not a fold change', () => {
     expect(configLine(clr)).toBe('method clr_welch, replacement_method bayesian_multiplicative, replacement_delta 0.65, bayesian_alpha estimated, min_prevalence 0; estimate is a CLR difference, not a fold change')
     expect(configLine(result)).toBe('method nb_glm, offset tss, min_prevalence 0')
+    const shrunken: DifferentialResult = {
+      ...result,
+      config: { ...result.config, dispersion: 'glmGamPoi' },
+    }
+    expect(configLine(shrunken)).toBe('method nb_glm, offset tss, dispersion glmGamPoi, min_prevalence 0')
     expect(differentialCsv(clr).split('\r\n')[2]).toBe(`# ${configLine(clr)}`)
     const custom: DifferentialResult = {
       ...clr,

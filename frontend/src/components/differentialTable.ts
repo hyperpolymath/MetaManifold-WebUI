@@ -72,7 +72,10 @@ export function configLine(result: DifferentialResult): string {
       return `method aldex2, mc_samples ${c.mc_samples}, seed ${c.seed}, min_prevalence ${c.min_prevalence}; estimate is an ALDEx2 standardized CLR effect size, not a fold change`
     case 'songbird':
       return `method songbird, min_prevalence ${c.min_prevalence}; estimate is a CLR-centred multinomial differential, not an absolute fold change`
-    case 'nb_glm':
+    case 'nb_glm': {
+      const dispersion = c.dispersion === undefined ? '' : `, dispersion ${c.dispersion}`
+      return `method nb_glm, offset ${c.offset}${dispersion}, min_prevalence ${c.min_prevalence}`
+    }
     case 'zinb':
     case 'hurdle_nb':
       return `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`

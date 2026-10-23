@@ -462,7 +462,7 @@ export interface DifferentialResult {
     /** aldex2 only. */
     seed?: number
     /** multinomial and dirichlet_multinomial: the taxon every ratio is against. */
-    mn_reference_taxon?: string
+    mn_reference_taxon?: string | null
     /** multinomial and dirichlet_multinomial: L2 penalty on the log-odds. */
     mn_penalty?: number
     /** dirichlet_multinomial only: how the concentration was estimated. */
