@@ -275,6 +275,31 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         end
     end
 
+    @testset "Nested-clade drag-and-drop counts each active branch once" begin
+        df = DataFrame(
+            SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4", "ASV_5", "ASV_6"],
+            S1 = [10, 20, 30, 40, 50, 0],
+        )
+        tree = CC.build_clade_tree(df; mode = :phylogenetic, newick =
+            "((ASV_1:0.10,ASV_2:0.20,ASV_6:9.0)0.96:0.30,(ASV_3:0.40,ASV_4:0.50,ASV_5:0.70)0.97:0.60)Root:8.0;")
+        source, target = tree.root.children
+        verdict = CC.validate_drag_drop(tree, source.id, target.id)
+        @test verdict["allowed"]
+        proposed = verdict["proposed_root"]
+        target_after = only(proposed["children"])
+        source_after = last(target_after["children"])
+
+        # 0.10 + 0.20 + 0.30 + 0.40 + 0.50 + 0.70 + 0.60 = 2.80.
+        # The inactive tip's 9.0 and the root's 8.0 contribute nothing.
+        @test proposed["subtree_pd"] ≈ 2.80 atol = 1e-12
+        @test target_after["subtree_pd"] ≈ 2.80 atol = 1e-12
+        @test source_after["subtree_pd"] ≈ 0.60 atol = 1e-12
+        @test [ch["subtree_pd"] for ch in source_after["children"]] ≈ [0.10, 0.20, 0.0] atol = 1e-12
+        @test proposed["cumulative_count"] == tree.root.cumulative_count == 150.0
+        @test tree.root.subtree_pd ≈ 2.80 atol = 1e-12
+        @test length(tree.root.children) == 2
+    end
+
     @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
         old_root = SV.ServerState._root[]
