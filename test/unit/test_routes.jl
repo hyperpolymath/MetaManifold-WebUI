@@ -932,5 +932,21 @@ _saved_root = SV.ServerState._root[]
 
 end
 
+@testset "Registered routes" begin
+    registered = [(m, string(p)) for (m, p, _) in SV.ROUTES]
+    @test !isempty(registered)
+
+    seen = Dict{Tuple{String,String},Int}()
+    for k in registered
+        seen[k] = get(seen, k, 0) + 1
+    end
+    duplicated = sort([k for (k, n) in seen if n > 1])
+    @test duplicated == Tuple{String,String}[]
+
+    paths = Set(p for (_, p) in registered)
+    @test any(occursin("/cladistics", p) for p in paths)
+    @test any(occursin("/clade-cumulus", p) for p in paths)
+end
+
 # Testsets above point the server at temporary roots.
 SV.ServerState._root[] = _saved_root

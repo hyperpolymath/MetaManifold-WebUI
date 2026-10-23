@@ -163,6 +163,15 @@ end
             @test _ss_served("/api/v1/studies").status == 200
         end
 
+        @testset "Invalid Unicode in client errors keeps its HTTP status" begin
+            r = SV.json_error(404, "study_not_found", "Study '\ufdd0' not found")
+            @test r.status == 404
+            @test JSON3.read(String(copy(r.body))).message == "Invalid request"
+            r = SV.json_error(400, "bad_request", "Invalid group", detail="\U0001ffff")
+            @test r.status == 400
+            @test JSON3.read(String(copy(r.body))).error == "bad_request"
+        end
+
         @testset "Report uploads are served inert" begin
             host = "Host" => "127.0.0.1:8080"
             base = "/api/v1/studies/StudyS/report"

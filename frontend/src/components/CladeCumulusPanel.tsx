@@ -249,6 +249,14 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
     return div.normalized_weighted_unifrac
   }, [result, unifracKind])
 
+  const unplacedSamples = useMemo<[string, number][]>(() => {
+    const div = result?.diversity
+    if (!div?.unplaced_reads) return []
+    return div.samples
+      .map(s => [s, div.unplaced_reads?.[s] ?? 0] as [string, number])
+      .filter(([, n]) => n > 0)
+  }, [result])
+
   const exportMatrixCsv = () => {
     if (!result?.diversity || !activeMatrix) return
     const csv = formatDistanceMatrixCsv(result.diversity.samples, activeMatrix)
@@ -699,6 +707,13 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
                   </div>
                 ))}
               </div>
+
+              {unplacedSamples.length > 0 && (
+                <p style={{ fontSize: '.75rem', margin: '0 0 12px', color: 'var(--color-fg-muted, #57606a)' }}>
+                  Unplaced reads (like-weight mass left off reference edges, excluded from weighted abundances above):{' '}
+                  {unplacedSamples.map(([s, n]) => `${s} ${n.toFixed(2)}`).join(', ')}
+                </p>
+              )}
 
               {/* Pairwise UniFrac table */}
               {activeMatrix && (

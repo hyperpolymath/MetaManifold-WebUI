@@ -28,11 +28,12 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# Placement tools may truncate a query's candidate list, so retained
-# like-weight ratios can legitimately sum to slightly less than 1 (a single
-# retained placement at 0.98 is complete evidence). Sums far from 1 indicate
-# a malformed or partial record and stay undecided.
-const PLACEMENT_WEIGHT_SUM_TOL = 0.05
+# Multi-candidate placements partition probability mass across kept edges and
+# must sum to 1 within floating-point tolerance; single-candidate placements
+# leave unplaced mass off the tree and require at least half the mass at the
+# reported site (`PLACEMENT_SINGLE_MIN_LWR`).
+const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
+const PLACEMENT_SINGLE_MIN_LWR = 0.5
 
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
@@ -573,7 +574,10 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
 
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
-        elseif abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
+        elseif length(cands) == 1 && cands[1].like_weight < PLACEMENT_SINGLE_MIN_LWR
+            push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
+                "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
+        elseif length(cands) > 1 && abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
@@ -1029,8 +1033,8 @@ function _graft_jplace_queries(
 
     function walk(u::PhyloNode)::PhyloNode
         rebuilt_kids = PhyloNode[walk(ch) for ch in u.children]
-        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_num, rebuilt_kids)
-        specs = u.edge_num === nothing ? nothing : get(by_edge, u.edge_num, nothing)
+        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_number, rebuilt_kids)
+        specs = u.edge_number === nothing ? nothing : get(by_edge, u.edge_number, nothing)
         (specs === nothing || isempty(specs)) && return cur
 
         # Order grafts from most distal (closest to `cur`, smallest `distal`) to most proximal.
@@ -1048,7 +1052,7 @@ function _graft_jplace_queries(
             sub = PhyloNode(string("jplace_clade#", seq_auto[]), "", 0.0, 1.0, nothing, PhyloNode[sub, qtip])
         end
         rem_len = max(0.0, total_len - prev_distal)
-        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_num, sub.children)
+        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_number, sub.children)
     end
 
     walk(base_root)
@@ -1791,11 +1795,12 @@ function _reaggregate_after_move(
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
             active_here = u.cumulative_count > 0.0
+            sub_pd = active_here && !is_root ? max(0.0, u.branch_length) : 0.0
             st = Epistemic.epistemic_status(case_obj, u.id)
             leaf_node = CladeNode(
                 u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
                 u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
-                u.branch_length, u.support, 0.0, u.dominant_taxon, u.taxon_purity, mono,
+                u.branch_length, u.support, sub_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
             return (leaf_node, tmap, 1, active_here)
@@ -1817,12 +1822,14 @@ function _reaggregate_after_move(
             n_sub_tips += nt
             if ch_active
                 any_active = true
-                sub_pd += max(0.0, rk.branch_length) + rk.subtree_pd
+                sub_pd += rk.subtree_pd
             end
             for (k, v) in ct
                 merged_taxa[k] = get(merged_taxa, k, 0) + v
             end
         end
+
+        !is_root && any_active && (sub_pd += max(0.0, u.branch_length))
 
         dom_tx = nothing
         dom_n = 0

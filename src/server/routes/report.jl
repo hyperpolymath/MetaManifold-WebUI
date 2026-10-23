@@ -19,14 +19,14 @@ _report_index(study::String) = joinpath(_report_dir(study), "items.json")
 function _report_items(study::String)::Vector{Dict{String,Any}}
     path = _report_index(study)
     isfile(path) || return Dict{String,Any}[]
-    raw = try JSON3.read(read(path, String)) catch; return Dict{String,Any}[] end
+    raw = try ijson_read(read(path)) catch; return Dict{String,Any}[] end
     [Dict{String,Any}(String(k) => v for (k, v) in item) for item in raw]
 end
 
 function _save_report_items(study::String, items)
     mkpath(_report_dir(study))
     tmp = _report_index(study) * ".tmp"
-    write(tmp, JSON3.write(items))
+    write(tmp, jcs_bytes(items))
     mv(tmp, _report_index(study); force=true)
 end
 
@@ -50,7 +50,7 @@ end
 @get "/api/v1/studies/{study}/report" function(req, study::String)
     err = _report_study_error(study)
     isnothing(err) || return err
-    json(_report_items(study))
+    jcs_json(_report_items(study))
 end
 
 # The file is the raw request body; kind, title and extension come as query parameters.
@@ -64,6 +64,14 @@ end
     ext in _REPORT_EXTENSIONS || return json_error(400, "invalid_ext", "ext must be one of $(join(_REPORT_EXTENSIONS, ", "))")
     title = strip(get(q, "title", ""))
     isempty(title) && (title = "Untitled $kind")
+    # Reject invalid I-JSON Unicode before writing the upload: an invalid
+    # title would otherwise make the index unsavable and orphan the file.
+    try
+        jcs_bytes(title)
+    catch e
+        e isa ArgumentError || rethrow()
+        return json_error(400, "invalid_title", "Title contains invalid Unicode")
+    end
     bytes = req.body
     isempty(bytes) && return json_error(400, "empty", "The item has no content")
     length(bytes) <= _REPORT_MAX_BYTES || return json_error(413, "too_large", "Report items are limited to 50 MB")
@@ -75,13 +83,13 @@ end
     item = Dict{String,Any}("id" => id, "kind" => kind, "title" => title, "file" => file,
                             "added" => string(now(UTC)))
     _report_edit(items -> push!(items, item), study)
-    json(item)
+    jcs_json(item)
 end
 
 @patch "/api/v1/studies/{study}/report/{id}" function(req, study::String, id::String)
     err = _report_study_error(study)
     isnothing(err) || return err
-    body = try JSON3.read(String(req.body)) catch; nothing end
+    body = try ijson_read(req.body) catch; nothing end
     title = body isa JSON3.Object ? get(body, :title, nothing) : nothing
     title isa AbstractString && !isempty(strip(title)) ||
         return json_error(400, "invalid_title", "Body must include a non-empty 'title'")
@@ -91,13 +99,13 @@ end
         items[i]["title"] = strip(title)
         items[i]
     end
-    isnothing(found) ? json_error(404, "not_found", "No report item '$id'") : json(found)
+    isnothing(found) ? json_error(404, "not_found", "No report item '$id'") : jcs_json(found)
 end
 
 @put "/api/v1/studies/{study}/report/order" function(req, study::String)
     err = _report_study_error(study)
     isnothing(err) || return err
-    body = try JSON3.read(String(req.body)) catch; nothing end
+    body = try ijson_read(req.body) catch; nothing end
     ids = body isa JSON3.Object ? get(body, :ids, nothing) : nothing
     ids isa AbstractVector || return json_error(400, "invalid_body", "Body must include 'ids'")
     ordered = _report_edit(study) do items
@@ -105,7 +113,7 @@ end
         sort!(items; by = it -> get(rank, it["id"], typemax(Int)))
         copy(items)
     end
-    json(ordered)
+    jcs_json(ordered)
 end
 
 @delete "/api/v1/studies/{study}/report/{id}" function(req, study::String, id::String)
@@ -118,7 +126,7 @@ end
     end
     isnothing(removed) && return json_error(404, "not_found", "No report item '$id'")
     rm(joinpath(_report_dir(study), removed["file"]); force=true)
-    json((; deleted=id))
+    jcs_json((; deleted=id))
 end
 
 const _REPORT_MIME = Dict(".svg" => "image/svg+xml", ".png" => "image/png", ".json" => "application/json",
