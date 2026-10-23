@@ -64,7 +64,9 @@ function _probe_optional_phylo_tool(tool_key::String, fallbacks::Vector{String})
     end
 end
 
-function _load_run_table_df(study::String, run::String, table::String; group::Union{String,Nothing}=nothing)
+function _load_run_table_df(study::String, run::String, table::AbstractString;
+                            group::Union{String,Nothing}=nothing)
+    table = String(table)
     dir = _require_duckdb(study, run; group)
     isnothing(dir) && return (nothing, nothing, json_error(404, "no_results",
         "No results for run '$run' - run the pipeline first"))
@@ -92,9 +94,9 @@ function _resolve_tree_inputs_from_request(
     body,
     source_digests::OrderedDict{String,String},
 )
-    tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
-    tree_file = strip(string(get(body, :treeFile, "")))
-    inline_newick = strip(string(get(body, :newick, "")))
+    tree_source = String(lowercase(strip(string(get(body, :treeSource, "auto")))))
+    tree_file = String(strip(string(get(body, :treeFile, ""))))
+    inline_newick = String(strip(string(get(body, :newick, ""))))
 
     if tree_source == "study_tree" || (!isempty(tree_file) && tree_source == "auto")
         _valid_tree_file(tree_file) || return (nothing, nothing, :auto,
@@ -145,19 +147,27 @@ end
             names_df = DataFrame(DBInterface.execute(con, "SHOW TABLES"))
             tlist = sort(String[string(r.name) for r in eachrow(names_df)])
             for t in tlist
-                cols = _duckdb_columns(con, t)
-                scols = _sample_count_columns(con, t)
-                isempty(scols) && continue
-                nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
-                has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
-                ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
-                push!(tables_info, OrderedDict{String,Any}(
-                    "table"        => t,
-                    "row_count"    => nrows,
-                    "sample_count" => length(scols),
-                    "has_sequence" => has_seq,
-                    "ranks"        => ranks,
-                ))
+                # `SHOW TABLES` includes views; a view backed by a DuckDB
+                # replacement scan is bound to the connection that registered it
+                # and cannot be queried from a new connection.
+                try
+                    cols = _duckdb_columns(con, t)
+                    scols = _sample_count_columns(con, t)
+                    isempty(scols) && continue
+                    nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
+                    has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
+                    ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
+                    push!(tables_info, OrderedDict{String,Any}(
+                        "table"        => t,
+                        "row_count"    => nrows,
+                        "sample_count" => length(scols),
+                        "has_sequence" => has_seq,
+                        "ranks"        => ranks,
+                    ))
+                catch err
+                    err isa InterruptException && rethrow()
+                    @warn "clade-cumulus sources: skipping unreadable DuckDB object" object=t exception=err
+                end
             end
         finally
             DBInterface.close!(con)
@@ -200,10 +210,10 @@ end
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
-    mode_str = lowercase(strip(string(get(body, :mode, "combined"))))
+    mode_str = String(lowercase(strip(string(get(body, :mode, "combined")))))
     mode_str in ("phylogenetic", "taxonomic", "combined") ||
         return json_error(400, "invalid_mode", "mode must be 'phylogenetic', 'taxonomic', or 'combined'")
     mode_sym = Symbol(mode_str)
@@ -268,13 +278,13 @@ end
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.weight for c in q.candidates); init = 0.0)
+                tw = sum((c.like_weight for c in q.candidates); init = 0.0)
                 tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.weight / tw
+                        tip_weights[tid] = cand.like_weight / tw
                     end
                 end
             end
@@ -386,15 +396,15 @@ end
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
 
-    source_id = strip(string(get(body, :sourceId, "")))
-    target_id = strip(string(get(body, :targetId, "")))
+    source_id = String(strip(string(get(body, :sourceId, ""))))
+    target_id = String(strip(string(get(body, :targetId, ""))))
     (isempty(source_id) || isempty(target_id)) &&
         return json_error(400, "missing_clade_ids", "Both sourceId and targetId are required")
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
-    mode_str = lowercase(strip(string(get(body, :mode, "combined"))))
+    mode_str = String(lowercase(strip(string(get(body, :mode, "combined")))))
     mode_str in ("phylogenetic", "taxonomic", "combined") ||
         return json_error(400, "invalid_mode", "mode must be 'phylogenetic', 'taxonomic', or 'combined'")
     mode_sym = Symbol(mode_str)
