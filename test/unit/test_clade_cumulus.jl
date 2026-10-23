@@ -572,6 +572,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             con = DBInterface.connect(db)
             DuckDB.register_data_frame(con, df, "src_df")
             DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            # The registration is a view backed by a replacement scan that only
+            # exists on this connection, so it is removed again: left in the file
+            # it makes the view unreadable for every later connection.
             DuckDB.unregister_data_frame(con, "src_df")
             DBInterface.close!(con)
             close(db)
