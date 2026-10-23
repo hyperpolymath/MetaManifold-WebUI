@@ -28,11 +28,12 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# Truncated candidate lists may be short of one, but rounding cannot justify
-# excess mass. Keep the upper bound tight so invalid overweight evidence never
-# gets normalised into apparently valid placement/confidence values.
-const PLACEMENT_WEIGHT_SHORTFALL_TOL = 0.05
-const PLACEMENT_WEIGHT_EXCESS_TOL = 1e-5
+# Multi-candidate placements partition probability mass across kept edges and
+# must sum to 1 within floating-point tolerance; single-candidate placements
+# leave unplaced mass off the tree and require at least half the mass at the
+# reported site (`PLACEMENT_SINGLE_MIN_LWR`).
+const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
+const PLACEMENT_SINGLE_MIN_LWR = 0.5
 
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
@@ -573,8 +574,10 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
 
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
-        elseif weight_sum < 1.0 - PLACEMENT_WEIGHT_SHORTFALL_TOL ||
-               weight_sum > 1.0 + PLACEMENT_WEIGHT_EXCESS_TOL
+        elseif length(cands) == 1 && cands[1].like_weight < PLACEMENT_SINGLE_MIN_LWR
+            push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
+                "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
+        elseif length(cands) > 1 && abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
@@ -1792,15 +1795,12 @@ function _reaggregate_after_move(
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
             active_here = u.cumulative_count > 0.0
-            # `subtree_pd` is node-local, as in `clade_faith_pd`: a node's own
-            # (non-root) branch counts once, here, and its parent adds only the
-            # value it returns.
-            own_pd = (active_here && !is_root) ? max(0.0, u.branch_length) : 0.0
+            sub_pd = active_here && !is_root ? max(0.0, u.branch_length) : 0.0
             st = Epistemic.epistemic_status(case_obj, u.id)
             leaf_node = CladeNode(
                 u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
                 u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
-                u.branch_length, u.support, own_pd, u.dominant_taxon, u.taxon_purity, mono,
+                u.branch_length, u.support, sub_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
             return (leaf_node, tmap, 1, active_here)
@@ -1822,18 +1822,14 @@ function _reaggregate_after_move(
             n_sub_tips += nt
             if ch_active
                 any_active = true
-                # The child's own branch is already inside `rk.subtree_pd`;
-                # adding `rk.branch_length` again would count every active
-                # internal edge twice.
                 sub_pd += rk.subtree_pd
             end
             for (k, v) in ct
                 merged_taxa[k] = get(merged_taxa, k, 0) + v
             end
         end
-        # Match clade_faith_pd: an active non-root clade adds the branch
-        # connecting it to its parent, once, on top of its descendants' values.
-        any_active && !is_root && (sub_pd += max(0.0, u.branch_length))
+
+        !is_root && any_active && (sub_pd += max(0.0, u.branch_length))
 
         dom_tx = nothing
         dom_n = 0
