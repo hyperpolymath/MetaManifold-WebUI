@@ -694,8 +694,16 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test jp_body.diversity.mapped_tips == 2
             @test jp_body.diversity.unplaced_reads.SampleA ≈ 21.0 atol = 1e-9
             @test jp_body.diversity.unplaced_reads.SampleB ≈ 35.0 atol = 1e-9
+            # Raw weighted UniFrac, derived branch by branch. On-tree counts
+            # are SampleA (24, 10) and SampleB (0, 20) over library size 55:
+            # ASV_1 pendant 0.02x24 + the 0.05 edge above its graft x24,
+            # ASV_2 pendant 0.02x10 + the 0.15 edge above its graft x10, and
+            # the 0.30 edge above both grafts x|34-20| = 7.58 in total.
+            # (The constant this assertion previously pinned, 0.15636, did
+            # not survive contact with a completed Julia run: it was written
+            # on #235, whose final merge never got one.)
             @test jp_body.diversity.weighted_unifrac[1][2] ≈
-                  0.15636363636363636 atol = 1e-9
+                  7.58 / 55 atol = 1e-9
             # The clade tree is a count view of the table and still conserves
             # every observed read; only the abundance-weighted diversity matrix
             # discounts the unplaced mass.
