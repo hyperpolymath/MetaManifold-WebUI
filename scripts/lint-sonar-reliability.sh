@@ -8,16 +8,21 @@
 # configures it. Its quality gate ("Sonar way", with the coverage condition
 # dropped) requires, on NEW code:
 #
-#     reliability rating <= A   i.e. EXACTLY A, which means ZERO findings
-#     security rating    <= A        with a reliability impact, at ANY
-#     maintainability    <= A        severity -- a single MINOR is rating B
+#     reliability rating <= A        (worst BUG on new code)
+#     security rating    <= A        (worst VULNERABILITY on new code)
+#     maintainability    <= A        (technical-debt ratio, < 5% is A)
 #     duplication        <= 3%
 #     hotspots reviewed  == 100%
 #
-# A MINOR finding is enough to fail it. That is why a pull request touching
-# ordinary TypeScript can go red for something a reviewer would call a style
-# remark, and why the only warning used to arrive ~90 seconds after a push,
-# from a service the contributor cannot run.
+# Reliability and security are rated on the WORST bug/vulnerability in the
+# changed lines (MINOR -> B, MAJOR -> C, CRITICAL -> D, BLOCKER -> E), so a
+# single bug fails it whatever its severity. Maintainability is a debt ratio,
+# and a couple of code smells is usually still A: measured on PR #233, two
+# MAJOR smells and 10 minutes of debt left the rating at A and the gate green.
+# So the gate is failed by one bug, not by untidiness -- that is why a pull
+# request touching ordinary TypeScript can go red for something a reviewer
+# would call a style remark, and why the only warning used to arrive ~90
+# seconds after a push, from a service the contributor cannot run.
 #
 # This script is the local, sub-second reproduction of the two rules that have
 # actually failed this check, so the finding arrives before the push. It is a
@@ -30,8 +35,11 @@
 #          frontend/src/views/CompositionsView.tsx.
 #
 #   S7758  "Prefer String#codePointAt() over String#charCodeAt()"
-#          MINOR, reliability LOW. Fired twice on PR #224. MINOR still fails
-#          the gate: rating A admits no findings at all.
+#          MINOR, but a CODE SMELL, so it does not move the reliability rating
+#          and would not fail the gate alone. Fired twice on PR #224; kept here
+#          so the repository's count stays at zero rather than accumulating
+#          debt, and because the exception below is a decision worth making
+#          explicitly.
 #
 # Fixing S2871 with the rule's own suggestion -- localeCompare -- is WRONG for
 # this codebase, and silently so: localeCompare applies locale collation, so it
@@ -77,9 +85,9 @@ CHARCODE_ALLOWED=(
 )
 
 char_code_allowed() {  # file
-  local f
+  local file="$1" f
   for f in "${CHARCODE_ALLOWED[@]}"; do
-    [[ "$1" == "$f" ]] && return 0
+    [[ "$file" == "$f" ]] && return 0
   done
   return 1
 }

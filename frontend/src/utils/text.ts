@@ -6,11 +6,12 @@
  * applies when it is handed no comparator, written out so the intent is
  * visible at the call site.
  *
- * It exists because a comparison-less `sort()` is reported as a RELIABILITY bug
- * by SonarCloud's `typescript:S2871`, and one such finding on a changed line
- * fails the repository's required "SonarCloud Code Analysis" check — the gate
- * demands reliability rating A on new code, and rating A means zero findings of
- * any severity on that axis.
+ * It exists because a comparison-less `sort()` is reported as a BUG by
+ * SonarCloud's `typescript:S2871`, and the repository's required "SonarCloud
+ * Code Analysis" check rates reliability on the worst bug in the changed lines:
+ * one `CRITICAL` bug is rating D, and anything above A fails the gate. That is
+ * a classification Sonar makes, not a severity a reviewer would recognise — the
+ * compiler is perfectly happy with the bare call.
  *
  * The rule's own suggestion, `(a, b) => a.localeCompare(b)`, is NOT equivalent:
  * it applies locale collation, so `['z', 'ä'].sort(byCodeUnit)` keeps `z` first
@@ -19,7 +20,9 @@
  * correctness bug, so the code-unit comparison is spelled out instead.
  */
 export function byCodeUnit(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0
+  if (a < b) return -1
+  if (a > b) return 1
+  return 0
 }
 
 /**

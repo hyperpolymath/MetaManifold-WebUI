@@ -34,7 +34,7 @@ Each requirement is checked before the code is read.
 4. **CI must run and pass.** A PR with no reported checks is not reviewed.
    The required **SonarCloud Code Analysis** check is a third-party cloud
    service that nothing in this repository configures, and it fails on a single
-   MINOR finding in the changed lines. It has no local equivalent, so run
+   *bug* — at any severity — in the changed lines. It has no local equivalent, so run
    `bash scripts/lint-sonar-reliability.sh` before pushing a frontend change
    and read [docs/sonar-quality-gate.md](docs/sonar-quality-gate.md). Do not
    silence it by swapping a `sort()` for `localeCompare`; the guard explains

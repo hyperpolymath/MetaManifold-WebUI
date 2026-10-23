@@ -28,18 +28,27 @@ The project's gate is Sonar's built-in **Sonar way**, with the coverage
 condition absent (automatic analysis reports no coverage). Measured from
 `/api/qualitygates/project_status` on PR #224:
 
-| Condition                | Threshold | Meaning                                  |
+| Condition                | Threshold | What drives it                           |
 | ------------------------ | --------- | ---------------------------------------- |
-| `new_reliability_rating` | ≤ A       | **zero** reliability findings, any severity |
-| `new_security_rating`    | ≤ A       | zero security findings                   |
-| `new_maintainability_rating` | ≤ A   | zero maintainability findings            |
+| `new_reliability_rating` | ≤ A       | the worst **bug** on new code             |
+| `new_security_rating`    | ≤ A       | the worst **vulnerability** on new code   |
+| `new_maintainability_rating` | ≤ A   | the **technical-debt ratio** (< 5% is A)  |
 | `new_duplicated_lines_density` | ≤ 3% | duplicate lines                      |
 | `new_security_hotspots_reviewed` | = 100% | hotspots reviewed                   |
 
-Rating `A` is not "no important findings": it is **no findings**. A single
-`MINOR` issue — the least severe level Sonar reports — makes the rating `B` and
-fails the gate. That is the whole failure mode: a change that a reviewer would
-call a style remark blocks the merge.
+The two ratings do not work the same way, and the difference is the whole
+failure mode. **Reliability is worst-severity, not a count**: a single bug of
+`MINOR` or above drops the rating (`MINOR` → B, `MAJOR` → C, `CRITICAL` → D,
+`BLOCKER` → E), and any rating above A fails the gate. **Maintainability is a
+ratio**, so a few code smells are usually free: measured on PR #233, two
+`MAJOR` code smells and 10 minutes of debt left the rating at `A` and the gate
+green.
+
+So the gate is failed by **one bug**, not by untidiness. That is exactly what
+happened: PR #224's single `CRITICAL` bug (`typescript:S2871`) put reliability
+at `D`. Its two `MINOR` `typescript:S7758` findings are classified as *code
+smells*, not bugs — they contributed 10 minutes of debt and were never what
+failed the check.
 
 "New code" is the pull request's changed lines. On `main` it is a **three-day
 sliding window**, so a finding merged into `main` keeps `main` red for three
@@ -86,9 +95,11 @@ bare `sort()` it replaces.
 ### `typescript:S7758` — `charCodeAt` where `codePointAt` is wanted
 
 *"Prefer `String#codePointAt()` over `String#charCodeAt()`."* Reported as
-**MINOR**, reliability LOW — and MINOR still fails the gate. It fired twice on
-`ijsonJcs.ts` (`:8`, `:10`) because the I-JSON validator walked UTF-16 *units*
-to reject unpaired surrogates.
+**MINOR**, but as a **code smell**, not a bug — so it does not move the
+reliability rating and would not, on its own, have failed the gate. It fired
+twice on `ijsonJcs.ts` (`:8`, `:10`) because the I-JSON validator walked UTF-16
+*units* to reject unpaired surrogates. It is still worth fixing, and this
+repository now reports none, but it is not the emergency it looks like.
 
 The rewrite iterates by code point:
 
@@ -137,8 +148,11 @@ decision, not that the script encodes the profile.
 
 1. **No local feedback.** No ESLint, no lint step, no configuration file. The
    gate is a cloud service, so the first signal is the red check.
-2. **The gate is absolute.** Rating A means zero findings; one MINOR fails it.
-   There is no "important findings only" tier to fall back on.
+2. **One bug is fatal, and a bug is a classification, not a severity.** A
+   single `MINOR` bug fails the reliability rating as surely as a `BLOCKER`
+   one. Whether a rule reports a bug or a code smell is Sonar's decision, and
+   nothing in the repository states it — `sort()` without a comparator is a
+   bug; `charCodeAt` is a smell.
 3. **The suggested fix is dangerous.** S2871's `localeCompare` suggestion is
    wrong for canonical JSON and for stable identifier ordering, so the obvious
    fix trades a red check for a silent behaviour change. `byCodeUnit` exists so
@@ -147,5 +161,7 @@ decision, not that the script encodes the profile.
    pull request; neither is stated anywhere in the repository.
 
 Points 1, 3 and 4 are what the guard and this page address. Point 2 is a
-SonarCloud UI setting: a custom gate that tolerates MINOR findings on new code
-would remove the trap entirely, but it cannot be done from this repository.
+SonarCloud UI setting: the built-in gate's reliability condition is
+`new_reliability_rating > 1`, so raising that threshold to `2` would tolerate a
+rating B (one `MINOR` bug) instead of blocking on it. That is a custom quality
+gate, and it cannot be created from this repository.
