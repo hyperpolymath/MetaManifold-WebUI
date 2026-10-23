@@ -105,6 +105,9 @@ end
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))
         @test _vs_post("/api/v1/statistics/summaries", negative_string).status == 422
+        float_policy = merge(_VS_EXACT_BODY, Dict("persist" => false,
+            "numeric_policy" => Dict("mode" => "exact_counts", "round_digits" => 8.0)))
+        @test _vs_post("/api/v1/statistics/summaries", float_policy).status == 422
         ordinary = merge(_VS_EXACT_BODY, Dict("numeric_policy" => Dict("mode" => "ordinary")))
         @test _vs_post("/api/v1/statistics/summaries", ordinary).status == 400
         ragged = merge(_VS_EXACT_BODY, Dict("counts" => [[1], [1, 2], [1, 0]]))

@@ -50,6 +50,57 @@ function _statistics_body(req)
     parsed
 end
 
+"""Reject decimal/exponent tokens whose representation JSON3 would erase.
+JSON3 1.14 normalises integral `1.0` and `1e0` tokens to Int64. Every numeric
+field in a direct validated-statistics request is contractually integral, so a
+lexical pass over the already-validated JSON preserves that boundary."""
+function _reject_noninteger_json_tokens(source::AbstractString)
+    bytes = codeunits(source)
+    position = 1
+    while position <= length(bytes)
+        byte = bytes[position]
+        if byte == UInt8('"')
+            position += 1
+            closed = false
+            while position <= length(bytes)
+                byte = bytes[position]
+                if byte == UInt8('\\')
+                    position += 2 # JSON3 has already validated the escape.
+                elseif byte == UInt8('"')
+                    closed = true
+                    position += 1
+                    break
+                else
+                    position += 1
+                end
+            end
+            closed || throw(ArgumentError("unterminated JSON string"))
+        elseif 0x30 <= byte <= 0x39 || byte == UInt8('-') || byte == UInt8('+')
+            token_start = position
+            noninteger = false
+            while position <= length(bytes)
+                byte = bytes[position]
+                if 0x30 <= byte <= 0x39 || byte == UInt8('+') || byte == UInt8('-') ||
+                   byte == UInt8('.') || byte == UInt8('e') || byte == UInt8('E')
+                    noninteger |= byte == UInt8('.') || byte == UInt8('e') || byte == UInt8('E')
+                    position += 1
+                else
+                    break
+                end
+            end
+            if noninteger
+                token = String(bytes[token_start:position - 1])
+                throw(UnsupportedRepresentationError(
+                    "an integer JSON token or whole-number string", token,
+                    "validated direct statistics; decimal and exponent JSON numbers are not exact input"))
+            end
+        else
+            position += 1
+        end
+    end
+    nothing
+end
+
 function _policy_integer(raw, key::Symbol, default)
     value = get(raw, key, default)
     (value isa Integer && !(value isa Bool)) || throw(ArgumentError(
@@ -95,8 +146,8 @@ function _json_exact_count(value, feature::String, sample::String)
                 "feature '$feature', sample '$sample'; use a canonical whole-number string"))
         end
     end
-    # JSON3 represents a decimal/exponent token as a float even when its value
-    # is mathematically integral. Reject the representation, not just 1.5.
+    # Non-integral decimal/exponent tokens remain floats after JSON3 parsing.
+    # Integral ones are rejected by the raw-token pass before this function.
     (value isa Integer && !(value isa Bool)) || throw(UnsupportedRepresentationError(
         "an integer JSON token or whole-number string", repr(value),
         "feature '$feature', sample '$sample'; floating-point JSON is not exact input"))
@@ -320,6 +371,7 @@ end
 @post "/api/v1/statistics/summaries" function(req)
     _statistics_guard() do
         body = _statistics_body(req)
+        _reject_noninteger_json_tokens(String(req.body))
         policy = _statistics_policy(body)
         counts, labels, features, groups = _direct_count_input(body)
         result = _run_statistics(counts, labels, features, groups, policy)
