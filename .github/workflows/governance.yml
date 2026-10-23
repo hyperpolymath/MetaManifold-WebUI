@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# Fork governance lane. DEED syntax comes from hyperpolymath/standards; the
+# Fork governance lane. DEED and K9 conformance come from hyperpolymath/standards; the
 # Hypatia verdict grid uses a fork-local copy of the standards reusable so its
 # advisory PR scan cannot become a blocking code-scanning-results check. Both
 # sources are pinned to commits. The grid covers Hypatia, panic-attack, pons
@@ -38,7 +38,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Check the advisory SARIF boundary
-        run: bash scripts/check-governance-contract.sh
+        run: |
+          bash scripts/check-governance-contract.sh
+          bash scripts/tests/test-governance-contract.sh
+          bash scripts/tests/test-ci-logging.sh
 
   deed:
     name: DEED syntax
@@ -47,6 +50,18 @@ jobs:
       contents: read
     with:
       require-files: true
+
+  k9:
+    name: K9 conformance
+    uses: hyperpolymath/standards/.github/workflows/k9-conformance.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      # No K9 contracts are committed yet: report grey, never pretend that
+      # DEED syntax validation establishes K9 semantic conformance.
+      require-files: false
+      fail-on-indeterminate: true
 
   hypatia:
     name: Hypatia verdict grid
@@ -64,7 +79,7 @@ jobs:
 
   verdict:
     name: Post the verdict grid
-    needs: [deed, hypatia]
+    needs: [deed, k9, hypatia]
     if: ${{ always() && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -80,11 +95,20 @@ jobs:
           name: verdict-grid
           path: verdict-grid
 
+      - name: Download the K9 conformance grid
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: k9-grid
+          path: k9-grid
+
       - name: Update the compact PR verdict
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           DEED_RESULT: ${{ needs.deed.result }}
+          K9_RESULT: ${{ needs.k9.result }}
+          K9_VERDICT: ${{ needs.k9.outputs.verdict }}
           HYPATIA_RESULT: ${{ needs.hypatia.result }}
           HYPATIA_VERDICT: ${{ needs.hypatia.outputs.verdict }}
         run: |
@@ -104,12 +128,19 @@ jobs:
             echo "| Lane | Status | Run |"
             echo "|---|---|---|"
             echo "| DEED syntax (repo deed) | $deed | [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) |"
+            echo "| K9 conformance (L0–L2; L3 not verified) | ${K9_VERDICT:-orange} (job: $K9_RESULT) | same run |"
             echo "| Hypatia verdict grid | ${HYPATIA_VERDICT:-orange} (job: $HYPATIA_RESULT) | same run |"
             echo
             if [ -s verdict-grid/report.md ]; then
               cat verdict-grid/report.md
             else
               echo '🟠 indeterminate · no verdict-grid artifact was produced by the Hypatia lane; see the run.'
+            fi
+            echo
+            if [ -s k9-grid/report.md ]; then
+              cat k9-grid/report.md
+            else
+              echo '🟠 indeterminate · no K9 grid artifact was produced; see the run.'
             fi
           } > "$RUNNER_TEMP/body.md"
           # One comment per PR, updated in place; newest run wins.

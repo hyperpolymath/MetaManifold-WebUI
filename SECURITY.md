@@ -1,24 +1,43 @@
 <!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
 # Security policy
 
-## Supported version
+## Reporting a vulnerability
 
-Security fixes are applied to the current `main` branch. Update to the latest
-revision before reporting a problem that may already have been fixed.
+For vulnerabilities in this fork, use [GitHub private vulnerability
+reporting](https://github.com/hyperpolymath/MetaManifold-WebUI/security/advisories/new).
+If private reporting is unavailable, contact the fork maintainer at
+**j.d.a.jewell@open.ac.uk**. Do not open a public issue containing exploit
+instructions, credentials, private sequence data, or patient identifiers.
 
-## Report a vulnerability
+Include the affected commit, deployment configuration, reproduction steps,
+expected and observed behaviour, and likely impact. Use synthetic or
+appropriately de-identified examples. Never send production credentials.
 
-Use [GitHub private vulnerability reporting](https://github.com/hyperpolymath/MetaManifold-WebUI/security/advisories/new)
-for suspected vulnerabilities in this fork. If private reporting is not
-available, contact the fork maintainer at `j.d.a.jewell@open.ac.uk` (the
-contact already published in `MetaManifold-WebUI_chora.deed`). Do not disclose
-an unpatched vulnerability in a public issue or pull request.
+For defects shared with the upstream project, coordinate disclosure with
+[JoshuaJewell/MetaManifold-WebUI](https://github.com/JoshuaJewell/MetaManifold-WebUI)
+as well; this fork cannot make support commitments on its behalf.
 
-Include the affected revision, a minimal reproduction, the security impact, and
-any suggested mitigation. Remove real study data, credentials, access tokens,
-and other secrets from the report. The maintainers will assess the report and
-coordinate a fix and disclosure with the reporter.
+## Supported versions and deployment boundary
 
-For vulnerabilities confined to upstream code that are not specific to this
-fork, also consult the upstream project's reporting process rather than
-assuming the fork can publish an upstream fix.
+Security fixes target the current `main` branch of this fork. Older commits
+and downstream deployments must be updated; no backport or response-time
+commitment is implied.
+
+Treat the Julia server as a trusted local analysis service, not a public,
+multi-tenant hosting boundary. Do not expose it directly to the internet.
+Remote deployments need an authenticated, TLS-terminating reverse proxy and
+appropriate access controls for the server's files, tools and analysis data.
+Keep DOI publication disabled unless deliberately configured; Zenodo tokens
+belong in server-side environment variables, never frontend code or Git.
+
+## Automated checks and their limits
+
+CI runs application tests and proof checks. The fork governance workflow
+reports DEED syntax, K9 conformance coverage, and advisory Hypatia findings.
+The Secret Scanner workflow checks the working tree and Git history; the
+Scorecard workflow assesses repository security practices. Dependency update
+PRs still require review and passing tests.
+
+A green workflow is not a claim that all security findings are resolved.
+Missing tools, inaccessible GitHub alert APIs, absent fleet report-backs and
+an empty K9 corpus must remain visible as missing or inapplicable evidence.
