@@ -129,6 +129,24 @@ reason, rather than suppressed with `// NOSONAR` — a suppression still leaves
 the finding counted, and `typescript:S1291` ("Track uses of NOSONAR") would add
 a maintainability finding of its own.
 
+### `shell:S6506` / `githubactions:S6506` — a download that may follow a redirect
+
+*"Not disabling redirects might allow for redirections to insecure websites."*
+Reported as a **vulnerability** (`MAJOR`, MEDIUM), so unlike the two rules above
+it moves `new_security_rating` and fails the gate on its own. It fired on the
+`wget --https-only` that fetched the CRAN repository key, and again on the copy
+of the same step in `.github/workflows/ci.yml`.
+
+`--https-only` constrains the *first* request; it says nothing about where a
+redirect sends the client. The fix is the one the rest of this repository
+already uses for every pinned download — `curl --proto '=https' --proto-redir
+'=https'`, which pins both the request and the redirect target — and the
+keyring is written from a private temporary file so a truncated download is
+never left in `/usr/share/keyrings`. `wget` has no equivalent spelling of
+`--proto-redir`, so the choice of client is part of the fix. Moving the step
+into `scripts/ci/install-r-runtime.sh` also removed the duplicate copy that
+made the same finding appear twice.
+
 ## Reproducing it locally
 
 ```
