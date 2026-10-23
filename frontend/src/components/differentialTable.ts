@@ -46,48 +46,42 @@ export function formatStat(value: number | null): string {
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
-
-  if (c.method === 'multinomial' || c.method === 'dirichlet_multinomial') {
-    const settings = [`method ${c.method}`]
-    if (c.method === 'dirichlet_multinomial' && c.dm_overdispersion_method)
-      settings.push(`overdispersion ${c.dm_overdispersion_method}`)
-    if (c.mn_reference_taxon) settings.push(`reference ${c.mn_reference_taxon}`)
-    if (c.mn_penalty !== undefined) settings.push(`penalty ${c.mn_penalty}`)
-    settings.push(`min_prevalence ${c.min_prevalence}`)
-    return `${settings.join(', ')}; estimates are log2 fold changes against the reference taxon`
-  }
-
-  if (c.method === 'clr_welch') {
-    const replacement = c.replacement_method ?? 'bayesian_multiplicative'
-    const settings = [
-      `method clr_welch`,
-      `replacement_method ${replacement}`,
-      `replacement_delta ${c.replacement_delta}`,
-    ]
-    // CZM has no Bayesian concentration parameter; do not claim one was used.
-    if (replacement === 'bayesian_multiplicative') {
+  switch (c.method) {
+    case 'multinomial':
+    case 'dirichlet_multinomial': {
+      const overdispersion = c.method === 'dirichlet_multinomial'
+        ? `, overdispersion ${c.dm_overdispersion_method}`
+        : ''
+      return `method ${c.method}${overdispersion}, reference ${c.mn_reference_taxon}, ` +
+        `penalty ${c.mn_penalty}, min_prevalence ${c.min_prevalence}; estimates are ` +
+        'log2 fold changes against the reference taxon'
+    }
+    case 'clr_welch': {
+      const replacement = c.replacement_method ?? 'bayesian_multiplicative'
       const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
         ? 'estimated' : String(c.bayesian_alpha)
-      settings.push(`bayesian_alpha ${alpha}`)
+      const alphaText = replacement === 'bayesian_multiplicative'
+        ? `, bayesian_alpha ${alpha}`
+        : ''
+      return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}` +
+        `${alphaText}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
     }
-    settings.push(`min_prevalence ${c.min_prevalence}`)
-    return `${settings.join(', ')}; estimate is a CLR difference, not a fold change`
+    case 'ancom_bc':
+      return `method ancom_bc, min_prevalence ${c.min_prevalence}; effect is bias-corrected log2 fold change (Lin & Peddada 2020)`
+    case 'aldex2':
+      return `method aldex2, mc_samples ${c.mc_samples}, seed ${c.seed}, min_prevalence ${c.min_prevalence}; estimate is an ALDEx2 standardized CLR effect size, not a fold change`
+    case 'songbird':
+      return `method songbird, min_prevalence ${c.min_prevalence}; estimate is a CLR-centred multinomial differential, not an absolute fold change`
+    case 'nb_glm': {
+      const dispersion = c.dispersion === undefined ? '' : `, dispersion ${c.dispersion}`
+      return `method nb_glm, offset ${c.offset}${dispersion}, min_prevalence ${c.min_prevalence}`
+    }
+    case 'zinb':
+    case 'hurdle_nb':
+      return `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+    default:
+      throw new Error(`Unsupported differential method: ${String(c.method)}`)
   }
-
-  if (c.method === 'ancom_bc')
-    return `method ancom_bc, min_prevalence ${c.min_prevalence}; effect is bias-corrected log2 fold change (Lin & Peddada 2020)`
-
-  if (c.method === 'aldex2')
-    return `method aldex2, mc_samples ${c.mc_samples}, seed ${c.seed}, min_prevalence ${c.min_prevalence}; estimate is an ALDEx2 standardized CLR effect size, not a fold change`
-
-  if (c.method === 'songbird')
-    return `method songbird, min_prevalence ${c.min_prevalence}; estimate is a CLR-centred multinomial differential, not an absolute fold change`
-
-  const settings = [`method ${c.method}`]
-  if (c.offset !== undefined) settings.push(`offset ${c.offset}`)
-  if (c.method === 'nb_glm' && c.dispersion !== undefined) settings.push(`dispersion ${c.dispersion}`)
-  settings.push(`min_prevalence ${c.min_prevalence}`)
-  return settings.join(', ')
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */
