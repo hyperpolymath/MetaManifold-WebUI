@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MPL-2.0
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  # Dependabot's npm ecosystem supports bun.lock. Julia and R pins remain
+  # maintainer-reviewed in tool_versions.yml, Manifest.toml and renv.lock.
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      development-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
