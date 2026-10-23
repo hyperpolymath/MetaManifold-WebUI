@@ -871,6 +871,18 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             if relocated !== nothing
                 @test Float64(relocated["cumulative_count"]) == moved_reads
                 @test Float64(relocated["residual_count"]) == moved_residual
+                # The moved clade's 0.30 incoming branch and its two tip
+                # branches (0.10 and 0.20) each occur exactly once.
+                @test Float64(relocated["subtree_pd"]) ≈ 0.60 atol = 1e-9
+            end
+            proposed_target = _cc_find_dict(proposed_root, String(target.id))
+            @test proposed_target !== nothing
+            if proposed_target !== nothing
+                # The target contributes its own 0.40 edge, two original tip
+                # edges (0.15 and 0.25), and the relocated clade's complete
+                # 0.60 node-local PD. Adding the relocated incoming edge again
+                # at the parent would incorrectly produce 1.70 rather than 1.40.
+                @test Float64(proposed_target["subtree_pd"]) ≈ 1.40 atol = 1e-9
             end
             @test Float64(proposed_root["cumulative_count"]) ≈ before_total atol = 1e-9
             # The emptied wrapper is childless but is not a tip: it must not
