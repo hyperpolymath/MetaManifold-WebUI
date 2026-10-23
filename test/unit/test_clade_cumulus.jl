@@ -397,9 +397,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test v_allow.proposal_file !== nothing
             @test isfile(joinpath(trees_dir, ".clade_cumulus", String(v_allow.proposal_file)))
             @test v_allow.proposed_root.cumulative_count ≈ 110.0 atol = 1e-9
-            # Subtree PD is the sum of active descendant branch lengths. It
-            # need not grow after reassignment: the moved branch can replace
-            # previously active topology rather than append to it.
+            # Subtree PD includes each active edge exactly once, including the
+            # target's own incoming edge (main's node-local PD convention).
             function proposed_node(u, id)
                 u.id == id && return u
                 for child in u.children
@@ -411,9 +410,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             proposed_target = proposed_node(v_allow.proposed_root, high_clade.id)
             @test proposed_target !== nothing
             if proposed_target !== nothing
-                expected_pd = sum((max(0.0, Float64(ch.branch_length)) + Float64(ch.subtree_pd)
-                                   for ch in proposed_target.children if ch.cumulative_count > 0);
-                                  init=0.0)
+                expected_pd = max(0.0, Float64(proposed_target.branch_length)) +
+                              sum((Float64(ch.subtree_pd) for ch in proposed_target.children
+                                   if ch.cumulative_count > 0); init=0.0)
                 @test Float64(proposed_target.subtree_pd) ≈ expected_pd atol = 1e-10
                 @test Float64(proposed_target.subtree_pd) != before_target_pd
             end
