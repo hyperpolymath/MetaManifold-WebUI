@@ -188,6 +188,23 @@ end
         end
     end
 
+    @testset "Calibration caveat scales with the smaller group" begin
+        # Pure thresholds, no R needed: every "ml" result is caveated, the
+        # glmGamPoi trend only through 12 in the smaller group.
+        caveat = Differential._calibration_caveat
+        @test caveat("ml", 4, 4)["severity"] == "strong"
+        @test caveat("ml", 30, 3)["severity"] == "strong"
+        @test caveat("ml", 5, 5)["severity"] == "caution"
+        @test caveat("ml", 12, 12)["severity"] == "caution"
+        @test caveat("ml", 13, 20)["severity"] == "caution"
+        @test caveat("ml", 13, 20)["min_group_n"] == 13
+        @test caveat("ml", 21, 25)["severity"] == "info"
+        @test caveat("glmGamPoi", 4, 9)["severity"] == "strong"
+        @test caveat("glmGamPoi", 12, 12)["severity"] == "caution"
+        @test isnothing(caveat("glmGamPoi", 13, 13))
+        @test isnothing(caveat("glmGamPoi", 20, 13))
+    end
+
     @testset "Input validation" begin
         taxa = ["a", "b", "c"]
         groups = ["A", "A", "B"]
@@ -226,6 +243,9 @@ end
                                    "TSS size-factor offset; Wald test of the group coefficient; " *
                                    "Benjamini-Hochberg adjustment over the fitted taxa"
             @test res["diagnostics"]["n_tested"] == 3
+            caveat = res["diagnostics"]["calibration_caveat"]
+            @test caveat["severity"] == "caution" && caveat["dispersion"] == "ml"
+            @test caveat["min_group_n"] == 12 && occursin("theta", caveat["message"])
             @test all(r -> r["status"] == "ok", res["rows"])
             @test isapprox(byt["t_up"]["estimate"], log(4); atol=0.5)
             @test isapprox(byt["t_up"]["log2_fold_change"], 2; atol=0.8)
@@ -239,6 +259,13 @@ end
                                              reference="B", contrast="A")
             sb = Dict(r["taxon"] => r for r in swapped["rows"])
             @test sb["t_up"]["estimate"] ≈ -byt["t_up"]["estimate"] rtol=1e-6
+            # The caveat strengthens as the smaller group shrinks; the p-values
+            # themselves are untouched by it (checked against MASS below).
+            keep = [1:4; 13:16]
+            small = differential_abundance(effect[keep, :], effect_samples[keep], effect_taxa,
+                                           effect_groups[keep]; reference="A", contrast="B")
+            @test small["diagnostics"]["calibration_caveat"]["severity"] == "strong"
+            @test small["diagnostics"]["calibration_caveat"]["min_group_n"] == 4
 
             @testset "matches a direct MASS::glm.nb call" begin
                 off = log.(tss_factors(effect, effect_samples))
@@ -276,6 +303,10 @@ end
                                    "with dispersion trend from glmGamPoi::glm_gp, log link) with a " *
                                    "TSS size-factor offset; Wald test of the group coefficient; " *
                                    "Benjamini-Hochberg adjustment over the fitted taxa"
+            caveat = res["diagnostics"]["calibration_caveat"]
+            @test caveat["severity"] == "caution" && caveat["dispersion"] == "glmGamPoi"
+            @test caveat["min_group_n"] == 12 &&
+                  occursin("quasi-likelihood F-test", caveat["message"])
             byt = Dict(r["taxon"] => r for r in res["rows"])
             off = log.(tss_factors(effect, effect_samples))
             g = effect_groups
@@ -669,6 +700,7 @@ end
             @test isempty(res["size_factors"])
             @test res["config"]["method"] == "clr_welch" && !haskey(res["config"], "offset")
             @test res["diagnostics"]["zero_replacement"]["zeros_replaced"] == 0
+            @test !haskey(res["diagnostics"], "calibration_caveat")
             @test occursin("Welch", res["method"]) && occursin("cmultRepl", res["method"])
             # Known answer, independent of R: the estimate is mean(B) - mean(A)
             # of each taxon's CLR.

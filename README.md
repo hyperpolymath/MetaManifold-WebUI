@@ -260,7 +260,14 @@ not exclude samples from this analysis.
 - `nb_glm` (default): a negative-binomial GLM per taxon using `MASS::glm.nb`,
   with a library-size offset. The effect is log2 fold change; positive values
   indicate greater abundance in the second condition. `offset` selects `tss`
-  (default) or `rle` scaling.
+  (default) or `rle` scaling. `dispersion` selects per-taxon maximum-likelihood
+  theta (`ml`, default) or a fixed theta from `glmGamPoi::glm_gp`'s cross-taxon
+  dispersion trend (`glmGamPoi`). Both options Wald-test the group coefficient
+  with the dispersion treated as known, so every `ml` result — and a
+  `glmGamPoi` result whose smaller group has at most 12 samples — carries a
+  calibration caveat in its diagnostics, shown with the result and written
+  into its CSV export. The caveat changes no p-value; the null-simulation
+  evidence and full replication protocol live in `bench/null_calibration`.
 - `clr_welch`: Welch's t-test on centred log-ratios after multiplicative zero
   replacement with `zCompositions::cmultRepl`. The effect is a CLR difference,
   not a fold change. `replacement_delta` controls the replacement fraction

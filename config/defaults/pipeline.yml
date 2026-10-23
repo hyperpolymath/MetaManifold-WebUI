@@ -364,7 +364,13 @@ analysis:
     # across all taxa in one call -- sharing information across taxa, which
     # steadies low-count taxa -- and fits each taxon through
     # MASS::negative.binomial(theta = 1/dispersion), so the Wald test is
-    # unchanged. Requires the glmGamPoi R package.
+    # unchanged. Requires the glmGamPoi R package. Both fixed-theta Wald
+    # tests treat the dispersion they use as known rather than propagating
+    # its estimation uncertainty: every ml result therefore carries a
+    # calibration caveat in its diagnostics, strongest when a group is
+    # small, as does a glmGamPoi result whose smaller group has at most 12
+    # samples. The caveat records the limitation; it changes no p-value.
+    # Evidence and the replication protocol: bench/null_calibration.
     dispersion: ml
     # Fraction of samples, 0 to 1, in which a taxon must have reads to be
     # tested. Taxa below it are listed as filtered, without a p-value. For

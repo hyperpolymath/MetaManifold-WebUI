@@ -135,6 +135,15 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 `and at most ${(100 * z.max_imputed_fraction).toPrecision(2)}% of any, and are not measurements.`
             })()}
           </p>
+          {result.diagnostics.calibration_caveat && (
+            <p role="note" style={{
+              fontSize: '.82rem', margin: '0 0 8px',
+              color: result.diagnostics.calibration_caveat.severity === 'info'
+                ? 'var(--color-muted-fg)' : 'inherit',
+            }}>
+              <strong>Calibration caveat:</strong> {result.diagnostics.calibration_caveat.message}
+            </p>
+          )}
 
           <AnalysisChart study={study} figure={result.figure} />
 

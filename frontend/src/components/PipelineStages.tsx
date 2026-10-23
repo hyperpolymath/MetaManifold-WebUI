@@ -152,7 +152,7 @@ export const CONFIG_DESCRIPTIONS: Record<string, string> = {
   'analysis.beta.depth':          'Reads per sample for rarefy or srs; 0 uses the smallest non-empty sample.',
   'analysis.differential.method': 'Model fitted to each taxon: nb_glm (negative-binomial GLM on read counts; effect is a log2 fold change) or clr_welch (Welch\'s t-test on centred log-ratios over the taxa passing min_prevalence, after zCompositions::cmultRepl zero replacement; effect is a CLR difference, not a fold change).',
   'analysis.differential.offset': 'Library-size offset in each negative-binomial model: tss (total reads per sample) or rle (median-of-ratios over taxa present in every sample; refused when there are none). Used by nb_glm only.',
-  'analysis.differential.dispersion': 'nb_glm only: ml estimates theta separately with MASS::glm.nb; glmGamPoi uses a cross-taxon dispersion trend in fixed-scale negative-binomial Wald fits.',
+  'analysis.differential.dispersion': 'nb_glm only: ml estimates theta separately with MASS::glm.nb; glmGamPoi uses a cross-taxon dispersion trend in fixed-scale negative-binomial Wald fits. Both Wald tests treat the dispersion as known, so ml results always carry a calibration caveat (strongest in small groups; see bench/null_calibration).',
   'analysis.differential.min_prevalence': 'Fraction of samples, 0 to 1, in which a taxon must have reads to be tested; taxa below it are listed as filtered.',
   'analysis.differential.replacement_delta': 'clr_welch only: cmultRepl\'s frac, between 0 and 1; an imputed proportion above its taxon\'s smallest observed proportion is lowered to this fraction of it. Replaced zeros are not measurements.',
   'analysis.alpha.show_points':   'Show individual samples overlaid on alpha comparison boxplots.',
