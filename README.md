@@ -293,7 +293,12 @@ not exclude samples from this analysis.
   with a library-size offset. The effect is log2 fold change; positive values
   indicate greater abundance in the second condition. `offset` selects `tss`
   (default) or `rle`; `dispersion` selects maximum-likelihood theta or a
-  cross-taxon `glmGamPoi` trend.
+  cross-taxon `glmGamPoi` trend. Both options Wald-test the group coefficient
+  with the dispersion treated as known, so every `ml` result — and a
+  `glmGamPoi` result whose smaller group has at most 12 samples — carries a
+  calibration caveat in its diagnostics, shown with the result and written
+  into its CSV export. The caveat changes no p-value; the null-simulation
+  evidence and full replication protocol live in `bench/null_calibration`.
 - `zinb`: a zero-inflated negative-binomial model with separate logistic
   zero and count components, a count-component library-size offset, a joint
   2-df likelihood-ratio test, and BH correction.

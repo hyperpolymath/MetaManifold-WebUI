@@ -474,6 +474,18 @@ export interface DifferentialResult {
   }
   diagnostics: {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
+    /**
+     * nb_glm only: interpretation caveat for the fixed-theta Wald test.
+     * Present for every `ml` result, scaled by the smaller group, and for
+     * `glmGamPoi` results whose smaller group has at most 12 samples. It
+     * changes no statistic.
+     */
+    calibration_caveat?: {
+      severity: 'info' | 'caution' | 'strong'
+      dispersion: 'ml' | 'glmGamPoi'
+      min_group_n: number
+      message: string
+    }
     /** Safety note for two-part models. */
     model_warning?: string
     /** clr_welch only. */

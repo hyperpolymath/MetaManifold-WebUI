@@ -237,6 +237,15 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
               return ` Reference frame taxon: ${s.reference_taxon ?? 'none'} over ${s.n_identifiable_taxa} identifiable taxa${sep}.`
             })()}
           </p>
+          {result.diagnostics.calibration_caveat && (
+            <p role="note" style={{
+              fontSize: '.82rem', margin: '0 0 8px',
+              color: result.diagnostics.calibration_caveat.severity === 'info'
+                ? 'var(--color-muted-fg)' : 'inherit',
+            }}>
+              <strong>Calibration caveat:</strong> {result.diagnostics.calibration_caveat.message}
+            </p>
+          )}
 
           {result.diagnostics.zero_replacement && result.diagnostics.zero_replacement.zeros_replaced > 0 && (() => {
             const z = result.diagnostics.zero_replacement!

@@ -22,10 +22,14 @@ export function csvField(value: string | number | null): string {
  */
 export function differentialCsv(result: DifferentialResult): string {
   const { reference, contrast } = result.groups
+  const caveat = result.diagnostics.calibration_caveat
   const header = [
     `# Differential abundance: ${contrast} vs ${reference} (reference), rank ${result.rank}, table ${result.table}`,
     `# ${result.method}`,
     `# ${configLine(result)}`,
+    // The caveat travels with the numbers it qualifies: a downloaded table
+    // must not look better-calibrated than the result it came from.
+    ...(caveat ? [`# Calibration caveat (${caveat.severity}): ${caveat.message}`] : []),
   ].map(l => l.replace(/[\r\n]+/g, ' '))
   const rows = result.rows.map(r => COLUMNS.map(c => csvField(r[c] ?? null)).join(','))
   return [...header, COLUMNS.join(','), ...rows].join('\r\n') + '\r\n'
