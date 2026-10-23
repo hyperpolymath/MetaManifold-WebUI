@@ -57,12 +57,13 @@ const UNIT_FILES = [
     "test_sample_reads.jl",
     "test_determinism.jl",
     "test_differential.jl",
+    "test_evidence.jl",
+    "test_evidence_routes.jl",
     "test_permanova.jl",
     "test_write_gates.jl",
     "test_server_security.jl",
     "test_canonical.jl",
     "test_doi.jl",
-    "test_clade_cumulus.jl",
 ]
 
 # The files named on the command line ("test_routes.jl", "routes" or
