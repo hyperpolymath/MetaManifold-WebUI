@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# Fork governance lane. Two reusable lanes from hyperpolymath/standards, each
-# pinned to a commit: DEED syntax for the repo deed, and the Hypatia verdict
-# grid (Hypatia, panic-attack, pons asinorum and the gitbot-fleet report-backs
-# under .gitbot-fleet/). This workflow is the fork's; nothing in it is
-# proposed upstream, and upstream's ci.yml is untouched.
+# Fork governance lane. DEED syntax comes from hyperpolymath/standards; the
+# Hypatia verdict grid uses a fork-local copy of the standards reusable so its
+# advisory PR scan cannot become a blocking code-scanning-results check. Both
+# sources are pinned to commits. The grid covers Hypatia, panic-attack, pons
+# asinorum and the gitbot-fleet report-backs under .gitbot-fleet/. This workflow
+# is the fork's; nothing in it is proposed upstream, and upstream's ci.yml is
+# untouched.
 #
 # The reusable renders the grid; the two jobs below post it on the pull
 # request and publish the badges, because a called workflow may not request
@@ -26,6 +28,18 @@ permissions:
   contents: read
 
 jobs:
+  workflow-contract:
+    name: Advisory scan contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the advisory SARIF boundary
+        run: bash scripts/check-governance-contract.sh
+
   deed:
     name: DEED syntax
     uses: hyperpolymath/standards/.github/workflows/deed-conformance.yml@75bd5994470661a099df562d6d5ad2fe744dbd66
@@ -36,7 +50,11 @@ jobs:
 
   hypatia:
     name: Hypatia verdict grid
-    uses: hyperpolymath/standards/.github/workflows/hypatia-scan-reusable.yml@01c9b0c9f2646ebea0b30a9588462642ac94aee9
+    needs: [workflow-contract]
+    # Fork-local so advisory PR scans do not upload error-level SARIF and
+    # create a second blocking check. The source pin and deltas are documented
+    # in the called file and checked by scripts/check-governance-contract.sh.
+    uses: ./.github/workflows/hypatia-scan-reusable.yml
     permissions:
       actions: read
       contents: read
