@@ -23,6 +23,7 @@ import type {
   ReferenceTreeDoc, ReferenceTreeSummary, ReferenceTreeDetail, AlignmentQC, TrimSettings,
   CladeCumulusSourcesResponse, CladeCumulusRequest, CladeCumulusResponse,
   CladeMoveValidationRequest, CladeMoveValidationResponse,
+  CladisticsSummary, CladisticsDetail, CladisticsCreateRequest,
 } from './types'
 
 import type { FigureDoc } from '../figure/types'
