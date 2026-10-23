@@ -14,21 +14,21 @@ const _TREE_MAX_BYTES  = 50 * 1024 * 1024
 const _VIEW_MAX_BYTES  = 5 * 1024 * 1024
 const _tree_view_lock  = ReentrantLock()
 
-_trees_dir(study::String) = joinpath(ServerState.projects_dir(), study, "trees")
-_tree_view_path(study::String, file::String) = joinpath(_trees_dir(study), ".views", file * ".json")
+_trees_dir(study::AbstractString) = joinpath(ServerState.projects_dir(), study, "trees")
+_tree_view_path(study::AbstractString, file::AbstractString) = joinpath(_trees_dir(study), ".views", file * ".json")
 
-_tree_format(file::String) = endswith(lowercase(file), ".jplace") ? "jplace" : "newick"
+_tree_format(file::AbstractString) = endswith(lowercase(file), ".jplace") ? "jplace" : "newick"
 
 function _valid_tree_file(file::AbstractString)::Bool
     _valid_name(file) && any(ext -> endswith(lowercase(file), ext), _TREE_EXTENSIONS)
 end
 
-function _study_exists(study::String)::Bool
+function _study_exists(study::AbstractString)::Bool
     _valid_name(study) &&
         (isdir(joinpath(ServerState.projects_dir(), study)) || study in _study_names())
 end
 
-function _tree_request_error(study::String, file::Union{String,Nothing}=nothing)
+function _tree_request_error(study::AbstractString, file::Union{AbstractString,Nothing}=nothing)
     _study_exists(study) || return json_error(404, "study_not_found", "Study '$study' not found")
     isnothing(file) && return nothing
     _valid_tree_file(file) || return json_error(400, "invalid_name",
@@ -36,7 +36,7 @@ function _tree_request_error(study::String, file::Union{String,Nothing}=nothing)
     nothing
 end
 
-function _tree_listing(study::String)
+function _tree_listing(study::AbstractString)
     dir = _trees_dir(study)
     isdir(dir) || return NamedTuple[]
     files = sort(filter(f -> _valid_tree_file(f) && isfile(joinpath(dir, f)), readdir(dir)))
