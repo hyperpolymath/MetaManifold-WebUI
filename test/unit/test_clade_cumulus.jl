@@ -629,9 +629,10 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         # `_reaggregate_after_move` detaches the moving clade from its old
         # parent. When that parent's only child was the one that moved, the
         # parent is left with no children but still carries the
-        # `cumulative_count` of the subtree that has just left. Read as a leaf,
-        # that stale count would keep the emptied clade active and give it a
-        # nonzero `subtree_pd` and frequency for reads it no longer holds.
+        # `cumulative_count` (and the `residual_count` behind its uncertainty
+        # cloud) of the subtree that has just left. Read as a leaf, that stale
+        # count would keep the emptied clade active and give it a nonzero
+        # `subtree_pd` and frequency for reads it no longer holds.
         df = DataFrame(
             SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4"],
             Domain  = fill("Bacteria", 4),
@@ -657,8 +658,11 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         if wrapper !== nothing && only_child !== nothing && target !== nothing
             before_total = Float64(cc_move.root.cumulative_count)
             vacated_reads = Float64(wrapper.cumulative_count)
+            vacated_residual = Float64(wrapper.residual_count)
             moved_reads = Float64(only_child.cumulative_count)
+            moved_residual = Float64(only_child.residual_count)
             @test vacated_reads > 0.0
+            @test vacated_residual > 0.0   # so clearing it is observable
             @test moved_reads > 0.0
 
             verdict = CC.validate_drag_drop(cc_move, String(only_child.id), String(target.id))
@@ -671,6 +675,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                 @test Float64(vacated["cumulative_count"]) == 0.0
                 @test Float64(vacated["cumulative_frequency"]) == 0.0
                 @test Float64(vacated["subtree_pd"]) == 0.0
+                # The residual uncertainty belonged to the reads that left, so
+                # it leaves with them instead of lingering on an empty clade.
+                @test Float64(vacated["residual_count"]) == 0.0
                 @test isempty(vacated["children"])
             end
 
@@ -680,6 +687,7 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test relocated !== nothing
             if relocated !== nothing
                 @test Float64(relocated["cumulative_count"]) == moved_reads
+                @test Float64(relocated["residual_count"]) == moved_residual
             end
             @test Float64(proposed_root["cumulative_count"]) ≈ before_total atol = 1e-9
         end

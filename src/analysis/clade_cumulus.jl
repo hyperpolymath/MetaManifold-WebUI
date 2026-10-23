@@ -1872,6 +1872,12 @@ function _reaggregate_after_move(
             # `direct_count`, as the internal-node branch below recomputes its
             # own from the rebuilt children.
             own_count = u.direct_count
+            # `residual_count` comes from the same departed subtree: placement
+            # and support uncertainty belong to the reads that left with it,
+            # and they are recomputed at its new location. A clade left holding
+            # no reads has no residual uncertainty left to report, so the
+            # residual is derived from the same count as everything else here.
+            own_residual = own_count > 0.0 ? u.residual_count : 0.0
             freq = total_reads > 0.0 ? own_count / total_reads : 0.0
             tmap = Dict{String,Int}()
             mono = u.monophyletic
@@ -1884,7 +1890,7 @@ function _reaggregate_after_move(
             st = Epistemic.epistemic_status(case_obj, u.id)
             leaf_node = CladeNode(
                 u.id, u.name, u.rank, u.direct_count, own_count, freq,
-                u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
+                own_residual, Epistemic.cloud_size_by_residual(own_residual),
                 u.branch_length, u.support, sub_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
