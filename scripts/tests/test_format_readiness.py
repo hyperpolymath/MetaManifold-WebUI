@@ -16,14 +16,23 @@ from process import ToolError, run
 from probe_kyq import main as probe_main
 
 
+def run_python(body, data=b"", **kwargs):
+    # A fake installed protocol adapter, never a production interpreter command.
+    with tempfile.TemporaryDirectory(prefix="format tool ") as tmp:
+        path = Path(tmp) / "ijson-jcs"
+        path.write_text(f"#!{sys.executable}\n{body}\n")
+        path.chmod(0o700)
+        return run([str(path), "canon"], data, **kwargs)
+
+
 class ProcessTests(unittest.TestCase):
     def test_round_trip_binary_io(self):
         raw = bytes(range(256)) * 200
-        result = run([sys.executable, "-c", "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())"], raw)
+        result = run_python("import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())", raw)
         self.assertEqual((result.code, result.stdout, result.stderr), (0, raw, b""))
 
     def test_stderr_separate_and_exit_preserved(self):
-        result = run([sys.executable, "-c", "import sys; sys.stderr.write('private'); sys.exit(7)"])
+        result = run_python("import sys; sys.stderr.write('private'); sys.exit(7)")
         self.assertEqual((result.code, result.stdout, result.stderr), (7, b"", b"private"))
 
     def test_missing_binary_is_infrastructure_not_document_rejection(self):
@@ -32,20 +41,32 @@ class ProcessTests(unittest.TestCase):
 
     def test_timeout(self):
         with self.assertRaisesRegex(ToolError, "time budget"):
-            run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.15)
+            run_python("import time; time.sleep(10)", timeout=0.15)
 
     def test_output_budget_covers_both_streams(self):
         with self.assertRaisesRegex(ToolError, "output budget"):
-            run([sys.executable, "-c", "import sys; sys.stderr.write('x' * 10000)"], limit=100)
+            run_python("import sys; sys.stderr.write('x' * 10000)", limit=100)
 
     def test_input_and_deadline_budgets(self):
         for kwargs in ({"timeout": 0}, {"timeout": float("nan")}, {"timeout": float("inf")}, {"limit": 0}, {"data": b"xx", "limit": 1}):
             with self.assertRaises(ToolError):
-                run([sys.executable, "-c", "pass"], **kwargs)
+                run_python("pass", **kwargs)
+
+    def test_arbitrary_programs_and_arguments_are_refused(self):
+        for argv in ([sys.executable, "-c", "pass"], ["git", "config", "--global", "x", "y"]):
+            with self.subTest(argv=argv), self.assertRaises(ToolError):
+                run(argv)
+
+    def test_symlink_cannot_disguise_an_interpreter_as_a_canonicalizer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ijson-jcs"
+            path.symlink_to(sys.executable)
+            with self.assertRaises(ToolError):
+                run([str(path), "canon"])
 
     def test_descendant_keeping_pipe_open_is_bounded(self):
         with self.assertRaisesRegex(ToolError, "time budget"):
-            run([sys.executable, "-c", "import os,time; p=os.fork(); time.sleep(10) if p==0 else None"], timeout=0.2)
+            run_python("import os,time; p=os.fork(); time.sleep(10) if p==0 else None", timeout=0.2)
 
 
 class CorpusTests(unittest.TestCase):
@@ -59,7 +80,7 @@ class CorpusTests(unittest.TestCase):
 
     def test_bad_and_ambiguous_corpora_fail_before_running_tools(self):
         for contents in (
-            "schema=2\ncase=[]\n", "schema=1\ncase=[]\n",
+            "schema=2\ncase=[]\n", "schema=true\ncase=[]\n", "schema=1\ncase=[]\n",
             "schema=1\n[[case]]\nid='a'\ninput='{}'\nvalid=true\n",
             "schema=1\n[[case]]\nid='a'\ninput='{}'\nhex='ff'\nvalid=false\n",
             "schema=1\n[[case]]\nid='a'\ninput='{}'\nvalid='false'\n",
@@ -81,7 +102,9 @@ class CorpusTests(unittest.TestCase):
                 list(load_cases(path))
 
     def fake(self, directory, body):
-        path = Path(directory) / "tool with spaces"
+        folder = Path(directory) / "tool with spaces"
+        folder.mkdir()
+        path = folder / "ijson-jcs"
         path.write_text(f"#!{sys.executable}\n{body}\n")
         path.chmod(0o700)
         return str(path)

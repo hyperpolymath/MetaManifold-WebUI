@@ -51,33 +51,39 @@ def category(path):
     return "untriaged"
 
 
+def _file_rows(root, name):
+    path = root / name
+    bucket = category(Path(name))
+    if path.is_symlink():
+        yield "symlink", bucket, name, 0, "target-not-followed"
+        return
+    if not path.is_file():
+        yield "missing", bucket, name, 0, "missing-worktree-file"
+        return
+    suffix = path.suffix
+    if suffix in DATA or path.name in ("renv.lock", "bun.lock"):
+        yield "document", bucket, name, 0, "format-owner-needs-review"
+    if suffix not in CODE:
+        return
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeError:
+        yield "unreadable", bucket, name, 0, "invalid-utf8-source"
+        return
+    for label, pattern in PATTERNS.items():
+        for match in re.finditer(pattern, text):
+            line = text.count("\n", 0, match.start()) + 1
+            yield "candidate", bucket, name, line, label
+
+
 def inventory(root):
     result = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=root, check=True, capture_output=True,
     )
-    paths = sorted(set(p.decode("utf-8") for p in result.stdout.split(b"\0") if p))
+    paths = sorted({p.decode("utf-8") for p in result.stdout.split(b"\0") if p})
     for name in paths:
-        path = root / name
-        if path.is_symlink():
-            yield "symlink", category(Path(name)), name, 0, "target-not-followed"
-            continue
-        if not path.is_file():
-            continue  # staged deletion / missing worktree file
-        suffix = path.suffix
-        if suffix in DATA or path.name in ("renv.lock", "bun.lock"):
-            yield "document", category(Path(name)), name, 0, "format-owner-needs-review"
-        if suffix not in CODE:
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeError:
-            yield "unreadable", category(Path(name)), name, 0, "invalid-utf8-source"
-            continue
-        for label, pattern in PATTERNS.items():
-            for match in re.finditer(pattern, text):
-                line = text.count("\n", 0, match.start()) + 1
-                yield "candidate", category(Path(name)), name, line, label
+        yield from _file_rows(root, name)
 
 
 def main(argv=None):

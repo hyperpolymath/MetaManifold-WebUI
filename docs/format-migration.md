@@ -9,7 +9,7 @@ record, configuration file or workflow dialect is migrated by this change.
 | Stage | State | Exit evidence required |
 | --- | --- | --- |
 | 1. Working kyq | **BLOCKED** | Real compiler checks including imports; executable build/tests; native/WASM IO; isolated-prefix installation |
-| 2. Conformance corpus | JSON raw-byte characterization harness prepared; reference execution delegated to CI; KYAML/runtime equivalence not verified | Installed-artifact tests, differential Julia/JS tests, pinned KYAML profile, comment-preservation/mutation proof, resource limits |
+| 2. Conformance corpus | JSON raw-byte characterization harness prepared; initial pinned reference run passed; KYAML/runtime equivalence not verified | Installed-artifact tests, differential Julia/JS tests, pinned KYAML profile, comment-preservation/mutation proof, resource limits |
 | 3. Shared adapters and structural gates | Not started | Explicit schemas/error mapping; replace workflow regex decisions with parser queries |
 | 4. Application migration | Not started | Boundary-by-boundary tests; precision, data and old-ID compatibility |
 | 5. Workflow conversion | Not started | Comment association/idempotence; actionlint, bot compatibility, real hosted execution |
@@ -116,14 +116,22 @@ missing tools, changed byte order and extra newlines cannot pass. This runner
 implements no parser/canonicalizer of its own. A future kyq adapter may implement
 this protocol; it is **not** a claim that kyq has a `canon` command today.
 
-The subprocess runner limits input/output bytes and wall time, keeps diagnostics
+The subprocess runner accepts only named installed tools (`ijson-jcs`, a future
+`kyq-json-adapter`, `git`, `just`) with closed argument protocols. It rejects
+arbitrary commands/flags and symlinks to unrelated interpreters. These are trusted
+installed executables, not sandboxed plugins. Corpus paths are repository
+constants/test fixtures, never CLI-supplied paths. The runner limits input/output
+bytes and wall time, keeps diagnostics
 out of logs and kills the process group on completion/failure. It currently
 supports POSIX hosts. These harness budgets are **not** parser resource limits
 in the application. Fake subprocesses in unit tests test the harness only.
 
 The preparation workflow builds the real pinned Rust CLI with locked dependencies
-and an explicit Rust release, then runs the corpus. Local Rust execution is not
-claimed (Rust/cargo are absent). Failures remain failures; there is no permissive
+and an explicit Rust release, then runs the corpus. The initial hosted run
+[39999978128](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/39999978128)
+built the pinned CLI and passed all 34 cases at `f0a00cc`. Subsequent harness
+changes must rerun that job. Local Rust execution is not claimed (Rust/cargo are
+absent). Failures remain failures; there is no permissive
 parser or sorted-jq fallback. Exit 0 means corpus compatibility at this pin, not
 complete RFC coverage, safe installation of kyq or application-wide adoption.
 
