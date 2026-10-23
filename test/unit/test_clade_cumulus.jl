@@ -149,6 +149,18 @@ _cc_req(method::String, path::String, body::String = "") =
         @test jp.queries[4].status === :undecided
         @test startswith(jp.queries[4].reason, "weight_sum_out_of_tolerance")
 
+        # A dropped candidate can cause a shortfall, never 4% extra mass.
+        # Keep malformed overweight evidence undecided even though 0.98 is valid.
+        overweight = JSON3.write(OrderedDict(
+            "version" => 3, "tree" => jp.tree_newick, "fields" => jp.fields,
+            "placements" => [OrderedDict("n" => ["Q_overweight"],
+                "p" => [[0, -100.0, 0.60, 0.01, 0.02],
+                         [1, -100.0, 0.44, 0.01, 0.02]])],
+        ))
+        overweight_query = only(CC.parse_jplace(overweight).queries)
+        @test overweight_query.status === :undecided
+        @test startswith(overweight_query.reason, "weight_sum_out_of_tolerance")
+
         # Placed query read counts project onto the reference tree edges without losing reads,
         # and `lwr_threshold = 0.95` marks `Q_borderline` (LWR = 0.85) as `present_in_some`
         # even when `support_threshold = 0.80`.
@@ -252,8 +264,8 @@ done
 echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "$OUT"
 """)
             chmod(mock_ft, 0o755)
-            old_ft = get(PH.Tools._tools, "fasttree", nothing)
-            PH.Tools._tools["fasttree"] = mock_ft
+            old_ft = get(MetaManifold.Tools._tools, "fasttree", nothing)
+            MetaManifold.Tools._tools["fasttree"] = mock_ft
             try
                 s4 = [
                     "ASV_1" => "ACGTACGTACGTACGTACGT",
@@ -267,9 +279,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                                r["sha256"] == bytes2hex(open(sha256, mock_ft)), ft_res.tool_records)
             finally
                 if old_ft === nothing
-                    delete!(PH.Tools._tools, "fasttree")
+                    delete!(MetaManifold.Tools._tools, "fasttree")
                 else
-                    PH.Tools._tools["fasttree"] = old_ft
+                    MetaManifold.Tools._tools["fasttree"] = old_ft
                 end
             end
         end

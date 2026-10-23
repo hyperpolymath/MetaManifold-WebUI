@@ -28,11 +28,11 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# jplace writers round `like_weight_ratio` and drop placements below their own
-# likelihood-weight cutoff, so a query whose surviving weights sum to a little
-# under one is still complete evidence. A shortfall beyond 5% is a missing or
-# discarded placement rather than rounding, and the query stays `undecided`.
-const PLACEMENT_WEIGHT_SUM_TOL = 5e-2
+# Truncated candidate lists may be short of one, but rounding cannot justify
+# excess mass. Keep the upper bound tight so invalid overweight evidence never
+# gets normalised into apparently valid placement/confidence values.
+const PLACEMENT_WEIGHT_SHORTFALL_TOL = 0.05
+const PLACEMENT_WEIGHT_EXCESS_TOL = 1e-5
 
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
@@ -206,8 +206,12 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
         end
     end
 
-    function read_label_and_quoted()::Tuple{String,Bool}
-        skip_ws_and_leading_comments!()
+    function read_label_and_quoted(; capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
+                                     capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing)::Tuple{String,Bool}
+        # An NHX comment immediately after ')' precedes the (usually empty)
+        # label, so the capture refs must be threaded through this first skip
+        # or the support tag is consumed as an anonymous comment.
+        skip_ws_and_leading_comments!(capture_nhx = capture_nhx, capture_edge = capture_edge)
         pos[] > n && return ("", false)
         if bytes[pos[]] == UInt8('\'')
             pos[] += 1
@@ -264,12 +268,8 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
 
         nhx_sup = Ref{Union{Float64,Nothing}}(nothing)
         edge_num = Ref{Union{Int,Nothing}}(nothing)
-        # A node's comment or jplace edge tag can sit before its label
-        # (`(...)[&&NHX:B=92]:0.1`, `(...){4}`) as well as after it, and
-        # `read_label_and_quoted` skips comments without capturing them, so the
-        # leading ones are captured first.
-        skip_ws_and_leading_comments!(capture_nhx = nhx_sup, capture_edge = edge_num)
-        raw_lbl, was_quoted = read_label_and_quoted()
+        raw_lbl, was_quoted = read_label_and_quoted(capture_nhx = nhx_sup, capture_edge = edge_num)
+
         skip_ws_and_leading_comments!(capture_nhx = nhx_sup, capture_edge = edge_num)
 
         branch_len = 0.0
@@ -574,7 +574,8 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
 
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
-        elseif abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
+        elseif weight_sum < 1.0 - PLACEMENT_WEIGHT_SHORTFALL_TOL ||
+               weight_sum > 1.0 + PLACEMENT_WEIGHT_EXCESS_TOL
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
@@ -1020,7 +1021,8 @@ function _graft_jplace_queries(
                 end
                 query_lwr[tip_id] = cand.like_weight
                 push!(get!(by_edge, cand.edge_num, _GraftedQuerySpec[]),
-                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_length), max(0.0, cand.pendant_length), cand.like_weight))
+                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_len), max(0.0, cand.pendant_len), cand.like_weight))
+
             end
         end
     end

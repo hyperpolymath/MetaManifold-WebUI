@@ -64,9 +64,12 @@ function _probe_optional_phylo_tool(tool_key::String, fallbacks::Vector{String})
     end
 end
 
-function _load_run_table_df(study::String, run::String, table::AbstractString;
-                            group::Union{String,Nothing}=nothing)
-    table = String(table) # request bodies hand us the SubString that `strip` returns
+function _load_run_table_df(study::AbstractString, run::AbstractString, table::AbstractString; group::Union{AbstractString,Nothing}=nothing)
+    # JSON3 hands request fields back as SubStrings; the DuckDB helpers are
+    # String-typed, so normalise once at this boundary.
+    study = String(study); run = String(run); table = String(table)
+    group = isnothing(group) ? nothing : String(group)
+
     dir = _require_duckdb(study, run; group)
     isnothing(dir) && return (nothing, nothing, json_error(404, "no_results",
         "No results for run '$run' - run the pipeline first"))
@@ -144,31 +147,26 @@ end
         db = DuckDB.DB(db_path)
         con = DBInterface.connect(db)
         try
-            names_df = DataFrame(DBInterface.execute(con, "SHOW TABLES"))
+            # Real tables only: SHOW TABLES also lists views, and a view backed
+            # by a session-registered DataFrame cannot be bound (let alone
+            # counted) from this fresh connection.
+            names_df = DataFrame(DBInterface.execute(con,
+                "SELECT table_name AS name FROM duckdb_tables() WHERE NOT internal"))
             tlist = sort(String[string(r.name) for r in eachrow(names_df)])
             for t in tlist
-                # `SHOW TABLES` lists views too, and a view over a DuckDB
-                # replacement scan is bound to the connection that registered it.
-                # Reading one from here raises, so an object that cannot be read
-                # is skipped instead of failing the whole listing.
-                try
-                    cols = _duckdb_columns(con, t)
-                    scols = _sample_count_columns(con, t)
-                    isempty(scols) && continue
-                    nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
-                    has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
-                    ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
-                    push!(tables_info, OrderedDict{String,Any}(
-                        "table"        => t,
-                        "row_count"    => nrows,
-                        "sample_count" => length(scols),
-                        "has_sequence" => has_seq,
-                        "ranks"        => ranks,
-                    ))
-                catch err
-                    err isa InterruptException && rethrow()
-                    @warn "clade-cumulus sources: skipping an unreadable object" object=t exception=err
-                end
+                cols = _duckdb_columns(con, t)
+                scols = _sample_count_columns(con, t)
+                isempty(scols) && continue
+                nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
+                has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
+                ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
+                push!(tables_info, OrderedDict{String,Any}(
+                    "table"        => t,
+                    "row_count"    => nrows,
+                    "sample_count" => length(scols),
+                    "has_sequence" => has_seq,
+                    "ranks"        => ranks,
+                ))
             end
         finally
             DBInterface.close!(con)
