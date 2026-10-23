@@ -46,13 +46,39 @@ export function formatStat(value: number | null): string {
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
-  if (c.method !== 'clr_welch')
-    return `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
-  const replacement = c.replacement_method ?? 'bayesian_multiplicative'
-  const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
-    ? 'estimated' : String(c.bayesian_alpha)
-  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}, ` +
-    `bayesian_alpha ${alpha}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
+  switch (c.method) {
+    case 'multinomial':
+    case 'dirichlet_multinomial': {
+      const overdispersion = c.method === 'dirichlet_multinomial'
+        ? `, overdispersion ${c.dm_overdispersion_method}`
+        : ''
+      return `method ${c.method}${overdispersion}, reference ${c.mn_reference_taxon}, ` +
+        `penalty ${c.mn_penalty}, min_prevalence ${c.min_prevalence}; estimates are ` +
+        'log2 fold changes against the reference taxon'
+    }
+    case 'clr_welch': {
+      const replacement = c.replacement_method ?? 'bayesian_multiplicative'
+      const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
+        ? 'estimated' : String(c.bayesian_alpha)
+      const alphaText = replacement === 'bayesian_multiplicative'
+        ? `, bayesian_alpha ${alpha}`
+        : ''
+      return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}` +
+        `${alphaText}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
+    }
+    case 'ancom_bc':
+      return `method ancom_bc, min_prevalence ${c.min_prevalence}; effect is bias-corrected log2 fold change (Lin & Peddada 2020)`
+    case 'aldex2':
+      return `method aldex2, mc_samples ${c.mc_samples}, seed ${c.seed}, min_prevalence ${c.min_prevalence}; estimate is an ALDEx2 standardized CLR effect size, not a fold change`
+    case 'songbird':
+      return `method songbird, min_prevalence ${c.min_prevalence}; estimate is a CLR-centred multinomial differential, not an absolute fold change`
+    case 'nb_glm':
+    case 'zinb':
+    case 'hurdle_nb':
+      return `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+    default:
+      throw new Error(`Unsupported differential method: ${String(c.method)}`)
+  }
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */
