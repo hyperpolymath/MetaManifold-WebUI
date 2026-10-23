@@ -190,6 +190,15 @@ end
 end
 
 @post "/api/v1/studies/{study}/runs/{run}/clade-cumulus" function(req::HTTP.Request, study::String, run::String)
+    try
+        return _clade_cumulus_post_impl(req, study, run)
+    catch e
+        @error "clade-cumulus request failed" exception = (e, catch_backtrace())
+        return json_error(500, "clade_cumulus_failed", sprint(showerror, e))
+    end
+end
+
+function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
     group = _req_group(req)
     err = _validate_run_request(study, run)
     !isnothing(err) && return err
