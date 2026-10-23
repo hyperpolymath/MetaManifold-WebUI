@@ -64,7 +64,11 @@ function _probe_optional_phylo_tool(tool_key::String, fallbacks::Vector{String})
     end
 end
 
-function _load_run_table_df(study::String, run::String, table::String; group::Union{String,Nothing}=nothing)
+function _load_run_table_df(study::AbstractString, run::AbstractString, table::AbstractString; group::Union{AbstractString,Nothing}=nothing)
+    # JSON3 hands request fields back as SubStrings; the DuckDB helpers are
+    # String-typed, so normalise once at this boundary.
+    study = String(study); run = String(run); table = String(table)
+    group = isnothing(group) ? nothing : String(group)
     dir = _require_duckdb(study, run; group)
     isnothing(dir) && return (nothing, nothing, json_error(404, "no_results",
         "No results for run '$run' - run the pipeline first"))
@@ -142,7 +146,11 @@ end
         db = DuckDB.DB(db_path)
         con = DBInterface.connect(db)
         try
-            names_df = DataFrame(DBInterface.execute(con, "SHOW TABLES"))
+            # Real tables only: SHOW TABLES also lists views, and a view backed
+            # by a session-registered DataFrame cannot be bound (let alone
+            # counted) from this fresh connection.
+            names_df = DataFrame(DBInterface.execute(con,
+                "SELECT table_name AS name FROM duckdb_tables() WHERE NOT internal"))
             tlist = sort(String[string(r.name) for r in eachrow(names_df)])
             for t in tlist
                 cols = _duckdb_columns(con, t)
