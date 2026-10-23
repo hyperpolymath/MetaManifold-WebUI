@@ -432,7 +432,7 @@ module Server
                          _analysis_source_middleware, _file_middleware]
     # Oxygen's docs (/docs, /docs/schema) and metrics sit outside the middleware
     # above, so they would bypass the Host and Origin checks; nothing uses them.
-    const _SERVE_OPTIONS = (access_log=nothing, show_errors=false, docs=false, metrics=false)
+    const _SERVE_OPTIONS = (access_log=nothing, show_errors=true, docs=false, metrics=false)
 
     function start(; root=pwd(), host="127.0.0.1", port=8080, listen::Bool=true)
         global_logger(_SuppressEpipe(global_logger()))
