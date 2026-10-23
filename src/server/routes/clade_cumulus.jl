@@ -198,6 +198,15 @@ end
 end
 
 @post "/api/v1/studies/{study}/runs/{run}/clade-cumulus" function(req::HTTP.Request, study::String, run::String)
+    try
+        return _clade_cumulus_post_impl(req, study, run)
+    catch e
+        @error "clade-cumulus request failed" exception = (e, catch_backtrace())
+        return json_error(500, "clade_cumulus_failed", sprint(showerror, e))
+    end
+end
+
+function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
     group = _req_group(req)
     err = _validate_run_request(study, run)
     !isnothing(err) && return err
@@ -276,13 +285,13 @@ end
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.weight for c in q.candidates); init = 0.0)
+                tw = sum((c.like_weight for c in q.candidates); init = 0.0)
                 tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.weight / tw
+                        tip_weights[tid] = cand.like_weight / tw
                     end
                 end
             end

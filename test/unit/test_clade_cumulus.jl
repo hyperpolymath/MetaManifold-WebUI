@@ -330,6 +330,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                 "supportThreshold" => 0.85,
                 "lwrThreshold" => 0.95,
             )))
+            # On failure this puts the structured error body in the CI annotation.
+            @test (r_comb.status == 200 ? "" : String(r_comb.body)) == ""
             @test r_comb.status == 200
             comb = JSON3.read(String(r_comb.body))
             @test comb.root.cumulative_count ≈ 110.0 atol = 1e-9
