@@ -528,34 +528,16 @@ jobs:
     if: needs.gate.outputs.relevant == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    env:
-      STANDARDS_SHA: c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d
-      IJSON_JCS_SHA: 3a9a4ee326a968a32b2f152b4faec243a2d00765
-      YQ_SHA256: fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Set up Julia
         run: bash scripts/install-ci-julia.sh
 
-      # yq is pinned by version and by the digest GitHub publishes for that
-      # asset; the standards clone is pinned by commit so a change in the
-      # checker arrives as a reviewable bump, not silently.
+      # The versions, the HTTPS restriction and the exact-commit fetches live in
+      # the script (one reviewed place), not interpolated into this workflow.
       - name: Install pinned standards tools
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/bin"
-          curl -fsSL -o "$RUNNER_TEMP/bin/yq" \
-            "https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_amd64"
-          echo "$YQ_SHA256  $RUNNER_TEMP/bin/yq" | sha256sum -c -
-          chmod 0755 "$RUNNER_TEMP/bin/yq"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-          git clone --quiet https://github.com/hyperpolymath/standards "$RUNNER_TEMP/standards"
-          git -C "$RUNNER_TEMP/standards" checkout --quiet "$STANDARDS_SHA"
-          git clone --quiet https://github.com/hyperpolymath/ijson-jcs "$RUNNER_TEMP/ijson-jcs"
-          git -C "$RUNNER_TEMP/ijson-jcs" checkout --quiet "$IJSON_JCS_SHA"
-          cargo build --quiet --release --manifest-path "$RUNNER_TEMP/ijson-jcs/Cargo.toml"
-          echo "$RUNNER_TEMP/ijson-jcs/target/release" >> "$GITHUB_PATH"
+        run: bash scripts/ci/fetch-statistics-tools.sh
 
       # YAML-POLICY Y-3 / D307. --check exits 1 on drift and 2 when yq is
       # missing or the file does not parse, so neither outcome can read as a pass.
@@ -572,7 +554,10 @@ jobs:
         run: |
           set -euo pipefail
           bash "$RUNNER_TEMP/standards/scripts/check-ijson-jcs.sh" --enforce \
-            frontend/public/config.json test/fixtures/jcs_oracle.jsonl
+            frontend/public/config.json
+          # test/fixtures/jcs_oracle.jsonl is a vector file: its inputs are
+          # deliberately NOT canonical and its expected outputs are the
+          # canonical form, so enforcing on it would be a category error.
           bash "$RUNNER_TEMP/standards/scripts/check-ijson-jcs.sh" . \
             | tee "$RUNNER_TEMP/ijson-jcs-report.txt"
 
@@ -586,7 +571,7 @@ jobs:
       # run cannot leave a planted defect behind.
       - name: Mutation campaign
         run: |
-          python3 scripts/statistics/mutation_check.py --max-mutants 4 \
+          julia --project=. -t2 scripts/statistics/mutation_check.jl --max-mutants 4 \
             --output "$RUNNER_TEMP/statistics-mutation-report.json" \
             --keep-logs "$RUNNER_TEMP/mutation-logs"
 

@@ -183,7 +183,7 @@ required checks are green. No local Julia result is claimed.
 
 ### W8 — Mutation/negative controls and reproducibility
 
-- Add `scripts/statistics/mutation_check.py`, a driver that applies one
+- Add `scripts/statistics/mutation_check.jl`, a driver that applies one
   mutation at a time, runs the focused test file, restores the source, and
   fails if a mutant survives.
 - Mutants cover zero-total handling, overflow refusal, exact-rational storage,
@@ -251,8 +251,8 @@ julia --project=. -t2 bench/validated_statistics.jl \
   --output validated-statistics-benchmark.json
 
 # mutation subset / full campaign
-python3 scripts/statistics/mutation_check.py --fast
-python3 scripts/statistics/mutation_check.py --output mutation-evidence.json
+julia --project=. -t2 scripts/statistics/mutation_check.jl
+julia --project=. -t2 scripts/statistics/mutation_check.jl --output mutation-evidence.json
 
 # standards gates
 bash .standards/scripts/kyaml-format.sh --check \

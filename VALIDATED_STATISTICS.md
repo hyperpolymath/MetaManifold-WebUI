@@ -304,7 +304,7 @@ campaign that proves the tests can fail:
 ```bash
 julia --project=. -t2 scripts/statistics/simulation_study.jl \
   --output simulation-report.json
-python3 scripts/statistics/mutation_check.py --output mutation-report.json
+julia --project=. -t2 scripts/statistics/mutation_check.jl --output mutation-report.json
 ```
 
 A representative biological count matrix is validated against the existing

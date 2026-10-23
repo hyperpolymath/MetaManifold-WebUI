@@ -62,7 +62,7 @@ JSON fuzz corpus, including random byte strings.
 
 ## 6. Negative controls and mutation evidence
 
-**Met, campaigned in CI.** `scripts/statistics/mutation_check.py` plants six
+**Met, campaigned in CI.** `scripts/statistics/mutation_check.jl` plants six
 reviewed defects one at a time (unapproved catalogue, limit drift, request-limit
 drift, weakened CSP, float-derived proportions, zero-total reported as zero),
 runs the focused test file, and requires a non-zero exit. The script refuses a
@@ -176,7 +176,7 @@ python3 test/references/check_high_precision_references.py --check \
 
 # Simulation, mutation, benchmark
 julia --project=. -t2 scripts/statistics/simulation_study.jl --output simulation-report.json
-python3 scripts/statistics/mutation_check.py --output mutation-report.json
+julia --project=. -t2 scripts/statistics/mutation_check.jl --output mutation-report.json
 julia --project=. -t2 bench/validated_statistics.jl --output benchmark.json
 
 # Standards
