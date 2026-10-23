@@ -10,7 +10,7 @@
 # Canonical run DuckDB tables are read-only here; staged reassignment proposals
 # write only study-local sidecars under `projects/{study}/trees/.clade_cumulus/`.
 
-using DataFrames, OrderedCollections, SHA, Dates, JSON3
+using DataFrames, OrderedCollections, SHA, Dates, JSON3, DuckDB, DBInterface
 
 const _CC_SIDECAR_MAX_BYTES = 5 * 1024 * 1024
 
@@ -268,13 +268,13 @@ end
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.weight for c in q.candidates); init = 0.0)
+                tw = sum((c.like_weight for c in q.candidates); init = 0.0)
                 tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.weight / tw
+                        tip_weights[tid] = cand.like_weight / tw
                     end
                 end
             end

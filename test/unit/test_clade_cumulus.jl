@@ -252,8 +252,10 @@ done
 echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "$OUT"
 """)
             chmod(mock_ft, 0o755)
-            old_ft = get(PH.Tools._tools, "fasttree", nothing)
-            PH.Tools._tools["fasttree"] = mock_ft
+            # `Phylogeny` imports `tool_bin` from `Tools` but does not bind the
+            # module itself, so the registry is reached through `MetaManifold`.
+            old_ft = get(MetaManifold.Tools._tools, "fasttree", nothing)
+            MetaManifold.Tools._tools["fasttree"] = mock_ft
             try
                 s4 = [
                     "ASV_1" => "ACGTACGTACGTACGTACGT",
@@ -267,9 +269,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                                r["sha256"] == bytes2hex(open(sha256, mock_ft)), ft_res.tool_records)
             finally
                 if old_ft === nothing
-                    delete!(PH.Tools._tools, "fasttree")
+                    delete!(MetaManifold.Tools._tools, "fasttree")
                 else
-                    PH.Tools._tools["fasttree"] = old_ft
+                    MetaManifold.Tools._tools["fasttree"] = old_ft
                 end
             end
         end

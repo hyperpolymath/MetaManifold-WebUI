@@ -30,6 +30,13 @@ const DEFAULT_TAXONOMIC_RANKS = [
 
 const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
 
+# Placement tools report a query placed at a single site as one candidate row
+# whose `like_weight_ratio` is the share of the probability mass behind it; the
+# rest is mass the tool did not place anywhere. Such a query is decisive while
+# that share is at least a half. A multi-candidate placement instead partitions
+# the mass, so its ratios must sum to one within `PLACEMENT_WEIGHT_SUM_TOL`.
+const PLACEMENT_SINGLE_MIN_LWR = 0.5
+
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
     id            :: String
@@ -202,8 +209,14 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
         end
     end
 
-    function read_label_and_quoted()::Tuple{String,Bool}
-        skip_ws_and_leading_comments!()
+    function read_label_and_quoted(
+        capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
+        capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing,
+    )::Tuple{String,Bool}
+        # A support tag may sit between the label and the branch length, or
+        # directly after ')' with no label at all (`)[&&NHX:B=92]:0.1`), so this
+        # skip has to record what it consumes.
+        skip_ws_and_leading_comments!(; capture_nhx = capture_nhx, capture_edge = capture_edge)
         pos[] > n && return ("", false)
         if bytes[pos[]] == UInt8('\'')
             pos[] += 1
@@ -260,7 +273,7 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
 
         nhx_sup = Ref{Union{Float64,Nothing}}(nothing)
         edge_num = Ref{Union{Int,Nothing}}(nothing)
-        raw_lbl, was_quoted = read_label_and_quoted()
+        raw_lbl, was_quoted = read_label_and_quoted(nhx_sup, edge_num)
         skip_ws_and_leading_comments!(capture_nhx = nhx_sup, capture_edge = edge_num)
 
         branch_len = 0.0
@@ -565,7 +578,12 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
 
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
-        elseif abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
+        elseif length(cands) == 1 && cands[1].like_weight < PLACEMENT_SINGLE_MIN_LWR
+            # One candidate but less than half the mass supports it: the rest of
+            # the mass is unexplained, so the placement is not decisive.
+            push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
+                "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
+        elseif length(cands) > 1 && abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
@@ -991,7 +1009,7 @@ function _graft_jplace_queries(
 
     for q in jd.queries
         q.status === :valid && !isempty(q.candidates) || continue
-        total_w = sum((c.weight for c in q.candidates); init = 0.0)
+        total_w = sum((c.like_weight for c in q.candidates); init = 0.0)
         total_w > 0.0 || continue
         multi = length(q.candidates) > 1
         for (qname, mult) in q.names
@@ -1000,7 +1018,7 @@ function _graft_jplace_queries(
             tx = get(asv_deepest_taxon, qname, nothing)
             tconf = get(asv_tax_conf, qname, 1.0)
             for (ci, cand) in enumerate(q.candidates)
-                share = cand.weight / total_w
+                share = cand.like_weight / total_w
                 tip_id = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
                 if multi
                     asv_reads[tip_id] = get(asv_reads, tip_id, 0.0) + base_cnt * share
@@ -1009,9 +1027,9 @@ function _graft_jplace_queries(
                 elseif !haskey(asv_reads, tip_id)
                     asv_reads[tip_id] = base_cnt
                 end
-                query_lwr[tip_id] = cand.weight
+                query_lwr[tip_id] = cand.like_weight
                 push!(get!(by_edge, cand.edge_num, _GraftedQuerySpec[]),
-                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_length), max(0.0, cand.pendant_length), cand.weight))
+                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_len), max(0.0, cand.pendant_len), cand.like_weight))
             end
         end
     end
@@ -1021,8 +1039,8 @@ function _graft_jplace_queries(
 
     function walk(u::PhyloNode)::PhyloNode
         rebuilt_kids = PhyloNode[walk(ch) for ch in u.children]
-        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_num, rebuilt_kids)
-        specs = u.edge_num === nothing ? nothing : get(by_edge, u.edge_num, nothing)
+        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_number, rebuilt_kids)
+        specs = u.edge_number === nothing ? nothing : get(by_edge, u.edge_number, nothing)
         (specs === nothing || isempty(specs)) && return cur
 
         # Order grafts from most distal (closest to `cur`, smallest `distal`) to most proximal.
@@ -1040,7 +1058,7 @@ function _graft_jplace_queries(
             sub = PhyloNode(string("jplace_clade#", seq_auto[]), "", 0.0, 1.0, nothing, PhyloNode[sub, qtip])
         end
         rem_len = max(0.0, total_len - prev_distal)
-        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_num, sub.children)
+        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_number, sub.children)
     end
 
     walk(base_root)
