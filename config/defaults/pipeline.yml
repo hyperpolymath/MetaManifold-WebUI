@@ -343,20 +343,18 @@ analysis:
     normalisation: hellinger
     # Reads per sample for rarefy or srs; 0 uses the smallest non-empty sample.
     depth: 0
-  # Differential abundance: a negative-binomial model per taxon (MASS::glm.nb)
-  # comparing two conditions on the raw read counts, with Benjamini-Hochberg
-  # adjusted p-values.
+  # Differential abundance: compares two conditions on the raw read counts, with
+  # mandatory Benjamini-Hochberg adjusted p-values across the fitted family.
   differential:
-    # The model fitted to each taxon. nb_glm: a negative-binomial GLM on the read
-    # counts with a library-size offset; the effect is a log2 fold change. clr_welch:
-    # Welch's t-test on centred log-ratios over the taxa passing min_prevalence,
-    # after zCompositions::cmultRepl replaces their zeros; the effect is a
-    # difference in CLR units, not a fold change.
+    # Per-taxon model: nb_glm (negative-binomial GLM), clr_welch (Welch test on
+    # zero-replaced CLR values), zinb (zero-inflated NB), or hurdle_nb (logistic
+    # occurrence plus zero-truncated NB). Two-part models test both group effects
+    # jointly; their count-process fold change is reported separately.
     method: nb_glm
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).
     # rle is refused when no taxon is present in every sample.
-    # Used by nb_glm only; clr_welch ignores it, since log-ratios carry no library size.
+    # Used by count models (nb_glm, zinb, hurdle_nb); clr_welch ignores it.
     offset: tss
     # nb_glm only: where each taxon's negative-binomial theta comes from. ml
     # (the default) takes the maximum-likelihood estimate MASS::glm.nb fits per
@@ -364,24 +362,65 @@ analysis:
     # across all taxa in one call -- sharing information across taxa, which
     # steadies low-count taxa -- and fits each taxon through
     # MASS::negative.binomial(theta = 1/dispersion), so the Wald test is
-    # unchanged. Requires the glmGamPoi R package. Both fixed-theta Wald
-    # tests treat the dispersion they use as known rather than propagating
-    # its estimation uncertainty: every ml result therefore carries a
-    # calibration caveat in its diagnostics, strongest when a group is
-    # small, as does a glmGamPoi result whose smaller group has at most 12
+    # unchanged. Requires the glmGamPoi R package; refused for non-nb_glm methods.
+    # Both fixed-theta Wald tests treat the dispersion they use as known rather
+    # than propagating its estimation uncertainty: every ml result therefore
+    # carries a calibration caveat in its diagnostics, strongest when a group
+    # is small, as does a glmGamPoi result whose smaller group has at most 12
     # samples. The caveat records the limitation; it changes no p-value.
     # Evidence and the replication protocol: bench/null_calibration.
     dispersion: ml
     # Fraction of samples, 0 to 1, in which a taxon must have reads to be
-    # tested. Taxa below it are listed as filtered, without a p-value. For
-    # clr_welch it is applied before zero replacement, so on a sparse table it also
-    # keeps imputed values for rare taxa out of every sample; clr_welch refuses a
-    # taxon seen in fewer than 2 samples.
+    # tested. Taxa below it are listed as filtered, without a p-value. Applied
+    # before compositional subcomposition construction in clr_welch, ancom_bc,
+    # aldex2, and songbird. Bayesian replacement refuses a taxon seen in fewer
+    # than 2 samples; CZM requires at least one.
     min_prevalence: 0.0
-    # clr_welch only: cmultRepl's frac, between 0 and 1. An imputed proportion above
-    # its taxon's smallest observed proportion is lowered to this fraction of it.
-    # A replaced zero is not a measurement.
+    # clr_welch only: how cmultRepl replaces zeros before the centred log-ratio.
+    # bayesian_multiplicative uses the geometric Bayesian-multiplicative (GBM)
+    # posterior replacement. multiplicative_replacement uses count zero
+    # multiplicative (CZM) replacement. Both preserve observed-part ratios;
+    # neither turns an imputed zero into a measurement.
+    replacement_method: bayesian_multiplicative
+    # clr_welch only: cmultRepl's frac, strictly between 0 and 1. For CZM this
+    # is the fraction of the 0.5/sample-total threshold; for either method an
+    # imputed proportion above its taxon's smallest observed proportion is
+    # lowered to this fraction of it. Values below 0.01 or at least 0.9 warn.
     replacement_delta: 0.65
+    # multinomial and dirichlet_multinomial only: the taxon whose log-odds are the
+    # denominator of every reported log ratio. ~ picks the most abundant taxon that
+    # passes min_prevalence. A reference must have reads in at least half the
+    # samples: every ratio is anchored on it, so a sparse one makes them unstable.
+    mn_reference_taxon: ~
+    # multinomial and dirichlet_multinomial: L2 (ridge) penalty on the log-odds
+    # coefficients, 0 for maximum likelihood. A penalty keeps a taxon with almost
+    # no reads in one group from dominating the joint fit, and its standard errors
+    # are the penalised ones. An L1 (Songbird-style sparsity) penalty is not
+    # implemented: a lasso estimate has no valid Wald standard error.
+    mn_penalty: 0.0
+    # dirichlet_multinomial only: how the Dirichlet concentration is estimated.
+    # mle profiles the likelihood alternately with the coefficients; mom takes one
+    # method-of-moments estimate from the multinomial composition (faster, no
+    # alternation). The result reports the concentration c and theta = 1/(1+c),
+    # the model's intra-sample correlation; theta -> 0 is the multinomial.
+    dm_overdispersion_method: mle
+    # Optimiser settings for the two multinomial models, which are fitted in
+    # Julia: the Newton iteration cap, the convergence tolerance (largest
+    # coefficient update, relative to the coefficients), and the wall-clock
+    # budget in seconds. A fit that exceeds the budget fails with an explicit
+    # error rather than holding the request open. The dense observed information
+    # limits a fit to 1000 taxa; raise min_prevalence or use a coarser rank above
+    # that.
+    max_iter: 500
+    tolerance: 0.00000001
+    max_seconds: 300.0
+    # clr_welch with bayesian_multiplicative only: null uses GBM's estimated
+    # Dirichlet concentration. A finite value greater than 0 overrides it with
+    # cmultRepl(method = "user") and the same leave-one-out prior mean.
+    bayesian_alpha: ~
+    # aldex2 only: number of Dirichlet Monte-Carlo instances drawn per sample
+    # (whole number in [16, 4096]; seeded by the study's top-level seed).
+    mc_samples: 128
 
 ## Occupancy probe (MMW-01)
 # Measures each attested stage's memory: Julia's allocation total, and the

@@ -391,32 +391,39 @@ export interface DifferentialRequest {
   aggregate?: boolean
 }
 
-/** `ok` and `boundary` rows carry statistics; `failed` and `filtered` rows say why not. */
-export type DifferentialStatus = 'ok' | 'boundary' | 'failed' | 'filtered'
+/**
+ * `ok` and `boundary` rows carry statistics; `failed` and `filtered` rows say
+ * why not. `reference` marks the multinomial models' reference taxon, which is
+ * the denominator of every log ratio and so carries no test.
+ */
+export type DifferentialStatus = 'ok' | 'boundary' | 'failed' | 'filtered' | 'reference'
 
 export interface DifferentialRow {
   taxon: string
   status: DifferentialStatus
   note: string
   /**
-   * nb_glm: natural-log fold change, contrast over reference. clr_welch: mean
-   * CLR of contrast minus mean CLR of reference, which is not a fold change.
+   * nb_glm / ancom_bc: natural-log fold change, contrast over reference.
+   * clr_welch: mean CLR difference. aldex2: standardized CLR effect size.
+   * songbird: CLR-centred multinomial differential.
    */
   estimate: number | null
-  /** nb_glm only; null for clr_welch. */
+  /** nb_glm and ancom_bc; null for CLR/differential methods. */
   log2_fold_change: number | null
   standard_error: number | null
-  /** z (nb_glm) or Welch's t (clr_welch). */
+  /** Wald z / W (nb_glm, ancom_bc, songbird) or Welch's t (clr_welch, aldex2). */
   statistic: number | null
   pvalue: number | null
   /** Benjamini-Hochberg adjusted; null outside the tested family. */
   padj: number | null
   /** nb_glm only. */
   dispersion_theta: number | null
+  /** Group coefficient in the logistic zero/occurrence component (two-part NB only). */
+  zero_process_log_odds?: number | null
   prevalence: number
 }
 
-export type DifferentialMethod = 'nb_glm' | 'clr_welch'
+export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -432,17 +439,24 @@ export interface DifferentialResult {
   groups: { reference: string; contrast: string }
   n_samples: Record<string, number>
   effect: DifferentialEffect
-  /** Empty for clr_welch, which takes no library-size offset. */
+  /** Empty for clr_welch; count models report their size factors. */
   size_factors: { sample: string; group: string; factor: number }[]
   config: {
     method: DifferentialMethod
     min_prevalence: number
-    /** nb_glm only. */
+    /** Count-process offset for nb_glm, zinb and hurdle_nb. */
     offset?: 'tss' | 'rle'
     /** nb_glm only: where each taxon's theta comes from. */
     dispersion?: 'ml' | 'glmGamPoi'
-    /** clr_welch only. */
+    /** clr_welch only: the reference cmultRepl method and its parameters. */
+    replacement_method?: 'bayesian_multiplicative' | 'multiplicative_replacement'
     replacement_delta?: number
+    /** Null uses GBM's estimated concentration; positive values override it. */
+    bayesian_alpha?: number | null
+    /** aldex2 only. */
+    mc_samples?: number
+    /** aldex2 only. */
+    seed?: number
   }
   diagnostics: {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
@@ -458,11 +472,40 @@ export interface DifferentialResult {
       min_group_n: number
       message: string
     }
+    /** Safety note for two-part models. */
+    model_warning?: string
     /** clr_welch only. */
     zero_replacement?: {
-      method: string; delta: number; zeros_replaced: number; n_taxa_in_composition: number
+      method: string
+      replacement_method: 'bayesian_multiplicative' | 'multiplicative_replacement'
+      delta: number; alpha: number | null; zeros_replaced: number; n_taxa_in_composition: number
       n_taxa_unobserved: number; median_imputed_fraction: number; max_imputed_fraction: number
       warnings: string[]
+      posterior?: {
+        family: 'Dirichlet'; prior_mean: string; shape: string; adjustments: string
+        concentration: { sample: string; value: number }[]
+      }
+    }
+    /** ancom_bc only. */
+    ancom_bc?: {
+      delta: number | null; delta_se: number | null
+      pi0: number | null; pi1: number | null; pi2: number | null
+      em_iterations: number; pseudo_count: number
+      n_taxa_in_composition: number; n_taxa_unobserved: number
+      warnings: string[]
+    }
+    /** aldex2 only. */
+    aldex2?: {
+      mc_samples: number; seed: number; dirichlet_prior: number; test: string
+      n_taxa_in_composition: number; n_taxa_unobserved: number
+    }
+    /** songbird only. */
+    songbird?: {
+      reference_taxon: string | null; reference_prevalence?: number
+      n_identifiable_taxa: number; n_separated_taxa: number
+      iterations?: number; loglik?: number; max_abs_gradient?: number; newton_decrement?: number
+      n_taxa_in_composition: number; n_taxa_unobserved: number
+      caveat?: string
     }
   }
   rows: DifferentialRow[]
@@ -609,6 +652,88 @@ export interface TreeFile {
   view:     unknown
 }
 
+export type CountNormalisation = 'none' | 'rarefy' | 'srs'
+
+export interface CladisticsCreateRequest {
+  name: string
+  runs: ComparisonRunSpec[]
+  table: string
+  min_reads: number
+  max_asvs: number
+  normalisation: CountNormalisation
+  /** Zero chooses the smallest positive library size; ignored for `none`. */
+  depth: number
+  colFilters?: Record<string, ColFilter>
+}
+
+export interface CladisticsSummary {
+  id: string
+  name: string
+  created: string
+  modified: string
+  asv_count: number
+  sample_count: number
+  state: PhyloState
+  built: boolean
+  published?: string | null
+}
+
+export interface CladisticsDoc {
+  id: string
+  name: string
+  created: string
+  modified: string
+  source: {
+    runs: ComparisonRunSpec[]
+    table: string
+    min_reads: number
+    max_asvs: number
+    available_asvs: number
+    selection: string
+  }
+  overrides: PhyloSettings
+  asv_count: number
+  sample_count: number
+  counts_sha256: string
+  tree_sha256?: string
+  published?: string
+  warning: string
+}
+
+export interface CumulativeCladeNode {
+  id: string
+  parent_id: string | null
+  label: string
+  branch_length: number | null
+  is_tip: boolean
+  tip_count: number
+  cumulative_count: number
+  cumulative_frequency: number
+}
+
+export interface CladisticsResult {
+  version: number
+  generated: string
+  tree_sha256: string
+  counts_sha256: string
+  nodes: CumulativeCladeNode[]
+  samples: string[]
+  sample_reads: number[]
+  faith_pd: number[]
+  unweighted_unifrac: number[][]
+  weighted_unifrac: number[][]
+  total_branch_length: number
+  normalisation: { method: CountNormalisation; depth: number; seed: number }
+  excluded_samples: string[]
+  weighted_unifrac_definition: string
+}
+
+export interface CladisticsDetail extends WorkflowDetail {
+  doc: CladisticsDoc
+  summary: CladisticsSummary
+  result: CladisticsResult | null
+}
+
 export const REFERENCE_STEPS = ['align', 'trim', 'tree'] as const
 export const PLACEMENT_STEPS = ['align', 'trim', 'place', 'accumulate'] as const
 export type PhyloStep = typeof REFERENCE_STEPS[number] | typeof PLACEMENT_STEPS[number]
@@ -750,4 +875,160 @@ export interface ReportItem {
   title: string
   file:  string
   added: string
+}
+
+export type EpistemicStatus = 'present_in_every' | 'present_in_some' | 'absent' | 'sans_fibre'
+
+export type CladeHierarchyMode = 'combined' | 'phylogenetic' | 'taxonomic'
+
+export type CladeTreeSource =
+  | 'auto'
+  | 'study_tree'
+  | 'build_fasttree'
+  | 'build_iqtree'
+  | 'build_nj'
+  | 'inline_newick'
+
+export interface CladeNodeData {
+  id: string
+  name: string
+  rank: string
+  direct_count: number
+  cumulative_count: number
+  cumulative_frequency: number
+  residual_count: number
+  cloud_size: number
+  branch_length: number
+  support: number | null
+  subtree_pd: number
+  dominant_taxon: string | null
+  taxon_purity: number | null
+  monophyletic: boolean | null
+  epistemic_status: EpistemicStatus
+  colour: string
+  children: CladeNodeData[]
+}
+
+export interface CladeCumulusSourcesResponse {
+  study: string
+  run: string
+  tables: {
+    table: string
+    row_count: number
+    sample_count: number
+    has_sequence: boolean
+    ranks: string[]
+  }[]
+  trees: TreeFileInfo[]
+  tools: {
+    key: string
+    available: boolean
+    version: string | null
+    path: string | null
+    sha256: string | null
+  }[]
+  proposals: string[]
+}
+
+export interface CladeCumulusRequest {
+  table?: string
+  mode?: CladeHierarchyMode
+  treeSource?: CladeTreeSource
+  treeFile?: string
+  newick?: string
+  maxAsvs?: number
+  supportThreshold?: number
+  lwrThreshold?: number
+  seed?: number
+}
+
+export interface CladeCumulusDiversity {
+  samples: string[]
+  mapped_tips: number
+  faith_pd: Record<string, number>
+  unweighted_unifrac: number[][]
+  weighted_unifrac: number[][]
+  normalized_weighted_unifrac: number[][]
+  top_branch_contributions: {
+    clade_id: string
+    label: string
+    is_tip: boolean
+    branch_length: number
+    freq_a: number
+    freq_b: number
+    contribution: number
+  }[]
+}
+
+export interface CladeCumulusReceipt {
+  schema_version: number
+  study: string
+  run: string
+  source_digests: Record<string, string>
+  tool_records: {
+    name: string
+    version: string
+    path: string
+    sha256: string
+    probed_by: string
+  }[]
+  parameters: Record<string, unknown>
+  warnings: string[]
+  created_at: string
+  checksum: string
+}
+
+export interface CladeCumulusResponse {
+  study: string
+  run: string
+  table: string
+  mode: CladeHierarchyMode
+  root: CladeNodeData
+  plotly: { data: unknown[]; layout: Record<string, unknown> }
+  phylogeny: {
+    newick: string | null
+    midpoint_rooted: boolean
+    subsampled: boolean
+    total_input_asvs: number
+    retained_asvs: number
+    retained_read_fraction: number
+  }
+  concordance: {
+    dispersed_taxa: {
+      taxon: string
+      tip_count: number
+      monophyletic: boolean
+      note: string
+    }[]
+    discordant_clades: {
+      clade_id: string
+      label: string
+      support: number | null
+      cumulative_reads: number
+      dominant_taxon: string | null
+      taxon_purity: number | null
+      taxa_breakdown: Record<string, number>
+    }[]
+  }
+  diversity: CladeCumulusDiversity | null
+  warnings: string[]
+  receipt: CladeCumulusReceipt
+}
+
+export interface CladeMoveValidationRequest extends CladeCumulusRequest {
+  sourceId: string
+  targetId: string
+  saveProposal?: boolean
+}
+
+export interface CladeMoveValidationResponse {
+  allowed: boolean
+  source_id: string
+  target_id: string
+  target_status: string
+  target_colour: string
+  reason: string
+  proposal_file: string | null
+  proposed_root: CladeNodeData | null
+  proposed_plotly?: { data: unknown[]; layout: Record<string, unknown> }
 }

@@ -4,7 +4,7 @@ import type { DifferentialResult, DifferentialRow } from '../api/types'
 
 const COLUMNS = [
   'taxon', 'status', 'log2_fold_change', 'estimate', 'standard_error', 'statistic',
-  'pvalue', 'padj', 'dispersion_theta', 'prevalence', 'note',
+  'pvalue', 'padj', 'dispersion_theta', 'zero_process_log_odds', 'prevalence', 'note',
 ] as const
 
 /** Quote one CSV field when it holds a comma, quote or line break (RFC 4180). */
@@ -31,7 +31,7 @@ export function differentialCsv(result: DifferentialResult): string {
     // must not look better-calibrated than the result it came from.
     ...(caveat ? [`# Calibration caveat (${caveat.severity}): ${caveat.message}`] : []),
   ].map(l => l.replace(/[\r\n]+/g, ' '))
-  const rows = result.rows.map(r => COLUMNS.map(c => csvField(r[c])).join(','))
+  const rows = result.rows.map(r => COLUMNS.map(c => csvField(r[c] ?? null)).join(','))
   return [...header, COLUMNS.join(','), ...rows].join('\r\n') + '\r\n'
 }
 
@@ -44,17 +44,23 @@ export function formatStat(value: number | null): string {
 }
 
 /**
- * The settings line of the CSV: the method and the parameters it used. The
- * offset belongs to nb_glm and the replacement delta to clr_welch, so each line
- * names only its own method's parameters.
+ * The settings line of the CSV: the method and the parameters it used. Each
+ * method names only its own parameters and states whether its effect is a
+ * bias-corrected fold change or a relative log-ratio.
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
-  return c.method === 'clr_welch'
-    ? `method clr_welch, replacement_delta ${c.replacement_delta}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
+  if (c.method === 'nb_glm')
     // Older saved results may not record the dispersion; name it only
     // when the result carries it, never guess one for the record.
-    : `method nb_glm, offset ${c.offset}${c.dispersion ? `, dispersion ${c.dispersion}` : ''}, min_prevalence ${c.min_prevalence}`
+    return `method nb_glm, offset ${c.offset}${c.dispersion ? `, dispersion ${c.dispersion}` : ''}, min_prevalence ${c.min_prevalence}`
+  if (c.method !== 'clr_welch')
+    return `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+  const replacement = c.replacement_method ?? 'bayesian_multiplicative'
+  const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
+    ? 'estimated' : String(c.bayesian_alpha)
+  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}, ` +
+    `bayesian_alpha ${alpha}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */

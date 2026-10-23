@@ -109,6 +109,8 @@ const _ENUM_VALUES = Dict(
     "analysis.differential.method"   => Differential.METHODS,
     "analysis.differential.offset"   => Differential.OFFSET_METHODS,
     "analysis.differential.dispersion" => Differential.DISPERSIONS,
+    "analysis.differential.dm_overdispersion_method" => Differential.DM_METHODS,
+    "analysis.differential.replacement_method" => Differential.REPLACEMENT_METHODS,
     "phylogeny.reference.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.placement.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.reference.trim.method"    => Validation.PHYLOGENY_TRIM_METHODS,
@@ -121,7 +123,19 @@ const _FILE_NAME_PARTS = ("dada2.output.fasta_prefix", "dada2.output.seq_table_p
                           "dada2.output.taxa_prefix", "cutadapt.r1_suffix", "cutadapt.r2_suffix")
 
 # Numeric keys whose factory default is a number but which also take ~.
-const _NULLABLE_NUMBERS = ("phylogeny.placement.place.heuristic",)
+const _NULLABLE_NUMBERS = ("phylogeny.placement.place.heuristic",
+                           "analysis.differential.bayesian_alpha")
+
+# Text keys whose factory default is ~: an empty value clears the setting.
+const _NULLABLE_STRINGS = ("analysis.differential.mn_reference_taxon",)
+
+# Enum keys whose submitted value is matched without regard to case and then
+# stored canonically, so " ML " and " glmGAMPOI " reach the pipeline as written.
+const _CASE_FOLDED_ENUMS = Dict(
+    "analysis.differential.dispersion" => Differential.DISPERSIONS,
+    "analysis.differential.dm_overdispersion_method" => Differential.DM_METHODS,
+    "analysis.differential.replacement_method" => Differential.REPLACEMENT_METHODS,
+)
 
 """
     _config_value_error(key, value) -> Union{String,Nothing}
@@ -131,10 +145,29 @@ factory default; a key whose default is ~ accepts a string, number or boolean.
 """
 function _config_value_error(key::String, value)
     v = value isa JSON3.Array ? collect(value) : value
-    if key == "analysis.differential.dispersion" && v isa AbstractString
-        v = lowercase(strip(v))
-        return v in lowercase.(Differential.DISPERSIONS) ? nothing :
-            "$key must be one of $(join(Differential.DISPERSIONS, ", "))"
+    if haskey(_CASE_FOLDED_ENUMS, key) && v isa AbstractString
+        allowed = _CASE_FOLDED_ENUMS[key]
+        folded = lowercase(strip(v))
+        return folded in lowercase.(allowed) ? nothing :
+            "$key must be one of $(join(allowed, ", "))"
+    end
+    if key in _NULLABLE_STRINGS
+        (isnothing(v) || v isa AbstractString) || return "$key must be text or empty"
+        return nothing
+    end
+    if key == "analysis.differential.replacement_delta"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && 0 < v < 1) ? nothing :
+            "$key must be a finite number in (0, 1)"
+    end
+    if key == "analysis.differential.bayesian_alpha"
+        isnothing(v) && return nothing
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
+            "$key must be empty or a finite number greater than 0"
+    end
+    if key == "analysis.differential.mc_samples"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) &&
+                Differential.MIN_MC_SAMPLES <= v <= Differential.MAX_MC_SAMPLES) ? nothing :
+            "$key must be a whole number in [$(Differential.MIN_MC_SAMPLES), $(Differential.MAX_MC_SAMPLES)]"
     end
     if haskey(_ENUM_VALUES, key)
         allowed = _ENUM_VALUES[key]
@@ -183,24 +216,53 @@ function _config_value_error(key::String, value)
     nothing
 end
 
-# Validate the effective pair after merging a PATCH, before writing any key.
-# Resolved entries carry source annotations; global defaults are raw values.
-function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
-    keys_ = ("analysis.differential.method", "analysis.differential.dispersion")
-    any(k -> haskey(changes, k), keys_) || return nothing
-    value(k, default) = if haskey(changes, k)
-        changes[k]
-    else
-        current = get(resolved, k, default)
+# Every `analysis.differential` key whose value depends on the method, with the
+# factory default used when a scope does not set it.
+const _DIFFERENTIAL_SETTING_DEFAULTS = Dict{String,Any}(
+    "analysis.differential.method" => "nb_glm",
+    "analysis.differential.dispersion" => "ml",
+    "analysis.differential.mn_reference_taxon" => nothing,
+    "analysis.differential.mn_penalty" => 0.0,
+    "analysis.differential.dm_overdispersion_method" => "mle",
+)
+
+const _DIFFERENTIAL_SETTING_KEYS = collect(keys(_DIFFERENTIAL_SETTING_DEFAULTS))
+
+"""
+    _differential_settings_error(effective) -> Union{String,Nothing}
+
+Why the method-dependent `analysis.differential` settings of one effective
+config cannot be used together, or nothing. `effective` maps dotted keys to
+values, or to the `(; value, source)` entries of a resolved scope. The rules are
+the ones `DifferentialConfig` enforces, worded as the change to make: a
+negative-binomial dispersion needs `nb_glm`, a reference taxon or a non-zero
+penalty needs one of the multinomial methods, and a non-default overdispersion
+method needs `dirichlet_multinomial`. Types are left to `_config_value_error`,
+so a value that is not text or a number is not judged here.
+"""
+function _differential_settings_error(effective::AbstractDict)
+    value(k) = begin
+        current = get(effective, k, _DIFFERENTIAL_SETTING_DEFAULTS[k])
         current isa NamedTuple ? current.value : current
     end
     method = value(keys_[1], "nb_glm")
     dispersion = value(keys_[2], "ml")
     if method isa AbstractString && dispersion isa AbstractString &&
-       lowercase(strip(method)) == "clr_welch" && lowercase(strip(dispersion)) == "glmgampoi"
-        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with clr_welch"
+       lowercase(strip(method)) != "nb_glm" && lowercase(strip(dispersion)) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with $(strip(method))"
     end
     nothing
+end
+
+# Validate the effective settings after merging a PATCH, before writing any key.
+# Resolved entries carry source annotations; global defaults are raw values.
+function _differential_pair_error(resolved::AbstractDict, changes::AbstractDict)
+    any(k -> haskey(changes, k), _DIFFERENTIAL_SETTING_KEYS) || return nothing
+    effective = Dict{String,Any}(string(k) => v for (k, v) in resolved)
+    for (k, v) in changes
+        effective[string(k)] = v
+    end
+    _differential_settings_error(effective)
 end
 
 # Resolve every affected study/group/run against the prospective document.
@@ -215,11 +277,10 @@ function _differential_cascade_error(path::String, document)
     flat(file) = get!(cache, file) do
         _flatten(_load_yml(file))
     end
-    pair = ("analysis.differential.method", "analysis.differential.dispersion")
     function check(values, label)
-        effective = Dict(pair[1]=>get(values, pair[1], "nb_glm"),
-                         pair[2]=>get(values, pair[2], "ml"))
-        bad = _differential_pair_error(effective, effective)
+        effective = Dict{String,Any}(k => get(values, k, v)
+                                     for (k, v) in _DIFFERENTIAL_SETTING_DEFAULTS)
+        bad = _differential_settings_error(effective)
         isnothing(bad) ? nothing : "$label: $bad"
     end
     try
@@ -274,10 +335,11 @@ end
 function _write_config_updates(path::String, changes::AbstractDict; remove=())
     lock(_config_file_lock) do
         native = Dict{String,Any}(string(k) => _to_plain(v) for (k, v) in changes)
-        key = "analysis.differential.dispersion"
-        if haskey(native, key) && native[key] isa AbstractString
-            i = findfirst(v -> lowercase(v) == lowercase(strip(native[key])), Differential.DISPERSIONS)
-            isnothing(i) || (native[key] = Differential.DISPERSIONS[i])
+        for (key, allowed) in _CASE_FOLDED_ENUMS
+            if haskey(native, key) && native[key] isa AbstractString
+                i = findfirst(v -> lowercase(v) == lowercase(strip(native[key])), allowed)
+                isnothing(i) || (native[key] = allowed[i])
+            end
         end
         isempty(native) && isempty(remove) && return nothing
         cfg = _load_yml(path)
@@ -289,8 +351,7 @@ function _write_config_updates(path::String, changes::AbstractDict; remove=())
             removed |= _remove_config_value!(cfg, k)
         end
         isempty(native) && !removed && return nothing
-        pair = ("analysis.differential.method", "analysis.differential.dispersion")
-        if any(k -> haskey(native, k) || k in remove, pair)
+        if any(k -> haskey(native, k) || k in remove, _DIFFERENTIAL_SETTING_KEYS)
             bad = _differential_cascade_error(path, cfg)
             isnothing(bad) || return json_error(400, "invalid_config_value", bad)
         end

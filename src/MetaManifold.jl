@@ -2,6 +2,7 @@ module MetaManifold
 
 # Core
 include("core/types.jl")
+include("core/epistemic.jl")
 include("core/r_runtime.jl")
 # Provenance probes R through the shared runtime lock, so it follows r_runtime.jl.
 include("core/provenance.jl")
@@ -19,6 +20,9 @@ include("core/validate.jl")
 include("core/project.jl")
 include("core/categories.jl")
 include("core/composition_library.jl")
+# Evidence Mode: the epistemic record of a run (claims, fibres, residuals).
+# Reads existing results and provenance; writes only into evidence/.
+include("core/evidence.jl")
 include("core/primers_library.jl")
 include("core/databases_library.jl")
 
@@ -32,13 +36,22 @@ include("pipeline/dada2.jl")
 include("pipeline/swarm.jl")
 include("pipeline/phylogeny.jl")
 
+# Canonical JSON precedes validated analyses: exact values and derived records
+# use deterministic bytes for hashing and content-addressing.
+include("canonical.jl")
+
 # Analysis
+include("analysis/clade_cumulus.jl")
 include("analysis/diversity.jl")
 include("analysis/analysis.jl")
+include("analysis/clade_cumulus.jl")
 include("analysis/differential.jl")
-
-# Canonical JSON: deterministic bytes for hashing and content-addressing.
-include("canonical.jl")
+# Opt-in validated descriptive statistics (issue #1). Ordinary workflows above
+# remain unchanged; these modes must be selected explicitly.
+include("analysis/numeric_policy.jl")
+include("analysis/exact_summaries.jl")
+include("analysis/high_precision.jl")
+include("analysis/derived_analyses.jl")
 
 # Web server
 include("server/server.jl")

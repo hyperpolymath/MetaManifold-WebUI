@@ -16,6 +16,11 @@ const RUN_SERVER      = "--server"      in ARGS
 
 const UNIT_FILES = [
     "test_diversity.jl",
+    "test_numeric_policy.jl",
+    "test_exact_summaries.jl",
+    "test_high_precision.jl",
+    "test_derived_analyses.jl",
+    "test_clade_cumulus.jl",
     "test_merge_taxa.jl",
     "test_config.jl",
     "test_validation.jl",
@@ -23,6 +28,7 @@ const UNIT_FILES = [
     "test_analysis.jl",
     "test_duckdb_store.jl",
     "test_analysis_duckdb.jl",
+    "test_validated_statistics.jl",
     "test_config_hashing.jl",
     "test_project.jl",
     "test_log.jl",
@@ -56,6 +62,7 @@ const UNIT_FILES = [
     "test_server_security.jl",
     "test_canonical.jl",
     "test_doi.jl",
+    "test_clade_cumulus.jl",
 ]
 
 # The files named on the command line ("test_routes.jl", "routes" or

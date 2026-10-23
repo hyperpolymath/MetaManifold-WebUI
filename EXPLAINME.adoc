@@ -1,0 +1,52 @@
+= Occupancy and two-part abundance models: claim receipts
+:toc:
+
+This page records what is implemented in the first slice of issue #18 and what
+is intentionally *not* claimed. The remaining end-user occupancy workflow is
+tracked in follow-up issue #205; code present today is not to be confused with
+that outstanding work.
+
+== Implemented in the current PR
+
+[cols="1,2,2",options="header"]
+|===
+|Claim |Implementation receipt |Boundary / evidence
+
+|Selectable ZINB differential model
+|`src/analysis/differential.jl` (`fit_two_part_nb`, `differential_abundance`), config enum in `src/server/routes/config.jl` and `frontend/src/components/PipelineStages.tsx`
+|Base R likelihood with zero and count components; the group effect is jointly tested by a 2-df likelihood-ratio test. Count offset is TSS/RLE. BH is applied by the shared result path. Backend Julia/R CI must pass before merge.
+
+|Selectable hurdle negative-binomial differential model
+|Same fitter and config/UI path; the positive count likelihood is zero-truncated NB.
+|All observed zeros are assigned to the occurrence process. It does not offer a lognormal or Poisson count component yet.
+
+|Model cautions and results
+|`frontend/src/components/DifferentialPanel.tsx`, CSV result types/export, diagnostics in `differential_abundance`
+|The UI surfaces a caution and exposes the zero-process coefficient. The joint LRT is not a model-selection test and does not establish that the chosen zero process is biologically real.
+
+|Repeated-visit occupancy estimator
+|`MetaManifold.Differential.fit_occupancy`; tests in `test/unit/test_differential.jl`
+|Accepts sites × visits × taxa Boolean detection histories; estimates group occupancy and common detection probability; refuses fewer than two visits. This is a lower-level API, not the standard analysis method or endpoint.
+
+|Scientific limitations
+|`docs/occupancy-models.md`, `README.md`
+|No single-visit occupancy claim. Closure and destructive microbiome sampling limitations are stated. Detection covariates are not implemented.
+|===
+
+== Not yet implemented
+
+The follow-up issue linked from #18 owns first-class occupancy configuration and
+UI, occupancy/detection formula inputs and covariates, identifiability checks,
+zero-formula/count-distribution options, model diagnostics/comparisons, reference
+parity, scale benchmarks, schema/provenance completion, and a synchronized wiki
+roadmap. Until that work lands, do not describe the occupancy estimator as a
+ready-to-use workflow.
+
+== Validation record
+
+* Frontend typecheck, production build and frontend unit tests are run locally.
+* Julia/R backend tests are defined in `test/unit/test_differential.jl` and run
+  by the repository CI workflow. Their successful CI result is required before
+  merge; this sandbox does not have Julia or R installed.
+* CI also contains other workflows; each current failure must be inspected and
+  either fixed or shown to be an unrelated, pre-existing non-required lane.

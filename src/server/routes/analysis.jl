@@ -480,7 +480,10 @@ function _alpha_normalisation(study::String;
                               group::Union{String,Nothing}=nothing,
                               config_cache::Union{Dict,Nothing}=nothing)
     resolved = _resolved_run_config(study, run, group, config_cache)
-    val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    val(k, d) = begin
+        value = get(get(resolved, k, (; value=d)), :value, d)
+        isnothing(value) ? d : value
+    end
     (; method = String(val("analysis.alpha.normalisation", "none")),
        depth = Int(val("analysis.alpha.depth", 0)),
        iterations = Int(val("analysis.alpha.rarefaction_iterations", 1)))
@@ -1196,18 +1199,30 @@ end
 
 The study's `analysis.differential` settings, resolved through the config
 cascade. Missing or `nothing` values use the defaults in `DifferentialConfig`,
-including `dispersion="ml"`. Invalid settings propagate the constructor's
+including `dispersion="ml"`, GBM replacement and an estimated Bayesian alpha.
+Invalid settings propagate the constructor's
 `ArgumentError`; values that cannot be converted to strings or numbers also
 raise their conversion errors.
 """
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
     val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    alpha = get(get(resolved, "analysis.differential.bayesian_alpha", (; value=nothing)), :value, nothing)
+    alpha_val = isnothing(alpha) || alpha isa Real ? alpha : throw(ArgumentError(
+        "analysis.differential.bayesian_alpha must be empty or a finite number greater than 0, not '$alpha'"))
+    mc_raw = val("analysis.differential.mc_samples", Differential.DEFAULT_MC_SAMPLES)
+    mc_val = mc_raw isa Real ? mc_raw : throw(ArgumentError(
+        "analysis.differential.mc_samples must be a whole number in " *
+        "[$(Differential.MIN_MC_SAMPLES), $(Differential.MAX_MC_SAMPLES)], not '$mc_raw'"))
     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
                        Float64(val("analysis.differential.min_prevalence", 0.0));
                        method=String(val("analysis.differential.method", "nb_glm")),
                        replacement_delta=Float64(val("analysis.differential.replacement_delta", 0.65)),
-                       dispersion=String(val("analysis.differential.dispersion", "ml")))
+                       dispersion=String(val("analysis.differential.dispersion", "ml")),
+                       replacement_method=String(val("analysis.differential.replacement_method",
+                                                       "bayesian_multiplicative")),
+                       bayesian_alpha=alpha_val,
+                       mc_samples=mc_val)
 end
 
 """
@@ -1280,13 +1295,15 @@ function _differential(study::String, body)
 
     result = try
         differential_abundance(mat, samples, taxa, groups;
-                               reference=labels[1], contrast=labels[2], config)
+                               reference=labels[1], contrast=labels[2],
+                               config, seed=_study_seed(study))
     catch e
         e isa ArgumentError    && return json_error(400, "invalid_input", sprint(showerror, e))
         e isa ScalingRefusal   && return json_error(422, "scaling_refused", sprint(showerror, e))
         e isa MASSUnavailable  && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa ZCompositionsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa GlmGamPoiUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
+        e isa RStatsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa ErrorException   && return json_error(422, "no_taxon_fitted", e.msg)
         rethrow()
     end
