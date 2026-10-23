@@ -29,6 +29,7 @@ formal Agda proof suite, and React UI.
    - Supports `:phylogenetic`, `:taxonomic`, and `:combined` modes, surfacing non-monophyletic / dispersed taxa and discordant clades.
    - Strict raw `.jplace` evidence reader (`parse_jplace`) without defaulting missing `like_weight_ratio` values to `1.0`.
    - Exact `faith_pd`, `clade_faith_pd`, `unweighted_unifrac`, and `weighted_unifrac` (`normalized = false | true`), verified against `scikit-bio` reference outputs.
+   - Indexed study-tree API used by the de novo cladistics builds (`src/server/routes/cladistics.jl`): `asv_tip_name` (content-addressed tip names), `parse_phylogenetic_tree` (Newick → `PhylogeneticTree` with a `tips` index), `clade_counts` (nodes × samples roll-up), `unifrac` (either a raw samples × ASVs matrix or an existing roll-up), and `analyse_phylogeny`, the single call that produces the JSON payload the UI renders.
 
 5. **Non-Destructive Server Routes & Evidence Mode UI (`src/server/routes/clade_cumulus.jl`, `frontend/src/components/EvidenceModeToggle.tsx`, `frontend/src/components/CladeCumulusPanel.tsx`)**
    - Gated behind an explicit `CladeCumulus Evidence Mode` switch on the Study `Trees` tab so standard workflows are never altered silently.
