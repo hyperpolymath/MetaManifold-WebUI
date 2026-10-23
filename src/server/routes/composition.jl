@@ -218,7 +218,9 @@ end
 # write lands on disk, so a name violating the charset or a value that is not
 # a Dict is rejected with 400 "invalid_library".
 @post "/api/v1/composition/filters/{name}" function(req, name::String)
-    body = _to_plain(_request_json(req))
+    parsed = _read_json_object(req; non_object_error="invalid_library")
+    parsed isa HTTP.Response && return parsed
+    body = _to_plain(parsed)
     result = _save_filter(name, body)
     result isa HTTP.Response && return result
     json(result)
@@ -236,7 +238,9 @@ end
 # unassigned_colour, categories). A category naming a filter absent from the
 # library fails validation and is rejected with 400 "invalid_library".
 @post "/api/v1/composition/sets/{name}" function(req, name::String)
-    body = _to_plain(_request_json(req))
+    parsed = _read_json_object(req; non_object_error="invalid_library")
+    parsed isa HTTP.Response && return parsed
+    body = _to_plain(parsed)
     result = _save_composition_set(name, body)
     result isa HTTP.Response && return result
     json(result)
@@ -342,7 +346,8 @@ end
 
 # Save a category set, mirroring the filter-preset save apparatus.
 @post "/api/v1/category-sets/{name}" function(req, name::String)
-    body = _request_json(req)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     base = string(get(body, :base, ""))
     colours = Dict{String,String}()
     let c = get(body, :colours, nothing)
@@ -373,7 +378,8 @@ end
     err = _validate_run_request(study, run)
     isnothing(err) || return err
 
-    body = _request_json(req)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     category_set = string(get(body, :category_set, "default"))
     subgroup = let s = get(body, :subgroup, nothing)
         isnothing(s) ? nothing : string(s)
@@ -403,7 +409,8 @@ end
     !isnothing(err) && return err
     group = _req_group(req)
 
-    body = _request_json(req)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     category_set = string(get(body, :category_set, "default"))
 
     table = string(get(body, :table, "merged"))
@@ -429,7 +436,8 @@ end
     !isnothing(err) && return err
     group = _req_group(req)
 
-    body = _request_json(req)
+    body = _read_json_object(req; allow_empty=true)
+    body isa HTTP.Response && return body
     category_set = string(get(body, :category_set, "default"))
 
     table = string(get(body, :table, "merged"))

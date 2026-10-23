@@ -149,9 +149,7 @@ end
         @test loaded["claims"][1]["text"] == "Lactobacillus holds more than half the caecal reads"
         @test loaded["claims"][1]["scope"]["values"] == ["Lactobacillus"]
         @test loaded["schema_version"] == Evidence.SCHEMA_VERSION
-        # `save_document` stamps `updated`; the round trip must hand back that
-        # ISO-8601 UTC value rather than merely some string.
-        @test match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", loaded["updated"]) !== nothing
+        @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", loaded["updated"])
 
         # A second save must be able to append a claim of a different shape; YAML
         # narrows homogeneous sequences and the vector must stay open.
