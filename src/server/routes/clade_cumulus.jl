@@ -69,7 +69,6 @@ function _load_run_table_df(study::AbstractString, run::AbstractString, table::A
     # String-typed, so normalise once at this boundary.
     study = String(study); run = String(run); table = String(table)
     group = isnothing(group) ? nothing : String(group)
-
     dir = _require_duckdb(study, run; group)
     isnothing(dir) && return (nothing, nothing, json_error(404, "no_results",
         "No results for run '$run' - run the pipeline first"))

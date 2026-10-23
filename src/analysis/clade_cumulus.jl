@@ -269,7 +269,6 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
         nhx_sup = Ref{Union{Float64,Nothing}}(nothing)
         edge_num = Ref{Union{Int,Nothing}}(nothing)
         raw_lbl, was_quoted = read_label_and_quoted(capture_nhx = nhx_sup, capture_edge = edge_num)
-
         skip_ws_and_leading_comments!(capture_nhx = nhx_sup, capture_edge = edge_num)
 
         branch_len = 0.0
@@ -1022,7 +1021,6 @@ function _graft_jplace_queries(
                 query_lwr[tip_id] = cand.like_weight
                 push!(get!(by_edge, cand.edge_num, _GraftedQuerySpec[]),
                     _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_len), max(0.0, cand.pendant_len), cand.like_weight))
-
             end
         end
     end

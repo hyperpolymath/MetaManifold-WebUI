@@ -5,21 +5,17 @@
 
 function validString(value: string): void {
   for (let i = 0; i < value.length; i++) {
-    const unit = value.charCodeAt(i)
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const low = value.charCodeAt(++i)
-      if (!(low >= 0xdc00 && low <= 0xdfff)) throw new TypeError('I-JSON refuses unpaired surrogates')
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
-      throw new TypeError('I-JSON refuses unpaired surrogates')
-    } else if ((unit >= 0xfdd0 && unit <= 0xfdef) || unit === 0xfffe || unit === 0xffff) {
+    const code = value.codePointAt(i)!
+    if (code > 0xffff) i++ // a valid UTF-16 surrogate pair
+    else if (code >= 0xd800 && code <= 0xdfff) throw new TypeError('I-JSON refuses unpaired surrogates')
+    if ((code >= 0xfdd0 && code <= 0xfdef) || (code & 0xfffe) === 0xfffe) {
       throw new TypeError('I-JSON refuses Unicode noncharacters')
     }
   }
-  for (const ch of value) {
-    const code = ch.codePointAt(0)!
-    if ((code & 0xfffe) === 0xfffe) throw new TypeError('I-JSON refuses Unicode noncharacters')
-  }
 }
+
+// JCS sorts UTF-16 code units, NOT human-language collation (localeCompare).
+const compareUtf16 = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0
 
 /** Canonicalise a JSON-shaped API payload; reject values that cannot round-trip. */
 export function ijsonJcsStringify(value: unknown): string {
@@ -50,7 +46,7 @@ export function ijsonJcsStringify(value: unknown): string {
       const object = input as Record<string, unknown>
       // Omit undefined optional properties just as JSON.stringify does, but
       // never convert an undefined array element into null silently.
-      return `{${Object.keys(object).sort().filter(key => object[key] !== undefined).map(key => {
+      return `{${Object.keys(object).sort(compareUtf16).filter(key => object[key] !== undefined).map(key => {
         validString(key)
         return `${JSON.stringify(key)}:${encode(object[key])}`
       }).join(',')}}`
