@@ -400,11 +400,11 @@ jobs:
         shell: bash
         run: |
           set +e
-          julia --project=. -t2 --compiled-modules=no test/runtests.jl numeric_policy exact_summaries high_precision derived_analyses validated_statistics 2>&1 | tee /tmp/validated-statistics-tests.log
+          julia --project=. -t2 --compiled-modules=no test/runtests.jl validated_statistics numeric_policy exact_summaries high_precision derived_analyses 2>&1 | tee /tmp/validated-statistics-tests.log
           status="${PIPESTATUS[0]}"
           if [ "$status" -ne 0 ]; then
             enc() { head -c 3500 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
-            echo "::error title=Validated-statistics tests failed::$(tail -n 120 /tmp/validated-statistics-tests.log | enc)"
+            echo "::error title=Validated-statistics tests failed::$(tail -n 200 /tmp/validated-statistics-tests.log | enc)"
           fi
           exit "$status"
 
