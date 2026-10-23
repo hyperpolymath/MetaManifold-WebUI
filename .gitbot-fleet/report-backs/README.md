@@ -1,7 +1,9 @@
 # gitbot-fleet report-backs
 
-One file per enrolled fleet member, named `<member>.json`, where `<member>` is
-the key `.gitbot-fleet/enrolment.json` uses (`rhodibot`, `seambot`, ...).
+One JSON file per enrolled fleet member. The renderer uses the `reporter`
+field as the row identity when present, falling back to the filename basename
+without `.json` (for example, `rhodibot.json` becomes `rhodibot`). This identity
+should match the key in `.gitbot-fleet/enrolment.json` (`rhodibot`, `seambot`, ...).
 
 The Hypatia verdict grid reads this directory
 (`.github/workflows/hypatia-scan-reusable.yml` passes it to
