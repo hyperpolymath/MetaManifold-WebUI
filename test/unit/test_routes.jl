@@ -953,8 +953,8 @@ end
     # The Cladistics tab and the run-level CladeCumulus evidence view are
     # served by two different route files; both must be registered.
     paths = Set(p for (_, p) in registered)
-    @test any(occursin("/cladistics", p) for p in paths)
-    @test any(occursin("/clade-cumulus", p) for p in paths)
+    @test "/api/v1/studies/{study}/cladistics" in paths
+    @test "/api/v1/studies/{study}/runs/{run}/clade-cumulus/sources" in paths
 end
 
 # Testsets above point the server at temporary roots.
