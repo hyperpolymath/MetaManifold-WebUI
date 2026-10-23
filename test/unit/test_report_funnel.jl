@@ -3,6 +3,7 @@
 using MetaManifold
 SV = MetaManifold.Server
 using JSON3, YAML
+using MetaManifold.Canonical: jcs_bytes
 
 _rf_request(method, path, body="", headers=["Content-Type" => "application/json"]) =
     SV.Oxygen.internalrequest(SV.HTTP.Request(method, path, headers, body))
@@ -22,6 +23,9 @@ _rf_request(method, path, body="", headers=["Content-Type" => "application/json"
                         ["Content-Type" => "application/octet-stream"])
         @test r.status == 200
         a = JSON3.read(String(r.body))
+        @test r.body == jcs_bytes(a)
+        @test read(joinpath(tmp, "projects", "StudyR", "report", "items.json")) ==
+              jcs_bytes([a])
         r = _rf_request("POST", "$base?kind=table&title=Tables&ext=.csv", "a,b\n1,2\n",
                         ["Content-Type" => "application/octet-stream"])
         b = JSON3.read(String(r.body))
@@ -132,11 +136,15 @@ end
         @test isempty(JSON3.read(String(_rf_request("GET", base).body)))
         r = _rf_request("POST", base, JSON3.write(Dict("title" => "Fig 1", "groups" => [])))
         @test r.status == 200
+        @test r.body == jcs_bytes(JSON3.read(String(r.body)))
         id = JSON3.read(String(r.body)).id
         @test occursin(r"^[0-9a-f]{8}$", id)
         r = _rf_request("PUT", "$base/$id", JSON3.write(Dict("id" => "ffffffff", "title" => "Renamed")))
         @test JSON3.read(String(r.body)).id == id
         @test JSON3.read(String(_rf_request("GET", "$base/$id").body)).title == "Renamed"
+        @test read(joinpath(tmp, "projects", "StudyF", "figures", "$id.json")) ==
+              jcs_bytes(JSON3.read(String(_rf_request("GET", "$base/$id").body)))
+        @test _rf_request("PUT", "$base/$id", "{\"title\":\"x\",\"title\":\"y\"}").status == 400
         @test only(JSON3.read(String(_rf_request("GET", base).body))).title == "Renamed"
         @test _rf_request("PUT", "$base/$id", "[1,2]").status == 400
         @test _rf_request("GET", "$base/nothex12").status == 400

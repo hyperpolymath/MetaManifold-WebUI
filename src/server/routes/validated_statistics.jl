@@ -15,9 +15,7 @@ const _DUCKDB_INTEGER_TYPES = Set([
     "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT",
 ])
 
-function _statistics_json(payload; status::Int=200)
-    HTTP.Response(status, ["Content-Type" => "application/json"], body=JSON3.write(payload))
-end
+_statistics_json(payload; status::Int=200) = jcs_json(payload; status)
 
 function _statistics_guard(f::Function)
     try
@@ -41,11 +39,7 @@ end
 function _statistics_body(req)
     length(req.body) <= _STATISTICS_REQUEST_LIMIT || throw(ResourceLimitError(
         "request bytes", _STATISTICS_REQUEST_LIMIT, length(req.body)))
-    parsed = try
-        JSON3.read(String(req.body))
-    catch
-        throw(ArgumentError("request body is not valid JSON"))
-    end
+    parsed = ijson_read(req.body)
     parsed isa JSON3.Object || throw(ArgumentError("request body must be a JSON object"))
     parsed
 end

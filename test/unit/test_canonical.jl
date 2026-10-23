@@ -5,7 +5,7 @@
 # ECMAScript JSON.stringify and UTF-16 key order. Rust fixture generation
 # provenance has not been reproduced in this audit.
 using MetaManifold
-using MetaManifold.Canonical: jcs_bytes, jcs_sha256
+using MetaManifold.Canonical: jcs_bytes, jcs_sha256, ijson_read
 using JSON3, SHA, Test
 
 @testset "canonical JSON (JCS)" begin
@@ -95,4 +95,26 @@ end
 @testset "rounding fixture is explicitly binary64 input" begin
     cases = readlines(joinpath(@__DIR__, "..", "fixtures", "jcs_oracle.jsonl"))
     @test JSON3.read(cases[5]).input[2] isa AbstractFloat
+end
+
+@testset "strict I-JSON input and JCS output (ijson-jcs)" begin
+    for input in ("{\"a\":1,\"a\":2}",
+                  "{\"a\":1,\"\\u0061\":2}",
+                  "{\"nested\":[{\"b\":0,\"b\":1}]}",
+                  "{\"n\":9007199254740992}",
+                  "[-9007199254740992]", "[1e400]", "{\"key\":\"\\ud800\"}",
+                  "{\"key\":\"\\udc00\"}",
+                  "{\"\\ufdd0\":0}", "[\"\\uFFFF\"]")
+        @test_throws ArgumentError ijson_read(input)
+    end
+    @test_throws ArgumentError ijson_read(UInt8[0xff])
+    @test_throws ArgumentError jcs_bytes(Dict("bad" => "\ufdd0"))
+    @test_throws ArgumentError jcs_bytes(Dict("\U0001ffff" => 1))
+    for input in ("{\"a\":1,\"b\":[true,null]}",
+                  "{\"emoji\":\"\\ud83d\\ude00\"}",
+                  "{\"exact\":\"9007199254740992\"}",
+                  "{\"float\":1e-7}")
+        @test ijson_read(String(jcs_bytes(ijson_read(input)))) isa JSON3.Object
+    end
+    @test String(jcs_bytes(ijson_read("{\"b\":2,\"a\":1}"))) == "{\"a\":1,\"b\":2}"
 end

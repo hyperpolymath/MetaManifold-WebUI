@@ -74,5 +74,10 @@ end
         # The verified original is still available after the failed conflicting use.
         @test load_derived_analysis(directory, id)["analysis_id"] == id
         @test object["analysis_id"] == id
+
+        # A record with the right semantic ID but noncanonical bytes is not a
+        # valid content-addressed I-JSON/JCS document.
+        write(joinpath(tampered, "$id.json"), vcat(UInt8[0x20], read(saved.path)))
+        @test_throws DerivedAnalysisError load_derived_analysis(tampered, id)
     end
 end
