@@ -112,14 +112,14 @@ export function parseNewick(text: string): SourceTree {
     skipSpace()
     if (s[i] === "'" || s[i] === '"') {
       const q = s[i++]
-      let out = ''
+      const parts: string[] = []
       while (i < s.length) {
         if (s[i] === q) {
-          if (s[i + 1] === q) { out += q; i += 2; continue }
+          if (s[i + 1] === q) { parts.push(q); i += 2; continue }
           i++
-          return out
+          return parts.join('')
         }
-        out += s[i++]
+        parts.push(s[i++])
       }
       fail('unclosed quote')
     }
@@ -209,7 +209,18 @@ export function parseNewick(text: string): SourceTree {
 }
 
 export function parseJplace(text: string): SourceTree {
-  const doc = JSON.parse(text)
+  let doc: {
+    tree?: unknown
+    fields?: string[]
+    placements?: Record<string, unknown>[]
+    metadata?: Record<string, unknown>
+    version?: unknown
+  }
+  try {
+    doc = JSON.parse(text)
+  } catch {
+    throw new Error('jplace file is not valid JSON')
+  }
   const tree = parseNewick(String(doc.tree))
   const fields: string[] = doc.fields ?? []
   const col = (f: string) => fields.indexOf(f)

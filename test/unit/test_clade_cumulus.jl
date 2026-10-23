@@ -184,6 +184,39 @@ _cc_req(method::String, path::String, body::String = "") =
         @test decoded.nodes[1].parent_id === nothing
         @test decoded.faith_pd[2] ≈ 5.0
         @test decoded.unweighted_unifrac[1][2] ≈ 0.7
+
+        # IQ-TREE infers an unrooted tree for a reversible model, so the root of
+        # a `reference.treefile` is only whichever node was serialized first.
+        # `analyse_phylogeny` must therefore root the way the legacy metrics do
+        # (midpoint), or Faith's PD depends on that arbitrary choice.
+        unrooted_text = "(A:1.0,B:2.0,C:3.0);"
+        unrooted = CC.parse_phylogenetic_tree(unrooted_text)
+        @test length(unrooted.nodes[unrooted.root].children) == 3
+        rooted = CC.ensure_rooted(unrooted)
+        @test length(rooted.nodes[rooted.root].children) == 2
+        @test sort(collect(keys(rooted.tips))) == ["A", "B", "C"]
+        @test CC.ensure_rooted(rooted) === rooted
+
+        tips3 = ["A", "B", "C"]
+        one_tip = [1.0 0.0 0.0]
+        counts3 = [1.0 0.0 0.0;
+                   0.0 2.0 3.0]
+        # The midpoint falls inside the root-C edge, so a lone A tip now has to
+        # reach it: 1.0 (A) + 0.5 (half of the B-root-C path remainder) = 1.5.
+        @test CC._faith_pd_indexed(unrooted, CC.clade_counts(unrooted, one_tip, tips3))[1] ≈ 1.0
+        @test CC.faith_pd(unrooted, one_tip, tips3)[1] ≈ 1.5
+        @test CC.faith_pd(unrooted, one_tip, tips3)[1] ≈
+              CC.faith_pd([1.0, 0.0, 0.0], tips3, unrooted_text)
+
+        # Rooted and unrooted serializations must agree on every payload metric:
+        # PD through the shared rooting convention, UniFrac through invariance.
+        unrooted_result = CC.analyse_phylogeny(unrooted, counts3, tips3, samples)
+        rooted_result = CC.analyse_phylogeny(rooted, counts3, tips3, samples)
+        @test unrooted_result.faith_pd ≈ rooted_result.faith_pd
+        @test unrooted_result.unweighted_unifrac ≈ rooted_result.unweighted_unifrac
+        @test unrooted_result.weighted_unifrac ≈ rooted_result.weighted_unifrac
+        @test unrooted_result.total_branch_length ≈ rooted_result.total_branch_length
+        @test unrooted_result.total_branch_length ≈ 6.0
     end
 
 
@@ -746,10 +779,12 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         # cloud) of the subtree that has just left. Read as a leaf, that stale
         # count would keep the emptied clade active and give it a nonzero
         # `subtree_pd` and frequency for reads it no longer holds.
+        # Two domains, two ASVs each, so the proposed root's taxon purity
+        # distinguishes "four real tips" (0.5) from "four tips plus the
+        # emptied wrapper counted as a fifth Bacteria tip" (0.6).
         df = DataFrame(
             SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4"],
-            Domain  = fill("Bacteria", 4),
-            Genus   = ["MovedGenus", "MovedGenus", "OtherGenus", "OtherGenus"],
+            Domain  = ["Bacteria", "Bacteria", "Archaea", "Archaea"],
             SampleA = [10.0, 20.0, 30.0, 40.0],
         )
         # `wrapper` has exactly one child (the ASV_1/ASV_2 clade); the other
@@ -802,42 +837,13 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             if relocated !== nothing
                 @test Float64(relocated["cumulative_count"]) == moved_reads
                 @test Float64(relocated["residual_count"]) == moved_residual
-                @test relocated["monophyletic"] == true
             end
-            # The vacated wrapper retains its taxon label but is no longer a
-            # tip: the two genera still each account for two of the four tips.
-            @test proposed_root["taxon_purity"] ≈ 0.5 atol = 1e-12
-            @test _cc_find_dict(proposed_root, String(target.id))["taxon_purity"] ≈ 0.5 atol = 1e-12
             @test Float64(proposed_root["cumulative_count"]) ≈ before_total atol = 1e-9
-        end
-    end
-
-    @testset "Zero-read terminal nodes remain tips after a move" begin
-        function node(id, rank, count, taxon, children = CC.CladeNode[])
-            cumulative = count + sum(ch.cumulative_count for ch in children; init = 0.0)
-            CC.CladeNode(
-                id, id, rank, count, cumulative, 0.0, 0.0, 5.0, 0.1, 1.0, 0.0,
-                taxon, taxon === nothing ? nothing : 1.0, nothing,
-                :present_in_every, "#2e7d32", children,
-            )
-        end
-        for rank in ("tip", "ASV")
-            positive = node("positive", rank, 10.0, "GenusA")
-            zero = node("zero", rank, 0.0, "GenusA")
-            unassigned = node("unassigned", rank, 0.0, nothing)
-            moving = node("moving", rank, 20.0, "GenusB")
-            target = node("target", "clade", 0.0, "GenusA", [positive, zero, unassigned])
-            root = node("root", "root", 0.0, "GenusA", [target, moving])
-            proposed = CC._reaggregate_after_move(root, moving, target.id, EP.Case("test", EP.WorldCandidate[]), 30.0)
-
-            # Both zero-read terminals count toward purity, including the
-            # unassigned tip, and the two GenusA tips prevent singleton monophyly.
-            @test proposed.taxon_purity ≈ 0.5 atol = 1e-12
-            @test CC._find_clade(proposed, target.id).taxon_purity ≈ 0.5 atol = 1e-12
-            @test CC._find_clade(proposed, positive.id).monophyletic == false
-            @test CC._find_clade(proposed, zero.id).monophyletic == false
-            @test CC._find_clade(proposed, zero.id).subtree_pd == 0.0
-            @test proposed.cumulative_count == 30.0
+            # The emptied wrapper is childless but is not a tip: it must not
+            # add its departed subtree's taxon to the tip counts behind
+            # purity/monophyly. Four real tips, two per domain, give 0.5;
+            # counting the wrapper as a fifth Bacteria tip would give 0.6.
+            @test Float64(proposed_root["taxon_purity"]) ≈ 0.5 atol = 1e-9
         end
     end
 

@@ -224,6 +224,10 @@ function _cc_compute(study::String, id::String)
     result["excluded_samples"] = counts_doc.excluded_samples
     result["weighted_unifrac_definition"] =
         "sum(branch * abs(a-b)) / sum(branch * (a+b)); clade relative abundances"
+    # IQ-TREE infers an unrooted tree for a reversible model, so PD is only
+    # meaningful relative to a stated rooting convention; record it next to the
+    # other metric definitions rather than leaving it implicit.
+    result["rooting"] = "midpoint (unrooted trees; Faith PD is root-dependent, UniFrac is not)"
     result
 end
 
