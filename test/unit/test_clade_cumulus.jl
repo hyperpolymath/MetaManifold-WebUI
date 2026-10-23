@@ -572,6 +572,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             con = DBInterface.connect(db)
             DuckDB.register_data_frame(con, df, "src_df")
             DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            # The registration is a view backed by a replacement scan that only
+            # exists on this connection, so it is removed again: left in the file
+            # it makes the view unreadable for every later connection.
             DuckDB.unregister_data_frame(con, "src_df")
             DBInterface.close!(con)
             close(db)
@@ -890,6 +893,69 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             # purity/monophyly. Four real tips, two per domain, give 0.5;
             # counting the wrapper as a fifth Bacteria tip would give 0.6.
             @test Float64(proposed_root["taxon_purity"]) ≈ 0.5 atol = 1e-9
+        end
+    end
+
+
+    @testset "A zero-read terminal still counts as a tip after a move" begin
+        # The tip rule in `_reaggregate_after_move` has two halves: a clade with
+        # no children is a tip if it holds reads *or* if it is a sequence
+        # terminal. The emptied-wrapper test above pins the first half (a
+        # vacated internal clade is not a tip). This pins the second: a
+        # terminal that happens to hold zero reads in this table is still a
+        # tip, so it still counts toward the global per-taxon tip total behind
+        # the monophyly verdict.
+        #
+        # These two monophyly assertions are what move. With the rule intact
+        # GenusA has two tips, so neither is a singleton and both read `false`.
+        # Drop the `|| rank in ("tip", "ASV")` half and the zero-read tip leaves
+        # the count, GenusA looks like a singleton, `positive` flips to `true`
+        # and `zero` gets no verdict at all (`nothing`) instead of `false`.
+        # Taxon purity happens not to move here -- it is 0.5 either way, since
+        # the tie-break between equally sized genera lands on the same number
+        # by a different route -- so it is asserted as a plain invariant, not
+        # as the regression guard.
+        _zero_node(id, rank, count, taxon, children = CC.CladeNode[]) =
+            CC.CladeNode(
+                id, id, rank, count,
+                count + sum(ch.cumulative_count for ch in children; init = 0.0),
+                0.0,                # cumulative_frequency
+                0.0,                # residual_count
+                5.0,                # cloud_size
+                0.1,                # branch_length
+                1.0,                # support
+                0.0,                # subtree_pd
+                taxon,
+                taxon === nothing ? nothing : 1.0,
+                nothing,            # monophyletic -- recomputed
+                :present_in_every,
+                "#2e7d32",
+                children,
+            )
+
+        for rank in ("tip", "ASV")
+            positive = _zero_node("positive", rank, 10.0, "GenusA")
+            zero = _zero_node("zero", rank, 0.0, "GenusA")
+            unassigned = _zero_node("unassigned", rank, 0.0, nothing)
+            moving = _zero_node("moving", rank, 20.0, "GenusB")
+            target = _zero_node("target", "clade", 0.0, "GenusA", [positive, zero, unassigned])
+            root = _zero_node("root", "root", 0.0, "GenusA", [target, moving])
+
+            proposed = CC._reaggregate_after_move(
+                root, moving, target.id, EP.Case("zero_read_tips", EP.WorldCandidate[]), 30.0,
+            )
+
+            # Four tips under `target` once `moving` joins it: two GenusA (one
+            # with reads, one without), one unassigned, one GenusB.
+            @test proposed.taxon_purity ≈ 0.5 atol = 1e-12
+            @test CC._find_clade(proposed, target.id).taxon_purity ≈ 0.5 atol = 1e-12
+            # GenusA has two tips, so neither of them is a monophyletic singleton.
+            @test CC._find_clade(proposed, positive.id).monophyletic == false
+            @test CC._find_clade(proposed, zero.id).monophyletic == false
+            # A terminal with no reads stays inactive, so it contributes no PD.
+            @test CC._find_clade(proposed, zero.id).subtree_pd == 0.0
+            # Reads are relocated, not created or lost.
+            @test proposed.cumulative_count == 30.0
         end
     end
 
