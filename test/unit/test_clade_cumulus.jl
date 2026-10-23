@@ -134,7 +134,7 @@ _cc_req(method::String, path::String, body::String = "") =
             "placements" => [
                 OrderedDict("n" => ["Q_split"], "p" => [[0, -100.0, 0.60, 0.01, 0.02], [1, -100.4, 0.40, 0.01, 0.03]]),
                 OrderedDict("nm" => [["Q_borderline", 1]], "p" => [[3, -98.0, 0.85, 0.05, 0.02], [2, -101.0, 0.15, 0.05, 0.02]]),
-                OrderedDict("n" => ["Q_strong"], "p" => [[3, -97.0, 0.98, 0.02, 0.01]]),
+                OrderedDict("n" => ["Q_strong"], "p" => [[3, -97.0, 0.98, 0.02, 0.01], [2, -101.0, 0.02, 0.02, 0.01]]),
                 OrderedDict("n" => ["Q_bad_sum"], "p" => [[0, -100.0, 0.40, 0.01, 0.01]]),
             ],
         ))
@@ -252,8 +252,8 @@ done
 echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "$OUT"
 """)
             chmod(mock_ft, 0o755)
-            old_ft = get(PH.Tools._tools, "fasttree", nothing)
-            PH.Tools._tools["fasttree"] = mock_ft
+            old_ft = get(MetaManifold.Tools._tools, "fasttree", nothing)
+            MetaManifold.Tools._tools["fasttree"] = mock_ft
             try
                 s4 = [
                     "ASV_1" => "ACGTACGTACGTACGTACGT",
@@ -267,9 +267,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                                r["sha256"] == bytes2hex(open(sha256, mock_ft)), ft_res.tool_records)
             finally
                 if old_ft === nothing
-                    delete!(PH.Tools._tools, "fasttree")
+                    delete!(MetaManifold.Tools._tools, "fasttree")
                 else
-                    PH.Tools._tools["fasttree"] = old_ft
+                    MetaManifold.Tools._tools["fasttree"] = old_ft
                 end
             end
         end
@@ -308,8 +308,13 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             db_path = joinpath(merge_dir, "results.duckdb")
             db = DuckDB.DB(db_path)
             con = DBInterface.connect(db)
-            DuckDB.register_data_frame(con, df, "src_df")
-            DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            DBInterface.execute(con, """CREATE TABLE merged (
+                SeqName VARCHAR, Domain VARCHAR, Genus VARCHAR, Sequence VARCHAR,
+                SampleA BIGINT, SampleB BIGINT)""")
+            for row in eachrow(df)
+                DBInterface.execute(con, "INSERT INTO merged VALUES (?, ?, ?, ?, ?, ?)",
+                    [row.SeqName, row.Domain, row.Genus, row.Sequence, row.SampleA, row.SampleB])
+            end
             DBInterface.close!(con)
             close(db)
             before_db_sha = bytes2hex(open(sha256, db_path))
