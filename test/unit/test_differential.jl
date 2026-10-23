@@ -1710,7 +1710,9 @@ end
             # BH adjustment is not optional: every fitted row carries a padj, and
             # no row carries one without a p-value.
             @test all(x -> (x.padj !== nothing) == (x.pvalue !== nothing), body.rows)
-            @test all(x -> x.padj !== nothing, body.rows)
+            fitted_rows = [x for x in body.rows if x.status in ("ok", "boundary")]
+            @test !isempty(fitted_rows)
+            @test all(x -> x.padj !== nothing, fitted_rows)
             @test haskey(body, :figure) && length(body.figure.data) >= 1
             # An explicit reference reparameterises the same fit: the log ratio
             # between Up and Down (a difference of two coefficients) must not
