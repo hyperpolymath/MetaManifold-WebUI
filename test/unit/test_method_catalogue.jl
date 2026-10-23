@@ -97,8 +97,9 @@ end
     @test rejected(doc -> doc["methods"] = Any[])
     @test rejected(doc -> doc["methods"][1]["status"] = "maybe")
     @test rejected(doc -> doc["methods"][1]["evidence"] = Any[])
-    @test rejected(doc -> doc["methods"][2]["status"] = "supported")
-    @test rejected(doc -> doc["methods"][2]["evidence"] = Any[])
+    # Flipping an unsupported entry to supported without evidence is refused.
+    @test rejected(doc -> doc["methods"][3]["status"] = "supported")
+    @test rejected(doc -> doc["methods"][3]["evidence"] = Any[])
     @test rejected(doc -> doc["methods"][1]["id"] = doc["methods"][2]["id"])
     @test rejected(doc -> doc["limits"]["max_cells"] = MAX_CELLS + 1)
     @test rejected(doc -> doc["limits"]["max_precision_bits"] = MAX_PRECISION_BITS + 1)

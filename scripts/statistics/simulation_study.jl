@@ -57,7 +57,9 @@ end
 
 """Independent reference at REFERENCE_BITS from exact proportions."""
 function reference_metrics(column::AbstractVector{BigInt})
-    first(with_precision(; bits=REFERENCE_BITS) do
+    # The do-block binds to the call it is written against, so `first(f() do … end)`
+    # would pass the function to `first`. Bind the result first, then unwrap it.
+    computed = with_precision(; bits=REFERENCE_BITS) do
         total = sum(column)
         shannon = zero(BigFloat)
         squares = big(0)
@@ -69,7 +71,8 @@ function reference_metrics(column::AbstractVector{BigInt})
         end
         simpson = BigFloat((total * total - squares) // (total * total))
         (shannon=shannon, simpson=simpson)
-    end)
+    end
+    first(computed)
 end
 
 _relative_error(observed::BigFloat, reference::BigFloat) =

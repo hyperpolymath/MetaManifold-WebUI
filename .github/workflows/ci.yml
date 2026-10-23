@@ -561,19 +561,43 @@ jobs:
           bash "$RUNNER_TEMP/standards/scripts/check-ijson-jcs.sh" . \
             | tee "$RUNNER_TEMP/ijson-jcs-report.txt"
 
+      # A failing study must say why in the checks API, not only in a log the
+      # reviewer cannot open from every client. Annotations are the same channel
+      # the Julia suite uses for failing assertions.
       - name: Seeded simulation study
+        shell: bash
         run: |
+          set +e
           julia --project=. -t2 scripts/statistics/simulation_study.jl \
-            --output "$RUNNER_TEMP/statistics-simulation-report.json"
+            --output "$RUNNER_TEMP/statistics-simulation-report.json" 2>&1 | tee /tmp/simulation.log
+          statuses=("${PIPESTATUS[@]}")
+          status="${statuses[0]}"
+          if [ "$status" -eq 0 ]; then status="${statuses[1]}"; fi
+          if [ "$status" -ne 0 ]; then
+            enc() { head -c 3000 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+            echo "::error title=Simulation study failed::$(tail -c 3000 /tmp/simulation.log | enc)"
+          fi
+          exit "$status"
 
       # Six mutants are defined; four keep the campaign inside the job timeout.
       # The script restores every file and re-verifies its digest, so a failed
       # run cannot leave a planted defect behind.
       - name: Mutation campaign
+        if: always()
+        shell: bash
         run: |
+          set +e
           julia --project=. -t2 scripts/statistics/mutation_check.jl --max-mutants 4 \
             --output "$RUNNER_TEMP/statistics-mutation-report.json" \
-            --keep-logs "$RUNNER_TEMP/mutation-logs"
+            --keep-logs "$RUNNER_TEMP/mutation-logs" 2>&1 | tee /tmp/mutation.log
+          statuses=("${PIPESTATUS[@]}")
+          status="${statuses[0]}"
+          if [ "$status" -eq 0 ]; then status="${statuses[1]}"; fi
+          if [ "$status" -ne 0 ]; then
+            enc() { head -c 3000 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+            echo "::error title=Mutation campaign failed::$(tail -c 3000 /tmp/mutation.log | enc)"
+          fi
+          exit "$status"
 
       - name: Retain statistics evidence
         if: always()

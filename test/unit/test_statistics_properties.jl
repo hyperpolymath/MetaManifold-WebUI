@@ -14,24 +14,32 @@ using MetaManifold.HighPrecision
 const _PROP_BITS = 512
 const _PROP_TOLERANCE = big"1e-70"
 
-_reference_shannon(column) = first(with_precision(; bits=_PROP_BITS) do
-    total = sum(big.(column))
-    iszero(total) && return nothing
-    h = zero(BigFloat)
-    for count in column
-        iszero(count) && continue
-        p = BigFloat(count) / BigFloat(total)
-        h -= p * log(p)
+# A do-block binds to the call it is written against, so `first(f() do … end)`
+# would hand the function to `first`. Each helper binds and then unwraps.
+function _reference_shannon(column)
+    computed = with_precision(; bits=_PROP_BITS) do
+        total = sum(big.(column))
+        iszero(total) && return nothing
+        h = zero(BigFloat)
+        for count in column
+            iszero(count) && continue
+            p = BigFloat(count) / BigFloat(total)
+            h -= p * log(p)
+        end
+        h
     end
-    h
-end)
+    first(computed)
+end
 
-_reference_simpson(column) = first(with_precision(; bits=_PROP_BITS) do
-    total = sum(big.(column))
-    iszero(total) && return nothing
-    squares = sum(big(c)^2 for c in column)
-    BigFloat((total * total - squares) // (total * total))
-end)
+function _reference_simpson(column)
+    computed = with_precision(; bits=_PROP_BITS) do
+        total = sum(big.(column))
+        iszero(total) && return nothing
+        squares = sum(big(c)^2 for c in column)
+        BigFloat((total * total - squares) // (total * total))
+    end
+    first(computed)
+end
 
 _close(reference, candidate) =
     abs(candidate - reference) <= _PROP_TOLERANCE * max(big(1), abs(reference))
