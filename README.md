@@ -445,39 +445,42 @@ models), `src/analysis/differential.jl`, `src/server/routes/analysis.jl`, and
 independent implementation and are quoted to 12 digits; the special functions
 are cross-checked against mpmath at 40 digits.
 
-### Evidence Mode
+### Evidence Mode (API)
 
-The **Evidence** tab turns a run's outputs into a citable epistemic record. A
-claim is a sentence a reader could disagree with, a **scope** naming the part of
-the data it is about (its *fibre*: the rows whose value at a rank, or whose
-category in a set, is one of the named labels), and a **warrant** saying why it
-follows. Claims are stored in `projects/{study}/[<group>/]<run>/evidence/claims.yml`
-and can be downloaded as that exact YAML.
+Evidence Mode turns a run's outputs into a citable epistemic record. A claim is
+a sentence a reader could disagree with, a **scope** naming the part of the data
+it is about (its *fibre*: the rows whose value at a rank, or whose category in a
+set, is one of the named labels), and a **warrant** saying why it follows.
+Claims are stored in `projects/{study}/[<group>/]<run>/evidence/claims.yml` and
+can be downloaded as that exact YAML.
 
-Three views share one record:
+The record is served entirely by the Julia backend; the browser surface is
+delivered by the Vue/Marid client, so this repository ships no Evidence UI.
 
-- **Claims** — the epistemic editor (avec fibre). A claim cannot be saved
-  without a scope and at least one value, and cannot be marked `supported`
-  without a measurement, citation or inference warrant: a definition alone
-  supports nothing.
-- **Fibre & echo** — the fibre's share of every sample, its largest members, and
-  the same fibre seen through a second projection: the other classifier at the
-  same rank, and the parent rank. Agreement is reported with a verdict;
-  disagreement is a limit on how strongly the claim may be stated, and an echo
-  that cannot be computed says so rather than vanishing.
-- **Residuals** — where the fibre departs from a null you declare, either
-  `proportional` (the fibre distributed across samples as the library is) or a
-  stated `claim_share`, with Pearson residuals, a log2 ratio and a χ² statistic
-  printed without a p-value. The worst departure is shown first.
+| Endpoint | What it answers |
+| --- | --- |
+| `GET .../runs/{run}/evidence` | The record plus the context a claim may cite (tables, ranks, categories, provenance) |
+| `POST .../evidence/claims` | Create, replace or retire a claim; ids are safe names of at most 64 characters |
+| `DELETE .../evidence/claims/{id}` | Retire one claim |
+| `GET .../evidence/claims.yml` | The record exactly as it sits on disk |
+| `POST .../evidence/fiber` | A fibre's share per sample, its largest members, and an **echo**: the same scope through another projection (the other classifier at the same rank, the parent rank) |
+| `POST .../evidence/residuals` | Where a fibre departs from a declared null — `proportional` (the fibre spread across samples as the library is) or a stated `claim_share` |
 
-The tab's Provenance card states whether `attestation.yml` is absent, degraded
-or internally inconsistent before any claim is read. Longer notes on the
-definitions, the schema and the limits are kept in `docs/evidence-mode.md`
-(documentation under `docs/` is kept local by policy — see `.gitignore`).
+Validation is enforced server-side, so every client sees the same rules. Scope
+is one projection (`rank` or `category`) of 1 to 50 values of at most 200
+characters; claim text is at most 2000 characters; a claim carries at most 5
+warrants and 20 caveats; a blank status is stored as `draft`. A claim cannot be
+marked `supported` without at least one measurement, citation or inference
+warrant — a definition alone supports nothing. Echo verdicts are `concordant`,
+`minor divergence`, `partial agreement` or `discordant`; containment is
+`contained`, `inconsistent` or `disjoint`. Residuals report Pearson residuals, a
+log2 ratio and a χ² statistic without a p-value, counting `|r| > 2`.
 
 Implementation: `src/core/evidence.jl` (schema, residuals, verdicts),
-`src/server/routes/evidence.jl` (the SQL), `frontend/src/evidence/`
-(editor, fibre visualiser, residual explorer) and `test/unit/test_evidence.jl`.
+`src/server/routes/evidence.jl` (the SQL), `test/unit/test_evidence.jl` and
+`test/unit/test_evidence_routes.jl`. Longer notes on the definitions, the schema
+and the limits are kept in `docs/evidence-mode.md` (documentation under `docs/`
+is kept local by policy — see `.gitignore`).
 
 ### Figures and report
 
