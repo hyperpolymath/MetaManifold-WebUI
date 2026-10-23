@@ -93,7 +93,7 @@ function _resolve_tree_inputs_from_request(
     source_digests::OrderedDict{String,String},
 )
     tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
-    tree_file = strip(string(get(body, :treeFile, "")))
+    tree_file = String(strip(string(get(body, :treeFile, ""))))
     inline_newick = strip(string(get(body, :newick, "")))
 
     if tree_source == "study_tree" || (!isempty(tree_file) && tree_source == "auto")
