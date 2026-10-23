@@ -29,4 +29,5 @@
     (history-scan ".github/workflows/secret-scanner.yml")
     (security-practices ".github/workflows/scorecard.yml")
     (fleet-enrolment ".gitbot-fleet/enrolment.json")
-    (scope "DEED syntax is not K9 semantic conformance. No K9 contracts are committed; the K9 corpus is grey, not a pass.")))
+    (contractiles ".machine_readable/contractiles/")
+    (scope "DEED syntax and K9 semantic conformance are validated separately: Yard-tier K9 contracts (must, trust, intend) are checked across L0-L2; L3 signatures remain outside CI.")))

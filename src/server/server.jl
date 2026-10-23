@@ -82,6 +82,29 @@ module Server
         HTTP.Response(status, ["Content-Type" => "application/json"], body=bytes)
     end
 
+    # Parse a JSON object request body without mutating `req.body::Vector{UInt8}`
+    # (Julia 1.12 `String(::Vector{UInt8})` truncates its argument in place).
+    # Malformed JSON or a non-object JSON payload returns a 400 HTTP.Response
+    # instead of throwing an unhandled parse/method exception out of the route.
+    function _read_json_object(req::HTTP.Request;
+                               allow_empty::Bool=false,
+                               non_object_error::String="invalid_json")
+        body_bytes = req.body isa AbstractString ? ncodeunits(req.body) : length(req.body)
+        if body_bytes == 0 && allow_empty
+            return (;)
+        end
+        raw = req.body isa AbstractString ? String(req.body) : String(copy(req.body))
+        parsed = try
+            JSON3.read(raw)
+        catch e
+            return json_error(400, "invalid_json",
+                "Request body is not valid JSON: $(sprint(showerror, e))")
+        end
+        parsed isa JSON3.Object || return json_error(400, non_object_error,
+            "Request body must be a JSON object")
+        parsed
+    end
+
     ## Route registration
     # Oxygen's routing macros register with its global router as the file
     # loads. A precompiled module does not load its files again, so these
@@ -136,6 +159,28 @@ module Server
     struct BadRequest <: Exception
         message::String
     end
+
+    # Parse a request body as JSON, and turn malformed input into a 400 instead
+    # of a 500 carrying a JSON3 stack trace. A client that sends a truncated
+    # body behind a Save button has made a request error, not found a server
+    # bug. `String(::Vector{UInt8})` can consume the buffer, so copy it: routes
+    # that parse and then hash or log `req.body` still see the original bytes.
+    function _request_json(req::HTTP.Request)
+        try
+            JSON3.read(String(copy(req.body)))
+        catch e
+            e isa InterruptException && rethrow()
+            throw(BadRequest("Request body is not valid JSON"))
+        end
+    end
+
+    # Oxygen's serializer catches whatever a handler throws and answers 500
+    # before the middleware chain sees it, so `_bad_request_middleware` cannot
+    # rescue a `BadRequest` raised inside a route. Its error mapper is the hook
+    # that does run inside the serializer: the same dispatch that answers
+    # Oxygen's own `ValidationError` with a 400. Extending it keeps our JSON
+    # error shape instead of Oxygen's plain `{"message": ...}`.
+    Oxygen.Core.Util.handle_error(err::BadRequest) = json_error(400, "bad_request", err.message)
 
     # Oxygen URL-decodes path parameters, so an encoded '/' would reach a handler
     # as a real separator. No study, run, table, column or file name needs one.

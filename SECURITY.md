@@ -40,4 +40,5 @@ PRs still require review and passing tests.
 
 A green workflow is not a claim that all security findings are resolved.
 Missing tools, inaccessible GitHub alert APIs, absent fleet report-backs and
-an empty K9 corpus must remain visible as missing or inapplicable evidence.
+unverified K9 L3 signatures must remain visible as missing or inapplicable
+evidence.

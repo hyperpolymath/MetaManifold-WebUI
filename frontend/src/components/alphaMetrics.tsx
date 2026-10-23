@@ -85,8 +85,16 @@ export function filterAlphaFigure(
   const raw = figure as PlotlyFigure
   if (!raw.data || !raw.layout) return figure
 
-  // Deep clone to strip Plotly-internal state from any prior render
-  const fig = JSON.parse(JSON.stringify(raw)) as PlotlyFigure
+  // Deep clone to strip Plotly-internal state from any prior render; fall back
+  // to the original figure if JSON cloning fails rather than crashing render.
+  let fig: PlotlyFigure
+  try {
+    const encoded = JSON.stringify(raw)
+    if (encoded === undefined) return figure
+    fig = JSON.parse(encoded) as PlotlyFigure
+  } catch {
+    return figure
+  }
 
   // Determine which panels to keep (in original order)
   const kept = ALPHA_METRICS.filter(m => selected.has(m))
