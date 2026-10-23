@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { AnalysisChart } from './AnalysisChart'
+import { ConstrainedOrdinationPanel } from './ConstrainedOrdinationPanel'
 import { useAlphaMetricSelection, AlphaMetricToggles, ALPHA_METRICS, extractAlphaPanel } from './alphaMetrics'
 import { useToast } from './Toast'
 import { errorMessage } from '../api/errorMessage'
@@ -169,6 +170,16 @@ export function DiversityPanel({ study, runs, option, aggregate }: {
             </>
           )}
         </div>
+      )}
+
+      {option && (
+        <ConstrainedOrdinationPanel
+          study={study}
+          runs={runs}
+          table={option.table}
+          aggregate={aggregate}
+          rAvailable={rAvailable}
+        />
       )}
     </div>
   )

@@ -60,6 +60,7 @@ const UNIT_FILES = [
     "test_evidence.jl",
     "test_evidence_routes.jl",
     "test_permanova.jl",
+    "test_ordination.jl",
     "test_write_gates.jl",
     "test_server_security.jl",
     "test_canonical.jl",

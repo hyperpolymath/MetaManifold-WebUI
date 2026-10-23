@@ -52,6 +52,7 @@ include("analysis/numeric_policy.jl")
 include("analysis/exact_summaries.jl")
 include("analysis/high_precision.jl")
 include("analysis/derived_analyses.jl")
+include("analysis/ordination.jl")
 
 # Web server
 include("server/server.jl")

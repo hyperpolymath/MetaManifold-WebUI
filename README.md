@@ -81,6 +81,7 @@ Once a run completes, analysis is performed on request through the web UI, both 
 - Pipeline stage read-count summaries
 - NMDS ordination (Bray-Curtis, via R/vegan)
 - PERMANOVA, with PERMDISP to check for differences in dispersion (via R/vegan)
+- Constrained ordinations — RDA, CCA, CAP, and dbRDA — with `Condition(...)` partial ordination, seeded `vegan::anova.cca` permutation tests, adjusted-$R^2$ variance partitioning (`vegan::varpart`), and biplot scalings 1 & 2 (see [Constrained ordinations](docs/statistics/constrained-ordinations.md))
 - De novo ASV phylogenies with cumulative clade abundances, Faith's phylogenetic diversity, and weighted/unweighted UniFrac (CladeCumulus)
 
 Counts may be normalised before analysis (none, rarefaction to a fixed or auto-resolved depth, or scaling with ranked subsampling (SRS), which reaches the depth by scaling counts and keeps more of the community structure), and contamination-flagged taxa may be included or excluded. Ordinations can also apply a Hellinger transform before the Bray-Curtis dissimilarity. Composition charts can be drawn as a grid faceted on any two of run, group and sub-group. All analysis charts are returned as Plotly JSON and rendered interactively in the browser.
@@ -1029,7 +1030,7 @@ The server exposes a REST API under `/api/v1/`. Key endpoint groups:
 | Results        | `GET/POST/DELETE .../results/tables/...`                                                                      | List, query, filter, save, export (`.xlsx`), and delete tables; OTU member drill-down    |
 | QC             | `GET .../results/qc`, `GET .../results/dada2`                                                                 | MultiQC report metadata and DADA2 figures, logs, stats                                   |
 | Analysis       | `POST .../runs/{run}/analysis/{alpha,chart}`, `GET .../runs/{run}/analysis/{pipeline-stats,ranks}`            | Per-run charts and rank discovery                                                        |
-| Cross-run      | `POST /studies/{study}/analysis/{alpha,chart,chart-facet,nmds,permanova,venn,publication-tables}`             | Comparison, faceted charts, NMDS, PERMANOVA, taxon overlap and publication tables across runs |
+| Cross-run      | `POST /studies/{study}/analysis/{alpha,chart,chart-facet,nmds,permanova,ordination,venn,publication-tables}`  | Comparison, faceted charts, NMDS, PERMANOVA, constrained ordinations (RDA/CCA/CAP/dbRDA), taxon overlap and publication tables across runs |
 | Composition    | `POST .../runs/{run}/composition/summary`, `POST .../composition/{source}/query`, `POST .../composition/{source}/distinct/{column}` | Organism-composition summaries and tables for a run                             |
 | Composition library | `GET /composition`, `POST/DELETE /composition/{filters,sets}/{name}`, `GET /category-sets`, `POST/DELETE /category-sets/{name}` | Edit the filters and category sets in `config/composition.yml`               |
 | Evidence | `GET .../runs/{run}/evidence`, `GET .../evidence/claims.yml`, `POST .../evidence/claims`, `DELETE .../evidence/claims/{id}`, `POST .../evidence/{fiber,residuals}` | Claims, fibres, echoes and residuals for a run; the record is exportable as YAML |

@@ -65,6 +65,12 @@ K9!
         rationale = "Independent arbitrary-precision reference constants must match the Julia test suite.",
       },
       {
+        id = "constrained-ordination-reference-oracle",
+        target = "test/references/check_ordination_references.py",
+        check_command = "python3 test/references/check_ordination_references.py --check test/fixtures/ordination_reference.json",
+        rationale = "Independent Python reference constants for RDA eigenvalues, Ezekiel adjusted-R2, two-way variance partitioning, and canonical JCS schema/fixtures must match within 1e-6.",
+      },
+      {
         id = "upstream-license-untouched",
         target = "LICENSE",
         check_command = "test -s LICENSE && test -s CITATION.cff",
@@ -76,6 +82,6 @@ K9!
   validation = {
     has_upstream_license = config.upstream_license == "AGPL-3.0-only",
     has_fork_license = config.fork_addition_license == "MPL-2.0",
-    invariant_count_positive = std.array.length config.invariants >= 5,
+    invariant_count_positive = std.array.length config.invariants >= 6,
   },
 }
