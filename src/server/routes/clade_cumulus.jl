@@ -215,7 +215,7 @@ end
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))
@@ -450,7 +450,7 @@ end
     (isempty(source_id) || isempty(target_id)) &&
         return json_error(400, "missing_clade_ids", "Both sourceId and targetId are required")
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))

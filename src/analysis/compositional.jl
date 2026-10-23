@@ -40,10 +40,10 @@
 #
 # The special functions are implemented here rather than pulled from
 # SpecialFunctions, so the models add no dependency: `_loggamma` and `_digamma`
-# are the Stirling series after the recurrence is applied up to x >= 10, and
-# `compositional_erfc` is the regularised incomplete gamma function at a = 1/2.
-# All three are accurate to about 1e-14 (checked against Julia's `lgamma` and
-# known constants in the unit tests).
+# are the Stirling series after the recurrence is applied up to x >= 10,
+# accurate to about 1e-14 (checked against Julia's `lgamma` and known constants
+# in the unit tests), and `_erfc` is the regularised incomplete gamma the Wald
+# p-value needs.
 module CompositionalModels
 
 export CompositionalFit, CompositionalRefusal, RuntimeRefusal, MAX_TAXA,
@@ -51,7 +51,7 @@ export CompositionalFit, CompositionalRefusal, RuntimeRefusal, MAX_TAXA,
        CONCENTRATION_MAX, DM_METHODS, fit_multinomial, fit_dirichlet_multinomial,
        multinomial_loglik, dirichlet_multinomial_loglik, dm_concentration_mle,
        dm_concentration_mom, observed_information, composition_probabilities,
-       compositional_loggamma, compositional_digamma, compositional_erfc
+       compositional_loggamma, compositional_digamma
 
 # At most this many taxa are fitted. The observed information is
 # ((K-1) q) x ((K-1) q) doubles: 500 taxa with two covariates is about 8 MB,
@@ -194,68 +194,55 @@ function compositional_digamma(x::Real)
         inv2 * (1 / 252 - inv2 * (1 / 240 - inv2 / 132)))) - shift
 end
 
-# erfc through the regularised incomplete gamma function, which needs only
-# `exp` and `log`: erfc(x) = Q(1/2, x^2) for x >= 0. The series for P and the
-# continued fraction for Q each converge quickly on the side where the other
-# one does not, and they cross over at x^2 = 1.5. Measured against the C
-# library's erfc, the relative error is below 1e-14 wherever erfc(x) >= 1e-50
-# (|z| <= 15 as a two-sided normal deviate), which is the same order as
-# `compositional_loggamma` and `compositional_digamma` above.
-const _ERFC_LOG_SQRT_PI = 0.57236494292470008707  # log Gamma(1/2)
-const _ERFC_EPS         = 3e-16
-const _ERFC_FPMIN       = 1e-300
-const _ERFC_MAX_ITER    = 1000
+# The Wald test reports the two-sided normal tail, `erfc(|z| / sqrt(2))`. The
+# complementary error function is the regularised upper incomplete gamma
+# Q(1/2, t^2), so the power series of P(1/2, x) evaluates it below the switch
+# and the continued fraction of Q(1/2, x) above it (modified Lentz). Each branch
+# ends within a few dozen terms at the switch and fewer away from it, and the
+# result is accurate to about 1e-14 relative over the range the Wald statistic
+# reaches (verified against independent reference values in the unit tests).
+const _LOG_SQRT_PI = 0.5723649429247000870717136756765293558
 
-# P(1/2, t) by its power series: sum t^n / ((1/2)(3/2)...(1/2 + n)).
-function _lower_gamma_half(t::Float64)
-    ap = 0.5
-    term = 2.0          # 1 / (1/2)
-    total = term
-    for _ in 1:_ERFC_MAX_ITER
-        ap += 1.0
-        term *= t / ap
-        total += term
-        abs(term) < abs(total) * _ERFC_EPS && break
+function _erfc(t::Float64)::Float64
+    t < 0.0 && return 2.0 - _erfc(-t)
+    iszero(t) && return 1.0
+    x = t * t
+    # exp(-x) * x^(1/2) / Gamma(1/2); x can underflow to zero for tiny t, and
+    # then exp(-Inf) is zero and the answer is 1 to double precision anyway.
+    log_prefactor = -x + 0.5 * log(x) - _LOG_SQRT_PI
+    if x < 1.5
+        # P(1/2, x) as a power series, then erfc = 1 - P. Below the switch the
+        # subtraction is safe: P <= 0.92 and erfc >= 0.08.
+        ap = 0.5
+        term = 1.0 / ap
+        acc = term
+        for _ in 1:200
+            ap += 1.0
+            term *= x / ap
+            acc += term
+            abs(term) <= abs(acc) * 1e-16 && break
+        end
+        return 1.0 - acc * exp(log_prefactor)
     end
-    total * exp(-t + 0.5 * log(t) - _ERFC_LOG_SQRT_PI)
-end
-
-# Q(1/2, t) by the Legendre continued fraction, evaluated with Lentz's method.
-function _upper_gamma_half(t::Float64)
-    a = 0.5
-    b = t + 1.0 - a
-    c = 1.0 / _ERFC_FPMIN
+    # Q(1/2, x) by its continued fraction.
+    tiny = 1e-300
+    b = x + 0.5
+    c = 1.0 / tiny
     d = 1.0 / b
     h = d
-    for i in 1:_ERFC_MAX_ITER
-        an = -i * (i - a)
+    for i in 1:200
+        an = -float(i) * (float(i) - 0.5)
         b += 2.0
         d = an * d + b
-        abs(d) < _ERFC_FPMIN && (d = _ERFC_FPMIN)
+        abs(d) < tiny && (d = tiny)
         c = b + an / c
-        abs(c) < _ERFC_FPMIN && (c = _ERFC_FPMIN)
+        abs(c) < tiny && (c = tiny)
         d = 1.0 / d
         delta = d * c
         h *= delta
-        abs(delta - 1.0) <= _ERFC_EPS && break
+        abs(delta - 1.0) <= 1e-16 && break
     end
-    h * exp(-t + 0.5 * log(t) - _ERFC_LOG_SQRT_PI)
-end
-
-"""
-    compositional_erfc(x) -> Float64
-
-The complementary error function. `compositional_erfc(abs(z) / sqrt(2))` is the
-two-sided p-value of a standard normal deviate `z`, which is the only thing this
-module asks of it. Throws `ArgumentError` for a non-finite argument.
-"""
-function compositional_erfc(x::Real)
-    xf = Float64(x)
-    isfinite(xf) || throw(ArgumentError("erfc needs a finite argument, not $x"))
-    xf < 0.0 && return 2.0 - compositional_erfc(-xf)
-    xf == 0.0 && return 1.0
-    t = xf * xf
-    t < 1.5 ? 1.0 - _lower_gamma_half(t) : _upper_gamma_half(t)
+    exp(log_prefactor) * h
 end
 
 ## Geometry
@@ -925,7 +912,7 @@ function _wald(coefficients::Matrix{Float64}, variances::Vector{Float64})
         se[l, k] = s
         if s > 0.0 && isfinite(s)
             z[l, k] = coefficients[l, k] / s
-            p[l, k] = compositional_erfc(abs(z[l, k]) / sqrt(2.0))
+            p[l, k] = _erfc(abs(z[l, k]) / sqrt(2.0))
         else
             z[l, k] = NaN
             p[l, k] = NaN

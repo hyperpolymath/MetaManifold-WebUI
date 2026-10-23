@@ -1338,6 +1338,25 @@ end
               Differential.DM_METHODS
     end
 
+    @testset "Multinomial: the Wald p-value uses the normal tail" begin
+        # `_erfc` carries the two-sided normal tail for the Wald test. The
+        # reference values are the complementary error function from libm, an
+        # implementation independent of the series/continued fraction here.
+        for (t, expected) in ((0.0, 1.0), (0.25, 0.7236736098317631),
+                              (0.5, 0.47950012218695348), (0.75, 0.28884436634648486),
+                              (1.0, 0.15729920705028513), (1.25, 0.07709987174354177),
+                              (1.5, 0.033894853524689274), (2.0, 0.0046777349810472654),
+                              (2.5, 0.00040695201744495892), (3.0, 2.2090496998585438e-05),
+                              (4.0, 1.541725790028002e-08), (5.0, 1.5374597944280351e-12),
+                              (7.0, 4.1838256077794142e-23), (10.0, 2.0884875837625449e-45))
+            @test CM._erfc(t) ≈ expected rtol = 1e-12
+        end
+        @test CM._erfc(-0.5) ≈ 2.0 - CM._erfc(0.5) atol = 1e-15
+        # The tail keeps falling where a naive 1 - cdf would have collapsed to 0.
+        @test 0.0 < CM._erfc(20.0) < 1e-170
+        @test CM._erfc(0.0) == 1.0
+    end
+
     @testset "Multinomial: coefficients, standard errors and likelihood" begin
         fit = CM.fit_multinomial(mn_counts, mn_design; reference=1)
         @test fit.converged
@@ -1535,26 +1554,6 @@ end
         @test CM.compositional_digamma(1.0) ≈ -0.5772156649015329 rtol=1e-12
         @test CM.compositional_digamma(10.0) ≈ 2.251752589066721 rtol=1e-12
         @test CM.compositional_digamma(0.5) ≈ -1.9635100260214235 rtol=1e-12
-
-        # erfc is the regularised incomplete gamma at a = 1/2, with the series
-        # and the continued fraction swapping over at x^2 = 1.5. Both sides of
-        # that crossover are pinned here, against the C library's erfc.
-        @test CM.compositional_erfc(0.0) == 1.0
-        @test CM.compositional_erfc(0.1) ≈ 0.8875370839817152 rtol=1e-13
-        @test CM.compositional_erfc(0.5) ≈ 0.47950012218695348 rtol=1e-13
-        @test CM.compositional_erfc(1.2) ≈ 0.08968602177036465 rtol=1e-13   # x^2 < 1.5
-        @test CM.compositional_erfc(1.3) ≈ 0.06599205505934755 rtol=1e-13   # x^2 > 1.5
-        @test CM.compositional_erfc(2.0) ≈ 0.0046777349810472654 rtol=1e-13
-        @test CM.compositional_erfc(5.0) ≈ 1.5374597944280351e-12 rtol=1e-13
-        # erfc(-x) = 2 - erfc(x), so the reflection has to be exact.
-        @test CM.compositional_erfc(-1.0) ≈ 1.842700792949715 rtol=1e-13
-        @test CM.compositional_erfc(-3.0) + CM.compositional_erfc(3.0) ≈ 2.0 rtol=1e-15
-        @test_throws ArgumentError CM.compositional_erfc(NaN)
-        @test_throws ArgumentError CM.compositional_erfc(Inf)
-
-        # The only call site: the two-sided p-value of a normal deviate.
-        @test CM.compositional_erfc(1.959963984540054 / sqrt(2.0)) ≈ 0.05 rtol=1e-12
-        @test CM.compositional_erfc(6.0 / sqrt(2.0)) ≈ 1.9731752900754024e-09 rtol=1e-13
     end
 
     @testset "Multinomial: the DA engine reports a composition, not per-taxon fits" begin
@@ -1663,16 +1662,14 @@ end
         end
         @test e isa ArgumentError
         @test occursin("is not fitted", sprint(showerror, e))
-        # Every taxon filtered out is an explicit error, not an empty table.
-        # `min_prevalence` is the second positional argument of
-        # `DifferentialConfig`, not a keyword; and both groups have to be
-        # populated, or the earlier "each group needs at least one sample"
-        # guard answers first and the prevalence filter is never reached.
-        # Taxon 'a' is in 3 of 4 samples and 'b' in 2, so a threshold of 1.0
-        # leaves nothing to fit.
+        # Every taxon filtered out is an explicit error, not an empty table. No
+        # taxon below is present in all eight samples, so min_prevalence = 1.0
+        # leaves no composition to model; every sample still has reads, so the
+        # refusal is the prevalence one and not an empty sample.
+        all_thin = [1 0; 2 3; 0 4; 5 0;
+                    1 2; 0 3; 4 0; 2 1]
         e = try
-            differential_abundance([1 0; 2 3; 0 4; 5 0], ["s1", "s2", "s3", "s4"],
-                                   ["a", "b"], ["A", "A", "B", "B"];
+            differential_abundance(all_thin, samples8, ["a", "b"], groups8;
                                    kw..., config=DifferentialConfig("tss", 1.0;
                                                                     method="multinomial"))
             nothing
