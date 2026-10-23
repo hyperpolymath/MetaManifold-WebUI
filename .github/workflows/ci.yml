@@ -191,6 +191,15 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
+      # The required "SonarCloud Code Analysis" check is the GitHub App's
+      # automatic analysis -- nothing in this repository configures or runs it,
+      # so its rules cannot be read here and its failure arrives only after the
+      # push. This script reproduces the two of those rules that have actually
+      # failed the gate, needs no toolchain, and runs in about 0.1s: first,
+      # before anything is installed, so the message beats the wait.
+      - name: Check the Sonar reliability rules the gate enforces
+        run: bash scripts/lint-sonar-reliability.sh
+
       - name: Set up Julia
         run: bash scripts/install-ci-julia.sh
 

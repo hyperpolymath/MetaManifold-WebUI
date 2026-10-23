@@ -5,17 +5,18 @@ import {
   buildDisplay, foldOps, indexTree, matchOps, midpointOp, parseJplace, parseNewick,
   pointOnBranch, stateOps, toNewick, type SourceTree, type TreeOp, type ViewState,
 } from './model'
+import { byCodeUnit } from '../utils/text'
 
 const splitSet = (src: SourceTree) => new Set(indexTree(src).splitEdge.keys())
 const byName = (src: SourceTree, name: string) => src.nodes.findIndex(n => n.name === name)
 const stateJson = (st: ViewState) => JSON.stringify({
   root: st.root,
-  collapsed: [...st.collapsed].sort(),
-  rotated: [...st.rotated].sort(),
-  names: [...st.names].sort(),
-  nameSides: [...st.nameSides].sort(),
-  styles: [...st.styles].sort(),
-  support: [...st.support].sort(),
+  collapsed: [...st.collapsed].sort(byCodeUnit),
+  rotated: [...st.rotated].sort(byCodeUnit),
+  names: [...st.names].sort(byCodeUnit),
+  nameSides: [...st.nameSides].sort(byCodeUnit),
+  styles: [...st.styles].sort(byCodeUnit),
+  support: [...st.support].sort(byCodeUnit),
 })
 
 describe('parseNewick', () => {
