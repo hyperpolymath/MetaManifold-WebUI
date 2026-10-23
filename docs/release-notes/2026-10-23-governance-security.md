@@ -147,3 +147,43 @@ It is historical evidence, not a freshly executed scan of this change.
   reconciliation after the next default-branch scan.
 - **CodeRabbit:** review capacity and Autofix billing notices require an account
   decision; this change neither purchases credits nor activates billing.
+
+
+## PR #228 supersession and R source boundaries
+
+The linked CodeRabbit Autofix response is a billing notice, not a code finding;
+no credits or paid usage have been enabled. The recorded conflict-resolution
+commit `77376ef18b06e01dd2537060064e78e090ceb68e` in #244 has the same tree as
+main `d69d4f9910a143911499c596e0648932c834c42e`
+(`8f91c388d973c6c4548c1d70d0d7af2e37c622c8`), independently verified with
+`git diff --exit-code`. Re-merging #228 would not add its intended fixes. Keep
+main's streamed bounded integer-count loading, strict I-JSON validation and
+unplaced-read mass semantics rather than restoring the stale versions.
+
+The remaining leaf-PD inconsistency is real, but its implementations and
+regressions are already in the **unmerged** #242 and #244. They are not in main
+and are not duplicated here. Main's CI run `39982506136` passed. Replacement
+#242's integration run `39986326202` subsequently passed all six jobs, including
+Julia, Agda and both occupancy checks; its other reported checks were also green
+at head `ed24c9c1708734fbc483f78f2bcca22ddb8a3074`. #244's Julia job was still
+running at review time. Neither replacement has been merged.
+
+CodeRabbit correctly warned that using R rather than Julia does not by itself
+make `RCall.reval` safe. Reviewing those call sites found two source boundaries
+that now receive explicit validation:
+
+- PERMANOVA concatenates metadata column names into a formula. Binding the
+  resulting string through RCall does not stop `as.formula`/model-frame
+  evaluation from interpreting expressions. Formula terms are now restricted
+  to plain ASCII R identifiers; expressions, reserved words, special dot terms
+  and control characters throw `ArgumentError` before formula construction.
+  Non-identifier metadata columns must be renamed before this analysis.
+- Provenance package-version queries interpolate a package name into an R
+  string literal. Only the R package-name alphabet is accepted before building
+  that query; quotes, escapes, path separators and controls are rejected.
+
+Pure-helper regressions do not require an R/vegan runtime, and a reference-suite
+case checks the PERMANOVA entry point when R/vegan is available. The new Julia
+regressions require hosted CI: Julia and R are not installed in the local
+sandbox. These targeted fixes are not a blanket dismissal of the remaining
+advisory findings or a complete R-call-site security audit.
