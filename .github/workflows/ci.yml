@@ -178,6 +178,9 @@ jobs:
     # for 24.04, and a runner that silently rolled to the next LTS would take that pin
     # with it. `runs-on` cannot read `env`, so this is a literal.
     runs-on: ubuntu-24.04
+    # Bound a hung toolchain install or test run. The full R/Julia suite normally
+    # completes well inside this budget; the GitHub default is six hours.
+    timeout-minutes: 60
     # The repository's root .Rprofile sources renv/activate.R, so R started from
     # the checkout auto-activates renv and rewrites the library paths. renv is a
     # local-development convenience; CI installs into the system library and
@@ -417,10 +420,12 @@ jobs:
             # failure but the last one. Publish a digest of all failing
             # assertions first - the testset, the expression and the evaluated
             # values are what identify the bug - then the end of the log.
+            # `set +e` above is deliberate: diagnostic helpers may find no
+            # matches, and only the captured test status controls this step.
             grep -E "Test Failed at |Error During Test at |^  Expression: |^   Evaluated: |^  Test threw exception" \
-              /tmp/validated-statistics-tests.log > /tmp/validated-statistics-failures.log || true
+              /tmp/validated-statistics-tests.log > /tmp/validated-statistics-failures.log
             rm -f /tmp/validated-statistics-digest-*
-            split -b 2500 /tmp/validated-statistics-failures.log /tmp/validated-statistics-digest- || true
+            split -b 2500 /tmp/validated-statistics-failures.log /tmp/validated-statistics-digest-
             index=0
             for chunk in /tmp/validated-statistics-digest-*; do
               [ -e "$chunk" ] || continue

@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: MPL-2.0
+# Repository-specific secret-scanning rules. The reusable stages the pinned
+# estate baseline at this path; no path- or commit-wide exceptions are made.
+
+[extend]
+path = ".gitleaks-estate.toml"
+
+[allowlist]
+description = "Exact public schema and UI callback identifiers misread as generic keys"
+regexes = [
+  '''^Associated_material$''',
+  '''^Associated_organism$''',
+  '''^allowPreviousMonth$''',
+  '''^associated_organism$''',
+  '''^canAddSubplot$''',
+  '''^focusPreviousDay$''',
+  '''^getInitialMonthFromProps$''',
+  '''^getPreviousNavigableMonth$''',
+  '''^handleDayClick$''',
+  '''^handleMouseEnter$''',
+]
+
+# Backport the upstream v8.30.1 AWS rule for the CI-pinned v8.18.4 engine.
+# The older rule accepts arbitrary A-Z0-9 suffixes with no entropy threshold,
+# which turns ordinary A/C/G/T sequences into AWS access-token findings. The
+# upstream boundaries, suffix alphabet, and entropy requirement retain real
+# credential detection without excluding biological data by path or commit.
+[[rules]]
+id = "aws-access-token"
+description = "Identified a pattern that may indicate AWS credentials, risking unauthorized cloud resource access and data breaches on AWS platforms."
+regex = '''\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b'''
+entropy = 3
+keywords = ["a3t", "akia", "asia", "abia", "acca"]
+
+# Likewise, upstream now requires a realistic Facebook token length and
+# entropy. Short printable FASTQ quality strings otherwise match the legacy
+# twenty-character minimum even though they are sequencing data.
+[[rules]]
+id = "facebook-page-access-token"
+description = "Discovered a Facebook Page Access Token, posing a risk of unauthorized access to Facebook accounts and personal data exposure."
+regex = '''\b(EAA[MC](?i)[a-z0-9]{100,})(?:[\x60'"\s;]|\\[nr]|$)'''
+entropy = 4
+keywords = ["eaam", "eaac"]

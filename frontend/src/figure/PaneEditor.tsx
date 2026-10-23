@@ -42,8 +42,7 @@ export function PaneEditor({ study, runs, source, pane, onChange }: {
   const selected = useMemo(() => {
     const keys = new Set((chart?.runs ?? []).map(specKey))
     return runs.filter(r => keys.has(specKey(r)))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runs, chart?.runs.map(specKey).join(',')])
+  }, [runs, chart?.runs])
   const tables = useSharedResultsTables(study, selected)
 
   const [ranks, setRanks] = useState<string[]>([])
