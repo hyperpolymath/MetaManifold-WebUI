@@ -32,8 +32,10 @@ def _children(pid):
     for task in tasks:
         try:
             result.update(int(value) for value in (task / "children").read_text().split())
-        except FileNotFoundError:
-            pass  # The process/thread exited during enumeration.
+        except FileNotFoundError as error:
+            if pid == os.getpid() and task.name == str(pid):
+                raise SupervisionError("procfs children interface unavailable") from error
+            # A different process/thread exited during enumeration.
     return result
 
 

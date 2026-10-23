@@ -88,9 +88,11 @@ time.sleep(30)
                 os.kill(pid, 0)
 
     def test_missing_procfs_fails_closed(self):
-        with patch("descendants.Path.iterdir", side_effect=FileNotFoundError):
-            with self.assertRaises(ToolError):
-                run("ijson-canon")
+        for method in ("iterdir", "read_text"):
+            with self.subTest(method=method):
+                with patch(f"descendants.Path.{method}", side_effect=FileNotFoundError):
+                    with self.assertRaises(ToolError):
+                        run("ijson-canon")
 
     def test_existing_child_context_is_refused_before_launch(self):
         with patch("descendants._children", return_value={12345}):
