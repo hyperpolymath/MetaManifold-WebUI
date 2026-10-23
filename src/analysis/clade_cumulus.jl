@@ -14,9 +14,11 @@ using SHA
 import ..Epistemic
 import ..Phylogeny
 
-export PhyloNode, QueryCandidate, QueryPlacement, JplaceDocument,
+export PhyloNode, IndexedPhyloNode, PhylogeneticTree,
+       QueryCandidate, QueryPlacement, JplaceDocument,
        CladeNode, CladeTreeResult,
-       parse_newick, midpoint_root, parse_jplace,
+       parse_newick, parse_phylogenetic_tree, midpoint_root, parse_jplace,
+       asv_tip_name, clade_counts, unifrac, analyse_phylogeny,
        faith_pd, faith_pd_table, clade_faith_pd,
        unweighted_unifrac, weighted_unifrac, unifrac_matrix,
        branch_unifrac_contributions,
@@ -43,6 +45,361 @@ mutable struct PhyloNode
     support       :: Union{Float64,Nothing}
     edge_number   :: Union{Int,Nothing}
     children      :: Vector{PhyloNode}
+end
+
+## Study-tree (indexed) structures used by the cladistics build API.
+# These mirror the #200 CladeCumulus schema: a PhylogeneticTree carries a
+# `tips` dictionary so cladistics.jl can validate that tree tips exactly
+# match the saved ASV columns.
+mutable struct IndexedPhyloNode
+    name    :: String
+    length  :: Union{Float64,Nothing}
+    parent  :: Int                 # 0 only for the root
+    children :: Vector{Int}        # 1-based node ids; parents precede children
+end
+
+struct PhylogeneticTree
+    nodes :: Vector{IndexedPhyloNode}
+    root  :: Int
+    tips  :: Dict{String,Int}
+end
+
+"""Stable, tool-safe ASV tip name tied to sequence content, not to a row number."""
+function asv_tip_name(sequence::AbstractString)
+    normalised = uppercase(replace(strip(String(sequence)), r"[\s\-.]" => ""))
+    isempty(normalised) && throw(ArgumentError("an ASV sequence is empty"))
+    "ASV_" * bytes2hex(sha256(normalised))[1:20]
+end
+
+## Indexed Newick parser (returns a PhylogeneticTree with a tips index)
+
+mutable struct _IndexedParser
+    bytes :: Vector{UInt8}
+    pos   :: Int
+    nodes :: Vector{IndexedPhyloNode}
+    tips  :: Dict{String,Int}
+end
+
+@inline _ip_done(p::_IndexedParser) = p.pos > length(p.bytes)
+@inline _ip_peek(p::_IndexedParser) = _ip_done(p) ? 0x00 : p.bytes[p.pos]
+@inline _ip_is_space(b::UInt8) = b in (0x09, 0x0a, 0x0d, 0x20)
+@inline _ip_is_delim(b::UInt8) = _ip_is_space(b) || b in (
+    UInt8('('), UInt8(')'), UInt8(','), UInt8(':'), UInt8(';'),
+    UInt8('['), UInt8(']'))
+
+_ip_fail(p::_IndexedParser, message::AbstractString) =
+    throw(ArgumentError("Newick byte $(p.pos): $message"))
+
+function _ip_skip!(p::_IndexedParser)
+    while !_ip_done(p)
+        if _ip_is_space(_ip_peek(p))
+            p.pos += 1
+        elseif _ip_peek(p) == UInt8('[')
+            depth = 0
+            while !_ip_done(p)
+                b = _ip_peek(p)
+                p.pos += 1
+                b == UInt8('[') && (depth += 1)
+                if b == UInt8(']')
+                    depth -= 1
+                    depth == 0 && break
+                end
+            end
+            depth == 0 || _ip_fail(p, "unclosed comment")
+        else
+            break
+        end
+    end
+end
+
+function _ip_take!(p::_IndexedParser, expected::UInt8)
+    _ip_skip!(p)
+    _ip_peek(p) == expected || _ip_fail(p, "expected '$(Char(expected))'")
+    p.pos += 1
+end
+
+function _ip_label!(p::_IndexedParser)::String
+    _ip_skip!(p)
+    _ip_done(p) && return ""
+    quote_char = _ip_peek(p)
+    if quote_char in (UInt8('\''), UInt8('"'))
+        p.pos += 1
+        out = UInt8[]
+        while !_ip_done(p)
+            b = _ip_peek(p)
+            p.pos += 1
+            if b == quote_char
+                if !_ip_done(p) && _ip_peek(p) == quote_char
+                    push!(out, quote_char)
+                    p.pos += 1
+                else
+                    return String(out)
+                end
+            else
+                push!(out, b)
+            end
+        end
+        _ip_fail(p, "unclosed quoted label")
+    end
+    first = p.pos
+    while !_ip_done(p) && !_ip_is_delim(_ip_peek(p))
+        p.pos += 1
+    end
+    String(strip(String(p.bytes[first:p.pos - 1])))
+end
+
+function _ip_length!(p::_IndexedParser)::Float64
+    _ip_skip!(p)
+    first = p.pos
+    while !_ip_done(p) && !_ip_is_delim(_ip_peek(p))
+        p.pos += 1
+    end
+    first < p.pos || _ip_fail(p, "missing branch length after ':'")
+    token = String(p.bytes[first:p.pos - 1])
+    value = try parse(Float64, token) catch
+        _ip_fail(p, "invalid branch length '$token'")
+    end
+    (isfinite(value) && value >= 0) ||
+        _ip_fail(p, "branch lengths must be finite and non-negative")
+    value
+end
+
+function _ip_parse_node!(p::_IndexedParser, parent::Int)::Int
+    _ip_skip!(p)
+    _ip_done(p) && _ip_fail(p, "expected a node")
+    push!(p.nodes, IndexedPhyloNode("", nothing, parent, Int[]))
+    id = length(p.nodes)
+    leaf = _ip_peek(p) != UInt8('(')
+    if !leaf
+        _ip_take!(p, UInt8('('))
+        while true
+            child = _ip_parse_node!(p, id)
+            push!(p.nodes[id].children, child)
+            _ip_skip!(p)
+            if _ip_peek(p) == UInt8(',')
+                p.pos += 1
+                continue
+            end
+            _ip_peek(p) == UInt8(')') || _ip_fail(p, "expected ',' or ')'")
+            p.pos += 1
+            break
+        end
+        isempty(p.nodes[id].children) && _ip_fail(p, "an internal node needs children")
+    end
+
+    label = _ip_label!(p)
+    if leaf
+        isempty(label) && _ip_fail(p, "a tip needs a non-empty label")
+        haskey(p.tips, label) && _ip_fail(p, "duplicate tip '$label'")
+        p.tips[label] = id
+    end
+    p.nodes[id].name = label
+    _ip_skip!(p)
+    if _ip_peek(p) == UInt8(':')
+        p.pos += 1
+        p.nodes[id].length = _ip_length!(p)
+    end
+    id
+end
+
+"""
+    parse_phylogenetic_tree(text) -> PhylogeneticTree
+
+Parse one Newick tree into an indexed `PhylogeneticTree` with a `tips`
+index, including quoted/Unicode tip labels, bracket comments, internal
+support labels and non-binary nodes. Duplicate or empty tip labels and
+negative/non-finite branch lengths are rejected.
+"""
+function parse_phylogenetic_tree(text::AbstractString)::PhylogeneticTree
+    p = _IndexedParser(collect(codeunits(text)), 1, IndexedPhyloNode[], Dict{String,Int}())
+    root = _ip_parse_node!(p, 0)
+    _ip_take!(p, UInt8(';'))
+    _ip_skip!(p)
+    _ip_done(p) || _ip_fail(p, "unexpected content after ';'")
+    isempty(p.tips) && throw(ArgumentError("Newick tree has no tips"))
+    root == 1 || error("internal parser error: root is not the first node")
+    PhylogeneticTree(p.nodes, root, p.tips)
+end
+
+## Roll-ups and metrics for the indexed tree
+
+function _check_counts(tree::PhylogeneticTree, counts, tip_names)
+    ndims(counts) == 2 || throw(DimensionMismatch("counts must be a samples × ASVs matrix"))
+    size(counts, 2) == length(tip_names) || throw(DimensionMismatch(
+        "counts has $(size(counts, 2)) columns but $(length(tip_names)) tip names were supplied"))
+    length(unique(String.(tip_names))) == length(tip_names) ||
+        throw(ArgumentError("tip names must be unique"))
+    all(v -> isfinite(v) && v >= 0, counts) || throw(ArgumentError("counts must be finite and non-negative"))
+    for name in tip_names
+        haskey(tree.tips, String(name)) || throw(ArgumentError(
+            "count feature '$name' is not a tip in the tree; refusing to discard its reads"))
+    end
+    nothing
+end
+
+"""
+    clade_counts(tree, counts, tip_names) -> Matrix{Float64}
+
+Return a nodes × samples matrix. Each tip receives its ASV counts, then a
+single reverse-node-order pass adds every child's counts to its parent. Thus
+every node contains the cumulative abundance of its whole phylogenetic clade.
+"""
+function clade_counts(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+                      tip_names::AbstractVector{<:AbstractString})::Matrix{Float64}
+    _check_counts(tree, counts, tip_names)
+    samples = size(counts, 1)
+    cumulative = zeros(Float64, length(tree.nodes), samples)
+    for (j, name) in enumerate(tip_names), sample in 1:samples
+        cumulative[tree.tips[String(name)], sample] += Float64(counts[sample, j])
+    end
+    for id in length(tree.nodes):-1:1
+        parent = tree.nodes[id].parent
+        parent == 0 && continue
+        for sample in 1:samples
+            cumulative[parent, sample] += cumulative[id, sample]
+        end
+    end
+    cumulative
+end
+
+function _tree_lengths(tree::PhylogeneticTree)::Vector{Float64}
+    lengths = zeros(Float64, length(tree.nodes))
+    for id in eachindex(tree.nodes)
+        id == tree.root && continue
+        edge_len = tree.nodes[id].length
+        isnothing(edge_len) && throw(ArgumentError(
+            "Faith PD and UniFrac need a length on every non-root branch"))
+        lengths[id] = edge_len
+    end
+    lengths
+end
+
+"""
+    unifrac(tree, cumulative; weighted=false) -> Matrix{Float64}
+
+Pairwise UniFrac between sample columns of a nodes × samples roll-up.
+"""
+function unifrac(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real};
+                 weighted::Bool=false)::Matrix{Float64}
+    sizes = size(cumulative)
+    sizes[1] == length(tree.nodes) || throw(DimensionMismatch(
+        "cumulative matrix has the wrong node count"))
+    all(v -> isfinite(v) && v >= 0, cumulative) || throw(ArgumentError(
+        "cumulative counts must be finite and non-negative"))
+    lengths = _tree_lengths(tree)
+    samples = size(cumulative, 2)
+    totals = vec(cumulative[tree.root, :])
+    out = zeros(Float64, samples, samples)
+    for a in 1:samples, b in a+1:samples
+        numerator = 0.0
+        denominator = 0.0
+        for id in eachindex(tree.nodes)
+            id == tree.root && continue
+            av = Float64(cumulative[id, a])
+            bv = Float64(cumulative[id, b])
+            edge_len = lengths[id]
+            if weighted
+                ar = totals[a] > 0 ? av / totals[a] : 0.0
+                br = totals[b] > 0 ? bv / totals[b] : 0.0
+                numerator += edge_len * abs(ar - br)
+                denominator += edge_len * (ar + br)
+            else
+                ap = av > 0
+                bp = bv > 0
+                ap != bp && (numerator += edge_len)
+                (ap || bp) && (denominator += edge_len)
+            end
+        end
+        one_empty = (totals[a] > 0) != (totals[b] > 0)
+        distance = denominator > 0 ? numerator / denominator : (one_empty ? 1.0 : 0.0)
+        out[a, b] = out[b, a] = distance
+    end
+    out
+end
+
+"""
+    unifrac(tree, counts, tip_names; weighted=false) -> Matrix{Float64}
+
+UniFrac over the natural samples × ASVs count matrix. The counts are rolled up
+through `clade_counts` first, so callers do not have to construct the internal
+nodes × samples matrix; `faith_pd(tree, counts, tip_names)` is the matching
+raw-count entry point.
+"""
+function unifrac(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+                 tip_names::AbstractVector{<:AbstractString};
+                 weighted::Bool=false)::Matrix{Float64}
+    unifrac(tree, clade_counts(tree, counts, tip_names); weighted = weighted)
+end
+
+function _faith_pd_indexed(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real})::Vector{Float64}
+    sizes = size(cumulative)
+    sizes[1] == length(tree.nodes) || throw(DimensionMismatch(
+        "cumulative matrix has the wrong node count"))
+    # `> 0` would silently treat NaN and negative entries as absent and report a
+    # plausible but underestimated PD; reject them as `clade_counts` and
+    # `unifrac` do.
+    all(v -> isfinite(v) && v >= 0, cumulative) || throw(ArgumentError(
+        "cumulative counts must be finite and non-negative"))
+    lengths = _tree_lengths(tree)
+    samples = size(cumulative, 2)
+    out = zeros(Float64, samples)
+    for id in eachindex(tree.nodes)
+        id == tree.root && continue
+        for sample in 1:samples
+            cumulative[id, sample] > 0 && (out[sample] += lengths[id])
+        end
+    end
+    out
+end
+
+faith_pd(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real}) = _faith_pd_indexed(tree, cumulative)
+faith_pd(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+         tip_names::AbstractVector{<:AbstractString}) =
+    faith_pd(tree, clade_counts(tree, counts, tip_names))
+
+"""
+    analyse_phylogeny(tree, counts, tip_names, sample_names) -> NamedTuple
+
+Compute the complete JSON-ready CladeCumulus result: cumulative clade counts
+and frequencies, Faith PD, and both UniFrac matrices.
+"""
+function analyse_phylogeny(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+                           tip_names::AbstractVector{<:AbstractString},
+                           sample_names::AbstractVector{<:AbstractString})
+    size(counts, 1) == length(sample_names) || throw(DimensionMismatch(
+        "counts has $(size(counts, 1)) rows but $(length(sample_names)) sample names were supplied"))
+    length(unique(String.(sample_names))) == length(sample_names) ||
+        throw(ArgumentError("sample names must be unique"))
+    cumulative = clade_counts(tree, counts, tip_names)
+    samples = String.(sample_names)
+    totals = vec(cumulative[tree.root, :])
+    grand_total = sum(totals)
+
+    tip_counts = zeros(Int, length(tree.nodes))
+    for id in length(tree.nodes):-1:1
+        node = tree.nodes[id]
+        tip_counts[id] = isempty(node.children) ? 1 : sum(tip_counts[c] for c in node.children)
+    end
+    tip_ids = Set(values(tree.tips))
+    nodes = map(eachindex(tree.nodes)) do id
+        node = tree.nodes[id]
+        parent = node.parent == 0 ? nothing : "n$(node.parent)"
+        clade_reads = sum(cumulative[id, :])
+        (; id = "n$id", parent_id = parent,
+           label = isempty(node.name) ? (id in tip_ids ? "Tip $id" : "Clade $id") : node.name,
+           branch_length = id == tree.root ? nothing : node.length,
+           is_tip = id in tip_ids,
+           tip_count = tip_counts[id],
+           cumulative_count = clade_reads,
+           cumulative_frequency = grand_total > 0 ? clade_reads / grand_total : 0.0)
+    end
+
+    (; nodes, samples,
+       sample_reads = collect(totals),
+       faith_pd = _faith_pd_indexed(tree, cumulative),
+       unweighted_unifrac = unifrac(tree, cumulative),
+       weighted_unifrac = unifrac(tree, cumulative; weighted=true),
+       total_branch_length = sum(_tree_lengths(tree)))
 end
 
 struct QueryCandidate

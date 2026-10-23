@@ -23,6 +23,120 @@ _cc_req(method::String, path::String, body::String = "") =
     )
 
 @testset "CladeCumulus & Phylogenetic Integration" begin
+    @testset "Indexed study-tree API: parsing, clade roll-up, Faith PD, and UniFrac" begin
+        # `((A:1.0,B:2.0)0.9:3.0,C:4.0);` parses in pre-order:
+        # 1 = root, 2 = (A,B), 3 = A, 4 = B, 5 = C.
+        tree = CC.parse_phylogenetic_tree("((A:1.0,B:2.0)0.9:3.0,C:4.0);")
+        @test tree isa CC.PhylogeneticTree
+        @test tree.root == 1
+        @test length(tree.nodes) == 5
+        @test sort(collect(keys(tree.tips))) == ["A", "B", "C"]
+        @test tree.nodes[tree.tips["A"]].parent == 2
+        @test tree.nodes[tree.tips["A"]].length == 1.0
+        @test tree.nodes[tree.tips["C"]].length == 4.0
+        @test tree.nodes[2].name == "0.9"
+        @test tree.nodes[2].length == 3.0
+        @test tree.nodes[tree.root].length === nothing
+        @test all(i -> all(c -> tree.nodes[c].parent == i, tree.nodes[i].children),
+                  eachindex(tree.nodes))
+
+        # Labels and branch lengths come out of the byte buffer as real Strings:
+        # an ordinary unquoted label, a multi-byte label, a quoted label with a
+        # space, and a trailing bracket comment must all survive the round trip.
+        odd = CC.parse_phylogenetic_tree("('ASV one':0.5[note],Σ_tip:0.5)root:0.0;\n")
+        @test haskey(odd.tips, "ASV one")
+        @test haskey(odd.tips, "Σ_tip")
+        @test odd.nodes[odd.tips["Σ_tip"]].length == 0.5
+        @test odd.nodes[odd.root].name == "root"
+
+        iqtree = CC.parse_phylogenetic_tree("(A:0.1,(B:0.2,C:0.3)0.95:0.4);\n")
+        @test sort(collect(keys(iqtree.tips))) == ["A", "B", "C"]
+        @test iqtree.nodes[iqtree.root].length === nothing
+
+        @test_throws ArgumentError CC.parse_phylogenetic_tree("(A:1.0,A:1.0);")
+        @test_throws ArgumentError CC.parse_phylogenetic_tree("(A:1.0,B:1.0)")
+        @test_throws ArgumentError CC.parse_phylogenetic_tree("(A:-1.0,B:1.0);")
+        @test_throws ArgumentError CC.parse_phylogenetic_tree("(A:1.0,B:1.0);;")
+
+        # Content-addressed ASV tip names ignore case, whitespace and gaps.
+        @test CC.asv_tip_name("ACGT") == CC.asv_tip_name(" acg-t. ")
+        @test startswith(CC.asv_tip_name("ACGT"), "ASV_")
+        @test ncodeunits(CC.asv_tip_name("ACGT")) == 24
+        @test_throws ArgumentError CC.asv_tip_name(" --- ")
+
+        tips = ["A", "B", "C"]
+        samples = ["s1", "s2"]
+        counts = [1.0 0.0 1.0;
+                  0.0 2.0 0.0]
+        cumulative = CC.clade_counts(tree, counts, tips)
+        @test size(cumulative) == (5, 2)
+        @test cumulative[tree.tips["A"], :] == [1.0, 0.0]
+        @test cumulative[tree.tips["B"], :] == [0.0, 2.0]
+        @test cumulative[tree.tips["C"], :] == [1.0, 0.0]
+        @test cumulative[2, :] == [1.0, 2.0]
+        @test cumulative[tree.root, :] == [2.0, 2.0]
+        @test_throws ArgumentError CC.clade_counts(tree, counts, ["A", "A", "C"])
+        @test_throws ArgumentError CC.clade_counts(tree, counts, ["A", "B", "Z"])
+        @test_throws DimensionMismatch CC.clade_counts(tree, counts, ["A", "B"])
+
+        # edges: A 1.0, B 2.0, (A,B) 3.0, C 4.0 -> PD([s1]) = 8.0, PD([s2]) = 5.0
+        @test CC.faith_pd(tree, counts, tips) ≈ [8.0, 5.0]
+        @test CC.faith_pd(tree, cumulative) ≈ [8.0, 5.0]
+        negative = copy(cumulative)
+        negative[tree.tips["A"], 1] = -1.0
+        not_a_number = copy(cumulative)
+        not_a_number[tree.tips["B"], 2] = NaN
+        @test_throws ArgumentError CC.faith_pd(tree, negative)
+        @test_throws ArgumentError CC.faith_pd(tree, not_a_number)
+        @test_throws ArgumentError CC.unifrac(tree, negative)
+        @test_throws DimensionMismatch CC.faith_pd(tree, zeros(4, 2))
+
+        # UniFrac: branches active in exactly one sample are A (1.0) and C (4.0)
+        # for s1 and B (2.0) for s2, over the 10.0 union of all four edges;
+        # the abundance-weighted variant is 6.0 / 9.0.
+        unweighted = CC.unifrac(tree, counts, tips)
+        weighted = CC.unifrac(tree, counts, tips; weighted = true)
+        @test unweighted[1, 2] ≈ 0.7
+        @test unweighted[2, 1] ≈ 0.7
+        @test unweighted[1, 1] == 0.0
+        @test weighted[1, 2] ≈ 6.0 / 9.0
+        @test CC.unifrac(tree, cumulative) ≈ unweighted
+        @test CC.unifrac(tree, cumulative; weighted = true) ≈ weighted
+
+        result = CC.analyse_phylogeny(tree, counts, tips, samples)
+        @test result.samples == samples
+        @test result.sample_reads ≈ [2.0, 2.0]
+        @test length(result.nodes) == 5
+        @test result.nodes[1].id == "n1"
+        @test result.nodes[1].parent_id === nothing
+        @test result.nodes[1].branch_length === nothing
+        @test result.nodes[1].tip_count == 3
+        @test result.nodes[1].cumulative_count ≈ 4.0
+        @test result.nodes[1].cumulative_frequency ≈ 1.0
+        @test result.nodes[2].parent_id == "n1"
+        @test result.nodes[2].label == "0.9"
+        @test result.nodes[2].tip_count == 2
+        @test result.nodes[tree.tips["A"]].is_tip
+        @test !result.nodes[2].is_tip
+        @test result.faith_pd ≈ [8.0, 5.0]
+        @test result.unweighted_unifrac ≈ unweighted
+        @test result.weighted_unifrac ≈ weighted
+        @test result.total_branch_length ≈ 10.0
+        @test_throws DimensionMismatch CC.analyse_phylogeny(tree, counts, tips, ["only"])
+        @test_throws ArgumentError CC.analyse_phylogeny(tree, counts, tips, ["s1", "s1"])
+
+        # The route writes this straight to JSON, so the payload must serialise.
+        payload = Dict{String,Any}(string(k) => v for (k, v) in pairs(result))
+        for key in ("unweighted_unifrac", "weighted_unifrac")
+            payload[key] = [collect(row) for row in eachrow(payload[key])]
+        end
+        decoded = JSON3.read(JSON3.write(payload))
+        @test decoded.nodes[1].id == "n1"
+        @test decoded.nodes[1].parent_id === nothing
+        @test decoded.faith_pd[2] ≈ 5.0
+        @test decoded.unweighted_unifrac[1][2] ≈ 0.7
+    end
+
 
     @testset "Epistemic world admissibility, colours, cloud sizing, and receipts" begin
         empty_case = EP.Case("empty", EP.WorldCandidate[])
