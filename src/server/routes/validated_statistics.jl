@@ -180,8 +180,6 @@ function _validated_integer_sample_columns(con, table::String, columns::Vector{S
     samples
 end
 
-"""Read and aggregate an integer-safe run table. Only GROUP BY is done in SQL;
-all count addition is Julia BigInt. No SQL SUM and no Float64 matrix is used."""
 function _reject_float_count_filters(sample_columns::Vector{String}, params::Dict{String,String})
     for sample in sample_columns, prefix in ("col_min.", "col_max.")
         key = prefix * sample
@@ -192,6 +190,15 @@ function _reject_float_count_filters(sample_columns::Vector{String}, params::Dic
     nothing
 end
 
+"""Read and aggregate an integer-safe run table without SQL arithmetic.
+
+SQL only projects rows; every count is added in Julia `BigInt`. A `SUM` of
+`BIGINT`/`HUGEINT` columns is evaluated in `Int64`/`Int128` and can overflow
+before the exact total is known - two sample columns of `2^126` already sum to
+`2^127`, one past `typemax(Int128)` - so no `SUM` and no `Float64` matrix is
+used. Rows that share a feature label are therefore summed here, after SQL has
+ordered them by label.
+"""
 function _validated_duckdb_counts(con, table::String, columns::Vector{String};
                                   prefix=nothing, taxonomic_level=nothing,
                                   where_clause::String="", where_params=Any[])
@@ -218,30 +225,46 @@ function _validated_duckdb_counts(con, table::String, columns::Vector{String};
         "COALESCE(NULLIF(CAST($(_sql_identifier(taxon)) AS VARCHAR), ''), 'Unassigned')"
     end
     count_columns = join([_sql_identifier(c) for c in samples], ", ")
+    # Project the rows and let SQL sort them by feature; no addition happens
+    # here. `GROUP BY feature` alone is a DuckDB binder error, because the count
+    # columns are neither grouped nor aggregated, and `SUM` cannot take their
+    # place without overflowing. Sorting by label makes equal labels adjacent
+    # and leaves the accumulator independent of row order.
     sql = "SELECT $feature_expression AS feature, $count_columns FROM $(_sql_identifier(table)) " *
-          "$where_clause GROUP BY $feature_expression ORDER BY feature LIMIT $(MAX_CELLS + 1)"
+          "$where_clause ORDER BY feature LIMIT $(MAX_CELLS + 1)"
     frame = DataFrame(DBInterface.execute(con, sql, where_params))
-    nrow(frame) <= MAX_CELLS || throw(ResourceLimitError("features", MAX_CELLS, nrow(frame)))
     nrow(frame) > 0 || throw(ArgumentError("no rows remain after filtering"))
-    nrow(frame) * length(samples) <= MAX_CELLS || throw(ResourceLimitError(
-        "table cells", MAX_CELLS, nrow(frame) * length(samples)))
+    nrow(frame) <= MAX_CELLS || throw(ResourceLimitError("table rows", MAX_CELLS, nrow(frame)))
 
-    features = Vector{String}(undef, nrow(frame))
-    counts = Matrix{BigInt}(undef, nrow(frame), length(samples))
+    features = String[]
+    totals = Dict{String,Vector{BigInt}}()
     for (i, row) in enumerate(eachrow(frame))
         ismissing(row.feature) && throw(UnsupportedRepresentationError(
             "a non-missing feature label", "missing", "validated run statistics row $i"))
-        features[i] = string(row.feature)
+        label = string(row.feature)
+        sums = get(totals, label, nothing)
+        if isnothing(sums)
+            length(features) + 1 <= MAX_CELLS ÷ max(length(samples), 1) ||
+                throw(ResourceLimitError("table cells", MAX_CELLS,
+                                         (length(features) + 1) * length(samples)))
+            sums = zeros(BigInt, length(samples))
+            totals[label] = sums
+            push!(features, label)
+        end
         for (j, sample) in enumerate(samples)
             value = row[Symbol(sample)]
             ismissing(value) && throw(UnsupportedRepresentationError(
-                "a non-missing integer count", "NULL", "feature '$(features[i])', sample '$sample'"))
+                "a non-missing integer count", "NULL", "feature '$label', sample '$sample'"))
             (value isa Integer && !(value isa Bool)) || throw(UnsupportedRepresentationError(
-                "an integer count", repr(value), "feature '$(features[i])', sample '$sample'"))
+                "an integer count", repr(value), "feature '$label', sample '$sample'"))
             value >= 0 || throw(ArgumentError(
-                "negative count $value at feature '$(features[i])', sample '$sample'"))
-            counts[i, j] = BigInt(value) # every addition later is exact BigInt
+                "negative count $value at feature '$label', sample '$sample'"))
+            sums[j] += BigInt(value) # every addition is exact, so no overflow
         end
+    end
+    counts = Matrix{BigInt}(undef, length(features), length(samples))
+    for (i, label) in enumerate(features)
+        counts[i, :] = totals[label]
     end
     ExactSummaries.validate_coordinates(counts, samples, features)
     counts, samples, features
