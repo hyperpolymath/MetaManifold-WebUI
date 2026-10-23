@@ -168,7 +168,9 @@ end
     end
 
     @testset "Configuration" begin
-        @test Differential.METHODS == ("nb_glm", "clr_welch", "zinb", "hurdle_nb")
+        @test Differential.METHODS == ("nb_glm", "clr_welch", "zinb", "hurdle_nb",
+                                       "ancom_bc", "aldex2", "songbird",
+                                       "multinomial", "dirichlet_multinomial")
         @test DifferentialConfig().offset == "tss"
         @test DifferentialConfig().min_prevalence == 0.0
         @test DifferentialConfig("rle", 0.5).offset == "rle"
@@ -1232,7 +1234,8 @@ end
         # Both methods are selectable names, and the two are told apart from the
         # per-taxon models by one tuple.
         @test Differential.METHODS ==
-              ("nb_glm", "clr_welch", "multinomial", "dirichlet_multinomial")
+              ("nb_glm", "clr_welch", "zinb", "hurdle_nb", "ancom_bc", "aldex2",
+               "songbird", "multinomial", "dirichlet_multinomial")
         @test Differential.COMPOSITIONAL_METHODS == ("multinomial", "dirichlet_multinomial")
         c = DifferentialConfig(; method="multinomial")
         @test c.method == "multinomial"

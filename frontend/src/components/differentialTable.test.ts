@@ -99,7 +99,7 @@ describe('multinomial results', () => {
 
   test('the reference taxon is exported with an empty statistic set, never a substitute', () => {
     const lines = differentialCsv(mn).trimEnd().split('\r\n')
-    expect(lines[4].startsWith('Bacteroides,reference,0,0,,,,,,1,')).toBe(true)
+    expect(lines[4].startsWith('Bacteroides,reference,0,0,,,,,,,1,')).toBe(true)
     expect(effectValue(mn, mn.rows[1])).toBe(1.6)
   })
 })
@@ -163,7 +163,7 @@ describe('advanced compositional methods (ancom_bc, aldex2, songbird)', () => {
     expect(effectValue(ax, ax.rows[0])).toBe(1.85)
     expect(configLine(ax)).toBe('method aldex2, mc_samples 128, seed 123, min_prevalence 0.05; estimate is an ALDEx2 standardized CLR effect size, not a fold change')
     const csvRows = differentialCsv(ax).trimEnd().split('\r\n')
-    expect(csvRows[4]).toBe('Bacteroides,ok,,1.85,,5.545,2.9e-8,5.8e-8,,1,')
+    expect(csvRows[4]).toBe('Bacteroides,ok,,1.85,,5.545,2.9e-8,5.8e-8,,,1,')
   })
 
   test('songbird reports CLR-centred multinomial differential metadata', () => {
@@ -200,12 +200,12 @@ describe('calibration caveat', () => {
     const lines = differentialCsv(caveated).trimEnd().split('\r\n')
     expect(lines[2]).toBe(`# ${configLine(caveated)}`)
     expect(lines[3]).toBe('# Calibration caveat (strong): Wald p-values treat the per-taxon theta as known.')
-    expect(lines[4]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,prevalence,note')
+    expect(lines[4]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,zero_process_log_odds,prevalence,note')
     expect(lines).toHaveLength(7)
   })
 
   test('a result without a caveat keeps the three-line header', () => {
     const lines = differentialCsv(result).trimEnd().split('\r\n')
-    expect(lines[3]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,prevalence,note')
+    expect(lines[3]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,zero_process_log_odds,prevalence,note')
   })
 })

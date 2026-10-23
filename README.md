@@ -667,7 +667,7 @@ analysis:
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
   differential:
-    method: nb_glm               # nb_glm | clr_welch | ancom_bc | aldex2 | songbird
+    method: nb_glm               # nb_glm | clr_welch | zinb | hurdle_nb | ancom_bc | aldex2 | songbird | multinomial | dirichlet_multinomial
     dispersion: ml               # nb_glm: ml | glmGamPoi
     replacement_method: bayesian_multiplicative
                                  # clr_welch: bayesian_multiplicative | multiplicative_replacement

@@ -18,7 +18,7 @@ import { EvidenceModeToggle } from '../components/EvidenceModeToggle'
 import { CladeCumulusPanel } from '../components/CladeCumulusPanel'
 import { ReportPanel } from '../components/ReportPanel'
 import { useNavRefresh } from '../hooks/useNavRefresh'
-import { CladeCumulusPanel } from '../cladistics/CladeCumulusPanel'
+import { CladeCumulusPanel as CladisticsPanel } from '../cladistics/CladeCumulusPanel'
 
 type GroupedRun = Run & { group?: string | null }
 
@@ -300,7 +300,7 @@ export function StudyView() {
             source={analysisSource} />
         : <p className="empty-state">No run has a results table with {analysisSource} taxonomy yet.</p>)}
 
-      {view === 'cladistics' && <CladeCumulusPanel key={study} study={study!} runs={cladisticsRuns} />}
+      {view === 'cladistics' && <CladisticsPanel key={study} study={study!} runs={cladisticsRuns} />}
 
       {view === 'trees' && <>
         <EvidenceModeToggle enabled={evidenceMode} onChange={setEvidenceMode} />

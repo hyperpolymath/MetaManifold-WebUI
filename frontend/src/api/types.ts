@@ -423,7 +423,10 @@ export interface DifferentialRow {
   prevalence: number
 }
 
-export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+export type DifferentialMethod =
+  | 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+  | 'ancom_bc' | 'aldex2' | 'songbird'
+  | 'multinomial' | 'dirichlet_multinomial'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -457,6 +460,16 @@ export interface DifferentialResult {
     mc_samples?: number
     /** aldex2 only. */
     seed?: number
+    /** multinomial and dirichlet_multinomial: the taxon every ratio is against. */
+    mn_reference_taxon?: string
+    /** multinomial and dirichlet_multinomial: L2 penalty on the log-odds. */
+    mn_penalty?: number
+    /** dirichlet_multinomial only: how the concentration was estimated. */
+    dm_overdispersion_method?: 'mle' | 'mom'
+    /** multinomial and dirichlet_multinomial: the optimiser settings used. */
+    tolerance?: number
+    max_iter?: number
+    max_seconds?: number
   }
   diagnostics: {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
@@ -506,6 +519,15 @@ export interface DifferentialResult {
       iterations?: number; loglik?: number; max_abs_gradient?: number; newton_decrement?: number
       n_taxa_in_composition: number; n_taxa_unobserved: number
       caveat?: string
+    }
+    /** multinomial and dirichlet_multinomial only. */
+    model?: {
+      reference_taxon: string; penalty: number; n_parameters: number; iterations: number
+      converged: boolean; log_likelihood: number; runtime_seconds: number; n_taxa_fitted: number
+    }
+    /** dirichlet_multinomial only: c and theta = 1 / (1 + c) in (0, 1). */
+    overdispersion?: {
+      method: 'mle' | 'mom'; concentration: number; theta: number; at_bound: boolean
     }
   }
   rows: DifferentialRow[]

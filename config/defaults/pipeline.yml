@@ -350,6 +350,10 @@ analysis:
     # zero-replaced CLR values), zinb (zero-inflated NB), or hurdle_nb (logistic
     # occurrence plus zero-truncated NB). Two-part models test both group effects
     # jointly; their count-process fold change is reported separately.
+    # Compositional alternatives: ancom_bc (bias-corrected log-linear model),
+    # aldex2 (Dirichlet Monte-Carlo CLR), songbird (CLR-centred multinomial
+    # regression), multinomial and dirichlet_multinomial (reference-taxon
+    # log-ratio models; see the mn_* and dm_* settings below).
     method: nb_glm
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).
