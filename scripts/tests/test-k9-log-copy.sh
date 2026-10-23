@@ -10,7 +10,7 @@ copy_log=$(awk '
   capture { sub(/^          /, ""); print }
   capture && /^fi$/ { exit }
 ' "$ROOT/.github/workflows/k9-conformance-reusable.yml")
-[ -n "$copy_log" ] || { echo 'optional K9 copy branch is missing' >&2; exit 1; }
+[[ -n "$copy_log" ]] || { echo 'optional K9 copy branch is missing' >&2; exit 1; }
 mkdir -p "$fixture/k9-grid"
 RUNNER_TEMP="$fixture" bash -euo pipefail -c "$copy_log"
 echo 'ok - empty K9 corpus needs no log'

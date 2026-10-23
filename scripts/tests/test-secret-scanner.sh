@@ -16,6 +16,6 @@ rc=0
 "$scanner" detect --source "$fixture/source" --no-git --redact --no-banner \
   --config "$config" --exit-code 1 --report-format json --report-path "$fixture/report.json" \
   > "$fixture/log" 2>&1 || rc=$?
-[ "$rc" -eq 1 ] || { echo "ERROR: synthetic credential was not rejected (exit $rc)" >&2; exit 1; }
+[[ "$rc" -eq 1 ]] || { echo "ERROR: synthetic credential was not rejected (exit $rc)" >&2; exit 1; }
 jq -e 'any(.[]; .RuleID == "aws-access-token")' "$fixture/report.json" > /dev/null
 echo 'ok - clean input passes; synthetic AWS credential fails with the expected rule'

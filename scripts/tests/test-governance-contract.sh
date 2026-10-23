@@ -21,6 +21,7 @@ for mutation in sarif k9-pin k9-indeterminate k9-verdict scanner-advisory scanne
     scanner-secrets) echo '    secrets: inherit' >> "$fixture/.github/workflows/secret-scanner.yml" ;;
     scanner-trigger) sed -i 's/^  pull_request:/  pull_request_target:/' "$fixture/.github/workflows/secret-scanner.yml" ;;
     scorecard-trigger) sed -i '/^on:/a\  pull_request:' "$fixture/.github/workflows/scorecard.yml" ;;
+    *) echo "ERROR: unknown mutation $mutation" >&2; exit 1 ;;
   esac
   if bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1; then
     echo "ERROR: governance contract accepted mutation $mutation" >&2

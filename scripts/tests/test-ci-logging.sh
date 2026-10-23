@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 workflow="$ROOT/.github/workflows/ci.yml"
 count=$(grep -Fc 'statuses=("${PIPESTATUS[@]}")' "$workflow")
-[ "$count" -eq 2 ] || { echo 'expected both Julia pipelines to preserve all exits' >&2; exit 1; }
+[[ "$count" -eq 2 ]] || { echo 'expected both Julia pipelines to preserve all exits' >&2; exit 1; }
 selection=$(awk '
   /statuses=\("\$\{PIPESTATUS\[@\]\}"\)/ { capture = 1 }
   capture { sub(/^          /, ""); print }
@@ -17,7 +17,7 @@ second=$(awk '
   capture { sub(/^          /, ""); print }
   capture && /then status=/ { exit }
 ' "$workflow")
-[ "$selection" = "$second" ] || { echo 'Julia exit-selection blocks differ' >&2; exit 1; }
+[[ "$selection" = "$second" ]] || { echo 'Julia exit-selection blocks differ' >&2; exit 1; }
 for spec in '0 0 0' '42 0 42' '0 23 23' '42 23 42'; do
   read -r producer logger expected <<< "$spec"
   rc=0
@@ -27,7 +27,7 @@ for spec in '0 0 0' '42 0 42' '0 23 23' '42 23 42'; do
     '"$selection"'
     exit "$status"
   ' test-ci-logging "$producer" "$logger" || rc=$?
-  [ "$rc" -eq "$expected" ] || {
+  [[ "$rc" -eq "$expected" ]] || {
     echo "producer=$producer logger=$logger returned $rc, expected $expected" >&2
     exit 1
   }

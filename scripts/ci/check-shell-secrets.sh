@@ -17,8 +17,8 @@ parameter_rhs=$(cat <<'REGEX'
 REGEX
 )
 ignore=()
-if [ -f .shell-secrets-ignore ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
+if [[ -f .shell-secrets-ignore ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" == \#* ]] || ignore+=("$line")
   done < .shell-secrets-ignore
 fi
@@ -34,7 +34,7 @@ scan_file() {
   for pattern in "${patterns[@]}"; do
     rc=0
     grep -noE "$pattern" "$file" > "$scratch/matches" || rc=$?
-    if [ "$rc" -gt 1 ]; then echo 'ERROR: shell-secret matcher failed' >&2; return "$rc"; fi
+    if [[ "$rc" -gt 1 ]]; then echo 'ERROR: shell-secret matcher failed' >&2; return "$rc"; fi
     while IFS= read -r line; do
       number=${line%%:*}; content=${line#*:}
       # PASSWORD allows arbitrary characters, including variable-only RHSs.
@@ -44,7 +44,7 @@ scan_file() {
       source_line=$(sed -n "${number}p" "$file")
       [[ "$source_line" =~ ^[[:space:]]*# ]] && continue
       [[ "$source_line" =~ $pragma ]] && continue
-      if [ "$number" -gt 1 ]; then
+      if [[ "$number" -gt 1 ]]; then
         previous=$(sed -n "$((number - 1))p" "$file")
         [[ "$previous" =~ $pragma ]] && continue
       fi
@@ -56,7 +56,7 @@ scan_file() {
 find . -type d \( -name .git -o -name node_modules -o -name target \) -prune -o \
   -type f \( -name '*.sh' -o -name '*.bash' \) -print0 > "$scratch/files"
 while IFS= read -r -d '' path; do scan_file "$path" "$path" working-tree; done < "$scratch/files"
-if [ "$(git rev-parse --is-shallow-repository)" != false ]; then
+if [[ "$(git rev-parse --is-shallow-repository)" != false ]]; then
   echo 'ERROR: refusing a shallow custom shell-history scan' >&2
   exit 1
 fi
@@ -67,17 +67,17 @@ while IFS= read -r revision; do
   while IFS= read -r -d '' entry; do
     header=${entry%%$'\t'*}; path=${entry#*$'\t'}
     read -r mode type oid <<< "$header"
-    [ "$type" = blob ] || continue
+    [[ "$type" = blob ]] || continue
     case "$path" in *.sh|*.bash) ;; *) continue ;; esac
-    case "/$path/" in */node_modules/*|*/target/*) continue ;; esac
+    case "/$path/" in */node_modules/*|*/target/*) continue ;; *) ;; esac
     key="$oid:$path"
-    [ -z "${seen[$key]+x}" ] || continue
+    [[ -z "${seen[$key]+x}" ]] || continue
     seen[$key]=1
     git cat-file blob "$oid" > "$scratch/blob"
     scan_file "$scratch/blob" "$path" "$revision"
   done < "$scratch/tree"
 done < "$scratch/commits"
-if [ "$found" -ne 0 ]; then
+if [[ "$found" -ne 0 ]]; then
   echo 'ERROR: hardcoded shell credentials detected; use environment variables.' >&2
   exit 1
 fi
