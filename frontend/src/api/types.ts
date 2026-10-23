@@ -423,7 +423,10 @@ export interface DifferentialRow {
   prevalence: number
 }
 
-export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+export type DifferentialMethod =
+  | 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+  | 'multinomial' | 'dirichlet_multinomial'
+  | 'ancom_bc' | 'aldex2' | 'songbird'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -453,6 +456,16 @@ export interface DifferentialResult {
     replacement_delta?: number
     /** Null uses GBM's estimated concentration; positive values override it. */
     bayesian_alpha?: number | null
+    /** multinomial and dirichlet_multinomial only. */
+    mn_reference_taxon?: string | null
+    /** multinomial and dirichlet_multinomial only. */
+    mn_penalty?: number
+    /** dirichlet_multinomial only. */
+    dm_overdispersion_method?: 'mle' | 'mom'
+    /** Multinomial optimiser settings. */
+    tolerance?: number
+    max_iter?: number
+    max_seconds?: number
     /** aldex2 only. */
     mc_samples?: number
     /** aldex2 only. */
@@ -462,6 +475,17 @@ export interface DifferentialResult {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
     /** Safety note for two-part models. */
     model_warning?: string
+    /** Diagnostics returned by the joint multinomial models. */
+    model?: {
+      reference_taxon: string
+      penalty: number
+      n_parameters: number
+      iterations: number
+      converged: boolean
+      log_likelihood: number
+      runtime_seconds: number
+      n_taxa_fitted: number
+    }
     /** clr_welch only. */
     zero_replacement?: {
       method: string

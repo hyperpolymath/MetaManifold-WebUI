@@ -46,13 +46,48 @@ export function formatStat(value: number | null): string {
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
-  if (c.method !== 'clr_welch')
-    return `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
-  const replacement = c.replacement_method ?? 'bayesian_multiplicative'
-  const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
-    ? 'estimated' : String(c.bayesian_alpha)
-  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}, ` +
-    `bayesian_alpha ${alpha}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
+
+  if (c.method === 'multinomial' || c.method === 'dirichlet_multinomial') {
+    const settings = [`method ${c.method}`]
+    if (c.method === 'dirichlet_multinomial' && c.dm_overdispersion_method)
+      settings.push(`overdispersion ${c.dm_overdispersion_method}`)
+    if (c.mn_reference_taxon) settings.push(`reference ${c.mn_reference_taxon}`)
+    if (c.mn_penalty !== undefined) settings.push(`penalty ${c.mn_penalty}`)
+    settings.push(`min_prevalence ${c.min_prevalence}`)
+    return `${settings.join(', ')}; estimates are log2 fold changes against the reference taxon`
+  }
+
+  if (c.method === 'clr_welch') {
+    const replacement = c.replacement_method ?? 'bayesian_multiplicative'
+    const settings = [
+      `method clr_welch`,
+      `replacement_method ${replacement}`,
+      `replacement_delta ${c.replacement_delta}`,
+    ]
+    // CZM has no Bayesian concentration parameter; do not claim one was used.
+    if (replacement === 'bayesian_multiplicative') {
+      const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
+        ? 'estimated' : String(c.bayesian_alpha)
+      settings.push(`bayesian_alpha ${alpha}`)
+    }
+    settings.push(`min_prevalence ${c.min_prevalence}`)
+    return `${settings.join(', ')}; estimate is a CLR difference, not a fold change`
+  }
+
+  if (c.method === 'ancom_bc')
+    return `method ancom_bc, min_prevalence ${c.min_prevalence}; effect is bias-corrected log2 fold change (Lin & Peddada 2020)`
+
+  if (c.method === 'aldex2')
+    return `method aldex2, mc_samples ${c.mc_samples}, seed ${c.seed}, min_prevalence ${c.min_prevalence}; estimate is an ALDEx2 standardized CLR effect size, not a fold change`
+
+  if (c.method === 'songbird')
+    return `method songbird, min_prevalence ${c.min_prevalence}; estimate is a CLR-centred multinomial differential, not an absolute fold change`
+
+  const settings = [`method ${c.method}`]
+  if (c.offset !== undefined) settings.push(`offset ${c.offset}`)
+  if (c.method === 'nb_glm' && c.dispersion !== undefined) settings.push(`dispersion ${c.dispersion}`)
+  settings.push(`min_prevalence ${c.min_prevalence}`)
+  return settings.join(', ')
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */

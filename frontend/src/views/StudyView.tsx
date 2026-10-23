@@ -15,7 +15,7 @@ import { ConfigAccordion } from '../components/ConfigAccordion'
 import { TreesPanel } from '../components/TreesPanel'
 import { PlacementPanel } from '../components/PlacementPanel'
 import { EvidenceModeToggle } from '../components/EvidenceModeToggle'
-import { CladeCumulusPanel } from '../components/CladeCumulusPanel'
+import { CladeCumulusPanel as EvidenceCladeCumulusPanel } from '../components/CladeCumulusPanel'
 import { ReportPanel } from '../components/ReportPanel'
 import { useNavRefresh } from '../hooks/useNavRefresh'
 import { CladeCumulusPanel } from '../cladistics/CladeCumulusPanel'
@@ -304,7 +304,7 @@ export function StudyView() {
 
       {view === 'trees' && <>
         <EvidenceModeToggle enabled={evidenceMode} onChange={setEvidenceMode} />
-        {evidenceMode && <CladeCumulusPanel study={study!} runs={placementRuns} />}
+        {evidenceMode && <EvidenceCladeCumulusPanel study={study!} runs={placementRuns} />}
         <PlacementPanel study={study!} runs={placementRuns} onPublished={() => setTreesVersion(v => v + 1)} />
         <TreesPanel key={treesVersion} study={study!} />
       </>}
