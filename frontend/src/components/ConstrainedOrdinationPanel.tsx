@@ -40,16 +40,19 @@ const ALL_DISTANCES: readonly OrdinationDistance[] = [
   'unweighted_unifrac',
 ]
 
+/** Format a finite value to fixed decimal places; show an em dash for missing/non-finite values. */
 function fmtNum(v: number | null | undefined, digits = 4): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—'
   return v.toFixed(digits)
 }
 
+/** Display a proportion as a percentage to one decimal place, or an em dash when unavailable. */
 function fmtPct(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return '—'
   return `${(100 * v).toFixed(1)}%`
 }
 
+/** Render term tests with reasons for withheld p-values; return null when there are no rows. */
 function TermAnovaTable({ title, subtitle, rows }: {
   title: string
   subtitle: string
@@ -92,6 +95,7 @@ function TermAnovaTable({ title, subtitle, rows }: {
   )
 }
 
+/** Render expandable method/interpretation guidance and links to primary literature. */
 function OrdinationHelpDetails() {
   return (
     <details style={{ marginTop: 14, fontSize: '.8rem', lineHeight: 1.5 }}>
@@ -135,7 +139,9 @@ function OrdinationHelpDetails() {
   )
 }
 
+/** Render the biplot, inference and variance partitions, with a CSV/provenance download named for the study. */
 function OrdinationResultsView({ study, result }: { study: string; result: OrdinationResult }) {
+  /** Download the displayed result and provenance as a UTF-8 CSV file. */
   const downloadCsv = () => {
     const csv = formatOrdinationCsv(result)
     saveBlob(
@@ -255,6 +261,13 @@ function OrdinationResultsView({ study, result }: { study: string; result: Ordin
   )
 }
 
+/**
+ * Render expandable constrained-ordination controls for the selected study runs
+ * and table. Opening the panel loads study defaults; users can save edits back
+ * to study config or request an analysis. `aggregate` is forwarded to the server.
+ * A false `rAvailable` disables running; null allows a request. Results are
+ * discarded when study, runs, table or aggregation changes.
+ */
 export function ConstrainedOrdinationPanel({
   study,
   runs,
@@ -324,6 +337,7 @@ export function ConstrainedOrdinationPanel({
       .catch(() => setCladisticsTrees([]))
   }, [open, needsPhylo, study])
 
+  /** Select a method and replace the distance only if it is incompatible. */
   const handleMethodChange = (next: ActiveOrdinationMethod) => {
     setMethod(next)
     setDistance(prev => resolveCompatibleDistance(next, prev))
@@ -344,6 +358,7 @@ export function ConstrainedOrdinationPanel({
 
   const availableCovariateChips = result?.available_covariates ?? ['group', 'run', 'log_library_size']
 
+  /** Start a blank RHS or append an additive term; syntax is checked separately. */
   const appendFormulaToken = (token: string) => {
     setFormula(prev => {
       const trimmed = prev.trim()
@@ -352,6 +367,7 @@ export function ConstrainedOrdinationPanel({
     })
   }
 
+  /** Save valid form values as study defaults; report request failures through a toast. */
   const saveStudyDefaults = async () => {
     if (!formulaCheck.valid || !permValid) return
     setSavingDefaults(true)
@@ -372,6 +388,10 @@ export function ConstrainedOrdinationPanel({
     }
   }
 
+  /**
+   * Request an analysis for valid form values, showing only the latest response
+   * for the current inputs. Request failures clear the result and show a toast.
+   */
   const runOrdination = async () => {
     if (!formulaCheck.valid || !permValid) return
     const reqId = ++reqCounter.current

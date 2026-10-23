@@ -16,6 +16,11 @@ const _ORDINATION_REQUEST_LIMIT = 16 * 1024 * 1024
 _ordination_derived_dir(study::String) =
     joinpath(ServerState.projects_dir(), study, "derived_analyses", "ordination")
 
+"""
+Return sample labels, prefixing all labels with their runs if any repeat and
+adding row indices if run/sample pairs still repeat. `run_labels` must align
+with `samples`; neither input is changed.
+"""
 function _unique_ordination_sample_ids(samples::Vector{String}, run_labels::Vector{String})::Vector{String}
     length(unique(samples)) == length(samples) && return copy(samples)
     combined = ["$(run_labels[i]) / $(samples[i])" for i in eachindex(samples)]
@@ -23,6 +28,10 @@ function _unique_ordination_sample_ids(samples::Vector{String}, run_labels::Vect
     ["$(combined[i]) #$i" for i in eachindex(combined)]
 end
 
+"""
+Read an I-JSON request object without consuming its body. Return an HTTP error
+response for bodies over 16 MiB (413), parse failures or non-object values (400).
+"""
 function _read_ordination_ijson(req::HTTP.Request)
     body_bytes = req.body isa AbstractString ? ncodeunits(req.body) : length(req.body)
     body_bytes <= _ORDINATION_REQUEST_LIMIT || return json_error(
@@ -40,6 +49,7 @@ function _read_ordination_ijson(req::HTTP.Request)
     parsed
 end
 
+"""Return nested ordination settings and the seed from the study's resolved config, filling absent keys with defaults."""
 function _study_ordination_dict(study::String)::Dict{String,Any}
     resolved = _resolve_config(study)
     val(k, d) = begin
@@ -63,6 +73,12 @@ function _study_ordination_dict(study::String)::Dict{String,Any}
     )
 end
 
+"""
+Copy recognised request settings to a plain dictionary, preserving explicit
+nulls and ignoring other keys. Throw `ArgumentError` for non-null scaling,
+permutation or seed values that are not integers (booleans excluded), or a
+non-boolean variance-partitioning flag. Range checks occur in `OrdinationConfig`.
+"""
 function _extract_ordination_overrides(body::JSON3.Object)::Dict{String,Any}
     overrides = Dict{String,Any}()
     for key in ("method", "formula", "distance", "scaling", "permutations",
@@ -83,6 +99,13 @@ function _extract_ordination_overrides(body::JSON3.Object)::Dict{String,Any}
     overrides
 end
 
+"""
+Add custom columns to `metadata` and return their sorted names, or an empty list
+for `nothing`. Arrays follow `sample_ids` order; maps must supply every sample.
+All-numeric values become finite floats, while other values become non-empty
+strings. Throw `ArgumentError` for invalid names, built-in column collisions,
+shape mismatches or invalid values. Columns added before a later error remain.
+"""
 function _attach_custom_covariates!(metadata::DataFrame, raw_covs, sample_ids::Vector{String})
     isnothing(raw_covs) && return String[]
     (raw_covs isa JSON3.Object || raw_covs isa AbstractDict) || throw(ArgumentError(
@@ -133,6 +156,13 @@ function _attach_custom_covariates!(metadata::DataFrame, raw_covs, sample_ids::V
     added
 end
 
+"""
+Return `(tree, tips, source)` from inline `tree_newick`, an explicit
+`cladistics_id`, or the latest completed study tree, in that precedence order.
+Blank IDs are ignored; failures resolving a non-blank ID or supplied Newick do
+not fall back. Throw `ArgumentError` for empty Newick, invalid IDs or missing
+trees; tree parsing and file access errors propagate.
+"""
 function _resolve_study_unifrac_tree(study::String, body::JSON3.Object)
     if haskey(body, :tree_newick) && !isnothing(body[:tree_newick])
         nwk = String(strip(string(body[:tree_newick])))
@@ -172,6 +202,11 @@ function _resolve_study_unifrac_tree(study::String, body::JSON3.Object)
         "UniFrac constrained ordination requires an ASV phylogenetic tree; build one in the study's Cladistics tab first or pass 'cladistics_id' / 'tree_newick'"))
 end
 
+"""
+Select public result fields for the HTTP payload and attach available covariates
+and the runtime estimate. The biplot and persistence receipt are added by the caller;
+internal score matrices and the full feature-score list are omitted.
+"""
 function _serializable_ordination_payload(res, available_covariates::Vector{String},
                                           runtime_estimate)
     Dict{String,Any}(
@@ -213,6 +248,7 @@ function _serializable_ordination_payload(res, available_covariates::Vector{Stri
     )
 end
 
+"""Read a boolean request option, using `default` for absent/null values and throwing `ArgumentError` for other types."""
 function _opt_ordination_bool(body::JSON3.Object, key::Symbol, default::Bool)::Bool
     (!haskey(body, key) || isnothing(body[key])) && return default
     v = body[key]

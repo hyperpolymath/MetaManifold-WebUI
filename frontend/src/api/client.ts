@@ -256,8 +256,10 @@ export const api = {
                      post<unknown>(`/api/v1/studies/${study}/analysis/nmds`, body),
     permanova:     (study: string, body: ComparisonRequest) =>
                      post<PermanovaResult>(`/api/v1/studies/${study}/analysis/permanova`, body),
+    /** Request a study ordination; reject on serialisation, network, HTTP or response-parsing errors. */
     ordination:    (study: string, body: OrdinationRequest) =>
                      post<OrdinationResult>(`/api/v1/studies/${study}/analysis/ordination`, body),
+    /** Fetch the ordination capability/citation contract; request and JSON parsing errors propagate. */
     ordinationContract: () =>
                      get<Record<string, unknown>>('/api/v1/ordination/contract'),
     capabilities:  () => get<{ r_available: boolean }>('/api/v1/capabilities'),

@@ -71,13 +71,14 @@ _string_keyed(x) = x
     load_ordination_contract() -> Dict{String,Any}
 
 Load the canonical KYAML capability and citation contract from
-`config/defaults/ordination.kyaml`.
+`config/defaults/ordination.kyaml`. File access and YAML parsing errors propagate.
 """
 function load_ordination_contract()::Dict{String,Any}
     contract_path = normpath(joinpath(@__DIR__, "..", "..", "config", "defaults", "ordination.kyaml"))
     _string_keyed(YAML.load_file(contract_path))
 end
 
+"""Trim and lowercase a setting; throw `ArgumentError` labelled with `label` if empty."""
 function _norm_symbol(val::Union{Symbol,AbstractString}, label::AbstractString)::Symbol
     s = lowercase(strip(String(val)))
     isempty(s) && throw(ArgumentError("$label cannot be empty"))
@@ -87,7 +88,8 @@ end
 """
     compatible_distances(method) -> Tuple{Vararg{Symbol}}
 
-Return the allowed dissimilarity/geometry symbols for `method`.
+Return the allowed dissimilarity/geometry symbols for `method`, ignoring case
+and surrounding whitespace. Throw `ArgumentError` for an unknown or empty method.
 """
 function compatible_distances(method::Union{Symbol,AbstractString})
     m = _norm_symbol(method, "ordination_method")
@@ -99,7 +101,8 @@ end
 """
     default_distance_for_method(method) -> Symbol
 
-Return the canonical default distance for `method`.
+Return the canonical default distance for `method`, ignoring case and surrounding
+whitespace. Throw `ArgumentError` for an unknown or empty method.
 """
 function default_distance_for_method(method::Union{Symbol,AbstractString})::Symbol
     m = _norm_symbol(method, "ordination_method")
@@ -112,8 +115,9 @@ end
     validate_method_distance!(method, distance) -> (Symbol, Symbol)
 
 Enforce method/distance geometric compatibility, throwing `ArgumentError` on
-incompatible combinations (such as linear RDA with raw Bray-Curtis or CCA with
-non-chi-square distances).
+unknown settings or incompatible combinations (such as linear RDA with raw
+Bray-Curtis or CCA with non-chi-square distances). Return the normalised method
+and distance symbols without mutating either argument.
 """
 function validate_method_distance!(method::Union{Symbol,AbstractString},
                                    distance::Union{Symbol,AbstractString})
@@ -137,10 +141,18 @@ function validate_method_distance!(method::Union{Symbol,AbstractString},
 end
 
 """
-    OrdinationConfig
+    OrdinationConfig(; kwargs...)
 
 Validated configuration for constrained ordination (`rda`, `cca`, `cap`, `dbrda`,
 or `:none` when disabled).
+
+The constructor rejects incompatible method/distance pairs, invalid formula
+syntax, scaling outside `1:2`, permutations outside `99:9999`, an unknown
+replacement method or a replacement fraction that is non-finite or outside
+`(0, 1)` with `ArgumentError`. Scaling 1 is distance scaling; scaling 2 is
+correlation scaling. An empty formula becomes `nothing` for automatic selection
+later; metadata are not checked here. The distance defaults to `:bray` even when
+another method is selected.
 """
 struct OrdinationConfig
     ordination_method     :: Symbol
@@ -206,6 +218,7 @@ end
 # Julia into an explicit identifier/interaction/Condition(...) AST, and the
 # string handed to R is reconstructed exclusively from validated tokens.
 
+"""Return a trimmed ASCII covariate name, or throw `ArgumentError` for invalid or reserved names."""
 function _check_identifier(ident::AbstractString)
     s = strip(String(ident))
     occursin(r"\A[A-Za-z][A-Za-z0-9_.]*\z", s) || throw(ArgumentError(
@@ -218,6 +231,7 @@ function _check_identifier(ident::AbstractString)
     String(s)
 end
 
+"""Split additive terms outside parentheses; throw `ArgumentError` for empty terms or unbalanced parentheses."""
 function _split_top_level_plus(rhs::AbstractString)::Vector{String}
     parts = String[]
     depth = 0
@@ -266,6 +280,10 @@ Validate an ordination formula string against the safe identifier, interaction
 (`:` / `*`), and `Condition(...)` grammar without requiring sample metadata.
 Throws `ArgumentError` on malformed syntax, disallowed characters, LHS
 expressions, arbitrary function calls, or missing constraining terms.
+Return `canonical_rhs` without a leading `~`, deduplicated constrained and
+condition terms, and referenced column names. Expand `a*b` to `a + b + a:b`;
+only two-way interactions are accepted. A column cannot be both constrained
+and conditioned.
 """
 function validate_formula_syntax(formula::AbstractString)
     raw_str = String(formula)
@@ -359,6 +377,11 @@ function validate_formula_syntax(formula::AbstractString)
        referenced_columns = collect(referenced))
 end
 
+"""
+Return 0 for a constant column, 1 for a varying numeric column, or levels minus
+1 for categorical values. Throw `ArgumentError` for missing
+values, non-finite numeric entries or empty categorical labels.
+"""
 function _column_df(col::AbstractVector)::Int
     if eltype(col) <: Union{Real,Missing} && !(eltype(col) <: Bool)
         vals = Float64[]
@@ -382,6 +405,7 @@ function _column_df(col::AbstractVector)::Int
     end
 end
 
+"""Estimate a term's degrees of freedom, multiplying column degrees of freedom for an interaction."""
 function _term_df(term::String, metadata::DataFrame)::Int
     if occursin(':', term)
         parts = split(term, ':')
@@ -393,11 +417,15 @@ end
 """
     parse_ordination_formula(formula, metadata) -> ParsedFormula
 
-Resolve and validate `formula` (or auto-construct a default formula over all
-non-constant metadata columns except `sample` when `formula === nothing`)
+Resolve and validate `formula` (or auto-construct a default formula over varying
+metadata columns except `sample` when the formula is `nothing` or blank,
+deduplicating identical numeric columns and equivalent categorical partitions)
 against `metadata` (`DataFrame` with one row per sample). Verifies column
 existence, non-constancy, absence of missing/non-finite entries, and positive
 residual degrees of freedom (`df_total < n_samples - 1`).
+Throw `ArgumentError` when fewer than three samples are supplied or any formula
+or metadata check fails. Degrees of freedom are estimated from individual
+columns and interactions; this does not establish full design-matrix rank.
 """
 function parse_ordination_formula(formula::Union{Nothing,AbstractString},
                                   metadata::DataFrame)::ParsedFormula
@@ -461,6 +489,12 @@ end
 
 Construct a validated `OrdinationConfig` from a merged `pipeline.yml` config
 dictionary, applying optional request-level `overrides`.
+Both dictionaries use string keys; override keys are names such as `"method"`.
+Null overrides inherit configured values, except a null `"formula"` explicitly
+requests automatic selection. The seed comes from the top-level config unless
+overridden. An inherited distance is retained and checked for compatibility;
+the method's default is used only when no distance is supplied in either scope.
+Configuration validation and conversion errors propagate.
 """
 function ordination_config_from_dict(cfg::AbstractDict;
                                      overrides::AbstractDict = Dict{String,Any}())::OrdinationConfig
@@ -504,6 +538,9 @@ end
 
 Analytical wall-clock cost heuristic for progressive-disclosure UI feedback and
 preflight warnings. Returns `(; estimated_seconds, tier, warn_five_minutes)`.
+Clamp each count to at least 1. Tiers are `"fast"` below 5 seconds, `"moderate"`
+below 60 seconds and `"heavy"` otherwise; warn only above 300 seconds. This does
+not measure execution time or validate method/distance compatibility.
 """
 function estimate_ordination_seconds(;
     method::Union{Symbol,AbstractString} = :dbrda,
@@ -549,10 +586,14 @@ end
 """
     pure_ezekiel_adj_r2(r2, n_samples, df_model; df_conditioned=0) -> Float64
 
-Analytical Ezekiel (1930) / Peres-Neto et al. (2006) adjusted R² matching
-`vegan::RsquareAdj` for linear RDA, CAP, and dbRDA:
+Analytical Ezekiel (1930) / Peres-Neto et al. (2006) adjusted R²:
 `1 - (1 - r2) * (n - 1 - df_cond) / (n - 1 - df_cond - df_model)` when
-unconditioned (`df_cond == 0`: `1 - (1 - r2) * (n - 1) / (n - 1 - df_model)`).
+conditioning removes `df_cond` degrees of freedom. With `df_cond == 0`, this
+matches `vegan::RsquareAdj` for unconditioned linear RDA, CAP and dbRDA:
+`1 - (1 - r2) * (n - 1) / (n - 1 - df_model)`.
+For `df_conditioned > 0`, `r2` is the fraction of inertia remaining after
+conditioning; this is not vegan's partial-model R² relative to total inertia.
+Throw `ArgumentError` when residual degrees of freedom are not positive.
 """
 function pure_ezekiel_adj_r2(r2::Real, n_samples::Integer, df_model::Integer;
                              df_conditioned::Integer = 0)::Float64
@@ -571,6 +612,8 @@ end
 Exact two-table Peres-Neto et al. (2006) adjusted-R² variance partitioning into
 unique `[a]` (`X1 | X2`), shared `[b]`, unique `[c]` (`X2 | X1`), and `[d]`
 (unexplained residual `1 - adj_r2_ab`).
+Return `unique_x1`, `shared`, `unique_x2` and `residual` without clamping negative
+fractions.
 """
 function pure_varpart_two_way(adj_r2_a::Real, adj_r2_b::Real, adj_r2_ab::Real)
     a_tot = Float64(adj_r2_a)
@@ -583,6 +626,11 @@ function pure_varpart_two_way(adj_r2_a::Real, adj_r2_b::Real, adj_r2_ab::Real)
     (; unique_x1 = uniq_a, shared = shared, unique_x2 = uniq_b, residual = resid)
 end
 
+"""
+Approximate eigenvalues of the symmetric part of square `S` in descending order,
+retaining only values above the absolute/relative cutoff. Stop after
+`max_sweeps` even if off-diagonal entries still exceed `tol`; leave `S` unchanged.
+"""
 function _sym_eigenvalues_desc(S::Matrix{Float64}; tol::Float64 = 1e-13, max_sweeps::Int = 80)::Vector{Float64}
     m = size(S, 1)
     m == 0 && return Float64[]
@@ -625,12 +673,14 @@ function _sym_eigenvalues_desc(S::Matrix{Float64}; tol::Float64 = 1e-13, max_swe
     [v for v in vals if v > cutoff]
 end
 
+"""Return retained positive Gram eigenvalues of `M`, divided by `scale_dof`, in descending order."""
 function _gram_eigenvalues(M::Matrix{Float64}, scale_dof::Float64)::Vector{Float64}
     n, p = size(M)
     G = n <= p ? ((M * permutedims(M)) ./ scale_dof) : ((permutedims(M) * M) ./ scale_dof)
     _sym_eigenvalues_desc(G)
 end
 
+"""Return an orthonormal column basis without changing `X`, dropping residual columns of norm at most `tol`."""
 function _modified_gram_schmidt(X::Matrix{Float64}; tol::Float64 = 1e-11)::Matrix{Float64}
     n, m = size(X)
     cols = Vector{Float64}[]
@@ -661,6 +711,7 @@ function _modified_gram_schmidt(X::Matrix{Float64}; tol::Float64 = 1e-11)::Matri
     Q
 end
 
+"""Return a floating-point copy with each column's mean removed."""
 function _center_columns(M::AbstractMatrix{<:Real})::Matrix{Float64}
     n, p = size(M)
     out = zeros(Float64, n, p)
@@ -681,6 +732,15 @@ Pure-Julia linear Redundancy Analysis (with optional partial conditioning matrix
 Used as an independent in-Julia algebraic cross-check of total, conditioned,
 constrained, and residual inertia (`tot.chi`, `pCCA\$tot.chi`, `CCA\$tot.chi`,
 `CA\$tot.chi`), `R2`, `adj_r2`, and pseudo-F without invoking R.
+
+Rows are samples in the same order in `Y` (responses), `X` (constraints) and
+`Z` (conditioning covariates); columns are centred internally. Return these
+statistics, positive eigenvalues in descending order and model/condition/residual
+degrees of freedom. For partial models, R² uses total inertia and adjusted R²
+subtracts the adjusted conditioning-only fit from the joint fit. Pseudo-F is
+`Inf` when residual inertia is zero. Throw `ArgumentError` for mismatched row
+counts, fewer than three samples, rank-zero constraints after conditioning or
+non-positive residual degrees of freedom.
 """
 function pure_linear_rda(Y::AbstractMatrix{<:Real}, X::AbstractMatrix{<:Real};
                          Z::Union{Nothing,AbstractMatrix{<:Real}} = nothing)
@@ -773,6 +833,7 @@ end
 
 ## Block-permutation testability helper (mirrors Analysis._varies_within_any_block)
 
+"""Return whether any block contains differing values; paired inputs are traversed with `zip`."""
 function _varies_within_any_block(values::AbstractVector, blocks::AbstractVector)::Bool
     first_seen = Dict{Any,Any}()
     for (v, b) in zip(values, blocks)
@@ -781,6 +842,7 @@ function _varies_within_any_block(values::AbstractVector, blocks::AbstractVector
     false
 end
 
+"""Return whether every constituent column of `term` is constant within every block."""
 function _term_untestable_in_blocks(term::String, metadata::DataFrame,
                                     blocks::AbstractVector)::Bool
     for part in split(term, ':')
@@ -818,6 +880,8 @@ _as_any_vec(x)                 = (ismissing(x) || isnothing(x)) ? Any[] : Any[x]
     vegan_available() -> Bool
 
 Return `true` when R can be initialised and `vegan` can be loaded under `with_r_lock`.
+Return `false` if R is unavailable or checking the package raises an error,
+including a timeout waiting for the shared runtime.
 """
 function vegan_available()::Bool
     r_available() || return false
@@ -830,6 +894,11 @@ function vegan_available()::Bool
     end
 end
 
+"""
+Return `nothing` for an `n × n` finite distance matrix with diagonal magnitudes
+at most `1e-10`, upper-triangle values at least `-1e-12` and symmetry within
+`1e-8`; otherwise throw `ArgumentError`. The matrix is not changed.
+"""
 function _validate_distance_matrix!(D::AbstractMatrix{<:Real}, n::Int)
     size(D) == (n, n) || throw(ArgumentError(
         "Distance matrix must have shape ($n, $n) matching sample count, got $(size(D))"))
@@ -852,6 +921,11 @@ function _validate_distance_matrix!(D::AbstractMatrix{<:Real}, n::Int)
     nothing
 end
 
+"""
+Copy selected, already validated columns for R and return `(clean, factor_cols)`.
+Numeric columns become floats; categorical columns become
+trimmed strings and are listed for conversion to R factors.
+"""
 function _prepare_metadata_for_r(metadata::DataFrame, cols::Vector{String})
     clean = DataFrame()
     factor_cols = String[]
@@ -1140,6 +1214,12 @@ const _ORD_CLEANUP_R =
     "'ord_vp_gross_adj', 'ord_vp_err', 'vp_formulas', 'vp_y', 'vp_args', " *
     "'vp_obj', 'vp_ind', 'vp_gr', 'r2_col', 'adj_col'))); invisible(gc())"
 
+"""
+Convert an extracted vegan ANOVA table into term rows plus residual statistics,
+permutation count and printed text. Omit total/residual rows from the term list,
+replace non-finite statistics with `nothing`, and withhold p-values for terms
+in `untestable`, retaining their F statistics and an explanatory reason.
+"""
 function _parse_aov_list(d, untestable::Set{String})
     terms = _as_str_vec(d[:terms])
     dfs   = _as_any_vec(d[:df])
@@ -1192,8 +1272,35 @@ partitioning.
 
 `counts` is `n_samples × n_features` (rows = samples, columns = ASVs/OTUs/taxa).
 For `:unweighted_unifrac` or `:weighted_unifrac`, pass either a precomputed
-`distance_matrix` (`n_samples × n_samples`) or `(; tree, feature_ids)` so
+`distance_matrix` (`n_samples × n_samples`) or the `tree` and `feature_ids` keywords so
 `CladeCumulus.unifrac_matrix` computes the phylogenetic distances.
+
+Metadata and sample IDs follow count-row order; feature IDs follow column order.
+At least three samples and positive residual model degrees of freedom are
+required. Aitchison input must be non-negative: with zeros, retained features
+must occur in at least two samples for Bayesian replacement or one for CZM,
+and retained counts must be integer-valued. `beta_transform` accepts `"none"`
+or `"hellinger"` where applied; Aitchison and tree-derived UniFrac ignore it.
+
+`blocks` restricts permutations only when its length matches the sample count
+and at least one label repeats; otherwise permutations are unrestricted.
+Terms constant within every block have their p-values withheld. `r_timeout`
+limits lock acquisition in seconds, not model execution. Fitting resets and
+advances the shared R random-number generator using `cfg.seed`.
+
+Return inertia and R² statistics, eigenvalues, two-axis sample/feature/covariate
+scores, permutation tests, cautions and provenance. `max_feature_scores` limits
+the feature scores selected by vector length, while all scores are also returned.
+Variance partitioning is `nothing` when disabled, otherwise a computed or
+skipped result with a reason. Failures of optional marginal/axis tests or
+centroid/species scoring yield empty collections; caught `vegan::varpart`
+failures yield a skipped result.
+
+Throw `ArgumentError` for invalid data or formulae, `VeganUnavailable` if vegan
+cannot load, and `RBusyError` if the runtime lock times out. Zero replacement
+can propagate `ZCompositionsUnavailable`; uncaught R fitting, omnibus/sequential
+testing and conversion errors also propagate. Unknown beta transforms raise
+`ErrorException`.
 """
 function run_constrained_ordination(
     counts::AbstractMatrix{<:Real},
@@ -1737,6 +1844,7 @@ const _BIPLOT_SYMBOLS = [
     "pentagon", "hexagon", "star", "cross", "x",
 ]
 
+"""Scale the longest arrow to `fill_frac` of the largest site radius; return 1 for empty arrows or zero radii."""
 function _arrow_multiplier(site_scores::Matrix{Float64}, arrows::AbstractVector; fill_frac::Float64 = 0.78)::Float64
     isempty(arrows) && return 1.0
     max_site = 0.0
@@ -1757,9 +1865,12 @@ end
     ordination_biplot_chart(ord_result; colour_by=nothing, shape_by=nothing, show_centroids=true, show_features=false, max_features=8) -> Dict{String,Any}
 
 Build an interactive, I-JSON-compliant Plotly biplot dictionary showing sample
-points (coloured by `colour_by`, shaped by `shape_by`), scaled covariate biplot
-arrows (`vegan` `ordiArrowMul` convention), optional factor centroids, and
-optional top taxon vectors.
+points (coloured by `colour_by`, shaped by `shape_by`), covariate arrows scaled
+to the sample radii, optional factor centroids, and optional top taxon vectors.
+Use a result from `run_constrained_ordination`; grouping labels follow site
+order and mismatched lengths raise `ArgumentError`. Feature overlays use up to
+`max_features` entries from `top_feature_scores`. Return `data` and `layout`
+without changing the result or rendering a chart.
 """
 function ordination_biplot_chart(
     ord_result;

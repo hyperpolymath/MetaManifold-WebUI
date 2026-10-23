@@ -106,11 +106,13 @@ const RESERVED_R_WORDS = new Set([
   'NA_complex_', 'NA_character_', '.', '...', 'Condition',
 ])
 
+/** Return method metadata, falling back to dbRDA for an unrecognised runtime value. */
 export function getMethodInfo(method: ActiveOrdinationMethod): OrdinationMethodInfo {
   const found = ORDINATION_METHODS_INFO.find(m => m.id === method)
   return found ?? ORDINATION_METHODS_INFO[0]
 }
 
+/** Check the method's allowed geometries; an unrecognised method uses the dbRDA list. */
 export function isDistanceCompatible(
   method: ActiveOrdinationMethod,
   distance: OrdinationDistance,
@@ -118,6 +120,7 @@ export function isDistanceCompatible(
   return getMethodInfo(method).compatibleDistances.includes(distance)
 }
 
+/** Keep the current distance when compatible; otherwise use the method's default. */
 export function resolveCompatibleDistance(
   method: ActiveOrdinationMethod,
   current: OrdinationDistance,
@@ -126,12 +129,14 @@ export function resolveCompatibleDistance(
   return info.compatibleDistances.includes(current) ? current : info.defaultDistance
 }
 
+/** Return interpretation guidance for distance scaling (1) or correlation scaling (2). */
 export function scalingDescription(scaling: OrdinationScaling): string {
   return scaling === 1
     ? 'Scaling 1 (distance biplot): distances between sample points approximate their ecological/Euclidean distances; project sample points onto covariate arrows at right angles.'
     : 'Scaling 2 (correlation biplot): cosines of angles between covariate arrows (and feature vectors) approximate correlations; distances between sample points are not approximate dissimilarities.'
 }
 
+/** Split additive terms outside parentheses, returning an error for empty terms or unbalanced parentheses. */
 function splitTopLevelPlus(rhs: string): string[] | { error: string } {
   const parts: string[] = []
   let depth = 0
@@ -156,6 +161,7 @@ function splitTopLevelPlus(rhs: string): string[] | { error: string } {
   return parts
 }
 
+/** Return a trimmed ASCII covariate identifier, or null for invalid or reserved names. */
 function validIdent(s: string): string | null {
   const t = s.trim()
   if (!/^[A-Za-z][A-Za-z0-9_.]*$/.test(t)) return null
@@ -166,6 +172,11 @@ function validIdent(s: string): string | null {
 /**
  * Client-side preflight validation matching `Ordination.validate_formula_syntax`
  * on the backend. Empty/null formula is valid (uses study default covariates).
+ * Only two-way interactions are supported; `a*b` counts as `a`, `b` and `a:b`.
+ * On success, return the number of distinct expanded constraints and whether
+ * conditioning is present; invalid syntax returns an error message. Empty input
+ * uses a count of 1 for runtime estimation. This checks syntax only; metadata
+ * and model degrees of freedom are checked by the server.
  */
 export function validateOrdinationFormulaSyntax(formula: string | null | undefined): {
   valid: boolean
@@ -280,6 +291,13 @@ export function validateOrdinationFormulaSyntax(formula: string | null | undefin
   }
 }
 
+/**
+ * Estimate wall-clock seconds for UI guidance, with a display label and cost tier.
+ * Missing feature/term counts use 250/1; counts are truncated and clamped to at
+ * least 3 samples, 10 features, 99 permutations and 1 term. Tiers change at 5 and
+ * 60 seconds; the five-minute warning is set only above 300 seconds. This is a
+ * heuristic, not a measured duration or a validation of the request.
+ */
 export function estimateOrdinationRuntime(opts: {
   method: ActiveOrdinationMethod
   distance: OrdinationDistance
@@ -325,6 +343,7 @@ export function estimateOrdinationRuntime(opts: {
   }
 }
 
+/** Escape commas, quotes and line breaks for one CSV cell; null/undefined become empty cells. */
 function csvCell(val: string | number | boolean | null | undefined): string {
   if (val === null || val === undefined) return ''
   const s = String(val)

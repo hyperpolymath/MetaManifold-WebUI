@@ -21,6 +21,11 @@ using Random
 
 const FIVE_MINUTE_WARN_SECONDS = 300.0
 
+"""
+Generate a reproducible sample-by-feature count matrix and aligned group, batch
+and pH metadata using a local RNG. For positive dimensions, ensure every sample
+and feature has positive total abundance.
+"""
 function _synthetic_microbiome(n_samples::Int, n_features::Int; seed::Int = 20261023)
     rng = MersenneTwister(seed)
     groups = [i <= div(n_samples, 2) ? "Control" : "Treatment" for i in 1:n_samples]
@@ -55,12 +60,17 @@ function _synthetic_microbiome(n_samples::Int, n_features::Int; seed::Int = 2026
     (counts, meta)
 end
 
+"""Return the median of a non-empty timing vector without changing it; empty input raises `BoundsError`."""
 function _median(xs::Vector{Float64})::Float64
     s = sort(xs)
     n = length(s)
     iseven(n) ? 0.5 * (s[div(n, 2)] + s[div(n, 2) + 1]) : s[div(n + 1, 2)]
 end
 
+"""
+Return median elapsed seconds over positive `reps` for Hellinger transformation
+and per-sample Shannon, Simpson and squared-norm summaries, excluding warm-up.
+"""
 function _bench_existing_diversity(counts::Matrix{Float64}; reps::Int = 5)
     # Warm-up
     _ = transform_counts(counts; method="hellinger")
@@ -83,6 +93,11 @@ function _bench_existing_diversity(counts::Matrix{Float64}; reps::Int = 5)
     _median(times)
 end
 
+"""
+Return median fit time in seconds over positive `reps` for Hellinger RDA with
+group/pH constraints and a BatchA indicator as the conditioning column.
+Transformation, design preparation and warm-up are excluded; fit errors propagate.
+"""
 function _bench_pure_julia_rda(counts::Matrix{Float64}, meta::DataFrame; reps::Int = 5)
     hel = transform_counts(counts; method="hellinger")
     n = size(counts, 1)
@@ -99,6 +114,13 @@ function _bench_pure_julia_rda(counts::Matrix{Float64}, meta::DataFrame; reps::I
     _median(times)
 end
 
+"""
+Run the 100-sample benchmark and optionally the 1,000-sample tier when
+`--include-1000` is present or `BENCH_INCLUDE_1000=1`. Print canonical JSON with
+`--json`, otherwise a text summary. Skip R fits when R/vegan is unavailable;
+errors during selected benchmark fits propagate. Timings above 300 seconds
+produce warnings in the summary without stopping the benchmark.
+"""
 function main(args::Vector{String})
     include_1000 = "--include-1000" in args || get(ENV, "BENCH_INCLUDE_1000", "0") == "1"
     emit_json = "--json" in args

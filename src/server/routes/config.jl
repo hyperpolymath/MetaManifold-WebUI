@@ -157,7 +157,10 @@ Differential optimiser settings reject booleans and non-finite values:
 and runtime in seconds must be positive, and the ridge penalty non-negative.
 `InexactError` and `OverflowError` from the iteration-limit conversion become
 validation messages. This checks individual values without saving them;
-method compatibility is checked separately by `_differential_settings_error`.
+method compatibility is checked separately by `_differential_settings_error`
+and `_ordination_settings_error`. Non-blank ordination formulae undergo syntax
+validation; formula `ArgumentError`s become validation messages. Ordination
+scaling must be 1 or 2 and permutation counts must lie in `99:9999`.
 """
 function _config_value_error(key::String, value)
     v = value isa JSON3.Array ? collect(value) : value
@@ -292,6 +295,14 @@ const _ORDINATION_SETTING_DEFAULTS = Dict{String,Any}(
 
 const _ORDINATION_SETTING_KEYS = collect(keys(_ORDINATION_SETTING_DEFAULTS))
 
+"""
+    _ordination_settings_error(effective) -> Union{String,Nothing}
+
+Return a method/distance validation message or `nothing`. Dotted keys may map
+to raw values or resolved `(; value, source)` entries; absent keys use factory
+defaults. Non-text values are left to individual value checks. Compatibility
+`ArgumentError`s become messages; other errors propagate.
+"""
 function _ordination_settings_error(effective::AbstractDict)
     value(k) = begin
         current = get(effective, k, _ORDINATION_SETTING_DEFAULTS[k])
@@ -309,6 +320,15 @@ function _ordination_settings_error(effective::AbstractDict)
     end
 end
 
+"""
+    _ordination_cascade_error(path, document) -> Union{String,Nothing}
+
+Check ordination method/distance compatibility in scopes affected by replacing
+the config at `path` with `document`, without writing it. Combine factory and
+global defaults with each affected study/group/run override. Return the first
+invalid scope and reason, or `nothing`. Errors while loading/checking the
+cascade become validation messages.
+"""
 function _ordination_cascade_error(path::String, document)
     data = ServerState.data_dir()
     root = dirname(data)
@@ -494,6 +514,15 @@ end
 
 # Validate, prepare the complete document, and publish once under one lock.
 # Readers do not take this lock, so per-key renames would expose partial PATCHes.
+"""
+    _write_config_updates(path, changes; remove=()) -> Union{HTTP.Response,Nothing}
+
+Apply dotted-key updates and removals under the config lock, normalising known
+case-insensitive enums. Validate affected differential and ordination cascades
+before publishing the whole YAML document atomically. Return an HTTP 400 response
+without writing on a cascade failure; return `nothing` after a write or no-op.
+File access, update and write errors propagate.
+"""
 function _write_config_updates(path::String, changes::AbstractDict; remove=())
     lock(_config_file_lock) do
         native = Dict{String,Any}(string(k) => _to_plain(v) for (k, v) in changes)
