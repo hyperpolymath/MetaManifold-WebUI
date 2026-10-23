@@ -64,7 +64,9 @@ function _probe_optional_phylo_tool(tool_key::String, fallbacks::Vector{String})
     end
 end
 
-function _load_run_table_df(study::String, run::String, table::String; group::Union{String,Nothing}=nothing)
+function _load_run_table_df(study::String, run::String, table::AbstractString;
+                            group::Union{String,Nothing}=nothing)
+    table = String(table) # request bodies hand us the SubString that `strip` returns
     dir = _require_duckdb(study, run; group)
     isnothing(dir) && return (nothing, nothing, json_error(404, "no_results",
         "No results for run '$run' - run the pipeline first"))
@@ -145,19 +147,28 @@ end
             names_df = DataFrame(DBInterface.execute(con, "SHOW TABLES"))
             tlist = sort(String[string(r.name) for r in eachrow(names_df)])
             for t in tlist
-                cols = _duckdb_columns(con, t)
-                scols = _sample_count_columns(con, t)
-                isempty(scols) && continue
-                nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
-                has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
-                ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
-                push!(tables_info, OrderedDict{String,Any}(
-                    "table"        => t,
-                    "row_count"    => nrows,
-                    "sample_count" => length(scols),
-                    "has_sequence" => has_seq,
-                    "ranks"        => ranks,
-                ))
+                # `SHOW TABLES` lists views too, and a view over a DuckDB
+                # replacement scan is bound to the connection that registered it.
+                # Reading one from here raises, so an object that cannot be read
+                # is skipped instead of failing the whole listing.
+                try
+                    cols = _duckdb_columns(con, t)
+                    scols = _sample_count_columns(con, t)
+                    isempty(scols) && continue
+                    nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
+                    has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
+                    ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
+                    push!(tables_info, OrderedDict{String,Any}(
+                        "table"        => t,
+                        "row_count"    => nrows,
+                        "sample_count" => length(scols),
+                        "has_sequence" => has_seq,
+                        "ranks"        => ranks,
+                    ))
+                catch err
+                    err isa InterruptException && rethrow()
+                    @warn "clade-cumulus sources: skipping an unreadable object" object=t exception=err
+                end
             end
         finally
             DBInterface.close!(con)
