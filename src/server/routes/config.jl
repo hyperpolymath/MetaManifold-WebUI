@@ -276,10 +276,10 @@ function _differential_settings_error(effective::AbstractDict)
     method isa AbstractString || return nothing
     m = lowercase(strip(method))
     compositional = m in Differential.COMPOSITIONAL_METHODS
-    if dispersion isa AbstractString && m != "nb_glm" &&
+    if m in Differential.METHODS && m != "nb_glm" && dispersion isa AbstractString &&
        lowercase(strip(dispersion)) == "glmgampoi"
         return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; " *
-               "use dispersion: ml with $(strip(method))"
+               "use dispersion: ml with $m"
     end
     if !isnothing(reference) && !(reference isa AbstractString && isempty(strip(reference))) &&
        !compositional

@@ -53,8 +53,8 @@ export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavail
 # Keep the other method groups in the public tuple as well: a configuration
 # must never silently lose a model because two feature branches were merged.
 const COMPOSITIONAL_METHODS = ("multinomial", "dirichlet_multinomial")
-const METHODS = ("nb_glm", "clr_welch", COMPOSITIONAL_METHODS...,
-                 "ancom_bc", "aldex2", "songbird", "zinb", "hurdle_nb")
+const METHODS = ("nb_glm", "clr_welch", "zinb", "hurdle_nb", "ancom_bc",
+                 "aldex2", "songbird", COMPOSITIONAL_METHODS...)
 
 # The per-taxon dispersion `nb_glm` uses: maximum likelihood (MASS::glm.nb's
 # own theta) or glmGamPoi's shrinkage estimator, which shares information
