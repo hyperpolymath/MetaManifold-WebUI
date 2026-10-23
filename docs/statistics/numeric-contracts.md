@@ -43,7 +43,11 @@ bytes, per `hyperpolymath/standards` JSON-POLICY (D306) and the
 - JSON numbers carry exactly the safe I-JSON integer range
   `-(2^53-1) .. 2^53-1`.
 - **A count above `2^53-1` is a decimal string, never a JSON number.** `1` is a
-  number; `"9007199254740993"` is a string.
+  number; `"9007199254740993"` is a string. A JSON number outside
+  `-(2^53-1) .. 2^53-1` is refused by the canonical reader as a `400`: the
+  document itself is not I-JSON, so the statistics layer never sees a count it
+  would have to round. The same magnitude sent as a whole-number string is
+  accepted and analysed exactly.
 - **Decimal and exponent tokens are refused even when their value is
   integral.** `1.0` and `1e0` are float tokens for a field that is
   contractually integral; accepting them would silently claim a precision the
