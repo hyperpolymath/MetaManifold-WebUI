@@ -2170,15 +2170,6 @@ function _build_phylo_or_combined_tree(
                 total_tips_per_taxon[tx] == 1 && (monophyletic_witness[tx] = true)
             end
             lbl = (mode === :combined && tx !== nothing) ? "$(u.name) [$tx]" : u.name
-            # A leaf's subtree PD is its own incoming branch when it carries
-            # reads, and zero otherwise - the `clade_faith_pd` convention, which
-            # the internal-node branch below already uses. Parents accumulate
-            # `subtree_pd` alone, so a leaf that reported `0.0` here would lose
-            # its own edge from every ancestor, while `_reaggregate_after_move`
-            # (which does credit an active leaf with its branch) would report a
-            # different leaf PD for the same topology after a drag-and-drop.
-            # Sharing the helper keeps both builders on one convention.
-            leaf_pd = clade_faith_pd(u, active_tips; is_root = is_root)
             node = CladeNode(
                 u.id,
                 lbl,
@@ -2190,7 +2181,11 @@ function _build_phylo_or_combined_tree(
                 Epistemic.cloud_size_by_residual(res),
                 is_root ? 0.0 : max(0.0, u.branch_length),
                 u.support === nothing ? sup : u.support,
-                leaf_pd,
+                # Keep the same node-local convention as clade_faith_pd and
+                # _reaggregate_after_move: an active non-root tip carries its
+                # incoming edge. This makes an unchanged tip's PD comparable
+                # before and after an accepted drag-and-drop proposal.
+                cnt > 0.0 && !is_root ? max(0.0, u.branch_length) : 0.0,
                 tx,
                 tx === nothing ? nothing : 1.0,
                 tx === nothing ? nothing : (total_tips_per_taxon[tx] == 1),

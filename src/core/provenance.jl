@@ -349,11 +349,18 @@ not even a well-formed R version. Two of five packages were misreported on this
 machine. Nothing here may reach for it, and nothing normalises what DESCRIPTION
 declares.
 """
-r_version_query(pkg::AbstractString) = """
+function r_version_query(pkg::AbstractString)
+    # This name becomes R source, not an RCall-bound value. Accept only the
+    # package-name alphabet before interpolation; quotes, escapes and controls
+    # must never be able to terminate its R string literal.
+    occursin(r"\A[A-Za-z][A-Za-z0-9.]*\z", pkg) || throw(ArgumentError(
+        "R package names must start with a letter and contain only letters, digits or dots"))
+    return """
 local({
   d <- tryCatch(utils::packageDescription("$pkg"), error = function(e) NULL)
   if (is.list(d) && !is.null(d[["Version"]])) as.character(d[["Version"]]) else NA_character_
 })"""
+end
 
 """
     probe_r(; packages=R_PACKAGES, renv_lock, timeout=60) -> RRecord

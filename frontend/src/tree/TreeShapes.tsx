@@ -22,13 +22,12 @@ export function TreeShapes({ layout, settings, selSubtree, matchSet, onSelect, o
   const branchPath = (n: LNode) => mode === 'rectangular' ? `M${n.px},${n.y}H${n.x}` : `M${n.ex},${n.ey}L${n.x},${n.y}`
   const right = aligned && settings.tipJustify === 'right'
 
-  // Branches are batched into one path per colour.
+  // Branches are batched into one path per colour. Accumulate path fragments
+  // in arrays and join once; repeated string concatenation is quadratic for
+  // large trees in engines that cannot flatten the intermediate strings.
   const { strokes, selected, leaders, caps } = useMemo(() => {
-    // Path fragments are collected per node and joined once: `d += ...` in this
-    // loop is quadratic in the number of nodes, and a tree view renders
-    // thousands of them (pons asinorum `string-concat-in-loop`).
-    const byColour = new Map<string, { rgba: Rgba | null; d: string[] }>()
-    const sel: string[] = [], lead: string[] = [], caps: string[] = []
+    const byColour = new Map<string, { rgba: Rgba | null; parts: string[] }>()
+    const selectedParts: string[] = [], leaderParts: string[] = [], capParts: string[] = []
     const arc = (n: LNode) => {
       const first = n.kids[0], last = n.kids[n.kids.length - 1]
       if (mode === 'slanted' || mode === 'unrooted') return ''
@@ -40,9 +39,10 @@ export function TreeShapes({ layout, settings, selSubtree, matchSet, onSelect, o
       return `M${cx + r * Math.cos(a1)},${cy + r * Math.sin(a1)}A${r},${r} 0 ${large} 1 ${cx + r * Math.cos(a2)},${cy + r * Math.sin(a2)}`
     }
     for (const n of layout.nodes) {
-      const p: string[] = []
-      if (n.d.parent) p.push(branchPath(n))
-      if (n.kids.length) p.push(arc(n))
+      const p = [
+        n.d.parent ? branchPath(n) : '',
+        n.kids.length ? arc(n) : '',
+      ].join('')
       if (n.capped) {
         // Two slashes across the middle of a branch drawn shorter than it is.
         const sx = mode === 'rectangular' ? n.px : n.ex, sy = mode === 'rectangular' ? n.y : n.ey
@@ -52,31 +52,33 @@ export function TreeShapes({ layout, settings, selSubtree, matchSet, onSelect, o
         const vx = 4 * (-uy + 0.5 * ux), vy = 4 * (ux + 0.5 * uy)
         for (const o of [-2, 2]) {
           const qx = mx + o * ux, qy = my + o * uy
-          caps.push(`M${qx - vx},${qy - vy}L${qx + vx},${qy + vy}`)
+          capParts.push(`M${qx - vx},${qy - vy}L${qx + vx},${qy + vy}`)
         }
       }
       const c = n.d.style.branch ?? null
       const key = c ? `${c.hex}/${c.alpha}` : ''
       const entry = byColour.get(key)
-      if (entry) entry.d.push(...p)
-      else byColour.set(key, { rgba: c, d: p })
-      if (selSubtree.has(n.d.id)) sel.push(...p)
+      if (entry) entry.parts.push(p)
+      else byColour.set(key, { rgba: c, parts: [p] })
+      if (selSubtree.has(n.d.id)) selectedParts.push(p)
       if (aligned && !n.kids.length) {
         const end = n.wedge ? farthest(n.wedge, circular, cx, cy) : null
         if (circular) {
           const r0 = end ? end.r : n.radius
-          if (layout.alignAt - 4 > r0) lead.push(`M${cx + r0 * Math.cos(n.angle)},${cy + r0 * Math.sin(n.angle)}L${cx + (layout.alignAt - 4) * Math.cos(n.angle)},${cy + (layout.alignAt - 4) * Math.sin(n.angle)}`)
+          if (layout.alignAt - 4 > r0) {
+            leaderParts.push(`M${cx + r0 * Math.cos(n.angle)},${cy + r0 * Math.sin(n.angle)}L${cx + (layout.alignAt - 4) * Math.cos(n.angle)},${cy + (layout.alignAt - 4) * Math.sin(n.angle)}`)
+          }
         } else {
           const x0 = end ? end.x : n.x
-          if (layout.alignAt - 4 > x0) lead.push(`M${x0},${n.y}H${layout.alignAt - 4}`)
+          if (layout.alignAt - 4 > x0) leaderParts.push(`M${x0},${n.y}H${layout.alignAt - 4}`)
         }
       }
     }
     return {
-      strokes: [...byColour.values()].map(b => ({ ...b, d: b.d.join('') })),
-      selected: sel.join(''),
-      leaders: lead.join(''),
-      caps: caps.join(''),
+      strokes: [...byColour.values()].map(({ rgba, parts }) => ({ rgba, d: parts.join('') })),
+      selected: selectedParts.join(''),
+      leaders: leaderParts.join(''),
+      caps: capParts.join(''),
     }
   }, [layout, circular, cx, cy, selSubtree, aligned, mode])
 

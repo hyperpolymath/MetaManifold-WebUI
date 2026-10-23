@@ -537,74 +537,6 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         end
     end
 
-    @testset "Nested-clade drag-and-drop counts each active branch once" begin
-        df = DataFrame(
-            SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4", "ASV_5", "ASV_6"],
-            S1 = [10, 20, 30, 40, 50, 0],
-        )
-        tree = CC.build_clade_tree(df; mode = :phylogenetic, newick =
-            "((ASV_1:0.10,ASV_2:0.20,ASV_6:9.0)0.96:0.30,(ASV_3:0.40,ASV_4:0.50,ASV_5:0.70)0.97:0.60)Root:8.0;")
-        source, target = tree.root.children
-        verdict = CC.validate_drag_drop(tree, source.id, target.id)
-        @test verdict["allowed"]
-        proposed = verdict["proposed_root"]
-        target_after = only(proposed["children"])
-        source_after = last(target_after["children"])
-
-        # 0.10 + 0.20 + 0.30 + 0.40 + 0.50 + 0.70 + 0.60 = 2.80.
-        # The inactive tip's 9.0 and the root's 8.0 contribute nothing.
-        @test proposed["subtree_pd"] ≈ 2.80 atol = 1e-12
-        @test target_after["subtree_pd"] ≈ 2.80 atol = 1e-12
-        @test source_after["subtree_pd"] ≈ 0.60 atol = 1e-12
-        @test [ch["subtree_pd"] for ch in source_after["children"]] ≈ [0.10, 0.20, 0.0] atol = 1e-12
-        @test proposed["cumulative_count"] == tree.root.cumulative_count == 150.0
-        @test tree.root.subtree_pd ≈ 2.80 atol = 1e-12
-        @test length(tree.root.children) == 2
-    end
-
-    @testset "Leaf subtree PD is identical before and after a move" begin
-        # Codex P2 on PR #228: validating a drag-and-drop must not change the
-        # reported PD of a leaf whose topology did not change. `build_node` and
-        # `_reaggregate_after_move` share the `clade_faith_pd` convention - an
-        # active non-root node contributes its own incoming branch - so an
-        # untouched tip keeps its edge in both trees.
-        df = DataFrame(
-            SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4"],
-            S1 = [10, 20, 30, 0],
-        )
-        tree = CC.build_clade_tree(df; mode = :phylogenetic, newick =
-            "((ASV_1:0.10,ASV_2:0.20)0.96:0.30,(ASV_3:0.40,ASV_4:9.0)0.97:0.60)Root:8.0;")
-
-        # Node-local PD: own branch when active and non-root, plus the
-        # children's subtree PD.
-        for u in _cc_nodes(tree.root)
-            own = (u !== tree.root && u.cumulative_count > 0.0) ? max(0.0, u.branch_length) : 0.0
-            @test u.subtree_pd ≈ own + sum((ch.subtree_pd for ch in u.children); init = 0.0) atol = 1e-12
-        end
-
-        tips = Dict(String(u.name) => u for u in _cc_nodes(tree.root) if isempty(u.children))
-        @test tips["ASV_1"].subtree_pd ≈ 0.10 atol = 1e-12
-        @test tips["ASV_2"].subtree_pd ≈ 0.20 atol = 1e-12
-        @test tips["ASV_3"].subtree_pd ≈ 0.40 atol = 1e-12
-        @test tips["ASV_4"].subtree_pd == 0.0   # no reads, so no edge in the PD sum
-        # 0.10 + 0.20 + 0.30 + 0.40 + 0.60; the inactive tip's 9.0 and the
-        # root's 8.0 contribute nothing.
-        @test tree.root.subtree_pd ≈ 1.60 atol = 1e-12
-
-        source, target = tree.root.children
-        verdict = CC.validate_drag_drop(tree, String(source.id), String(target.id))
-        @test verdict["allowed"]
-        proposed = verdict["proposed_root"]
-        for name in ("ASV_1", "ASV_2")
-            before = Float64(tips[name].subtree_pd)
-            after = _cc_find_dict(proposed, String(tips[name].id))
-            @test after !== nothing
-            if after !== nothing
-                @test Float64(after["subtree_pd"]) ≈ before atol = 1e-12
-            end
-        end
-    end
-
     @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
         old_root = _CLADE_SV.ServerState._root[]
@@ -640,6 +572,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             con = DBInterface.connect(db)
             DuckDB.register_data_frame(con, df, "src_df")
             DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            # The registration is a view backed by a replacement scan that only
+            # exists on this connection, so it is removed again: left in the file
+            # it makes the view unreadable for every later connection.
             DuckDB.unregister_data_frame(con, "src_df")
             DBInterface.close!(con)
             close(db)
@@ -677,6 +612,18 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test high_clade.colour == "#2e7d32"
             @test low_clade.epistemic_status == "present_in_some"
             @test low_clade.colour == "#f9a825"
+
+            # Node-local PD has the same meaning on tips as on internal clades:
+            # an active non-root tip includes its incoming branch. Every tip is
+            # active in at least one sample in this fixture.
+            for tip_id in ("ASV_1", "ASV_2", "ASV_3", "ASV_4")
+                tip = _cc_find(comb.root, tip_id)
+                @test tip !== nothing
+                if tip !== nothing
+                    @test Float64(tip.cumulative_count) > 0.0
+                    @test Float64(tip.subtree_pd) ≈ Float64(tip.branch_length) atol = 1e-10
+                end
+            end
 
             # 3. Validate drag-and-drop: moving ASV_3 into low-support clade fails warrant check!
             r_deny = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
@@ -743,6 +690,22 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                                    if ch.cumulative_count > 0); init=0.0)
                 @test Float64(proposed_target.subtree_pd) ≈ expected_pd atol = 1e-10
                 @test Float64(proposed_target.subtree_pd) != before_target_pd
+            end
+
+            # Reaggregation must not change the PD stored on a tip merely
+            # because a proposal was accepted. This covers unchanged tips and
+            # the moved tip, whose incoming branch itself is unchanged.
+            for tip_id in ("ASV_1", "ASV_2", "ASV_3", "ASV_4")
+                original_tip = _cc_find(comb.root, tip_id)
+                proposed_tip = _cc_find_dict(v_allow.proposed_root, tip_id)
+                @test original_tip !== nothing
+                @test proposed_tip !== nothing
+                if original_tip !== nothing && proposed_tip !== nothing
+                    @test Float64(proposed_tip["subtree_pd"]) ≈
+                          Float64(original_tip.subtree_pd) atol = 1e-10
+                    @test Float64(proposed_tip["branch_length"]) ≈
+                          Float64(original_tip.branch_length) atol = 1e-10
+                end
             end
 
             # Re-saving under a different threshold writes a distinct immutable sidecar file
@@ -911,6 +874,18 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             if relocated !== nothing
                 @test Float64(relocated["cumulative_count"]) == moved_reads
                 @test Float64(relocated["residual_count"]) == moved_residual
+                # The moved clade's 0.30 incoming branch and its two tip
+                # branches (0.10 and 0.20) each occur exactly once.
+                @test Float64(relocated["subtree_pd"]) ≈ 0.60 atol = 1e-9
+            end
+            proposed_target = _cc_find_dict(proposed_root, String(target.id))
+            @test proposed_target !== nothing
+            if proposed_target !== nothing
+                # The target contributes its own 0.40 edge, two original tip
+                # edges (0.15 and 0.25), and the relocated clade's complete
+                # 0.60 node-local PD. Adding the relocated incoming edge again
+                # at the parent would incorrectly produce 1.70 rather than 1.40.
+                @test Float64(proposed_target["subtree_pd"]) ≈ 1.40 atol = 1e-9
             end
             @test Float64(proposed_root["cumulative_count"]) ≈ before_total atol = 1e-9
             # The emptied wrapper is childless but is not a tip: it must not
@@ -918,6 +893,69 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             # purity/monophyly. Four real tips, two per domain, give 0.5;
             # counting the wrapper as a fifth Bacteria tip would give 0.6.
             @test Float64(proposed_root["taxon_purity"]) ≈ 0.5 atol = 1e-9
+        end
+    end
+
+
+    @testset "A zero-read terminal still counts as a tip after a move" begin
+        # The tip rule in `_reaggregate_after_move` has two halves: a clade with
+        # no children is a tip if it holds reads *or* if it is a sequence
+        # terminal. The emptied-wrapper test above pins the first half (a
+        # vacated internal clade is not a tip). This pins the second: a
+        # terminal that happens to hold zero reads in this table is still a
+        # tip, so it still counts toward the global per-taxon tip total behind
+        # the monophyly verdict.
+        #
+        # These two monophyly assertions are what move. With the rule intact
+        # GenusA has two tips, so neither is a singleton and both read `false`.
+        # Drop the `|| rank in ("tip", "ASV")` half and the zero-read tip leaves
+        # the count, GenusA looks like a singleton, `positive` flips to `true`
+        # and `zero` gets no verdict at all (`nothing`) instead of `false`.
+        # Taxon purity happens not to move here -- it is 0.5 either way, since
+        # the tie-break between equally sized genera lands on the same number
+        # by a different route -- so it is asserted as a plain invariant, not
+        # as the regression guard.
+        _zero_node(id, rank, count, taxon, children = CC.CladeNode[]) =
+            CC.CladeNode(
+                id, id, rank, count,
+                count + sum(ch.cumulative_count for ch in children; init = 0.0),
+                0.0,                # cumulative_frequency
+                0.0,                # residual_count
+                5.0,                # cloud_size
+                0.1,                # branch_length
+                1.0,                # support
+                0.0,                # subtree_pd
+                taxon,
+                taxon === nothing ? nothing : 1.0,
+                nothing,            # monophyletic -- recomputed
+                :present_in_every,
+                "#2e7d32",
+                children,
+            )
+
+        for rank in ("tip", "ASV")
+            positive = _zero_node("positive", rank, 10.0, "GenusA")
+            zero = _zero_node("zero", rank, 0.0, "GenusA")
+            unassigned = _zero_node("unassigned", rank, 0.0, nothing)
+            moving = _zero_node("moving", rank, 20.0, "GenusB")
+            target = _zero_node("target", "clade", 0.0, "GenusA", [positive, zero, unassigned])
+            root = _zero_node("root", "root", 0.0, "GenusA", [target, moving])
+
+            proposed = CC._reaggregate_after_move(
+                root, moving, target.id, EP.Case("zero_read_tips", EP.WorldCandidate[]), 30.0,
+            )
+
+            # Four tips under `target` once `moving` joins it: two GenusA (one
+            # with reads, one without), one unassigned, one GenusB.
+            @test proposed.taxon_purity ≈ 0.5 atol = 1e-12
+            @test CC._find_clade(proposed, target.id).taxon_purity ≈ 0.5 atol = 1e-12
+            # GenusA has two tips, so neither of them is a monophyletic singleton.
+            @test CC._find_clade(proposed, positive.id).monophyletic == false
+            @test CC._find_clade(proposed, zero.id).monophyletic == false
+            # A terminal with no reads stays inactive, so it contributes no PD.
+            @test CC._find_clade(proposed, zero.id).subtree_pd == 0.0
+            # Reads are relocated, not created or lost.
+            @test proposed.cumulative_count == 30.0
         end
     end
 
