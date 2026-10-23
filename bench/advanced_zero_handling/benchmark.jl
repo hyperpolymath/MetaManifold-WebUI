@@ -92,7 +92,11 @@ function main()
     isnothing(output) ? println(rendered) : write(output, rendered * "\n")
 
     if !isnothing(baseline_path)
-        baseline = JSON3.read(read(baseline_path, String))
+        baseline = try
+            JSON3.read(read(baseline_path, String))
+        catch e
+            error("Failed to read benchmark baseline JSON from '$baseline_path': $(sprint(showerror, e))")
+        end
         regressions = String[]
         for old in baseline.results
             old.operation in ("replacement/bayesian_multiplicative", "dispersion/ml") || continue

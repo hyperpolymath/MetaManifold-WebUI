@@ -39,9 +39,10 @@ function _statistics_guard(f::Function)
 end
 
 function _statistics_body(req; reject_noninteger_tokens::Bool=false)
-    length(req.body) <= _STATISTICS_REQUEST_LIMIT || throw(ResourceLimitError(
-        "request bytes", _STATISTICS_REQUEST_LIMIT, length(req.body)))
-    source = String(copy(req.body))
+    body_bytes = req.body isa AbstractString ? ncodeunits(req.body) : length(req.body)
+    body_bytes <= _STATISTICS_REQUEST_LIMIT || throw(ResourceLimitError(
+        "request bytes", _STATISTICS_REQUEST_LIMIT, body_bytes))
+    source = req.body isa AbstractString ? String(req.body) : String(copy(req.body))
     parsed = ijson_read(source)
     parsed isa JSON3.Object || throw(ArgumentError("request body must be a JSON object"))
     reject_noninteger_tokens && _reject_noninteger_json_tokens(source)

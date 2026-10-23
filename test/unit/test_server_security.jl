@@ -195,6 +195,44 @@ end
             @test SV.HTTP.header(f, "X-Content-Type-Options") == "nosniff"
             @test SV.HTTP.header(f, "Content-Security-Policy") == ""
         end
+
+        @testset "Malformed or non-object JSON bodies answer 400 rather than 500" begin
+            headers = ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"]
+            object_routes = (
+                ("POST",  "/api/v1/studies"),
+                ("POST",  "/api/v1/studies/StudyS/rename"),
+                ("POST",  "/api/v1/studies/StudyS/groups"),
+                ("POST",  "/api/v1/studies/StudyS/runs"),
+                ("POST",  "/api/v1/studies/StudyS/runs/run1/rename"),
+                ("PATCH", "/api/v1/config"),
+                ("PATCH", "/api/v1/studies/StudyS/config"),
+                ("PATCH", "/api/v1/studies/StudyS/runs/run1/config"),
+                ("POST",  "/api/v1/category-sets/custom"),
+                ("POST",  "/api/v1/studies/StudyS/runs/run1/composition/summary"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/alpha"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/chart"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/chart-facet"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/venn"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/differential"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/publication-tables"),
+                ("POST",  "/api/v1/filter-presets/testpreset"),
+            )
+            for (method, path) in object_routes, payload in ("{not-json", "[1,2]", "123")
+                r = _ss_request(method, path, headers, payload)
+                @test r.status == 400
+                @test JSON3.read(String(copy(r.body))).error == "invalid_json"
+            end
+
+            for path in ("/api/v1/composition/filters/f1", "/api/v1/composition/sets/s1")
+                bad_syntax = _ss_request("POST", path, headers, "{not-json")
+                @test bad_syntax.status == 400
+                @test JSON3.read(String(copy(bad_syntax.body))).error == "invalid_json"
+
+                bad_shape = _ss_request("POST", path, headers, "[1,2]")
+                @test bad_shape.status == 400
+                @test JSON3.read(String(copy(bad_shape.body))).error == "invalid_library"
+            end
+        end
     finally
         saved_origins === nothing ||
             (ENV["JULIA_METAMANIFOLD_ALLOWED_ORIGINS"] = saved_origins)
