@@ -537,6 +537,74 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         end
     end
 
+    @testset "Nested-clade drag-and-drop counts each active branch once" begin
+        df = DataFrame(
+            SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4", "ASV_5", "ASV_6"],
+            S1 = [10, 20, 30, 40, 50, 0],
+        )
+        tree = CC.build_clade_tree(df; mode = :phylogenetic, newick =
+            "((ASV_1:0.10,ASV_2:0.20,ASV_6:9.0)0.96:0.30,(ASV_3:0.40,ASV_4:0.50,ASV_5:0.70)0.97:0.60)Root:8.0;")
+        source, target = tree.root.children
+        verdict = CC.validate_drag_drop(tree, source.id, target.id)
+        @test verdict["allowed"]
+        proposed = verdict["proposed_root"]
+        target_after = only(proposed["children"])
+        source_after = last(target_after["children"])
+
+        # 0.10 + 0.20 + 0.30 + 0.40 + 0.50 + 0.70 + 0.60 = 2.80.
+        # The inactive tip's 9.0 and the root's 8.0 contribute nothing.
+        @test proposed["subtree_pd"] ≈ 2.80 atol = 1e-12
+        @test target_after["subtree_pd"] ≈ 2.80 atol = 1e-12
+        @test source_after["subtree_pd"] ≈ 0.60 atol = 1e-12
+        @test [ch["subtree_pd"] for ch in source_after["children"]] ≈ [0.10, 0.20, 0.0] atol = 1e-12
+        @test proposed["cumulative_count"] == tree.root.cumulative_count == 150.0
+        @test tree.root.subtree_pd ≈ 2.80 atol = 1e-12
+        @test length(tree.root.children) == 2
+    end
+
+    @testset "Leaf subtree PD is identical before and after a move" begin
+        # Codex P2 on PR #228: validating a drag-and-drop must not change the
+        # reported PD of a leaf whose topology did not change. `build_node` and
+        # `_reaggregate_after_move` share the `clade_faith_pd` convention - an
+        # active non-root node contributes its own incoming branch - so an
+        # untouched tip keeps its edge in both trees.
+        df = DataFrame(
+            SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4"],
+            S1 = [10, 20, 30, 0],
+        )
+        tree = CC.build_clade_tree(df; mode = :phylogenetic, newick =
+            "((ASV_1:0.10,ASV_2:0.20)0.96:0.30,(ASV_3:0.40,ASV_4:9.0)0.97:0.60)Root:8.0;")
+
+        # Node-local PD: own branch when active and non-root, plus the
+        # children's subtree PD.
+        for u in _cc_nodes(tree.root)
+            own = (u !== tree.root && u.cumulative_count > 0.0) ? max(0.0, u.branch_length) : 0.0
+            @test u.subtree_pd ≈ own + sum((ch.subtree_pd for ch in u.children); init = 0.0) atol = 1e-12
+        end
+
+        tips = Dict(String(u.name) => u for u in _cc_nodes(tree.root) if isempty(u.children))
+        @test tips["ASV_1"].subtree_pd ≈ 0.10 atol = 1e-12
+        @test tips["ASV_2"].subtree_pd ≈ 0.20 atol = 1e-12
+        @test tips["ASV_3"].subtree_pd ≈ 0.40 atol = 1e-12
+        @test tips["ASV_4"].subtree_pd == 0.0   # no reads, so no edge in the PD sum
+        # 0.10 + 0.20 + 0.30 + 0.40 + 0.60; the inactive tip's 9.0 and the
+        # root's 8.0 contribute nothing.
+        @test tree.root.subtree_pd ≈ 1.60 atol = 1e-12
+
+        source, target = tree.root.children
+        verdict = CC.validate_drag_drop(tree, String(source.id), String(target.id))
+        @test verdict["allowed"]
+        proposed = verdict["proposed_root"]
+        for name in ("ASV_1", "ASV_2")
+            before = Float64(tips[name].subtree_pd)
+            after = _cc_find_dict(proposed, String(tips[name].id))
+            @test after !== nothing
+            if after !== nothing
+                @test Float64(after["subtree_pd"]) ≈ before atol = 1e-12
+            end
+        end
+    end
+
     @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
         old_root = _CLADE_SV.ServerState._root[]
