@@ -1647,8 +1647,7 @@ end
         e = try
             differential_abundance([1 0; 2 3; 0 4; 5 0], ["s1", "s2", "s3", "s4"],
                                    ["a", "b"], groups8[1:4];
-                                   kw..., config=DifferentialConfig(; method="multinomial",
-                                                                    min_prevalence=1.0))
+                                   kw..., config=DifferentialConfig("tss", 1.0; method="multinomial"))
             nothing
         catch err
             err
