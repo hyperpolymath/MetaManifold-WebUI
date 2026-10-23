@@ -184,6 +184,39 @@ _cc_req(method::String, path::String, body::String = "") =
         @test decoded.nodes[1].parent_id === nothing
         @test decoded.faith_pd[2] ≈ 5.0
         @test decoded.unweighted_unifrac[1][2] ≈ 0.7
+
+        # IQ-TREE infers an unrooted tree for a reversible model, so the root of
+        # a `reference.treefile` is only whichever node was serialized first.
+        # `analyse_phylogeny` must therefore root the way the legacy metrics do
+        # (midpoint), or Faith's PD depends on that arbitrary choice.
+        unrooted_text = "(A:1.0,B:2.0,C:3.0);"
+        unrooted = CC.parse_phylogenetic_tree(unrooted_text)
+        @test length(unrooted.nodes[unrooted.root].children) == 3
+        rooted = CC.ensure_rooted(unrooted)
+        @test length(rooted.nodes[rooted.root].children) == 2
+        @test sort(collect(keys(rooted.tips))) == ["A", "B", "C"]
+        @test CC.ensure_rooted(rooted) === rooted
+
+        tips3 = ["A", "B", "C"]
+        one_tip = [1.0 0.0 0.0]
+        counts3 = [1.0 0.0 0.0;
+                   0.0 2.0 3.0]
+        # The midpoint falls inside the root-C edge, so a lone A tip now has to
+        # reach it: 1.0 (A) + 0.5 (half of the B-root-C path remainder) = 1.5.
+        @test CC._faith_pd_indexed(unrooted, CC.clade_counts(unrooted, one_tip, tips3))[1] ≈ 1.0
+        @test CC.faith_pd(unrooted, one_tip, tips3)[1] ≈ 1.5
+        @test CC.faith_pd(unrooted, one_tip, tips3)[1] ≈
+              CC.faith_pd([1.0, 0.0, 0.0], tips3, unrooted_text)
+
+        # Rooted and unrooted serializations must agree on every payload metric:
+        # PD through the shared rooting convention, UniFrac through invariance.
+        unrooted_result = CC.analyse_phylogeny(unrooted, counts3, tips3, samples)
+        rooted_result = CC.analyse_phylogeny(rooted, counts3, tips3, samples)
+        @test unrooted_result.faith_pd ≈ rooted_result.faith_pd
+        @test unrooted_result.unweighted_unifrac ≈ rooted_result.unweighted_unifrac
+        @test unrooted_result.weighted_unifrac ≈ rooted_result.weighted_unifrac
+        @test unrooted_result.total_branch_length ≈ rooted_result.total_branch_length
+        @test unrooted_result.total_branch_length ≈ 6.0
     end
 
 
