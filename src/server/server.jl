@@ -82,6 +82,29 @@ module Server
         HTTP.Response(status, ["Content-Type" => "application/json"], body=bytes)
     end
 
+    # Parse a JSON object request body without mutating `req.body::Vector{UInt8}`
+    # (Julia 1.12 `String(::Vector{UInt8})` truncates its argument in place).
+    # Malformed JSON or a non-object JSON payload returns a 400 HTTP.Response
+    # instead of throwing an unhandled parse/method exception out of the route.
+    function _read_json_object(req::HTTP.Request;
+                               allow_empty::Bool=false,
+                               non_object_error::String="invalid_json")
+        body_bytes = req.body isa AbstractString ? ncodeunits(req.body) : length(req.body)
+        if body_bytes == 0 && allow_empty
+            return (;)
+        end
+        raw = req.body isa AbstractString ? String(req.body) : String(copy(req.body))
+        parsed = try
+            JSON3.read(raw)
+        catch e
+            return json_error(400, "invalid_json",
+                "Request body is not valid JSON: $(sprint(showerror, e))")
+        end
+        parsed isa JSON3.Object || return json_error(400, non_object_error,
+            "Request body must be a JSON object")
+        parsed
+    end
+
     ## Route registration
     # Oxygen's routing macros register with its global router as the file
     # loads. A precompiled module does not load its files again, so these

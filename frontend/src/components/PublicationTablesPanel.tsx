@@ -197,6 +197,7 @@ export function PublicationTablesPanel({ study, runs }: {
     [request, heatmap, hideZeros])
 
   // Heatmap and zero-hiding only restyle the preview, so rebuild it in place.
+  // Only presentation changes trigger this; data changes clear the preview instead.
   const hasTable = built !== null
   useEffect(() => {
     if (!hasTable || !presented) return
@@ -205,8 +206,6 @@ export function PublicationTablesPanel({ study, runs }: {
       .then(r => { if (!cancelled) setBuilt(r.table) })
       .catch(err => { if (!cancelled) toast.error(`Publication table: ${errorMessage(err)}`) })
     return () => { cancelled = true }
-    // Only presentation changes trigger this; data changes clear the preview instead.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heatmap, hideZeros])
 
   const act = async (key: string, f: () => Promise<void>) => {
