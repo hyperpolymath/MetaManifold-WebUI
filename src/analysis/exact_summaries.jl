@@ -109,10 +109,7 @@ function _summarise(label::String, counts::Vector{BigInt}, policy::NumericPolicy
         push!(warnings, "'$label' has zero reads: relative abundances are undefined, not zero")
     else
         for (i, count) in enumerate(counts)
-            # An unobserved feature has no measured share of the sample: its
-            # proportion is undefined (nothing), never a substituted exact 0.
-            proportions[i] = iszero(count) ? nothing :
-                exact_relative_abundance(count, total; policy)
+            proportions[i] = exact_relative_abundance(count, total; policy)
         end
     end
     total, proportions, warnings
