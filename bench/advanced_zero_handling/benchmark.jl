@@ -92,10 +92,14 @@ function main()
     isnothing(output) ? println(rendered) : write(output, rendered * "\n")
 
     if !isnothing(baseline_path)
+        # A baseline is an input like any other: a truncated or hand-edited file
+        # must name itself in the error rather than escape as a JSON3 parse
+        # failure from inside the benchmark loop.
         baseline = try
             JSON3.read(read(baseline_path, String))
-        catch e
-            error("Failed to read benchmark baseline JSON from '$baseline_path': $(sprint(showerror, e))")
+        catch err
+            err isa InterruptException && rethrow()
+            error("could not read benchmark baseline $(baseline_path): $(sprint(showerror, err))")
         end
         regressions = String[]
         for old in baseline.results
