@@ -203,6 +203,16 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 `replaced values hold ${(100 * z.median_imputed_fraction).toPrecision(2)}% of the median sample ` +
                 `and at most ${(100 * z.max_imputed_fraction).toPrecision(2)}% of any, and are not measurements.`
             })()}
+            {result.diagnostics.model && (() => {
+              const m = result.diagnostics.model
+              return ` Reference taxon: ${m.reference_taxon}; ${m.n_parameters} coefficients, ` +
+                `penalty ${m.penalty}, ${m.iterations} Newton steps in ${m.runtime_seconds.toPrecision(2)} s.`
+            })()}
+            {result.diagnostics.overdispersion && (() => {
+              const o = result.diagnostics.overdispersion
+              return ` Concentration ${o.concentration.toPrecision(3)} by ${o.method}, ` +
+                `theta = ${o.theta.toPrecision(3)}${o.at_bound ? ' (at a bound: see the row notes)' : ''}.`
+            })()}
             {result.diagnostics.ancom_bc && (() => {
               const b = result.diagnostics.ancom_bc
               const warn = b.warnings.length > 0 ? ` Warning: ${b.warnings.join('; ')}.` : ''

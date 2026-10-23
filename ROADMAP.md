@@ -6,7 +6,8 @@ occupancy work. The GitHub Wiki roadmap still needs a synchronized update; see
 
 ## Available now
 
-- `nb_glm` and `clr_welch` remain the existing differential methods.
+- `nb_glm`, `clr_welch`, `multinomial`, `dirichlet_multinomial`, `ancom_bc`,
+  `aldex2`, and `songbird` remain available differential methods.
 - `zinb` and `hurdle_nb` are available in the differential-abundance config and
   UI. They report the count effect and zero/occurrence effect and test group
   effects jointly. The UI surfaces model cautions; BH adjustment remains on.

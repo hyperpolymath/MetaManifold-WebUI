@@ -293,18 +293,40 @@ not exclude samples from this analysis.
   with a library-size offset. The effect is log2 fold change; positive values
   indicate greater abundance in the second condition. `offset` selects `tss`
   (default) or `rle`; `dispersion` selects maximum-likelihood theta or a
-  cross-taxon `glmGamPoi` trend.
-- `zinb`: a zero-inflated negative-binomial model with separate logistic
-  zero and count components, a count-component library-size offset, a joint
-  2-df likelihood-ratio test, and BH correction.
-- `hurdle_nb`: a logistic occurrence model plus zero-truncated NB counts for
-  positive observations. It uses the same joint test and offset convention.
+  cross-taxon `glmGamPoi` trend. The glmGamPoi path uses fixed-theta NB Wald
+  fits, not a quasi-likelihood test.
 - `clr_welch`: Welch's t-test on centred log-ratios after zero replacement with
   `zCompositions::cmultRepl`. The effect is a CLR difference, not a fold change.
   `replacement_method` selects Bayesian-multiplicative (GBM, default) or
   multiplicative (CZM) replacement; `replacement_delta` sets the replacement
   fraction and optional `bayesian_alpha` overrides GBM's concentration. The
   offset is not used. See [zero-handling notes](docs/statistics/zero-handling.md).
+- `multinomial`: one joint multinomial logistic composition model against a
+  reference taxon. It uses no library-size offset or zero replacement; estimates
+  are log ratios against that reference, with explicit convergence and runtime
+  limits. `mn_reference_taxon`, `mn_penalty`, `max_iter`, `tolerance`, and
+  `max_seconds` control the fit.
+- `dirichlet_multinomial`: the joint reference-taxon model with an estimated
+  Dirichlet concentration for extra-multinomial overdispersion. Its diagnostics
+  report the concentration, theta, and boundary status;
+  `dm_overdispersion_method` selects `mle` or `mom`.
+- `ancom_bc`: ANCOM-BC sampling-fraction bias-corrected log-linear model. The
+  effect is a bias-corrected log2 fold change; the implementation reports its
+  mixture and bias diagnostics and requires at least three tested taxa. Its
+  assumption that fewer than half of tested taxa are differential must be
+  checked rather than treated as a guarantee.
+- `aldex2`: Dirichlet(`count + 0.5`) Monte-Carlo CLR model. `mc_samples` controls
+  the bounded, study-seeded instance count. The reported estimate is a
+  standardized CLR effect size, not an absolute fold change.
+- `songbird`: compositional baseline-category multinomial regression with
+  reference-frame invariant CLR-centred differentials. Differentials sum to zero
+  across fitted taxa; the model conditions on read totals and does not add an
+  extra-multinomial biological-overdispersion parameter.
+- `zinb`: a zero-inflated negative-binomial model with separate logistic
+  zero and count components, a count-component library-size offset, a joint
+  2-df likelihood-ratio test, and BH correction.
+- `hurdle_nb`: a logistic occurrence model plus zero-truncated NB counts for
+  positive observations. It uses the same joint test and offset convention.
 
 ZINB and hurdle models can overfit sparse data; do not select ZINB solely
 because counts are sparse. Compare against NB diagnostics. The methods report
@@ -662,12 +684,20 @@ analysis:
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
   differential:
-    method: nb_glm               # nb_glm | clr_welch | ancom_bc | aldex2 | songbird
+    method: nb_glm               # nb_glm | clr_welch | multinomial | dirichlet_multinomial
+                                 # ancom_bc | aldex2 | songbird | zinb | hurdle_nb
+    offset: tss                  # count models: tss | rle
     dispersion: ml               # nb_glm: ml | glmGamPoi
     replacement_method: bayesian_multiplicative
                                  # clr_welch: bayesian_multiplicative | multiplicative_replacement
     replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
-    bayesian_alpha: ~            # clr_welch: null (GBM estimate) or a number > 0
+    bayesian_alpha: ~            # Bayesian replacement: null (GBM estimate) or a number > 0
+    mn_reference_taxon: ~        # multinomial models: null selects the most abundant fitted taxon
+    mn_penalty: 0.0              # multinomial models: non-negative L2 penalty
+    dm_overdispersion_method: mle # dirichlet_multinomial: mle | mom
+    max_iter: 500                # multinomial models: Newton iteration cap
+    tolerance: 0.00000001        # multinomial models: convergence tolerance
+    max_seconds: 300.0           # multinomial models: wall-clock budget
     mc_samples: 128              # aldex2: Dirichlet Monte-Carlo instances in [16, 4096]
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value

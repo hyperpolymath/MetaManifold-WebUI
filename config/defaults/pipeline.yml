@@ -346,15 +346,19 @@ analysis:
   # Differential abundance: compares two conditions on the raw read counts, with
   # mandatory Benjamini-Hochberg adjusted p-values across the fitted family.
   differential:
-    # Per-taxon model: nb_glm (negative-binomial GLM), clr_welch (Welch test on
-    # zero-replaced CLR values), zinb (zero-inflated NB), or hurdle_nb (logistic
-    # occurrence plus zero-truncated NB). Two-part models test both group effects
-    # jointly; their count-process fold change is reported separately.
+    # Model fitted across conditions: nb_glm (negative-binomial GLM), clr_welch
+    # (Welch test on zero-replaced CLR values), multinomial or
+    # dirichlet_multinomial (joint reference-taxon composition models), ancom_bc
+    # (bias-corrected log-linear model), aldex2 (Monte-Carlo CLR effects),
+    # songbird (CLR-centred multinomial differentials), zinb (zero-inflated NB),
+    # or hurdle_nb (logistic occurrence plus zero-truncated NB). Two-part models
+    # test both group effects jointly; their count-process effect is separate.
     method: nb_glm
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).
     # rle is refused when no taxon is present in every sample.
-    # Used by count models (nb_glm, zinb, hurdle_nb); clr_welch ignores it.
+    # Used by count models (nb_glm, zinb, hurdle_nb); CLR and joint compositional
+    # models do not use a library-size offset.
     offset: tss
     # nb_glm only: where each taxon's negative-binomial theta comes from. ml
     # (the default) takes the maximum-likelihood estimate MASS::glm.nb fits per

@@ -1206,10 +1206,15 @@ raise their conversion errors.
 """
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
-    val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    val(k, d) = begin
+        value = get(get(resolved, k, (; value=d)), :value, d)
+        isnothing(value) ? d : value
+    end
+    # Null is meaningful for alpha: it selects GBM's estimated concentration.
     alpha = get(get(resolved, "analysis.differential.bayesian_alpha", (; value=nothing)), :value, nothing)
     alpha_val = isnothing(alpha) || alpha isa Real ? alpha : throw(ArgumentError(
         "analysis.differential.bayesian_alpha must be empty or a finite number greater than 0, not '$alpha'"))
+    reference = val("analysis.differential.mn_reference_taxon", nothing)
     mc_raw = val("analysis.differential.mc_samples", Differential.DEFAULT_MC_SAMPLES)
     mc_val = mc_raw isa Real ? mc_raw : throw(ArgumentError(
         "analysis.differential.mc_samples must be a whole number in " *
@@ -1222,6 +1227,12 @@ function _differential_config(study::String)
                        replacement_method=String(val("analysis.differential.replacement_method",
                                                        "bayesian_multiplicative")),
                        bayesian_alpha=alpha_val,
+                       mn_reference_taxon=isnothing(reference) ? nothing : string(reference),
+                       mn_penalty=Float64(val("analysis.differential.mn_penalty", 0.0)),
+                       dm_overdispersion_method=String(val("analysis.differential.dm_overdispersion_method", "mle")),
+                       max_iter=Int(val("analysis.differential.max_iter", 500)),
+                       tol=Float64(val("analysis.differential.tolerance", 1e-8)),
+                       max_seconds=Float64(val("analysis.differential.max_seconds", 300.0)),
                        mc_samples=mc_val)
 end
 
@@ -1304,6 +1315,8 @@ function _differential(study::String, body)
         e isa ZCompositionsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa GlmGamPoiUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa RStatsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
+        e isa CompositionalRefusal && return json_error(422, "model_refused", sprint(showerror, e))
+        e isa RuntimeRefusal   && return json_error(422, "runtime_budget_exceeded", sprint(showerror, e))
         e isa ErrorException   && return json_error(422, "no_taxon_fitted", e.msg)
         rethrow()
     end

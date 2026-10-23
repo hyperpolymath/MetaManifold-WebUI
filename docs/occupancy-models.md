@@ -6,9 +6,9 @@ not an AnalysisConfig method or the standard endpoint. The full workflow is
 tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205),
 a follow-up to #18.
 
-The differential-abundance configuration supports `zinb` and `hurdle_nb` in
-addition to the existing `nb_glm` and `clr_welch` models. The two new methods
-are fixed-effect, per-taxon models with a two-part negative-binomial likelihood.
+The differential-abundance configuration supports `zinb` and `hurdle_nb`
+alongside the count, CLR, and compositional methods. These two methods are
+fixed-effect, per-taxon models with a two-part negative-binomial likelihood.
 They use the configured `tss` or `rle` library-size offset in the count
 component and apply Benjamini–Hochberg correction to the joint tests.
 

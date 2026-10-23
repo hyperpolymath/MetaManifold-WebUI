@@ -4,7 +4,7 @@
 ## Differential abundance
 # Per-taxon and compositional models comparing two groups of samples, with
 # mandatory Benjamini-Hochberg correction across the taxa that produced a
-# p-value. Five methods:
+# p-value. Nine methods:
 #
 # - nb_glm: a negative-binomial GLM per taxon (MASS::glm.nb) on the observed
 #   integer read counts, with a library-size offset. There are no pseudocounts.
@@ -23,6 +23,11 @@
 #   reference-frame invariant CLR-centred differentials (Morton et al. 2019;
 #   Zhang et al. 2017) fitted by damped Newton-Raphson with exact O(K)
 #   Sherman-Morrison Fisher-information inversion.
+# - multinomial and dirichlet_multinomial: joint compositional models fitted in
+#   Julia against a reference taxon; the latter estimates extra-multinomial
+#   overdispersion. Neither uses a library-size offset or zero replacement.
+# - zinb and hurdle_nb: two-part negative-binomial models with a joint test of
+#   group effects in the zero/occurrence and count processes.
 #
 # Count matrices here are samples x taxa, as everywhere else in `Analysis`.
 # Anything that is not a non-negative integer count is refused rather than
@@ -37,14 +42,19 @@ using ..CompositionalModels: CompositionalFit, CompositionalRefusal, RuntimeRefu
        DM_METHODS, CONCENTRATION_MIN, CONCENTRATION_MAX, fit_multinomial,
        fit_dirichlet_multinomial
 export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
-       GlmGamPoiUnavailable, RStatsUnavailable, OFFSET_METHODS, METHODS, DISPERSIONS,
-       REPLACEMENT_METHODS, MIN_MC_SAMPLES, MAX_MC_SAMPLES, DEFAULT_MC_SAMPLES,
+       GlmGamPoiUnavailable, CompositionalRefusal, RuntimeRefusal, RStatsUnavailable,
+       OFFSET_METHODS, METHODS, COMPOSITIONAL_METHODS, DISPERSIONS, REPLACEMENT_METHODS,
+       MIN_MC_SAMPLES, MAX_MC_SAMPLES, DEFAULT_MC_SAMPLES,
        tss_factors, rle_factors, size_factors, bh_adjust, validate_counts, replace_zeros,
        clr_transform, fit_nb, fit_two_part_nb, fit_occupancy, fit_welch,
-       differential_abundance, volcano_chart
+       fit_ancom_bc, fit_aldex2, fit_songbird, differential_abundance, volcano_chart
 
-# Methods accepted under `analysis.differential.method`.
-const METHODS = ("nb_glm", "clr_welch", "zinb", "hurdle_nb")
+# The two joint models use a reference taxon and the optimiser settings below.
+# Keep the other method groups in the public tuple as well: a configuration
+# must never silently lose a model because two feature branches were merged.
+const COMPOSITIONAL_METHODS = ("multinomial", "dirichlet_multinomial")
+const METHODS = ("nb_glm", "clr_welch", COMPOSITIONAL_METHODS...,
+                 "ancom_bc", "aldex2", "songbird", "zinb", "hurdle_nb")
 
 # The per-taxon dispersion `nb_glm` uses: maximum likelihood (MASS::glm.nb's
 # own theta) or glmGamPoi's shrinkage estimator, which shares information
@@ -68,6 +78,12 @@ const THETA_LOWER = 1e-8
 # zCompositions::cmultRepl's default `frac`, as in Martín-Fernández et al. (2003).
 const DEFAULT_DELTA = 0.65
 
+# Optimiser defaults for the two multinomial models. These must match
+# CompositionalModels.DEFAULT_* (asserted in the unit tests).
+const COMPOSITIONAL_MAX_ITER    = 500
+const COMPOSITIONAL_TOL         = 1e-8
+const COMPOSITIONAL_MAX_SECONDS = 300.0
+
 # Bounds and default for `analysis.differential.mc_samples` (`aldex2` Dirichlet draws).
 const MIN_MC_SAMPLES = 16
 const MAX_MC_SAMPLES = 4096
@@ -88,18 +104,24 @@ end
     DifferentialConfig(offset="tss", min_prevalence=0.0; method="nb_glm",
                        replacement_delta=0.65, dispersion="ml",
                        replacement_method="bayesian_multiplicative",
-                       bayesian_alpha=nothing, mc_samples=128)
+                       bayesian_alpha=nothing, mn_reference_taxon=nothing,
+                       mn_penalty=0.0, dm_overdispersion_method="mle",
+                       max_iter=500, tol=1e-8, max_seconds=300.0, mc_samples=128)
 
 Settings for one differential abundance analysis, read from
 `analysis.differential` in the pipeline config. `method` is one of `"nb_glm"`,
-`"clr_welch"`, `"ancom_bc"`, `"aldex2"` or `"songbird"`. `offset` names the
-size factor method (`"tss"` or `"rle"`) and is used by `nb_glm` only.
+`"clr_welch"`, `"multinomial"`, `"dirichlet_multinomial"`, `"ancom_bc"`,
+`"aldex2"`, `"songbird"`, `"zinb"` or `"hurdle_nb"`. `offset` names the
+size factor method (`"tss"` or `"rle"`) and is used by the count models.
 `min_prevalence` is the fraction of samples, in [0, 1], in which a taxon must
 have at least one read to be tested. `replacement_delta`, in (0, 1), is the
 `frac` passed to `zCompositions::cmultRepl` by `clr_welch`.
 `replacement_method` selects `"bayesian_multiplicative"` (GBM) or
 `"multiplicative_replacement"` (CZM), with optional positive `bayesian_alpha`
-for `"bayesian_multiplicative"`.
+for `"bayesian_multiplicative"`. The multinomial settings select a reference
+taxon, an optional non-negative ridge penalty, the Dirichlet overdispersion
+estimator, and explicit iteration/tolerance/runtime limits. `mc_samples` is
+the bounded ALDEx2 Monte-Carlo instance count.
 `dispersion` names the per-taxon dispersion `nb_glm` uses (`"ml"` or
 `"glmGamPoi"`): `"ml"` takes the maximum-likelihood theta from `MASS::glm.nb`,
 `"glmGamPoi"` uses `overdispersion_shrinkage_list.dispersion_trend` from
@@ -125,6 +147,12 @@ struct DifferentialConfig
     dispersion         :: String
     replacement_method :: String
     bayesian_alpha     :: Union{Float64,Nothing}
+    mn_reference_taxon :: Union{Nothing,String}
+    mn_penalty         :: Float64
+    dm_overdispersion_method :: String
+    max_iter           :: Int
+    tol                :: Float64
+    max_seconds        :: Float64
     mc_samples         :: Int
     function DifferentialConfig(offset::AbstractString="tss", min_prevalence::Real=0.0;
                                 method::AbstractString="nb_glm",
@@ -132,6 +160,12 @@ struct DifferentialConfig
                                 dispersion::AbstractString="ml",
                                 replacement_method::AbstractString="bayesian_multiplicative",
                                 bayesian_alpha::Union{Real,Nothing}=nothing,
+                                mn_reference_taxon::Union{Nothing,AbstractString}=nothing,
+                                mn_penalty::Real=0.0,
+                                dm_overdispersion_method::AbstractString="mle",
+                                max_iter::Integer=COMPOSITIONAL_MAX_ITER,
+                                tol::Real=COMPOSITIONAL_TOL,
+                                max_seconds::Real=COMPOSITIONAL_MAX_SECONDS,
                                 mc_samples::Real=DEFAULT_MC_SAMPLES)
         m = lowercase(strip(String(method)))
         m in METHODS || throw(ArgumentError(
@@ -188,7 +222,9 @@ struct DifferentialConfig
             "analysis.differential.mc_samples must be a whole number in " *
             "[$MIN_MC_SAMPLES, $MAX_MC_SAMPLES], not $mc_samples"))
         a = isnothing(bayesian_alpha) ? nothing : Float64(bayesian_alpha)
-        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d, r, a, Int(mc_samples))
+        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d, r, a, ref,
+            Float64(mn_penalty), dm, Int(max_iter), Float64(tol), Float64(max_seconds),
+            Int(mc_samples))
     end
 end
 
@@ -1971,7 +2007,8 @@ end
 Test every taxon (column) of the samples x taxa read-count matrix for a
 difference in abundance between the samples labelled `contrast` and those
 labelled `reference` in `groups`, by `config.method` (`"nb_glm"`, `"clr_welch"`,
-`"ancom_bc"`, `"aldex2"` or `"songbird"`).
+`"multinomial"`, `"dirichlet_multinomial"`, `"ancom_bc"`, `"aldex2"`,
+`"songbird"`, `"zinb"` or `"hurdle_nb"`).
 
 `nb_glm`: size factors are computed on the full matrix by `config.offset` and
 enter each negative-binomial model as `log(factor)`; the estimate is a
@@ -1990,6 +2027,17 @@ by Welch's t-test. The estimate is the difference in mean CLR, contrast minus
 reference, relative to the geometric mean of the tested taxa. Replaced zeros are
 not measurements; `diagnostics.zero_replacement` reports their share of each
 sample. Each group needs at least 2 samples.
+
+`multinomial` and `dirichlet_multinomial` fit one joint composition against a
+reference taxon, without size factors or zero replacement. Their estimates are
+log ratios against that reference; the Dirichlet-multinomial additionally
+reports its concentration and overdispersion diagnostics. A reference that is
+not fitted or is present in fewer than half the samples is refused.
+
+`ancom_bc`, `aldex2` and `songbird` retain their method-specific compositional
+estimators and diagnostics. `ancom_bc` reports bias-corrected log2 fold changes,
+`aldex2` standardized CLR effect sizes, and `songbird` CLR-centred differentials;
+these are not interchangeable with an absolute fold change.
 
 `zinb` and `hurdle_nb` use a count-process negative binomial with a library-size
 offset and a group-specific logistic zero/occurrence process. Their reported
@@ -2134,7 +2182,271 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
                                     for (i, s) in enumerate(replaced.posterior.concentration)])
         end
         diagnostics["zero_replacement"] = zero_diagnostics
-    else
+    elseif config.method in COMPOSITIONAL_METHODS
+        # The multinomial models condition on each sample's total: they need no
+        # size factor, and a zero count is part of the likelihood rather than a
+        # value to replace. Two things still have to be settled before the fit.
+        #
+        # First, a taxon with no reads at all in one group has no finite log
+        # fold change, and because the model is fitted jointly its coefficient
+        # would drag the whole fit towards -Inf. Such taxa are refused by name
+        # and left out of the composition, exactly like taxa below the
+        # prevalence threshold; the note says which and why.
+        tested = findall(>=(config.min_prevalence), prevalence)
+        separated = Int[]
+        for j in tested
+            absent = [lvl for lvl in levels
+                      if all(i -> counts[i, j] == 0, findall(==(lvl), groups))]
+            if !isempty(absent)
+                push!(separated, j)
+                rows[j]["status"] = "failed"
+                rows[j]["note"] = "no reads in any '$(absent[1])' sample (complete " *
+                    "separation): the log fold change against the reference is unbounded, " *
+                    "so the taxon is left out of the composition"
+            end
+        end
+        tested = [j for j in tested if !(j in separated)]
+        isempty(tested) && throw(ArgumentError(
+            "no taxon passes analysis.differential.min_prevalence = $(config.min_prevalence) " *
+            "and has reads in both '$reference' and '$contrast' samples, so there is no " *
+            "composition to model; raise analysis.differential.min_prevalence or use " *
+            "method nb_glm"))
+
+        # Second, the reference taxon: the denominator of every reported ratio.
+        # An explicit choice must be a taxon at this rank and must be fitted.
+        ref_name = config.mn_reference_taxon
+        ref_pos = 0
+        if isnothing(ref_name)
+            totals = [sum(view(counts, :, j)) for j in tested]
+            ref_pos = argmax(totals)
+            ref_name = String(taxa[tested[ref_pos]])
+        else
+            j = findfirst(==(ref_name), taxa)
+            isnothing(j) && throw(ArgumentError(
+                "analysis.differential.mn_reference_taxon = '$(ref_name)' is not a taxon " *
+                "at this rank"))
+            pos = findfirst(==(j), tested)
+            isnothing(pos) && throw(ArgumentError(
+                "the reference taxon '$(ref_name)' is not fitted: it has reads in " *
+                "$(count(>(0), view(counts, :, j))) of $n samples, below " *
+                "analysis.differential.min_prevalence = $(config.min_prevalence), or no " *
+                "reads in one group. Choose another reference taxon, or lower min_prevalence"))
+            ref_pos = pos
+        end
+        # A reference seen in fewer than half the samples makes every ratio it
+        # anchors unstable, so it is refused rather than silently used.
+        ref_prevalence = prevalence[tested[ref_pos]]
+        ref_prevalence >= 0.5 || throw(ArgumentError(
+            "the reference taxon '$(ref_name)' has reads in only " *
+            "$(round(Int, ref_prevalence * n)) of $n samples; the log ratios it anchors " *
+            "would be unstable. Choose a reference present in at least half the samples " *
+            "(analysis.differential.mn_reference_taxon), or use method nb_glm or clr_welch"))
+
+        # The design is the group indicator with an intercept: the intercept is
+        # the log-odds against the reference in the reference group, the slope
+        # the difference in those log-odds between the groups.
+        design = Matrix{Float64}(undef, n, 2)
+        for i in 1:n
+            design[i, 1] = 1.0
+            design[i, 2] = groups[i] == contrast ? 1.0 : 0.0
+        end
+        sub = Matrix{Int}(counts[:, tested])
+        started = time()
+        fit = config.method == "multinomial" ?
+            fit_multinomial(sub, design; reference=ref_pos, penalty=config.mn_penalty,
+                            max_iter=config.max_iter, tol=config.tol,
+                            max_seconds=config.max_seconds) :
+            fit_dirichlet_multinomial(sub, design; reference=ref_pos, penalty=config.mn_penalty,
+                                      overdispersion_method=config.dm_overdispersion_method,
+                                      max_iter=config.max_iter, tol=config.tol,
+                                      max_seconds=config.max_seconds)
+        elapsed = time() - started
+        # A joint fit that has not converged describes neither taxon: there is
+        # no per-taxon rescue, so it is refused rather than reported.
+        fit.converged || throw(CompositionalRefusal(
+            "the $(config.method == "multinomial" ? "multinomial" : "Dirichlet-multinomial") " *
+            "fit did not converge in $(config.max_iter) Newton steps on $(length(tested)) taxa; " *
+            "raise analysis.differential.max_iter, raise min_prevalence so fewer taxa are " *
+            "fitted, or analyse a coarser taxonomic rank"))
+        c = fit.concentration
+        at_bound = config.method == "dirichlet_multinomial" &&
+                   !(c > CONCENTRATION_MIN * (1 + 1e-6) && c < CONCENTRATION_MAX * (1 - 1e-6))
+        boundary_note = c >= CONCENTRATION_MAX * (1 - 1e-6) ?
+            "the Dirichlet concentration reached its upper bound: no overdispersion is " *
+            "detectable, so the model is effectively multinomial" :
+            "the Dirichlet concentration reached its lower bound: the composition is nearly " *
+            "degenerate and the standard errors are not trustworthy"
+        for (l, j) in enumerate(tested)
+            if l == ref_pos
+                rows[j]["status"] = "reference"
+                rows[j]["note"] = "reference taxon: the denominator of every log ratio; its " *
+                    "coefficient is fixed at zero, so it carries no test"
+                rows[j]["estimate"] = 0.0
+                rows[j]["log2_fold_change"] = 0.0
+                continue
+            end
+            k = l < ref_pos ? l : l - 1
+            est = fit.coefficients[k, 2]
+            se = fit.standard_errors[k, 2]
+            zz = fit.statistic[k, 2]
+            pv = fit.pvalue[k, 2]
+            if isnan(est) || isnan(se) || isnan(pv)
+                rows[j]["status"] = "failed"
+                rows[j]["note"] = "the fit returned a non-finite estimate or standard error"
+                continue
+            end
+            merge!(rows[j], Dict{String,Any}(
+                "status" => at_bound ? "boundary" : "ok",
+                "note" => at_bound ? boundary_note : "",
+                "estimate" => est,
+                "log2_fold_change" => est / log(2),
+                "standard_error" => se, "statistic" => zz, "pvalue" => pv,
+                "dispersion_theta" => nothing))
+        end
+        model = config.method == "multinomial" ? "multinomial logistic" :
+                "Dirichlet-multinomial"
+        method_text = "$model regression over $(length(tested)) taxa with " *
+            "'$(ref_name)' as the reference taxon (softmax link, each sample's read " *
+            "composition, no size factor and no zero replacement); " *
+            (config.method == "multinomial" ?
+             "Wald test of the group coefficient from the observed information, with a " *
+             "ridge penalty of $(config.mn_penalty); " :
+             "concentration estimated by $(uppercase(config.dm_overdispersion_method)), " *
+             "theta = $(round(fit.overdispersion; sigdigits=3)), Wald test of the group " *
+             "coefficient from the observed information; ") *
+            "Benjamini-Hochberg adjustment over the fitted taxa. Estimates are log fold " *
+            "changes in relative abundance against '$(ref_name)' (a log ratio of two taxa, " *
+            "so coherent under compositionality): " *
+            (config.method == "multinomial" ?
+             "Songbird's model, Morton et al. 2019" :
+             "La Rosa et al. 2012 for the Dirichlet-multinomial")
+        effect = Dict("key" => "log2_fold_change",
+                      "label" => "log2 fold change vs $(ref_name)")
+        size_factor_rows = Dict{String,Any}[]
+        config_echo = Dict{String,Any}("method" => config.method,
+                                       "min_prevalence" => config.min_prevalence,
+                                       "mn_reference_taxon" => ref_name,
+                                       "mn_penalty" => config.mn_penalty,
+                                       "tolerance" => config.tol,
+                                       "max_iter" => config.max_iter,
+                                       "max_seconds" => config.max_seconds)
+        config.method == "dirichlet_multinomial" &&
+            (config_echo["dm_overdispersion_method"] = config.dm_overdispersion_method)
+        diagnostics["model"] = Dict{String,Any}(
+            "reference_taxon" => ref_name, "penalty" => config.mn_penalty,
+            "n_parameters" => fit.n_parameters, "iterations" => fit.iterations,
+            "converged" => fit.converged, "log_likelihood" => fit.loglik,
+            "runtime_seconds" => elapsed, "n_taxa_fitted" => length(tested))
+        if config.method == "dirichlet_multinomial"
+            diagnostics["overdispersion"] = Dict{String,Any}(
+                "method" => config.dm_overdispersion_method,
+                "concentration" => c, "theta" => fit.overdispersion,
+                "at_bound" => at_bound)
+        end
+    elseif config.method == "ancom_bc"
+        (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
+            "ANCOM-BC needs at least 2 samples in each group to estimate within-group variance; " *
+            "'$reference' has $n_ref and '$contrast' has $n_con"))
+        for j in findall(==(0), present)
+            rows[j]["note"] = "no reads in any sample of either group, so it is not part of the composition"
+        end
+        tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
+        length(tested) >= 3 || throw(ArgumentError(
+            "ancom_bc needs at least 3 taxa with reads at or above " *
+            "analysis.differential.min_prevalence = $(config.min_prevalence) to separate " *
+            "sampling-fraction bias from taxon effects; there are $(length(tested))"))
+        bc = fit_ancom_bc(counts[:, tested], groups; levels, samples)
+        for (k, j) in enumerate(tested)
+            f = bc.table[k, :]
+            merge!(rows[j], Dict{String,Any}(
+                "status" => f.status, "note" => f.note, "estimate" => f.estimate,
+                "log2_fold_change" => isnothing(f.estimate) ? nothing : f.estimate / log(2),
+                "standard_error" => f.se, "statistic" => f.statistic,
+                "pvalue" => f.pvalue))
+        end
+        method_text = "ANCOM-BC bias-corrected log-linear model (Lin & Peddada 2020) over the taxa " *
+                      "passing min_prevalence: within-group sample offsets and between-group " *
+                      "sampling-fraction bias estimated via an E-M Gaussian mixture on log(counts + 1), " *
+                      "with bias variance propagated into two-sided Wald tests and Benjamini-Hochberg " *
+                      "adjustment over the fitted taxa. Assumes fewer than half of the tested taxa " *
+                      "are differentially abundant"
+        effect = Dict("key" => "log2_fold_change", "label" => "Bias-corrected log2 FC")
+        size_factor_rows = Dict{String,Any}[]
+        config_echo = Dict{String,Any}("method" => config.method,
+                                       "min_prevalence" => config.min_prevalence)
+        diagnostics["ancom_bc"] = merge(bc.diagnostics, Dict{String,Any}(
+            "n_taxa_in_composition" => length(tested),
+            "n_taxa_unobserved" => count(==(0), present)))
+    elseif config.method == "aldex2"
+        (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
+            "ALDEx2 needs at least 2 samples in each group to estimate within-group variance; " *
+            "'$reference' has $n_ref and '$contrast' has $n_con"))
+        for j in findall(==(0), present)
+            rows[j]["note"] = "no reads in any sample of either group, so it is not part of the composition"
+        end
+        tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
+        length(tested) >= 2 || throw(ArgumentError(
+            "ALDEx2 needs at least 2 taxa with reads at or above " *
+            "analysis.differential.min_prevalence = $(config.min_prevalence); there are $(length(tested))"))
+        ax = fit_aldex2(counts[:, tested], groups; levels, samples,
+                        mc_samples=config.mc_samples, seed=Int(seed))
+        for (k, j) in enumerate(tested)
+            f = ax.table[k, :]
+            merge!(rows[j], Dict{String,Any}(
+                "status" => f.status, "note" => f.note, "estimate" => f.estimate,
+                "standard_error" => nothing, "statistic" => f.statistic,
+                "pvalue" => f.pvalue))
+        end
+        method_text = "ALDEx2 Dirichlet(count + 0.5) Monte-Carlo CLR model (Fernandes et al. 2014; " *
+                      "$(config.mc_samples) instances, seed = $(Int(seed))) over the taxa passing " *
+                      "min_prevalence: consistent-sign posterior predictive Welch's t-test p-values " *
+                      "with Benjamini-Hochberg adjustment over the fitted taxa. Estimates are " *
+                      "standardized CLR effect sizes (between-group difference over max within-group " *
+                      "dispersion), not absolute fold changes"
+        effect = Dict("key" => "estimate", "label" => "ALDEx2 effect size")
+        size_factor_rows = Dict{String,Any}[]
+        config_echo = Dict{String,Any}("method" => config.method,
+                                       "min_prevalence" => config.min_prevalence,
+                                       "mc_samples" => config.mc_samples,
+                                       "seed" => Int(seed))
+        diagnostics["aldex2"] = merge(ax.diagnostics, Dict{String,Any}(
+            "n_taxa_in_composition" => length(tested),
+            "n_taxa_unobserved" => count(==(0), present)))
+    elseif config.method == "songbird"
+        (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
+            "songbird needs at least 2 samples in each group; " *
+            "'$reference' has $n_ref and '$contrast' has $n_con"))
+        for j in findall(==(0), present)
+            rows[j]["note"] = "no reads in any sample of either group, so it is not part of the composition"
+        end
+        tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
+        length(tested) >= 2 || throw(ArgumentError(
+            "songbird needs at least 2 taxa with reads at or above " *
+            "analysis.differential.min_prevalence = $(config.min_prevalence); there are $(length(tested))"))
+        sb = fit_songbird(counts[:, tested], groups; levels, samples, taxa=taxa[tested])
+        for (k, j) in enumerate(tested)
+            f = sb.table[k, :]
+            merge!(rows[j], Dict{String,Any}(
+                "status" => f.status, "note" => f.note, "estimate" => f.estimate,
+                "standard_error" => f.se, "statistic" => f.statistic,
+                "pvalue" => f.pvalue))
+        end
+        ref_tax = something(sb.diagnostics["reference_taxon"], "none")
+        method_text = "Songbird-style compositional multinomial regression (Morton et al. 2019; " *
+                      "Zhang et al. 2017; reference taxon '$ref_tax') over the identifiable taxa " *
+                      "passing min_prevalence: CLR-centred differentials (summing to zero across " *
+                      "fitted taxa) with delta-method standard errors, two-sided Wald z-tests, and " *
+                      "Benjamini-Hochberg adjustment. Differentials are relative log-ratios, not " *
+                      "absolute fold changes, and multinomial likelihood conditions on read totals " *
+                      "without extra-multinomial overdispersion"
+        effect = Dict("key" => "estimate", "label" => "Differential (CLR log-ratio)")
+        size_factor_rows = Dict{String,Any}[]
+        config_echo = Dict{String,Any}("method" => config.method,
+                                       "min_prevalence" => config.min_prevalence)
+        diagnostics["songbird"] = merge(sb.diagnostics, Dict{String,Any}(
+            "n_taxa_in_composition" => length(tested),
+            "n_taxa_unobserved" => count(==(0), present)))
+    elseif config.method in ("zinb", "hurdle_nb")
         factors = size_factors(counts, samples, config.offset)
         tested = findall(>=(config.min_prevalence), prevalence)
         fits = isempty(tested) ? nothing :
@@ -2165,6 +2477,8 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
         diagnostics["model_warning"] = config.method == "zinb" ?
             "Use ZINB only when diagnostics support excess zeros beyond NB; zero inflation and NB overdispersion can be difficult to distinguish." :
             "Hurdle NB assumes every zero comes from the occurrence process and positive counts follow a zero-truncated NB."
+    else
+        throw(ArgumentError("unsupported differential method '$(config.method)'"))
     end
 
 

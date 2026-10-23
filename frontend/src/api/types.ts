@@ -423,7 +423,11 @@ export interface DifferentialRow {
   prevalence: number
 }
 
-export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+export type DifferentialMethod =
+  | 'nb_glm' | 'clr_welch'
+  | 'multinomial' | 'dirichlet_multinomial'
+  | 'ancom_bc' | 'aldex2' | 'songbird'
+  | 'zinb' | 'hurdle_nb'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -439,7 +443,7 @@ export interface DifferentialResult {
   groups: { reference: string; contrast: string }
   n_samples: Record<string, number>
   effect: DifferentialEffect
-  /** Empty for clr_welch; count models report their size factors. */
+  /** Empty for CLR and compositional models; count models report their size factors. */
   size_factors: { sample: string; group: string; factor: number }[]
   config: {
     method: DifferentialMethod
@@ -453,9 +457,19 @@ export interface DifferentialResult {
     replacement_delta?: number
     /** Null uses GBM's estimated concentration; positive values override it. */
     bayesian_alpha?: number | null
+    /** multinomial and dirichlet_multinomial: the taxon every ratio is against. */
+    mn_reference_taxon?: string
+    /** multinomial and dirichlet_multinomial: L2 penalty on the log-odds. */
+    mn_penalty?: number
+    /** dirichlet_multinomial only: how the concentration was estimated. */
+    dm_overdispersion_method?: 'mle' | 'mom'
+    /** multinomial and dirichlet_multinomial: the optimiser settings used. */
+    tolerance?: number
+    max_iter?: number
+    max_seconds?: number
     /** aldex2 only. */
     mc_samples?: number
-    /** aldex2 only. */
+    /** aldex2 only: the study seed used for its Dirichlet instances. */
     seed?: number
   }
   diagnostics: {
@@ -473,6 +487,15 @@ export interface DifferentialResult {
         family: 'Dirichlet'; prior_mean: string; shape: string; adjustments: string
         concentration: { sample: string; value: number }[]
       }
+    }
+    /** multinomial and dirichlet_multinomial only. */
+    model?: {
+      reference_taxon: string; penalty: number; n_parameters: number; iterations: number
+      converged: boolean; log_likelihood: number; runtime_seconds: number; n_taxa_fitted: number
+    }
+    /** dirichlet_multinomial only: c and theta = 1 / (1 + c) in (0, 1). */
+    overdispersion?: {
+      method: 'mle' | 'mom'; concentration: number; theta: number; at_bound: boolean
     }
     /** ancom_bc only. */
     ancom_bc?: {
