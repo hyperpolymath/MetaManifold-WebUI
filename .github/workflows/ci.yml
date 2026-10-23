@@ -534,16 +534,32 @@ jobs:
       - name: Set up Julia
         run: bash scripts/install-ci-julia.sh
 
-      # The evidence scripts are ordinary project code: they load JSON3 and the
-      # statistics modules, so the environment must be instantiated before the
-      # standards tools are used.
-      - name: Instantiate Julia project
-        run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
-
       # The versions, the HTTPS restriction and the exact-commit fetches live in
       # the script (one reviewed place), not interpolated into this workflow.
       - name: Install pinned standards tools
         run: bash scripts/ci/fetch-statistics-tools.sh
+
+      # MetaManifold includes RCall at module load, and RCall's build step needs
+      # an R installation even though this job runs no R code. The version comes
+      # from the committed pin file, not from whatever apt calls current.
+      - name: Install the pinned R runtime
+        run: |
+          R_APT_VERSION="$(yq -r '.runtimes.r.apt_version' config/defaults/tool_versions.yml)"
+          test -n "$R_APT_VERSION"
+          wget --https-only -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
+            | sudo gpg --dearmor -o /usr/share/keyrings/r-project.gpg
+          echo "deb [signed-by=/usr/share/keyrings/r-project.gpg] https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/" \
+            | sudo tee /etc/apt/sources.list.d/r-project.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends r-base-core="$R_APT_VERSION"
+          R --version | head -1
+
+      # The evidence scripts are ordinary project code: they load JSON3 and the
+      # statistics modules, so the environment must be instantiated after R.
+      - name: Instantiate Julia project
+        run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
+
+
 
       # YAML-POLICY Y-3 / D307. --check exits 1 on drift and 2 when yq is
       # missing or the file does not parse, so neither outcome can read as a pass.
