@@ -193,3 +193,34 @@ describe('advanced compositional methods (ancom_bc, aldex2, songbird)', () => {
     expect(configLine(sb)).toBe('method songbird, min_prevalence 0.2; estimate is a CLR-centred multinomial differential, not an absolute fold change')
   })
 })
+
+describe('calibration caveat', () => {
+  const caveated: DifferentialResult = {
+    ...result,
+    config: { method: 'nb_glm', offset: 'tss', dispersion: 'ml', min_prevalence: 0 },
+    diagnostics: {
+      ...result.diagnostics,
+      calibration_caveat: {
+        severity: 'strong', dispersion: 'ml', min_group_n: 2,
+        message: 'Wald p-values treat the per-taxon theta as known.',
+      },
+    },
+  }
+
+  test('the settings line records the dispersion the result carries', () => {
+    expect(configLine(caveated)).toBe('method nb_glm, offset tss, dispersion ml, min_prevalence 0')
+  })
+
+  test('the caveat travels into the CSV header, after the settings line', () => {
+    const lines = differentialCsv(caveated).trimEnd().split('\r\n')
+    expect(lines[2]).toBe(`# ${configLine(caveated)}`)
+    expect(lines[3]).toBe('# Calibration caveat (strong): Wald p-values treat the per-taxon theta as known.')
+    expect(lines[4]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,zero_process_log_odds,prevalence,note')
+    expect(lines).toHaveLength(7)
+  })
+
+  test('a result without a caveat keeps the three-line header', () => {
+    const lines = differentialCsv(result).trimEnd().split('\r\n')
+    expect(lines[3]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,zero_process_log_odds,prevalence,note')
+  })
+})
