@@ -79,6 +79,135 @@ function _statistics_policy(body)
         round_digits=_policy_integer(raw, :round_digits, 6))
 end
 
+# JSON3 collapses an integral float token (1.0, 1e0) to an integer when it
+# parses, so the token form of `counts` entries can only be checked on the
+# raw request text. This scanner walks the top-level object to the `counts`
+# member and rejects any numeric token there that is not a plain integer
+# token. Strings are skipped properly; their contents are validated by
+# _json_exact_count after parsing.
+function _reject_float_count_tokens(raw::AbstractString)
+    text = String(raw)
+    bytes = codeunits(text)
+    n = length(bytes)
+    pos = Ref(1)
+    at_end() = pos[] > n
+    peek() = at_end() ? 0x00 : bytes[pos[]]
+    function skip_ws()
+        while !at_end() && bytes[pos[]] in (0x20, 0x09, 0x0a, 0x0d)
+            pos[] += 1
+        end
+    end
+    function parse_string()
+        # At the opening quote; returns the decoded string.
+        pos[] += 1
+        out = IOBuffer()
+        while !at_end()
+            byte = bytes[pos[]]
+            pos[] += 1
+            if byte == 0x22 # "
+                return String(take!(out))
+            elseif byte == 0x5c # backslash
+                at_end() && break
+                esc = bytes[pos[]]
+                pos[] += 1
+                if esc == 0x75 && pos[] + 3 <= n # \uXXXX
+                    hex = text[pos[]:pos[] + 3]
+                    code = tryparse(UInt32, hex; base=16)
+                    isnothing(code) || print(out, Char(code))
+                    pos[] += 4
+                else
+                    print(out, Char(esc))
+                end
+            else
+                write(out, byte)
+            end
+        end
+        String(take!(out))
+    end
+    function skip_value()
+        skip_ws()
+        byte = peek()
+        if byte == 0x22
+            parse_string()
+        elseif byte in (0x7b, 0x5b) # { [
+            depth = 0
+            while !at_end()
+                current = peek()
+                if current == 0x22
+                    parse_string()
+                    continue
+                end
+                pos[] += 1
+                if current in (0x7b, 0x5b)
+                    depth += 1
+                elseif current in (0x7d, 0x5d) # } ]
+                    depth -= 1
+                    depth == 0 && break
+                end
+            end
+        else
+            while !at_end() && !(bytes[pos[]] in (0x2c, 0x7d, 0x5d, 0x20, 0x09, 0x0a, 0x0d))
+                pos[] += 1
+            end
+        end
+    end
+    function scan_counts_value()
+        # At the first byte of the counts value: check every numeric token
+        # until the value ends, skipping strings and nesting.
+        depth = 0
+        while !at_end()
+            byte = peek()
+            if byte == 0x22
+                parse_string()
+                continue
+            elseif byte in (0x7b, 0x5b)
+                depth += 1
+                pos[] += 1
+            elseif byte in (0x7d, 0x5d)
+                depth -= 1
+                pos[] += 1
+                depth <= 0 && break
+            elseif byte == 0x2d || (0x30 <= byte <= 0x39) # - or digit
+                start = pos[]
+                while !at_end() && (bytes[pos[]] in (0x2d, 0x2b, 0x2e, 0x65, 0x45) ||
+                                     0x30 <= bytes[pos[]] <= 0x39)
+                    pos[] += 1
+                end
+                token = text[start:pos[] - 1]
+                occursin(r"^-?[0-9]+$", token) || throw(UnsupportedRepresentationError(
+                    "integer JSON tokens in counts", token,
+                    "counts; floating-point JSON tokens are not exact input, " *
+                    "even when their value is integral"))
+                depth == 0 && break
+            else
+                pos[] += 1
+                byte == 0x2c && depth == 0 && break # comma ends a scalar value
+            end
+        end
+    end
+
+    skip_ws()
+    peek() == 0x7b || return nothing # not an object; _statistics_body refuses it
+    pos[] += 1
+    while true
+        skip_ws()
+        peek() == 0x22 || return nothing
+        key = parse_string()
+        skip_ws()
+        peek() == 0x3a || return nothing # :
+        pos[] += 1
+        skip_ws()
+        if key == "counts"
+            scan_counts_value()
+            return nothing
+        end
+        skip_value()
+        skip_ws()
+        peek() == 0x2c || return nothing
+        pos[] += 1
+    end
+end
+
 function _statistics_labels(raw, name::String)
     raw isa AbstractVector || throw(ArgumentError("$name must be an array of strings"))
     all(x -> x isa AbstractString, raw) || throw(ArgumentError("$name must contain only strings"))
@@ -95,8 +224,9 @@ function _json_exact_count(value, feature::String, sample::String)
                 "feature '$feature', sample '$sample'; use a canonical whole-number string"))
         end
     end
-    # JSON3 represents a decimal/exponent token as a float even when its value
-    # is mathematically integral. Reject the representation, not just 1.5.
+    # A non-integral float token (1.5) reaches here as a float and is refused.
+    # Integral float tokens (1.0, 1e0) are collapsed to integers by JSON3, so
+    # _reject_float_count_tokens refuses those on the raw text before parsing.
     (value isa Integer && !(value isa Bool)) || throw(UnsupportedRepresentationError(
         "an integer JSON token or whole-number string", repr(value),
         "feature '$feature', sample '$sample'; floating-point JSON is not exact input"))
@@ -218,31 +348,45 @@ function _validated_duckdb_counts(con, table::String, columns::Vector{String};
         "COALESCE(NULLIF(CAST($(_sql_identifier(taxon)) AS VARCHAR), ''), 'Unassigned')"
     end
     count_columns = join([_sql_identifier(c) for c in samples], ", ")
+    # Rows sharing a feature (e.g. several sequences in one genus) are summed
+    # here, in BigInt, not in SQL: DuckDB refuses bare count columns beside
+    # GROUP BY, and SUM over HUGEINT counts would overflow exactly the values
+    # this path exists to keep exact. ORDER BY keeps features sorted and each
+    # feature's rows adjacent.
     sql = "SELECT $feature_expression AS feature, $count_columns FROM $(_sql_identifier(table)) " *
-          "$where_clause GROUP BY $feature_expression ORDER BY feature LIMIT $(MAX_CELLS + 1)"
+          "$where_clause ORDER BY feature LIMIT $(MAX_CELLS + 1)"
     frame = DataFrame(DBInterface.execute(con, sql, where_params))
-    nrow(frame) <= MAX_CELLS || throw(ResourceLimitError("features", MAX_CELLS, nrow(frame)))
+    nrow(frame) <= MAX_CELLS || throw(ResourceLimitError("rows", MAX_CELLS, nrow(frame)))
     nrow(frame) > 0 || throw(ArgumentError("no rows remain after filtering"))
-    nrow(frame) * length(samples) <= MAX_CELLS || throw(ResourceLimitError(
-        "table cells", MAX_CELLS, nrow(frame) * length(samples)))
 
-    features = Vector{String}(undef, nrow(frame))
-    counts = Matrix{BigInt}(undef, nrow(frame), length(samples))
+    features = String[]
+    feature_rows = Vector{BigInt}[]
     for (i, row) in enumerate(eachrow(frame))
         ismissing(row.feature) && throw(UnsupportedRepresentationError(
             "a non-missing feature label", "missing", "validated run statistics row $i"))
-        features[i] = string(row.feature)
+        feature = string(row.feature)
+        if isempty(features) || features[end] != feature
+            push!(features, feature)
+            push!(feature_rows, zeros(BigInt, length(samples)))
+        end
+        target = feature_rows[end]
         for (j, sample) in enumerate(samples)
             value = row[Symbol(sample)]
             ismissing(value) && throw(UnsupportedRepresentationError(
-                "a non-missing integer count", "NULL", "feature '$(features[i])', sample '$sample'"))
+                "a non-missing integer count", "NULL", "feature '$feature', sample '$sample'"))
             (value isa Integer && !(value isa Bool)) || throw(UnsupportedRepresentationError(
-                "an integer count", repr(value), "feature '$(features[i])', sample '$sample'"))
+                "an integer count", repr(value), "feature '$feature', sample '$sample'"))
             value >= 0 || throw(ArgumentError(
-                "negative count $value at feature '$(features[i])', sample '$sample'"))
-            counts[i, j] = BigInt(value) # every addition later is exact BigInt
+                "negative count $value at feature '$feature', sample '$sample'"))
+            target[j] += BigInt(value) # every addition is exact BigInt
         end
     end
+    counts = Matrix{BigInt}(undef, length(features), length(samples))
+    for (i, feature_row) in enumerate(feature_rows)
+        counts[i, :] = feature_row
+    end
+    length(features) * length(samples) <= MAX_CELLS || throw(ResourceLimitError(
+        "table cells", MAX_CELLS, length(features) * length(samples)))
     ExactSummaries.validate_coordinates(counts, samples, features)
     counts, samples, features
 end
@@ -281,6 +425,7 @@ end
 @post "/api/v1/statistics/summaries" function(req)
     _statistics_guard() do
         body = _statistics_body(req)
+        _reject_float_count_tokens(String(req.body))
         policy = _statistics_policy(body)
         counts, labels, features, groups = _direct_count_input(body)
         result = _run_statistics(counts, labels, features, groups, policy)

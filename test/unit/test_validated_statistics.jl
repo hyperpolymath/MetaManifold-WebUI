@@ -92,16 +92,20 @@ end
 
 @testset "Numeric JSON representations fail closed" begin
     _vs_with_root() do _
-        for bad in (1.0, 1.5, -1, 9007199254740993)
+        for bad in (1.5, -1, 9007199254740993)
             payload = merge(_VS_EXACT_BODY, Dict("persist" => false,
                 "counts" => [[bad, 1], [1, 0], [1, 0]]))
             response = _vs_post("/api/v1/statistics/summaries", payload)
             @test response.status == 422
             @test JSON3.read(String(response.body)).error == "invalid_numeric_input"
         end
-        # Exponent notation is a float token even though its value is integral.
-        raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1e0]]}"""
-        @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 422
+        # Decimal and exponent notation are float tokens even though their
+        # values are integral. These go through raw bodies: a Dict round-trip
+        # cannot represent the token distinction (JSON3.write(1.0) is "1").
+        for token in ("1.0", "1e0")
+            raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[$token]]}"""
+            @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 422
+        end
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))
         @test _vs_post("/api/v1/statistics/summaries", negative_string).status == 422
