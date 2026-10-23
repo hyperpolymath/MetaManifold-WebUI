@@ -18,8 +18,11 @@ using ..DerivedAnalyses
 const _STATISTICS_UI_TABLE_CELLS = 20_000
 const _STATISTICS_UI_TITLE = "Validated statistics"
 
+# `string`, not `String`: the storage dictionaries carry integers as JSON
+# numbers, and `String(::Int)` is a MethodError. Every value that reaches the
+# page is rendered, so accepting any printable value here is the contract.
 function _html_escape(value)
-    replace(String(value),
+    replace(string(value),
         '&' => "&amp;", '<' => "&lt;", '>' => "&gt;",
         '"' => "&quot;", '\'' => "&#39;")
 end
@@ -348,7 +351,7 @@ function _ui_high_precision_value(value)
     display = get(value, "display", "")
     bits = get(value, "precision_bits", "")
     kind = get(value, "kind", "approximate")
-    String("<code>", _html(print_value), "</code><br><span class=\"display\">",
+    string("<code>", _html(print_value), "</code><br><span class=\"display\">",
            _html(kind), " · ", _html(string(bits)), "-bit · display: ",
            _html(display), "</span>")
 end

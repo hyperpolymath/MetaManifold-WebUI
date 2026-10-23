@@ -101,7 +101,7 @@ function main(args::Vector{String})
     rng = MersenneTwister(seed)
     exact_failures = String[]
     metric_failures = String[]
-    maxima = Dict(Int, Dict{String,BigFloat})(
+    maxima = Dict{Int,Dict{String,BigFloat}}(
         bits => Dict("shannon_abs" => big(0.0), "shannon_rel" => big(0.0),
                      "simpson_abs" => big(0.0), "simpson_rel" => big(0.0))
         for bits in PRECISIONS)
