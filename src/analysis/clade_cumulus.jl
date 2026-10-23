@@ -278,6 +278,12 @@ end
     unifrac(tree, cumulative; weighted=false) -> Matrix{Float64}
 
 Pairwise UniFrac between sample columns of a nodes × samples roll-up.
+`weighted=false` gives unweighted UniFrac (Lozupone & Knight 2005).
+`weighted=true` gives **normalised** weighted UniFrac in `[0, 1]`
+(Lozupone et al. 2007). This differs from the default of
+`weighted_unifrac(...; normalized=false)`, which returns the raw distance.
+If the denominator is zero, the distance is `1.0` when exactly one sample
+is non-empty and `0.0` otherwise.
 """
 function unifrac(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real};
                  weighted::Bool=false)::Matrix{Float64}
