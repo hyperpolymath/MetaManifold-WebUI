@@ -10,7 +10,7 @@
 # Canonical run DuckDB tables are read-only here; staged reassignment proposals
 # write only study-local sidecars under `projects/{study}/trees/.clade_cumulus/`.
 
-using DataFrames, OrderedCollections, SHA, Dates, JSON3
+using DataFrames, OrderedCollections, SHA, Dates, JSON3, DuckDB, DBInterface
 
 const _CC_SIDECAR_MAX_BYTES = 5 * 1024 * 1024
 
@@ -91,6 +91,13 @@ function _resolve_tree_inputs_from_request(
     body,
     source_digests::OrderedDict{String,String},
 )
+    # JSON3 hands request fields back as SubStrings and `strip` keeps them that
+    # way, but `_valid_tree_file` and `_tree_format` are String-typed -- an
+    # unnormalised `treeFile` reached them as a SubString and raised a
+    # MethodError, which the handler had no catch for, so every `study_tree`
+    # request answered 500. Normalise once at this boundary, as
+    # `_load_run_table_df` does above and as `cladistics.jl` does at its own
+    # call into `_valid_tree_file`. (`lowercase` already returns a String.)
     tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
     tree_file = String(strip(string(get(body, :treeFile, ""))))
     inline_newick = String(strip(string(get(body, :newick, ""))))
@@ -198,6 +205,19 @@ end
     end
 end
 
+"""
+    _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
+
+Build a clade explorer JSON response from a run's results table and the requested
+tree source, including a provenance receipt, without modifying canonical tables.
+Diversity is `nothing` unless a phylogeny, sample columns and matching tips are
+available. Placed `.jplace` abundances use raw like-weight ratios; unplaced reads
+include unmapped ASVs and remain in the weighted UniFrac library-size denominators.
+
+Return HTTP error responses for request validation, missing inputs and failures
+building the clade tree (the latter become HTTP 400). Other exceptions, including
+diversity calculation failures, propagate to the route wrapper's HTTP 500 handler.
+"""
 function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
     group = _req_group(req)
     err = _validate_run_request(study, run)
@@ -271,9 +291,17 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
             tid = String(strip(string(r[id_col])))
             !haskey(row_by_id, tid) && (row_by_id[tid] = ri)
         end
-        # Weight each placed `.jplace` tip by its raw like-weight ratio so any
-        # unplaced mass remains off the tree rather than renormalised onto the
-        # kept edge(s).
+        # Map split `.jplace` tip IDs back to the share of their query's reads
+        # that belongs on that edge. The share is the candidate's raw
+        # like-weight ratio, never a ratio renormalised over the retained
+        # candidates: a multi-candidate placement already partitions the mass
+        # (its ratios sum to 1 within `PLACEMENT_WEIGHT_SUM_TOL`), while a
+        # single-candidate placement accepted at `PLACEMENT_SINGLE_MIN_LWR`
+        # carries only the mass behind that one site. Dividing by the retained
+        # total would turn a lone 0.6 placement into a weight of 1.0 and push
+        # the 0.4 the tool left unplaced onto the reported edge, inflating that
+        # tip in weighted UniFrac and in Faith's PD. The shortfall is reported
+        # as `unplaced_reads` below instead.
         tip_weights = Dict{String,Float64}()
         if jplace_str !== nothing && !isempty(strip(jplace_str))
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
@@ -283,6 +311,8 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
+                        # `parse_jplace` has already rejected any ratio outside
+                        # [0, 1], so this needs no further clamping.
                         tip_weights[tid] = cand.like_weight
                     end
                 end
@@ -306,29 +336,35 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
                     mat[mi, ci] = ismissing(v) ? 0.0 : max(0.0, Float64(v)) * w
                 end
             end
-            row_weight = Dict{Int,Float64}()
-            for (ri, w) in taxa_rows
-                row_weight[ri] = get(row_weight, ri, 0.0) + w
-            end
-            # `unplaced_reads` reports how much of each row's abundance never
-            # reached the tree, so its floor is floating-point noise, not the
-            # *validity* tolerance. `PLACEMENT_WEIGHT_SUM_TOL` (0.05) exists so
-            # that a candidate list truncated by the placement tool stays
-            # `:valid`; reusing it here reported 0 unplaced reads for a
-            # placement at LWR 0.99 whose remaining 1% really is off the tree.
-            noise_floor = MetaManifold.CladeCumulus.PLACEMENT_WEIGHT_OVER_TOL
-            short_rows = [(ri, 1.0 - wsum) for (ri, wsum) in row_weight
-                          if 1.0 - wsum > noise_floor]
+
+            # Each sample's library size over the whole table, and the part of
+            # it that no tip carries. Reads go missing from `mat` two ways: a
+            # query whose kept like-weight ratios do not reach 1 contributes
+            # only that share, and an ASV the tree does not cover contributes
+            # nothing at all. Both are the same thing to a diversity metric --
+            # mass that is not on the tree.
+            #
+            # `sample_totals` is then handed to the weighted metrics as their
+            # denominator. Without it they divide by the placed-only total, so
+            # a sample whose single mapped query was placed at LWR 0.6 comes
+            # back out at relative abundance 1.0 and the raw like-weight
+            # weighting above is undone at the last step. Faith's PD and
+            # unweighted UniFrac read presence only and are unaffected.
+            sample_totals = Float64[]
             unplaced_reads = OrderedDict{String,Float64}()
-            for sc in scols
-                col_vals = df[!, sc]
+            for (ci, sc) in enumerate(scols)
                 tot = 0.0
-                for (ri, lost_share) in short_rows
-                    v = col_vals[ri]
+                for v in df[!, sc]
                     ismissing(v) && continue
-                    tot += max(0.0, Float64(v)) * lost_share
+                    tot += max(0.0, Float64(v))
                 end
-                unplaced_reads[sc] = tot
+                placed = sum(@view mat[:, ci])
+                # A multi-candidate partition only has to sum to one within
+                # `PLACEMENT_WEIGHT_SUM_TOL`, so the placed mass can sit a hair
+                # above the table total. The denominator must never fall below
+                # what the tree actually carries.
+                push!(sample_totals, max(tot, placed))
+                unplaced_reads[sc] = max(0.0, tot - placed)
             end
             pd_by_sample = OrderedDict{String,Float64}(
                 sc => MetaManifold.CladeCumulus.faith_pd(@view(mat[:, ci]), taxa_vec, cc_res.phylo_root)
@@ -338,14 +374,17 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
                 mat, taxa_vec, scols, cc_res.phylo_root; metric = :unweighted
             )
             w_raw = MetaManifold.CladeCumulus.unifrac_matrix(
-                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = false
+                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = false,
+                totals = sample_totals
             )
             w_norm = MetaManifold.CladeCumulus.unifrac_matrix(
-                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = true
+                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = true,
+                totals = sample_totals
             )
             top_branches = if length(scols) >= 2
                 first_n = MetaManifold.CladeCumulus.branch_unifrac_contributions(
-                    @view(mat[:, 1]), @view(mat[:, 2]), taxa_vec, cc_res.phylo_root
+                    @view(mat[:, 1]), @view(mat[:, 2]), taxa_vec, cc_res.phylo_root;
+                    total_a = sample_totals[1], total_b = sample_totals[2]
                 )
                 first_n[1:min(length(first_n), 15)]
             else

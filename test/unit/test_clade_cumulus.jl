@@ -16,6 +16,55 @@ const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
 const _CLADE_SV = MetaManifold.Server
 
+"""Depth-first lookup of a clade node by `id` in a decoded clade-tree payload."""
+function _cc_find(node, id::AbstractString)
+    String(node.id) == id && return node
+    for ch in node.children
+        hit = _cc_find(ch, id)
+        hit === nothing || return hit
+    end
+    nothing
+end
+
+"""Depth-first lookup by `id` in a `clade_node_to_dict` payload (an `OrderedDict`)."""
+function _cc_find_dict(node, id::AbstractString)
+    String(node["id"]) == id && return node
+    for ch in node["children"]
+        hit = _cc_find_dict(ch, id)
+        hit === nothing || return hit
+    end
+    nothing
+end
+
+"""Every clade node below `root`, in depth-first order."""
+function _cc_nodes(root)
+    out = Any[root]
+    i = 1
+    while i <= length(out)
+        append!(out, out[i].children)
+        i += 1
+    end
+    out
+end
+
+"""The first non-root clade holding exactly one child, or `nothing`."""
+function _cc_single_child_parent(root)
+    for u in _cc_nodes(root)
+        (u !== root && length(u.children) == 1) && return u
+    end
+    nothing
+end
+
+"""The internal clade that directly contains the tip labelled `tipname`."""
+function _cc_parent_of_tip(root, tipname::AbstractString)
+    for u in _cc_nodes(root)
+        for ch in u.children
+            (isempty(ch.children) && startswith(String(ch.name), tipname)) && return u
+        end
+    end
+    nothing
+end
+
 _cc_req(method::String, path::String, body::String = "") =
     _CLADE_SV.Oxygen.internalrequest(
         _CLADE_SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
@@ -257,6 +306,41 @@ _cc_req(method::String, path::String, body::String = "") =
         @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false) ≈ 2.3276502663333334 atol = 1e-11
         @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = true) ≈ 0.6655215451489284 atol = 1e-11
 
+        # An explicit per-sample total keeps mass that is not on the tree off
+        # it, instead of renormalising it onto the tips that are. Without this
+        # the weighted metric divides by the placed-only sum, so a sample whose
+        # placements carry a fraction of its reads is scaled straight back up
+        # to a full community and the down-weighting achieves nothing.
+        #
+        # Against an all-zero partner every `pb` is 0, so the raw distance is
+        # exactly `sum(branch_length * pa)` and is linear in `1 / total_a`:
+        # declaring twice the library size must halve it.
+        f_zero = zeros(Int, length(ft_taxa))
+        d_placed_only = CC.weighted_unifrac(fa, f_zero, ft_taxa, ft_nwk; normalized = false)
+        d_true_total = CC.weighted_unifrac(fa, f_zero, ft_taxa, ft_nwk;
+                                           normalized = false, total_a = 2 * sum(fa))
+        @test d_placed_only > 0.0
+        @test d_true_total ≈ d_placed_only / 2 atol = 1e-12
+        # Declaring the mass already on the tree is the default, to the bit.
+        @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false,
+                                  total_a = sum(fa), total_b = sum(fb)) ≈
+              CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false)
+        # A total below what the tree already carries would push a relative
+        # abundance above one, so it is rejected rather than clamped.
+        @test_throws ArgumentError CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; total_a = 1.0)
+        @test_throws ArgumentError CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; total_b = -1.0)
+        @test_throws ArgumentError CC.unifrac_matrix(
+            hcat(Float64.(fa), Float64.(fb)), ft_taxa, ["A", "B"], ft_nwk;
+            metric = :weighted, totals = [1.0])
+
+        # The per-branch breakdown uses the same denominators, so the table
+        # still explains the distance it sits next to.
+        contribs_default = CC.branch_unifrac_contributions(fa, f_zero, ft_taxa, ft_nwk)
+        contribs_total = CC.branch_unifrac_contributions(fa, f_zero, ft_taxa, ft_nwk;
+                                                         total_a = 2 * sum(fa))
+        @test sum(Float64(c["contribution"]) for c in contribs_total) ≈
+              sum(Float64(c["contribution"]) for c in contribs_default) / 2 atol = 1e-12
+
         # Quoted labels, NHX support, negative branch clamping, non-finite branch rejection,
         # and midpoint split-support symmetry across both root children.
         warns = String[]
@@ -294,8 +378,13 @@ _cc_req(method::String, path::String, body::String = "") =
         @test jp.queries[3].status === :valid
         @test jp.queries[3].max_lwr ≈ 0.98 atol = 1e-12
         @test jp.queries[4].status === :undecided
-        @test startswith(jp.queries[4].reason, "weight_sum_out_of_tolerance")
+        @test startswith(jp.queries[4].reason, "single_candidate_below_min_lwr")
 
+        # Two acceptance rules, not one blanket tolerance. A single-candidate
+        # record is the tool naming one site and leaving the rest of the mass
+        # unplaced, so it is judged on its own share; a multi-candidate record
+        # partitions the mass, whose shortfall may be the placement tool's
+        # own truncation but whose excess never is.
         _lwr_doc(ps) = JSON3.write(OrderedDict(
             "version" => 3,
             "tree" => "((Ref_1:0.1{0},Ref_2:0.2{1})95:0.3{2},Ref_3:0.4{3}){4};",
@@ -313,9 +402,11 @@ _cc_req(method::String, path::String, body::String = "") =
         @test _single_at(0.60).max_lwr ≈ 0.60 atol = 1e-12
         @test _single_at(CC.PLACEMENT_SINGLE_MIN_LWR).status === :valid
         @test _single_at(0.49).status === :undecided
+        @test startswith(_single_at(0.49).reason, "single_candidate_below_min_lwr")
+
         @test _partition(0.70, 0.30).status === :valid
-        @test _partition(0.80, 0.16).status === :valid
-        @test _partition(0.80, 0.24).status === :undecided
+        @test _partition(0.80, 0.16).status === :valid       # 0.96: a truncated candidate list
+        @test _partition(0.80, 0.24).status === :undecided   # 1.04: overweight evidence
         @test _partition(0.60, 0.60).status === :undecided
 
         # Placed query read counts project onto the reference tree edges without losing reads,
@@ -421,6 +512,8 @@ done
 echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "$OUT"
 """)
             chmod(mock_ft, 0o755)
+            # `Phylogeny` imports `tool_bin` from `Tools` but does not bind the
+            # module itself, so the registry is reached through `MetaManifold`.
             old_ft = get(MetaManifold.Tools._tools, "fasttree", nothing)
             MetaManifold.Tools._tools["fasttree"] = mock_ft
             try
@@ -599,6 +692,48 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test v_allow2.allowed == true
             @test String(v_allow2.proposal_file) != String(v_allow.proposal_file)
 
+            # 5. A `.jplace` study tree: the diversity block weights each tip by
+            # the raw like-weight ratio, so mass the placement file left on no
+            # edge is reported rather than renormalised onto the edge that was
+            # kept. ASV_1 is placed once at LWR 0.60 and ASV_2 once at LWR 1.00;
+            # ASV_3 and ASV_4 are not placed at all.
+            #
+            # SampleA holds 40 + 10 + 0 + 5 = 55 reads, of which the tree
+            # carries 40 x 0.6 + 10 = 34, so 21 are unplaced: 16 of ASV_1's
+            # like-weight shortfall plus ASV_4's 5 unmapped reads.
+            # SampleB holds 0 + 20 + 25 + 10 = 55 and the tree carries 20, so
+            # 35 are unplaced (ASV_3's 25 and ASV_4's 10, ASV_1 having none
+            # here).
+            write(joinpath(trees_dir, "placed.jplace"), JSON3.write(OrderedDict(
+                "version" => 3,
+                "tree" => "((Ref_1:0.10{0},Ref_2:0.20{1})0.96:0.30{2},Ref_3:0.40{3}){4};",
+                "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
+                "placements" => [
+                    OrderedDict("n" => ["ASV_1"], "p" => [[0, -100.0, 0.60, 0.05, 0.02]]),
+                    OrderedDict("n" => ["ASV_2"], "p" => [[1, -99.0, 1.00, 0.05, 0.02]]),
+                ],
+            )))
+            r_jp = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "placed.jplace",
+                "supportThreshold" => 0.85,
+                "lwrThreshold" => 0.95,
+            )))
+            @test r_jp.status == 200
+            jp_body = JSON3.read(String(r_jp.body))
+            @test jp_body.diversity !== nothing
+            @test jp_body.diversity.mapped_tips == 2
+            @test jp_body.diversity.unplaced_reads.SampleA ≈ 21.0 atol = 1e-9
+            @test jp_body.diversity.unplaced_reads.SampleB ≈ 35.0 atol = 1e-9
+            @test jp_body.diversity.weighted_unifrac[1][2] ≈
+                  0.15636363636363636 atol = 1e-9
+            # The clade tree is a count view of the table and still conserves
+            # every observed read; only the abundance-weighted diversity matrix
+            # discounts the unplaced mass.
+            @test jp_body.root.cumulative_count ≈ 110.0 atol = 1e-9
+
             # Canonical DuckDB database is strictly untouched byte-for-byte!
             @test bytes2hex(open(sha256, db_path)) == before_db_sha
 
@@ -635,5 +770,82 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             rm(tmp; recursive = true, force = true)
         end
     end
+
+    @testset "A move that empties a clade clears its activity and PD" begin
+        # `_reaggregate_after_move` detaches the moving clade from its old
+        # parent. When that parent's only child was the one that moved, the
+        # parent is left with no children but still carries the
+        # `cumulative_count` (and the `residual_count` behind its uncertainty
+        # cloud) of the subtree that has just left. Read as a leaf, that stale
+        # count would keep the emptied clade active and give it a nonzero
+        # `subtree_pd` and frequency for reads it no longer holds.
+        # Two domains, two ASVs each, so the proposed root's taxon purity
+        # distinguishes "four real tips" (0.5) from "four tips plus the
+        # emptied wrapper counted as a fifth Bacteria tip" (0.6).
+        df = DataFrame(
+            SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4"],
+            Domain  = ["Bacteria", "Bacteria", "Archaea", "Archaea"],
+            SampleA = [10.0, 20.0, 30.0, 40.0],
+        )
+        # `wrapper` has exactly one child (the ASV_1/ASV_2 clade); the other
+        # side of the root is a two-tip clade we can move that child into.
+        nwk = "(((ASV_1:0.10,ASV_2:0.20)0.96:0.30)0.94:0.05,(ASV_3:0.15,ASV_4:0.25)0.90:0.40)Root;"
+        cc_move = CC.build_clade_tree(
+            df; mode = :combined, newick = nwk, support_threshold = 0.5, lwr_threshold = 0.95,
+        )
+
+        wrapper = _cc_single_child_parent(cc_move.root)
+        @test wrapper !== nothing
+        only_child = wrapper === nothing ? nothing : wrapper.children[1]
+        @test only_child !== nothing
+
+        # The target is the clade directly holding ASV_3: internal, well
+        # supported, and in the other half of the tree from the moving clade.
+        target = _cc_parent_of_tip(cc_move.root, "ASV_3")
+        @test target !== nothing
+
+        if wrapper !== nothing && only_child !== nothing && target !== nothing
+            before_total = Float64(cc_move.root.cumulative_count)
+            vacated_reads = Float64(wrapper.cumulative_count)
+            vacated_residual = Float64(wrapper.residual_count)
+            moved_reads = Float64(only_child.cumulative_count)
+            moved_residual = Float64(only_child.residual_count)
+            @test vacated_reads > 0.0
+            @test vacated_residual > 0.0   # so clearing it is observable
+            @test moved_reads > 0.0
+
+            verdict = CC.validate_drag_drop(cc_move, String(only_child.id), String(target.id))
+            @test verdict["allowed"] == true
+            proposed_root = verdict["proposed_root"]
+
+            vacated = _cc_find_dict(proposed_root, String(wrapper.id))
+            @test vacated !== nothing
+            if vacated !== nothing
+                @test Float64(vacated["cumulative_count"]) == 0.0
+                @test Float64(vacated["cumulative_frequency"]) == 0.0
+                @test Float64(vacated["subtree_pd"]) == 0.0
+                # The residual uncertainty belonged to the reads that left, so
+                # it leaves with them instead of lingering on an empty clade.
+                @test Float64(vacated["residual_count"]) == 0.0
+                @test isempty(vacated["children"])
+            end
+
+            # The reads are relocated, not lost, and the clade that moved keeps
+            # every one of them.
+            relocated = _cc_find_dict(proposed_root, String(only_child.id))
+            @test relocated !== nothing
+            if relocated !== nothing
+                @test Float64(relocated["cumulative_count"]) == moved_reads
+                @test Float64(relocated["residual_count"]) == moved_residual
+            end
+            @test Float64(proposed_root["cumulative_count"]) ≈ before_total atol = 1e-9
+            # The emptied wrapper is childless but is not a tip: it must not
+            # add its departed subtree's taxon to the tip counts behind
+            # purity/monophyly. Four real tips, two per domain, give 0.5;
+            # counting the wrapper as a fifth Bacteria tip would give 0.6.
+            @test Float64(proposed_root["taxon_purity"]) ≈ 0.5 atol = 1e-9
+        end
+    end
+
 
 end
