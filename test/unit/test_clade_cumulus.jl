@@ -281,7 +281,7 @@ _cc_req(method::String, path::String, body::String = "") =
         @test _single_at(CC.PLACEMENT_SINGLE_MIN_LWR).status === :valid
         @test _single_at(0.49).status === :undecided
         @test _partition(0.70, 0.30).status === :valid
-        @test _partition(0.80, 0.16).status === :undecided
+        @test _partition(0.80, 0.16).status === :valid
         @test _partition(0.80, 0.24).status === :undecided
         @test _partition(0.60, 0.60).status === :undecided
 

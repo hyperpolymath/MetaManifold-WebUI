@@ -30,11 +30,15 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# Multi-candidate placements partition probability mass across kept edges and
-# must sum to 1 within floating-point tolerance; single-candidate placements
-# leave unplaced mass off the tree and require at least half the mass at the
-# reported site (`PLACEMENT_SINGLE_MIN_LWR`).
-const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
+# Placement tools truncate a query's candidate list at a likelihood-weight
+# cutoff, so retained like-weight ratios can legitimately sum to a little
+# under 1 (a single retained placement at 0.98 is complete evidence). A shortfall
+# beyond the tolerance is a missing or discarded placement and stays undecided.
+# A sum over 1 is never legitimate: weights are mutually exclusive placement
+# ratios, so overweight evidence is malformed and is rejected by a tight upper
+# bound while the lower shortfall is tolerated.
+const PLACEMENT_WEIGHT_SUM_TOL = 0.05
+const PLACEMENT_WEIGHT_OVER_TOL = 1e-9
 const PLACEMENT_SINGLE_MIN_LWR = 0.5
 
 ## Phylogenetic tree structures & Newick / jplace parsers
@@ -940,7 +944,7 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
         elseif length(cands) == 1 && cands[1].like_weight < PLACEMENT_SINGLE_MIN_LWR
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
-        elseif length(cands) > 1 && abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
+        elseif length(cands) > 1 && (weight_sum > 1.0 + PLACEMENT_WEIGHT_OVER_TOL || weight_sum < 1.0 - PLACEMENT_WEIGHT_SUM_TOL)
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
