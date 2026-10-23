@@ -14,7 +14,14 @@ const EP = MetaManifold.Epistemic
 const CC = MetaManifold.CladeCumulus
 const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
-const SV = MetaManifold.Server
+# NOT const, unlike the four above: `runtests.jl` includes every test file into
+# Main, so `SV` is one binding shared with the thirteen later test files
+# (test_routes.jl, test_composition.jl, ...) that assign it plainly. Declaring
+# it const here makes the first of them die with "invalid assignment to
+# constant Main.SV", which aborts the whole MetaManifold testset -- so every
+# file after this one, including the occupancy disagreement experiment, silently
+# stops running. test/occupancy_disagreement_test.jl states the same rule.
+SV = MetaManifold.Server
 
 _cc_req(method::String, path::String, body::String = "") =
     SV.Oxygen.internalrequest(
