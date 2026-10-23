@@ -14,7 +14,7 @@ const EP = MetaManifold.Epistemic
 const CC = MetaManifold.CladeCumulus
 const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
-const SV = MetaManifold.Server
+SV = MetaManifold.Server
 
 _cc_req(method::String, path::String, body::String = "") =
     SV.Oxygen.internalrequest(

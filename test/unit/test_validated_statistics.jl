@@ -1,7 +1,7 @@
 using Test
 using JSON3
 using MetaManifold
-const SV = MetaManifold.Server
+SV = MetaManifold.Server
 
 function _vs_request(method::String, path::String, body; raw::Bool=false)
     payload = raw ? body : JSON3.write(body)
