@@ -14,7 +14,22 @@ const EP = MetaManifold.Epistemic
 const CC = MetaManifold.CladeCumulus
 const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
-const SV = MetaManifold.Server
+# NOT `const`: every other unit file binds `SV = MetaManifold.Server` with a plain
+# assignment, and all of them are `include`d into the same `Main`. Declaring it
+# constant here -- this file runs sixth -- made the next plain assignment throw
+# `invalid assignment to constant Main.SV`, which aborted the include loop and
+# silently skipped the remaining unit files.
+SV = MetaManifold.Server
+
+"""Depth-first lookup of a clade node by `id` in a decoded clade-tree payload."""
+function _cc_find(node, id::AbstractString)
+    String(node.id) == id && return node
+    for ch in node.children
+        hit = _cc_find(ch, id)
+        hit === nothing || return hit
+    end
+    nothing
+end
 
 _cc_req(method::String, path::String, body::String = "") =
     SV.Oxygen.internalrequest(
@@ -109,6 +124,41 @@ _cc_req(method::String, path::String, body::String = "") =
         @test CC.unweighted_unifrac(fa, fb, ft_taxa, ft_nwk) ≈ 0.5113342456491424 atol = 1e-11
         @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false) ≈ 2.3276502663333334 atol = 1e-11
         @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = true) ≈ 0.6655215451489284 atol = 1e-11
+
+        # An explicit per-sample total keeps mass that is not on the tree off
+        # it, instead of renormalising it onto the tips that are. Without this
+        # the weighted metric divides by the placed-only sum, so a sample whose
+        # placements carry a fraction of its reads is scaled straight back up
+        # to a full community and the down-weighting achieves nothing.
+        #
+        # Against an all-zero partner every `pb` is 0, so the raw distance is
+        # exactly `sum(branch_length * pa)` and is linear in `1 / total_a`:
+        # declaring twice the library size must halve it.
+        f_zero = zeros(Int, length(ft_taxa))
+        d_placed_only = CC.weighted_unifrac(fa, f_zero, ft_taxa, ft_nwk; normalized = false)
+        d_true_total = CC.weighted_unifrac(fa, f_zero, ft_taxa, ft_nwk;
+                                           normalized = false, total_a = 2 * sum(fa))
+        @test d_placed_only > 0.0
+        @test d_true_total ≈ d_placed_only / 2 atol = 1e-12
+        # Declaring the mass already on the tree is the default, to the bit.
+        @test CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false,
+                                  total_a = sum(fa), total_b = sum(fb)) ≈
+              CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; normalized = false)
+        # A total below what the tree already carries would push a relative
+        # abundance above one, so it is rejected rather than clamped.
+        @test_throws ArgumentError CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; total_a = 1.0)
+        @test_throws ArgumentError CC.weighted_unifrac(fa, fb, ft_taxa, ft_nwk; total_b = -1.0)
+        @test_throws ArgumentError CC.unifrac_matrix(
+            hcat(Float64.(fa), Float64.(fb)), ft_taxa, ["A", "B"], ft_nwk;
+            metric = :weighted, totals = [1.0])
+
+        # The per-branch breakdown uses the same denominators, so the table
+        # still explains the distance it sits next to.
+        contribs_default = CC.branch_unifrac_contributions(fa, f_zero, ft_taxa, ft_nwk)
+        contribs_total = CC.branch_unifrac_contributions(fa, f_zero, ft_taxa, ft_nwk;
+                                                         total_a = 2 * sum(fa))
+        @test sum(Float64(c["contribution"]) for c in contribs_total) ≈
+              sum(Float64(c["contribution"]) for c in contribs_default) / 2 atol = 1e-12
 
         # Quoted labels, NHX support, negative branch clamping, non-finite branch rejection,
         # and midpoint split-support symmetry across both root children.
@@ -428,7 +478,19 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test v_allow.proposal_file !== nothing
             @test isfile(joinpath(trees_dir, ".clade_cumulus", String(v_allow.proposal_file)))
             @test v_allow.proposed_root.cumulative_count ≈ 110.0 atol = 1e-9
-            @test Float64(v_allow.proposed_root.children[1].subtree_pd) > before_target_pd
+
+            # The proposal reports `subtree_pd` on exactly the same footing as the tree
+            # it is compared against (`clade_faith_pd`: a clade's own subtending branch
+            # counts whenever an observed tip sits below it). Moving ASV_4 hands its
+            # 0.25 branch to the target, so the target reads 0.30 + 0.10 + 0.20 + 0.25
+            # and the clade it left falls to 0.40 + 0.15.
+            moved_target = _cc_find(v_allow.proposed_root, String(high_clade.id))
+            @test moved_target !== nothing
+            @test Float64(moved_target.subtree_pd) ≈ 0.85 atol = 1e-9
+            @test Float64(moved_target.subtree_pd) > before_target_pd
+            @test Float64(_cc_find(v_allow.proposed_root, String(low_clade.id)).subtree_pd) ≈ 0.55 atol = 1e-9
+            # Relocating an observed tip cannot create or destroy phylogenetic diversity.
+            @test Float64(v_allow.proposed_root.subtree_pd) ≈ Float64(comb.root.subtree_pd) atol = 1e-9
 
             # Re-saving under a different threshold writes a distinct immutable sidecar file
             r_allow2 = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
@@ -448,9 +510,15 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             # 5. A `.jplace` study tree: the diversity block weights each tip by
             # the raw like-weight ratio, so mass the placement file left on no
             # edge is reported rather than renormalised onto the edge that was
-            # kept. ASV_1 is placed once at LWR 0.60, ASV_2 once at LWR 1.00, so
-            # ASV_1 contributes only 60% of its reads and the missing 40%
-            # (SampleA 40 x 0.4 = 16, SampleB 0) is counted as unplaced.
+            # kept. ASV_1 is placed once at LWR 0.60 and ASV_2 once at LWR 1.00;
+            # ASV_3 and ASV_4 are not placed at all.
+            #
+            # SampleA holds 40 + 10 + 0 + 5 = 55 reads, of which the tree
+            # carries 40 x 0.6 + 10 = 34, so 21 are unplaced: 16 of ASV_1's
+            # like-weight shortfall plus ASV_4's 5 unmapped reads.
+            # SampleB holds 0 + 20 + 25 + 10 = 55 and the tree carries 20, so
+            # 35 are unplaced (ASV_3's 25 and ASV_4's 10, ASV_1 having none
+            # here).
             write(joinpath(trees_dir, "placed.jplace"), JSON3.write(OrderedDict(
                 "version" => 3,
                 "tree" => "((Ref_1:0.10{0},Ref_2:0.20{1})0.96:0.30{2},Ref_3:0.40{3}){4};",
@@ -472,8 +540,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             jp_body = JSON3.read(String(r_jp.body))
             @test jp_body.diversity !== nothing
             @test jp_body.diversity.mapped_tips == 2
-            @test jp_body.diversity.unplaced_reads.SampleA ≈ 16.0 atol = 1e-9
-            @test jp_body.diversity.unplaced_reads.SampleB ≈ 0.0 atol = 1e-9
+            @test jp_body.diversity.unplaced_reads.SampleA ≈ 21.0 atol = 1e-9
+            @test jp_body.diversity.unplaced_reads.SampleB ≈ 35.0 atol = 1e-9
             # The clade tree is a count view of the table and still conserves
             # every observed read; only the abundance-weighted diversity matrix
             # discounts the unplaced mass.

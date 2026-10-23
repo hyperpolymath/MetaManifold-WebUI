@@ -764,11 +764,48 @@ function unweighted_unifrac(
 end
 
 """
-    weighted_unifrac(counts_a, counts_b, taxa, tree; normalized=false) -> Float64
+    _sample_total(abund, declared, name) -> Float64
+
+The denominator for one sample's relative abundances. It defaults to the mass
+that actually sits on the tree, which is the ordinary case. A caller that knows
+part of the sample could not be placed on the tree -- `.jplace` like-weight mass
+the tool left on no edge, or table ASVs the tree does not cover -- passes the
+true library size instead, so that share stays off the tree rather than being
+renormalised onto the tips that were placed. Without this, down-weighting a tip
+to express placement uncertainty achieves nothing: dividing by the placed-only
+total scales it straight back up.
+"""
+function _sample_total(
+    abund::Dict{String,Float64},
+    declared::Union{Real,Nothing},
+    name::AbstractString,
+)::Float64
+    on_tree = sum(values(abund); init = 0.0)
+    declared === nothing && return on_tree
+    t = Float64(declared)
+    (isfinite(t) && t >= 0.0) ||
+        throw(ArgumentError("$name must be finite and non-negative, got $declared"))
+    # Below what the tree already carries would put a relative abundance above
+    # one. That is a caller error, not a discrepancy to round away -- but the
+    # equality case must survive floating-point summation, hence the slack.
+    t >= on_tree * (1 - 1e-9) - 1e-9 ||
+        throw(ArgumentError(
+            "$name ($t) is below the $on_tree reads this sample already maps onto the tree"))
+    max(t, on_tree)
+end
+
+"""
+    weighted_unifrac(counts_a, counts_b, taxa, tree; normalized=false,
+                     total_a=nothing, total_b=nothing) -> Float64
 
 Lozupone et al. (2007) raw (`normalized=false`) or normalized (`normalized=true`)
 weighted UniFrac distance: branch-length-weighted L1 distance between the two
 samples' CladeCumulus cumulative relative abundance trees.
+
+`total_a` / `total_b` override the per-sample denominator, which otherwise is
+the mass on the tree. Pass the sample's true library size when part of it could
+not be placed, so the unplaced share is absent from the tree instead of being
+renormalised onto the tips that were.
 """
 function weighted_unifrac(
     counts_a::AbstractVector{<:Real},
@@ -776,12 +813,14 @@ function weighted_unifrac(
     taxa::AbstractVector{<:AbstractString},
     tree::Union{PhyloNode,AbstractString};
     normalized::Bool = false,
+    total_a::Union{Real,Nothing} = nothing,
+    total_b::Union{Real,Nothing} = nothing,
 )::Float64
     root = _ensure_rooted_tree(tree)
     ab_a = _validate_counts_and_taxa(counts_a, taxa, root)
     ab_b = _validate_counts_and_taxa(counts_b, taxa, root)
-    tot_a = sum(values(ab_a); init = 0.0)
-    tot_b = sum(values(ab_b); init = 0.0)
+    tot_a = _sample_total(ab_a, total_a, "total_a")
+    tot_b = _sample_total(ab_b, total_b, "total_b")
     (tot_a <= 0.0 && tot_b <= 0.0) && return 0.0
 
     function walk(u::PhyloNode, depth_from_root::Float64, is_root::Bool)::Tuple{Float64,Float64,Float64,Float64}
@@ -822,13 +861,17 @@ function branch_unifrac_contributions(
     counts_a::AbstractVector{<:Real},
     counts_b::AbstractVector{<:Real},
     taxa::AbstractVector{<:AbstractString},
-    tree::Union{PhyloNode,AbstractString},
+    tree::Union{PhyloNode,AbstractString};
+    total_a::Union{Real,Nothing} = nothing,
+    total_b::Union{Real,Nothing} = nothing,
 )::Vector{OrderedDict{String,Any}}
     root = _ensure_rooted_tree(tree)
     ab_a = _validate_counts_and_taxa(counts_a, taxa, root)
     ab_b = _validate_counts_and_taxa(counts_b, taxa, root)
-    tot_a = sum(values(ab_a); init = 0.0)
-    tot_b = sum(values(ab_b); init = 0.0)
+    # Same denominators as `weighted_unifrac`, so the per-branch table adds up
+    # to the distance it is meant to explain.
+    tot_a = _sample_total(ab_a, total_a, "total_a")
+    tot_b = _sample_total(ab_b, total_b, "total_b")
 
     contribs = OrderedDict{String,Any}[]
     function walk(u::PhyloNode, is_root::Bool)::Tuple{Float64,Float64}
@@ -882,11 +925,17 @@ function unifrac_matrix(
     tree::Union{PhyloNode,AbstractString};
     metric::Symbol = :weighted,
     normalized::Bool = false,
+    totals::Union{AbstractVector{<:Real},Nothing} = nothing,
 )::Matrix{Float64}
     size(sample_matrix, 1) == length(taxa) ||
         throw(ArgumentError("sample_matrix rows ($(size(sample_matrix, 1))) != length(taxa) ($(length(taxa)))"))
     size(sample_matrix, 2) == length(samples) ||
         throw(ArgumentError("sample_matrix cols ($(size(sample_matrix, 2))) != length(samples) ($(length(samples)))"))
+    # Per-sample library sizes for the weighted metric, in `samples` order. See
+    # `_sample_total`: they keep mass that could not be placed off the tree
+    # rather than renormalised onto the tips that were.
+    isnothing(totals) || length(totals) == length(samples) ||
+        throw(ArgumentError("totals ($(length(totals))) != length(samples) ($(length(samples)))"))
     root = _ensure_rooted_tree(tree)
     k = length(samples)
     M = zeros(Float64, k, k)
@@ -897,7 +946,9 @@ function unifrac_matrix(
             d = if metric === :unweighted
                 unweighted_unifrac(ci, cj, taxa, root)
             elseif metric === :weighted
-                weighted_unifrac(ci, cj, taxa, root; normalized = normalized)
+                weighted_unifrac(ci, cj, taxa, root; normalized = normalized,
+                    total_a = isnothing(totals) ? nothing : totals[i],
+                    total_b = isnothing(totals) ? nothing : totals[j])
             else
                 throw(ArgumentError("Unsupported UniFrac metric $(repr(metric))"))
             end
@@ -1819,10 +1870,16 @@ function _reaggregate_after_move(
             end
             active_here = u.cumulative_count > 0.0
             st = Epistemic.epistemic_status(case_obj, u.id)
+            # `subtree_pd` has to mean here exactly what it means on the tree
+            # this proposal is compared against. `clade_faith_pd`/`_pd_accum`,
+            # which the builder uses, counts a node's OWN branch when the
+            # subtree below it holds an observed tip -- so an observed tip
+            # contributes its own branch length, not zero.
+            leaf_pd = (active_here && !is_root) ? max(0.0, u.branch_length) : 0.0
             leaf_node = CladeNode(
                 u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
                 u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
-                u.branch_length, u.support, 0.0, u.dominant_taxon, u.taxon_purity, mono,
+                u.branch_length, u.support, leaf_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
             return (leaf_node, tmap, 1, active_here)
@@ -1844,11 +1901,18 @@ function _reaggregate_after_move(
             n_sub_tips += nt
             if ch_active
                 any_active = true
-                sub_pd += max(0.0, rk.branch_length) + rk.subtree_pd
+                # `rk.subtree_pd` already carries the child's own branch length.
+                sub_pd += rk.subtree_pd
             end
             for (k, v) in ct
                 merged_taxa[k] = get(merged_taxa, k, 0) + v
             end
+        end
+
+        # Mirror `_pd_accum`: a non-root clade whose subtree is observed also
+        # contributes the branch that subtends it.
+        if any_active && !is_root
+            sub_pd += max(0.0, u.branch_length)
         end
 
         dom_tx = nothing

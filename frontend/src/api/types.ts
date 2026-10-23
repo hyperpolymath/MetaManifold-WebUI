@@ -969,10 +969,12 @@ export interface CladeCumulusDiversity {
   samples: string[]
   mapped_tips: number
   /**
-   * Reads per sample the `.jplace` file left on no edge: the like-weight
-   * ratios kept for a query need not reach 1, and the shortfall is counted
-   * here rather than redistributed onto the edges that survived. Absent for
-   * responses produced before this field existed.
+   * Reads per sample that no tip on the tree carries — a query whose kept
+   * `.jplace` like-weight ratios do not reach 1 contributes only that share,
+   * and an ASV the tree does not cover contributes nothing. This mass is held
+   * out of the weighted UniFrac denominators rather than renormalised onto the
+   * tips that were placed. Absent for responses produced before this field
+   * existed.
    */
   unplaced_reads?: Record<string, number>
   faith_pd: Record<string, number>

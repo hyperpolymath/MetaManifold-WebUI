@@ -712,15 +712,17 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
               </div>
 
               {/*
-                Reads the placement file left on no edge. They are excluded
-                from the abundances above rather than renormalised onto the
-                edges a query did keep, so the shortfall is stated instead of
-                being silently absorbed.
+                Reads no tip carries: like-weight mass a placement left on no
+                edge, plus ASVs the tree does not cover. They are held out of
+                the weighted UniFrac denominators rather than renormalised onto
+                the tips that were placed, so the shortfall is stated here
+                instead of being silently absorbed.
               */}
               {unplacedSamples.length > 0 && (
                 <p style={{ fontSize: '.75rem', margin: '0 0 12px', color: 'var(--color-fg-muted, #57606a)' }}>
-                  Unplaced reads (like-weight mass the placement file left on no edge, excluded
-                  from the abundances above):{' '}
+                  Unplaced reads (carried by no tip — like-weight mass left on no edge, plus
+                  ASVs the tree does not cover — and held out of the weighted UniFrac
+                  denominators):{' '}
                   {unplacedSamples
                     .map(([s, n]) => `${s} ${n.toFixed(2)}`)
                     .join(', ')}

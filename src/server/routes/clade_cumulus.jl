@@ -323,30 +323,34 @@ end
                 end
             end
 
-            # Reads whose placement the file left on no edge at all: the
-            # like-weight ratios kept for a query need not reach 1, and the
-            # shortfall belongs to edges the placement tool discarded. Those
-            # reads are counted here rather than redistributed onto the edges
-            # that survived, so an abundance-weighted result can be read
-            # against the evidence that was actually placed. A row whose tips
-            # carry the full mass (every non-jplace ASV, and any partition
-            # complete within `PLACEMENT_WEIGHT_SUM_TOL`) contributes nothing.
-            row_weight = Dict{Int,Float64}()
-            for (ri, w) in taxa_rows
-                row_weight[ri] = get(row_weight, ri, 0.0) + w
-            end
-            short_rows = [(ri, 1.0 - wsum) for (ri, wsum) in row_weight
-                          if wsum < 1.0 - MetaManifold.CladeCumulus.PLACEMENT_WEIGHT_SUM_TOL]
+            # Each sample's library size over the whole table, and the part of
+            # it that no tip carries. Reads go missing from `mat` two ways: a
+            # query whose kept like-weight ratios do not reach 1 contributes
+            # only that share, and an ASV the tree does not cover contributes
+            # nothing at all. Both are the same thing to a diversity metric --
+            # mass that is not on the tree.
+            #
+            # `sample_totals` is then handed to the weighted metrics as their
+            # denominator. Without it they divide by the placed-only total, so
+            # a sample whose single mapped query was placed at LWR 0.6 comes
+            # back out at relative abundance 1.0 and the raw like-weight
+            # weighting above is undone at the last step. Faith's PD and
+            # unweighted UniFrac read presence only and are unaffected.
+            sample_totals = Float64[]
             unplaced_reads = OrderedDict{String,Float64}()
-            for sc in scols
-                col_vals = df[!, sc]
+            for (ci, sc) in enumerate(scols)
                 tot = 0.0
-                for (ri, lost_share) in short_rows
-                    v = col_vals[ri]
+                for v in df[!, sc]
                     ismissing(v) && continue
-                    tot += max(0.0, Float64(v)) * lost_share
+                    tot += max(0.0, Float64(v))
                 end
-                unplaced_reads[sc] = tot
+                placed = sum(@view mat[:, ci])
+                # A multi-candidate partition only has to sum to one within
+                # `PLACEMENT_WEIGHT_SUM_TOL`, so the placed mass can sit a hair
+                # above the table total. The denominator must never fall below
+                # what the tree actually carries.
+                push!(sample_totals, max(tot, placed))
+                unplaced_reads[sc] = max(0.0, tot - placed)
             end
             pd_by_sample = OrderedDict{String,Float64}(
                 sc => MetaManifold.CladeCumulus.faith_pd(@view(mat[:, ci]), taxa_vec, cc_res.phylo_root)
@@ -356,14 +360,17 @@ end
                 mat, taxa_vec, scols, cc_res.phylo_root; metric = :unweighted
             )
             w_raw = MetaManifold.CladeCumulus.unifrac_matrix(
-                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = false
+                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = false,
+                totals = sample_totals
             )
             w_norm = MetaManifold.CladeCumulus.unifrac_matrix(
-                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = true
+                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = true,
+                totals = sample_totals
             )
             top_branches = if length(scols) >= 2
                 first_n = MetaManifold.CladeCumulus.branch_unifrac_contributions(
-                    @view(mat[:, 1]), @view(mat[:, 2]), taxa_vec, cc_res.phylo_root
+                    @view(mat[:, 1]), @view(mat[:, 2]), taxa_vec, cc_res.phylo_root;
+                    total_a = sample_totals[1], total_b = sample_totals[2]
                 )
                 first_n[1:min(length(first_n), 15)]
             else
