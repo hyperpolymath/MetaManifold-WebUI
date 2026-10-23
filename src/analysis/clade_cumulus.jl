@@ -18,7 +18,7 @@ export PhyloNode, IndexedPhyloNode, PhylogeneticTree,
        QueryCandidate, QueryPlacement, JplaceDocument,
        CladeNode, CladeTreeResult,
        parse_newick, parse_phylogenetic_tree, midpoint_root, parse_jplace,
-       asv_tip_name, clade_counts, unifrac, analyse_phylogeny,
+       asv_tip_name, clade_counts, unifrac, analyse_phylogeny, ensure_rooted,
        faith_pd, faith_pd_table, clade_faith_pd,
        unweighted_unifrac, weighted_unifrac, unifrac_matrix,
        branch_unifrac_contributions,
@@ -278,6 +278,63 @@ function _tree_lengths(tree::PhylogeneticTree)::Vector{Float64}
     lengths
 end
 
+## Rooting
+
+"""
+    ensure_rooted(tree::PhylogeneticTree) -> PhylogeneticTree
+
+Return `tree` with a biologically meaningful root, using the same convention as
+the legacy `PhyloNode` metrics (`_ensure_rooted_tree`): an unrooted tree — more
+than two children at the root — is midpoint-rooted by `midpoint_root`, and an
+already bifurcating tree is returned unchanged.
+
+This matters because IQ-TREE infers an *unrooted* tree for a reversible
+substitution model, so the root of a `reference.treefile` is only whichever
+node happened to be serialized first. UniFrac is unaffected (it sums edge
+partitions, and re-rooting preserves them), but Faith's PD is a path-to-root
+quantity: for a sample with a single active tip the arbitrary root inflates PD
+by the distance from that tip to the serialization point. Rooting here keeps
+`analyse_phylogeny` consistent with `faith_pd(counts, taxa, tree)`.
+"""
+function ensure_rooted(tree::PhylogeneticTree)::PhylogeneticTree
+    length(tree.nodes[tree.root].children) <= 2 && return tree
+    rooted, changed = midpoint_root(_to_phylo(tree))
+    changed || return tree        # fewer than two tips: nothing to root against
+    _from_phylo(rooted)
+end
+
+# The legacy rooting and metric code is audited against scikit-bio, so it is
+# reused rather than reimplemented: convert to `PhyloNode`, root, convert back.
+function _to_phylo(tree::PhylogeneticTree, id::Int = tree.root)::PhyloNode
+    node = tree.nodes[id]
+    is_root = id == tree.root
+    !is_root && isnothing(node.length) && throw(ArgumentError(
+        "Faith PD and UniFrac need a length on every non-root branch"))
+    children = PhyloNode[_to_phylo(tree, child) for child in node.children]
+    PhyloNode("n$id", node.name, is_root ? 0.0 : something(node.length, 0.0),
+              nothing, nothing, children)
+end
+
+function _from_phylo(root::PhyloNode)::PhylogeneticTree
+    nodes = IndexedPhyloNode[]
+    tips = Dict{String,Int}()
+    function add!(node::PhyloNode, parent::Int)::Int
+        push!(nodes, IndexedPhyloNode(node.name,
+            parent == 0 ? nothing : node.branch_length, parent, Int[]))
+        id = length(nodes)
+        for child in node.children
+            push!(nodes[id].children, add!(child, id))
+        end
+        if isempty(node.children) && !isempty(node.name)
+            haskey(tips, node.name) && throw(ArgumentError("duplicate tip '$(node.name)'"))
+            tips[node.name] = id
+        end
+        id
+    end
+    root_id = add!(root, 0)
+    PhylogeneticTree(nodes, root_id, tips)
+end
+
 """
     unifrac(tree, cumulative; weighted=false) -> Matrix{Float64}
 
@@ -333,12 +390,15 @@ end
 UniFrac over the natural samples × ASVs count matrix. The counts are rolled up
 through `clade_counts` first, so callers do not have to construct the internal
 nodes × samples matrix; `faith_pd(tree, counts, tip_names)` is the matching
-raw-count entry point.
+raw-count entry point. The tree is passed through `ensure_rooted` first, so an
+unrooted IQ-TREE tree and a rerooted serialization of it agree; UniFrac itself
+is root-invariant because it only sums edge partitions.
 """
 function unifrac(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
                  tip_names::AbstractVector{<:AbstractString};
                  weighted::Bool=false)::Matrix{Float64}
-    unifrac(tree, clade_counts(tree, counts, tip_names); weighted = weighted)
+    rooted = ensure_rooted(tree)
+    unifrac(rooted, clade_counts(rooted, counts, tip_names); weighted = weighted)
 end
 
 function _faith_pd_indexed(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real})::Vector{Float64}
@@ -362,16 +422,32 @@ function _faith_pd_indexed(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:
     out
 end
 
+"""
+    faith_pd(tree, cumulative) -> Vector{Float64}
+    faith_pd(tree, counts, tip_names) -> Vector{Float64}
+
+Faith's Phylogenetic Diversity per sample column. The roll-up overload sums the
+length of every non-root edge whose clade holds reads, so `cumulative` must come
+from `clade_counts` applied to a tree already passed through `ensure_rooted`;
+the raw-count overload does that rooting for you and is the one to prefer.
+"""
 faith_pd(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real}) = _faith_pd_indexed(tree, cumulative)
-faith_pd(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
-         tip_names::AbstractVector{<:AbstractString}) =
-    faith_pd(tree, clade_counts(tree, counts, tip_names))
+function faith_pd(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+                  tip_names::AbstractVector{<:AbstractString})::Vector{Float64}
+    rooted = ensure_rooted(tree)
+    faith_pd(rooted, clade_counts(rooted, counts, tip_names))
+end
 
 """
     analyse_phylogeny(tree, counts, tip_names, sample_names) -> NamedTuple
 
 Compute the complete JSON-ready CladeCumulus result: cumulative clade counts
 and frequencies, Faith PD, and both UniFrac matrices.
+
+The tree is passed through `ensure_rooted` first, so an unrooted IQ-TREE
+`reference.treefile` and any rerooted serialization of the same inferred tree
+produce the same `faith_pd`, `unweighted_unifrac` and `weighted_unifrac` values.
+The returned `nodes` describe the rooted tree.
 """
 function analyse_phylogeny(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
                            tip_names::AbstractVector{<:AbstractString},
@@ -380,6 +456,7 @@ function analyse_phylogeny(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real
         "counts has $(size(counts, 1)) rows but $(length(sample_names)) sample names were supplied"))
     length(unique(String.(sample_names))) == length(sample_names) ||
         throw(ArgumentError("sample names must be unique"))
+    tree = ensure_rooted(tree)
     cumulative = clade_counts(tree, counts, tip_names)
     samples = String.(sample_names)
     totals = vec(cumulative[tree.root, :])

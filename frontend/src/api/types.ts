@@ -746,6 +746,8 @@ export interface CladisticsResult {
   unweighted_unifrac: number[][]
   weighted_unifrac: number[][]
   total_branch_length: number
+  /** How the inferred (unrooted) tree was rooted before computing PD. */
+  rooting?: string
   normalisation: { method: CountNormalisation; depth: number; seed: number }
   excluded_samples: string[]
   weighted_unifrac_definition: string
