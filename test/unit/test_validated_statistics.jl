@@ -102,6 +102,13 @@ end
         # Exponent notation is a float token even though its value is integral.
         raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1e0]]}"""
         @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 422
+        # String(::Vector{UInt8}) can consume the request buffer. Parsing and
+        # lexical validation must use the same string for byte-backed bodies.
+        @test _vs_post("/api/v1/statistics/summaries",
+            Vector{UInt8}(codeunits(raw)); raw=true).status == 422
+        integer_raw = replace(raw, "1e0" => "1")
+        @test _vs_post("/api/v1/statistics/summaries",
+            Vector{UInt8}(codeunits(integer_raw)); raw=true).status == 200
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))
         @test _vs_post("/api/v1/statistics/summaries", negative_string).status == 422
@@ -208,6 +215,16 @@ end
         @test loaded.source.source_format == "duckdb-read-only-bigint-aggregation"
         @test loaded.config.numeric_policy.mode == "exact_counts"
         @test !haskey(loaded.result, :analysis_id) # response-only field is not in the stored result
+
+        # Run filters retain decimal support, and prefix selection preserves
+        # the correspondence between sample labels and streamed columns.
+        filtered = _vs_post(path, merge(request, Dict("prefix" => "s2",
+            "colFilters" => Dict("Pident" => Dict("min" => 99.0)))))
+        @test filtered.status == 200
+        filtered_result = JSON3.read(String(filtered.body))
+        @test length(filtered_result.samples) == 1
+        @test filtered_result.samples[1].label == "s2"
+        @test collect(filtered_result.samples[1].counts) == [string(big(2)^126)]
 
         @test _vs_post(path, merge(request, Dict("table" => "merged_float"))).status == 422
         @test _vs_post(path, merge(request, Dict("table" => "merged_negative"))).status == 400

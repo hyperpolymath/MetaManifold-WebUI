@@ -38,15 +38,17 @@ function _statistics_guard(f::Function)
     end
 end
 
-function _statistics_body(req)
+function _statistics_body(req; reject_noninteger_tokens::Bool=false)
     length(req.body) <= _STATISTICS_REQUEST_LIMIT || throw(ResourceLimitError(
         "request bytes", _STATISTICS_REQUEST_LIMIT, length(req.body)))
+    source = String(req.body)
     parsed = try
-        JSON3.read(String(req.body))
+        JSON3.read(source)
     catch
         throw(ArgumentError("request body is not valid JSON"))
     end
     parsed isa JSON3.Object || throw(ArgumentError("request body must be a JSON object"))
+    reject_noninteger_tokens && _reject_noninteger_json_tokens(source)
     parsed
 end
 
@@ -252,6 +254,7 @@ function _validated_duckdb_counts(con, table::String, columns::Vector{String};
         samples = filter(c -> startswith(c, prefix), samples)
     end
     isempty(samples) && throw(ArgumentError("no sample columns remain after the prefix filter"))
+    sample_symbols = Symbol.(samples)
 
     feature_expression = if isnothing(taxonomic_level)
         identity = Analysis.sequence_column_name(columns)
@@ -306,7 +309,7 @@ function _validated_duckdb_counts(con, table::String, columns::Vector{String};
                         feature_rows[feature] = i
                     end
                     for (j, sample) in enumerate(samples)
-                        value = row[Symbol(sample)]
+                        value = row[sample_symbols[j]]
                         ismissing(value) && throw(UnsupportedRepresentationError(
                             "a non-missing integer count", "NULL",
                             "feature '$feature', sample '$sample'"))
@@ -370,8 +373,7 @@ end
 
 @post "/api/v1/statistics/summaries" function(req)
     _statistics_guard() do
-        body = _statistics_body(req)
-        _reject_noninteger_json_tokens(String(req.body))
+        body = _statistics_body(req; reject_noninteger_tokens=true)
         policy = _statistics_policy(body)
         counts, labels, features, groups = _direct_count_input(body)
         result = _run_statistics(counts, labels, features, groups, policy)
