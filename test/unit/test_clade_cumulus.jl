@@ -14,12 +14,12 @@ const EP = MetaManifold.Epistemic
 const CC = MetaManifold.CladeCumulus
 const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
-const SV = MetaManifold.Server
+const _CLADE_SV = MetaManifold.Server
 
 _cc_req(method::String, path::String, body::String = "") =
-    SV.Oxygen.internalrequest(
-        SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
-        middleware = SV._MIDDLEWARE,
+    _CLADE_SV.Oxygen.internalrequest(
+        _CLADE_SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
+        middleware = _CLADE_SV._MIDDLEWARE,
     )
 
 @testset "CladeCumulus & Phylogenetic Integration" begin
@@ -277,8 +277,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
 
     @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
-        old_root = SV.ServerState._root[]
-        SV.ServerState.set_root!(tmp)
+        old_root = _CLADE_SV.ServerState._root[]
+        _CLADE_SV.ServerState.set_root!(tmp)
         try
             data_dir = joinpath(tmp, "data", "StudyCC", "run1")
             mkpath(data_dir)
@@ -310,6 +310,7 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             con = DBInterface.connect(db)
             DuckDB.register_data_frame(con, df, "src_df")
             DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            DuckDB.unregister_data_frame(con, "src_df")
             DBInterface.close!(con)
             close(db)
             before_db_sha = bytes2hex(open(sha256, db_path))
@@ -414,6 +415,26 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             # Canonical DuckDB database is strictly untouched byte-for-byte!
             @test bytes2hex(open(sha256, db_path)) == before_db_sha
 
+            # 6. POST combined mode against a study `.jplace` artifact
+            jplace_payload = JSON3.write(OrderedDict(
+                "version" => 3,
+                "tree" => "((ASV_1:0.05{0},ASV_2:0.05{1})0.96:0.20{2},ASV_3:0.08{3}){4};",
+                "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
+                "placements" => [
+                    OrderedDict("n" => ["ASV_4"], "p" => [[3, -10.0, 0.99, 0.02, 0.03]]),
+                ],
+            ))
+            write(joinpath(trees_dir, "placed.jplace"), jplace_payload)
+            r_jp = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "placed.jplace",
+            )))
+            @test r_jp.status == 200
+            jp_body = JSON3.read(String(r_jp.body))
+            @test jp_body.diversity !== nothing
+
             # Path traversal attempts are rejected with 400!
             @test _cc_req("GET", "/api/v1/studies/..%2Fetc/runs/run1/clade-cumulus/sources").status == 400
             @test _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus", JSON3.write(Dict(
@@ -421,7 +442,7 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                 "treeFile" => "../secret.nwk",
             ))).status == 400
         finally
-            SV.ServerState._root[] = old_root
+            _CLADE_SV.ServerState._root[] = old_root
             rm(tmp; recursive = true, force = true)
         end
     end

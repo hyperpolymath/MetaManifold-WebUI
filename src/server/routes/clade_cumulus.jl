@@ -64,26 +64,30 @@ function _probe_optional_phylo_tool(tool_key::String, fallbacks::Vector{String})
     end
 end
 
-function _load_run_table_df(study::String, run::String, table::String; group::Union{String,Nothing}=nothing)
-    dir = _require_duckdb(study, run; group)
+function _load_run_table_df(
+    study::AbstractString,
+    run::AbstractString,
+    table::AbstractString;
+    group::Union{AbstractString,Nothing} = nothing,
+)
+    study_s = String(study)
+    run_s = String(run)
+    table_s = String(table)
+    group_s = isnothing(group) ? nothing : String(group)
+    dir = _require_duckdb(study_s, run_s; group = group_s)
     isnothing(dir) && return (nothing, nothing, json_error(404, "no_results",
-        "No results for run '$run' - run the pipeline first"))
+        "No results for run '$run_s' - run the pipeline first"))
     db_path = joinpath(dir, "results.duckdb")
     isfile(db_path) || return (nothing, nothing, json_error(404, "no_results",
-        "No results database for run '$run'"))
-    db = DuckDB.DB(db_path)
-    con = DBInterface.connect(db)
-    try
-        cols = _duckdb_columns(con, table)
+        "No results database for run '$run_s'"))
+    with_results_db(dir) do con
+        cols = _duckdb_columns(con, table_s)
         isempty(cols) && return (nothing, nothing, json_error(404, "table_not_found",
-            "Table '$table' not found in run '$run'"))
-        scols = _sample_count_columns(con, table)
+            "Table '$table_s' not found in run '$run_s'"))
+        scols = _sample_count_columns(con, table_s)
         order = _stable_order_clause(cols)
-        df = DataFrame(DBInterface.execute(con, "SELECT * FROM \"$table\" $order"))
+        df = DataFrame(DBInterface.execute(con, "SELECT * FROM \"$table_s\" $order"))
         return (df, (db_path = db_path, sample_cols = scols, columns = cols), nothing)
-    finally
-        DBInterface.close!(con)
-        close(db)
     end
 end
 
@@ -93,8 +97,8 @@ function _resolve_tree_inputs_from_request(
     source_digests::OrderedDict{String,String},
 )
     tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
-    tree_file = strip(string(get(body, :treeFile, "")))
-    inline_newick = strip(string(get(body, :newick, "")))
+    tree_file = String(strip(string(get(body, :treeFile, ""))))
+    inline_newick = String(strip(string(get(body, :newick, ""))))
 
     if tree_source == "study_tree" || (!isempty(tree_file) && tree_source == "auto")
         _valid_tree_file(tree_file) || return (nothing, nothing, :auto,
@@ -138,11 +142,13 @@ end
     dir = _require_duckdb(study, run; group)
     db_path = isnothing(dir) ? nothing : joinpath(dir, "results.duckdb")
     tables_info = OrderedDict{String,Any}[]
-    if !isnothing(db_path) && isfile(db_path)
-        db = DuckDB.DB(db_path)
-        con = DBInterface.connect(db)
-        try
-            names_df = DataFrame(DBInterface.execute(con, "SHOW TABLES"))
+    if !isnothing(dir) && !isnothing(db_path) && isfile(db_path)
+        tables_info = with_results_db(dir) do con
+            available = OrderedDict{String,Any}[]
+            names_df = DataFrame(DBInterface.execute(
+                con,
+                "SELECT table_name AS name FROM duckdb_tables() WHERE NOT internal",
+            ))
             tlist = sort(String[string(r.name) for r in eachrow(names_df)])
             for t in tlist
                 cols = _duckdb_columns(con, t)
@@ -151,7 +157,7 @@ end
                 nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
                 has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
                 ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
-                push!(tables_info, OrderedDict{String,Any}(
+                push!(available, OrderedDict{String,Any}(
                     "table"        => t,
                     "row_count"    => nrows,
                     "sample_count" => length(scols),
@@ -159,9 +165,7 @@ end
                     "ranks"        => ranks,
                 ))
             end
-        finally
-            DBInterface.close!(con)
-            close(db)
+            available
         end
     end
 
@@ -268,13 +272,13 @@ end
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.weight for c in q.candidates); init = 0.0)
+                tw = sum((c.like_weight for c in q.candidates); init = 0.0)
                 tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.weight / tw
+                        tip_weights[tid] = cand.like_weight / tw
                     end
                 end
             end
