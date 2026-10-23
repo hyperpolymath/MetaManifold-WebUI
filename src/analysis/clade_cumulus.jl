@@ -1018,9 +1018,9 @@ function _graft_jplace_queries(
                 elseif !haskey(asv_reads, tip_id)
                     asv_reads[tip_id] = base_cnt
                 end
-                query_lwr[tip_id] = cand.weight
+                query_lwr[tip_id] = cand.like_weight
                 push!(get!(by_edge, cand.edge_num, _GraftedQuerySpec[]),
-                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_length), max(0.0, cand.pendant_length), cand.weight))
+                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_length), max(0.0, cand.pendant_length), cand.like_weight))
             end
         end
     end
