@@ -28,8 +28,10 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# Placement weights are often rounded or truncated in serialized jplace output.
-# Accept small omissions without treating materially incomplete evidence as valid.
+# Placement tools may truncate a query's candidate list, so retained
+# like-weight ratios can legitimately sum to slightly less than 1 (a single
+# retained placement at 0.98 is complete evidence). Sums far from 1 indicate
+# a malformed or partial record and stay undecided.
 const PLACEMENT_WEIGHT_SUM_TOL = 0.05
 
 ## Phylogenetic tree structures & Newick / jplace parsers
@@ -204,10 +206,11 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
         end
     end
 
-    function read_label_and_quoted(;
-        capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
-        capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing,
-    )::Tuple{String,Bool}
+    function read_label_and_quoted(; capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
+                                     capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing)::Tuple{String,Bool}
+        # An NHX comment immediately after ')' precedes the (usually empty)
+        # label, so the capture refs must be threaded through this first skip
+        # or the support tag is consumed as an anonymous comment.
         skip_ws_and_leading_comments!(capture_nhx = capture_nhx, capture_edge = capture_edge)
         pos[] > n && return ("", false)
         if bytes[pos[]] == UInt8('\'')
@@ -265,8 +268,7 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
 
         nhx_sup = Ref{Union{Float64,Nothing}}(nothing)
         edge_num = Ref{Union{Int,Nothing}}(nothing)
-        raw_lbl, was_quoted = read_label_and_quoted(
-            capture_nhx = nhx_sup, capture_edge = edge_num)
+        raw_lbl, was_quoted = read_label_and_quoted(capture_nhx = nhx_sup, capture_edge = edge_num)
         skip_ws_and_leading_comments!(capture_nhx = nhx_sup, capture_edge = edge_num)
 
         branch_len = 0.0
@@ -1017,8 +1019,7 @@ function _graft_jplace_queries(
                 end
                 query_lwr[tip_id] = cand.like_weight
                 push!(get!(by_edge, cand.edge_num, _GraftedQuerySpec[]),
-                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_len),
-                        max(0.0, cand.pendant_len), cand.like_weight))
+                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_len), max(0.0, cand.pendant_len), cand.like_weight))
             end
         end
     end
