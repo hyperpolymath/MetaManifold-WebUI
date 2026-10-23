@@ -93,6 +93,23 @@ The local binary came from the npm platform package at 8.30.1-post.3; hosted
 CI installs the checksum-verified upstream archive, so hosted verification
 remains necessary. No actual credential values were published.
 
+## Scanner review findings
+
+Codex review on #243 identified four inherited scanner defects. Rust and
+shell findings now report locations without source values; the regression
+tests assert the synthetic credential is absent from logs. The AsciiDoc
+mirror preserves the scanner exit status, validates the report, and fails
+on runtime errors or missing/invalid evidence rather than reporting clean.
+The custom shell rules now scan every unique historical shell blob as well
+as the working tree, so a deleted credential remains detectable independently
+of Gitleaks' built-in rules. Both current and historical findings are blocking.
+
+`bash scripts/tests/test-scanner-boundaries.sh` exercises clean input, a
+working-tree shell credential, a committed-then-deleted shell credential,
+Rust findings in both scopes, and six AsciiDoc result/error modes. Fixture
+repositories are temporary and do not change application Git history.
+The custom shell scan also passes on this repository's actual history.
+
 ## Remaining findings / decisions
 
 The source report is Hypatia grid run **39982506244**, commit `d69d4f9`.

@@ -43,6 +43,7 @@ jobs:
           bash scripts/tests/test-governance-contract.sh
           bash scripts/tests/test-ci-logging.sh
           bash scripts/tests/test-k9-log-copy.sh
+          bash scripts/tests/test-scanner-boundaries.sh
 
   deed:
     name: DEED syntax
