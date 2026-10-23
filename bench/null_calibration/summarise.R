@@ -72,6 +72,13 @@ summ_rows <- lapply(groups, function(d) {
   } else c(NA_real_, NA_real_)
   w <- function(alpha) wilson(sum(p_null < alpha), length(p_null))
   w01 <- w(0.01); w05 <- w(0.05); w10 <- w(0.10)
+  # The pre-registered reading (README): anti-conservative when the LOWER
+  # Wilson bound at alpha = 0.05 exceeds 0.05, conservative when the UPPER
+  # bound is below it. Emitted as a column so a report never re-derives it.
+  verdict <- if (is.na(w05[2])) NA_character_
+             else if (w05[2] > 0.05) "anti-conservative"
+             else if (w05[3] < 0.05) "conservative"
+             else "not flagged"
   data.frame(
     truth = d$truth[1], shape = d$shape[1], offset = d$offset[1],
     n_per_group = d$n_per[1], n_taxa_setting = d$taxa[1], test = d$test[1],
@@ -81,6 +88,7 @@ summ_rows <- lapply(groups, function(d) {
     fail_rate = sum(d$status == "failed") / nrow(d),
     rate_01 = w01[1], rate_01_lo = w01[2], rate_01_hi = w01[3],
     rate_05 = w05[1], rate_05_lo = w05[2], rate_05_hi = w05[3],
+    verdict_05 = verdict,
     rate_10 = w10[1], rate_10_lo = w10[2], rate_10_hi = w10[3],
     ks_D = ks[1], ks_p = ks[2], mean_p_null = if (length(p_null)) mean(p_null) else NA_real_,
     stringsAsFactors = FALSE
@@ -127,5 +135,36 @@ if (nrow(pow) > 0) {
                              power_df$n_per_group, power_df$test), ]
   write.csv(power_df, file.path(out_dir, "power_summary.csv"), row.names = FALSE)
   cat(sprintf("wrote %s (%d rows)\n", file.path(out_dir, "power_summary.csv"), nrow(power_df)))
+}
+# One machine-generated run record per cell, from the provenance files the
+# calibration run wrote. Previously this CSV was assembled by hand, which made
+# "what was actually run" a hand-maintained claim rather than an artefact.
+prov_files <- list.files(results_dir, pattern = "^provenance_.*[.]txt$", full.names = TRUE)
+if (length(prov_files) > 0) {
+  field <- function(lines, key) {
+    hit <- lines[startsWith(lines, paste0(key, ":"))]
+    if (length(hit) == 0) return(NA_character_)
+    trimws(sub(paste0("^", key, ":[ ]*"), "", hit[1]))
+  }
+  prow <- lapply(prov_files, function(f) {
+    lines <- readLines(f, warn = FALSE)
+    r_line <- grep("^R version ", lines, value = TRUE)
+    p_line <- grep("^Platform: ", lines, value = TRUE)
+    data.frame(
+      cell = field(lines, "cell"), date_utc = field(lines, "date"),
+      args = field(lines, "args"), seed0 = field(lines, "seed0"),
+      cell_key = field(lines, "cell key"), executor = field(lines, "executor"),
+      calibration_md5 = field(lines, "calibration.R md5"),
+      fit_r_md5 = field(lines, "_FIT_R md5"),
+      mass_mode = field(lines, "MASS"), glmGamPoi = field(lines, "glmGamPoi"),
+      edgeR = field(lines, "edgeR"), tests_run = field(lines, "tests run"),
+      r_version = if (length(r_line)) r_line[1] else NA_character_,
+      platform = if (length(p_line)) trimws(sub("^Platform: ", "", p_line[1])) else NA_character_,
+      stringsAsFactors = FALSE)
+  })
+  prov_df <- do.call(rbind, prow)
+  prov_df <- prov_df[order(prov_df$cell), ]
+  write.csv(prov_df, file.path(out_dir, "provenance_summary.csv"), row.names = FALSE)
+  cat(sprintf("wrote %s (%d rows)\n", file.path(out_dir, "provenance_summary.csv"), nrow(prov_df)))
 }
 cat("summarise complete\n")
