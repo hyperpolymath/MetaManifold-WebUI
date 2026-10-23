@@ -1617,7 +1617,7 @@ function run_constrained_ordination(
                 (; label = "[a] = $t1 | $t2", df = _term_df(t1, metadata), r2 = nothing, adj_r2 = vp2.unique_x1, testable = true),
                 (; label = "[b] = Shared ($t1 & $t2)", df = 0, r2 = nothing, adj_r2 = vp2.shared, testable = false),
                 (; label = "[c] = $t2 | $t1", df = _term_df(t2, metadata), r2 = nothing, adj_r2 = vp2.unique_x2, testable = true),
-                (; label = "[d] = Residuals", df = omnibus.df_residual, r2 = nothing, adj_r2 = vp2.residual, testable = false),
+                (; label = "[d] = Residuals incl. conditioned share", df = omnibus.df_residual, r2 = nothing, adj_r2 = vp2.residual, testable = false),
             ]
             has_neg = any(r -> !isnothing(r.adj_r2) && r.adj_r2 < -1e-6, ind_rows)
             (; status = "computed",
