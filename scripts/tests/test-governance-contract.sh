@@ -14,7 +14,7 @@ for mutation in sarif k9-pin k9-indeterminate k9-verdict scanner-advisory scanne
   reset_fixture
   case "$mutation" in
     sarif) sed -i "/if: github.event_name != 'pull_request'/d" "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
-    k9-pin) sed -i '/uses: .*k9-conformance.yml@/s/@.*/@main/' "$fixture/.github/workflows/governance.yml" ;;
+    k9-pin) sed -i 's/ref: c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d/ref: main/' "$fixture/.github/workflows/k9-conformance-reusable.yml" ;;
     k9-indeterminate) sed -i 's/fail-on-indeterminate: true/fail-on-indeterminate: false/' "$fixture/.github/workflows/governance.yml" ;;
     k9-verdict) sed -i 's/${K9_VERDICT:-orange}/${K9_VERDICT:-green}/' "$fixture/.github/workflows/governance.yml" ;;
     scanner-advisory) echo '    continue-on-error: true' >> "$fixture/.github/workflows/secret-scanner.yml" ;;

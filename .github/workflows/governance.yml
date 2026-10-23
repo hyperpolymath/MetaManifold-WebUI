@@ -42,6 +42,7 @@ jobs:
           bash scripts/check-governance-contract.sh
           bash scripts/tests/test-governance-contract.sh
           bash scripts/tests/test-ci-logging.sh
+          bash scripts/tests/test-k9-log-copy.sh
 
   deed:
     name: DEED syntax
@@ -53,7 +54,7 @@ jobs:
 
   k9:
     name: K9 conformance
-    uses: hyperpolymath/standards/.github/workflows/k9-conformance.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d
+    uses: ./.github/workflows/k9-conformance-reusable.yml
     permissions:
       contents: read
       pull-requests: read
@@ -121,6 +122,12 @@ jobs:
             failure) deed='🔴 failing' ;;
             *)       deed="🟠 indeterminate ($DEED_RESULT)" ;;
           esac
+          # A rendered grid is not proof that its job completed successfully.
+          case "$K9_RESULT" in
+            success) k9="${K9_VERDICT:-orange}" ;;
+            failure) k9=red ;;
+            *)       k9=orange ;;
+          esac
           {
             echo '<!-- fork-governance-verdict: regenerated on every run -->'
             echo '# Fork governance'
@@ -128,7 +135,7 @@ jobs:
             echo "| Lane | Status | Run |"
             echo "|---|---|---|"
             echo "| DEED syntax (repo deed) | $deed | [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) |"
-            echo "| K9 conformance (L0–L2; L3 not verified) | ${K9_VERDICT:-orange} (job: $K9_RESULT) | same run |"
+            echo "| K9 conformance (L0–L2; L3 not verified) | $k9 (job: $K9_RESULT) | same run |"
             echo "| Hypatia verdict grid | ${HYPATIA_VERDICT:-orange} (job: $HYPATIA_RESULT) | same run |"
             echo
             if [ -s verdict-grid/report.md ]; then

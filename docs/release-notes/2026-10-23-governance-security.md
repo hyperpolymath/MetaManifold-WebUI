@@ -13,7 +13,7 @@ No other contributor's branch was rewritten.
 
 ## Changes
 
-- Full-history and working-tree secret scanning via the standards reusable at
+- Full-history and working-tree secret scanning via a fork-local copy of the standards reusable at
   `c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d`, with only `contents: read` and
   no inherited secrets. Findings fail the job; no local suppressions added.
 - Pinned Scorecard publication on main and weekly/manual runs, not PR code.
@@ -44,7 +44,7 @@ With bun **1.3.10**:
 - `bun audit --audit-level high`: pass. Full JSON audit fell from 31 advisories
   (1 critical, 13 high, 14 moderate, 3 low) to **2 moderate** React Router
   advisories. This is not a zero-vulnerability claim.
-- `bash scripts/check-governance-contract.sh`: 31 assertions.
+- `bash scripts/check-governance-contract.sh`: 39 assertions.
 - `bash scripts/tests/test-governance-contract.sh`: 8 weakening mutations
   rejected (SARIF, K9, scanner privileges/failure policy, Scorecard PR trigger).
 - `bash scripts/tests/test-ci-logging.sh`: success and each combination of
@@ -57,6 +57,41 @@ Julia, R, Agda and Nickel are not installed in the authoring sandbox; their
 runtime/semantic checks are delegated to hosted CI, not reported as local
 passes. GitHub log/artifact downloads are restricted by the sandbox's host
 allowlist; job/check APIs and the published Hypatia grid remain readable.
+
+## Hosted K9 correction
+
+The first hosted run exposed a bug in the pinned standards wrapper: its
+terminal `[ -f corpus.log ] && cp ...` returned 1 for the legitimate empty
+corpus, after rendering and archiving the grid. The fork-local reusable now
+uses an explicit conditional. It still checks out the validator, contract
+and renderer at the same immutable standards SHA; no semantic checks or
+ratchet rules were weakened. Three regression cases exercise absent log,
+present log and a genuine copy failure. The local reusable only has a
+`workflow_call` trigger to prevent duplicate standalone conformance runs.
+
+## Hosted history-scan correction
+
+The first hosted full-history scan failed under the standards wrapper's old
+Gitleaks **8.18.4**. Reproducing its legacy rule set with the 8.30.1 engine
+produced 211,428 findings: 211,408 AWS-pattern matches in historical sequence
+and FASTQ data, 19 generic-key matches in minified bundles/annotation field
+names, and one Facebook-pattern match in FASTQ data. For example, the old
+AWS rule accepts low-entropy `ACCA`-prefixed DNA and a broader character
+alphabet without the current detector's entropy threshold; the
+annotation matches are schema labels (`associated_organism`, etc.). This is
+not a reason to exempt the data directory or Git history from scanning.
+
+The fork-local scanner reusable now uses **Gitleaks 8.30.1**, verified against
+upstream's release-asset SHA256
+`551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb`.
+The estate baseline still comes from the same pinned standards source.
+No repository allowlist or historical fingerprint suppression was added;
+working-tree, full-history, shell, Rust and AsciiDoc checks remain gating.
+The current engine reports no leaks locally, and a synthetic AWS credential
+must still trigger its AWS rule. That sensitivity check is also run in CI.
+The local binary came from the npm platform package at 8.30.1-post.3; hosted
+CI installs the checksum-verified upstream archive, so hosted verification
+remains necessary. No actual credential values were published.
 
 ## Remaining findings / decisions
 
