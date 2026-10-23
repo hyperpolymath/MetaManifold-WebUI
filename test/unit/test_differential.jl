@@ -525,6 +525,25 @@ end
         for bad_mc in (0, 15, 4097, 64.5, true, "128", nothing)
             @test !isnothing(SV._config_value_error("analysis.differential.mc_samples", bad_mc))
         end
+        for (key, value) in (("analysis.differential.max_iter", 1),
+                             ("analysis.differential.max_iter", 500),
+                             ("analysis.differential.tolerance", 1e-8),
+                             ("analysis.differential.max_seconds", 300.0),
+                             ("analysis.differential.mn_penalty", 0.0))
+            @test isnothing(SV._config_value_error(key, value))
+        end
+        for (key, value) in (("analysis.differential.max_iter", 0),
+                             ("analysis.differential.max_iter", 1.5),
+                             ("analysis.differential.max_iter", NaN),
+                             ("analysis.differential.max_iter", big(2)^80),
+                             ("analysis.differential.tolerance", 0),
+                             ("analysis.differential.tolerance", Inf),
+                             ("analysis.differential.max_seconds", -1),
+                             ("analysis.differential.max_seconds", NaN),
+                             ("analysis.differential.mn_penalty", -0.1),
+                             ("analysis.differential.mn_penalty", Inf))
+            @test !isnothing(SV._config_value_error(key, value))
+        end
         for dispersion in ("ml", "glmGamPoi", " ML ", "  GLMGAMPOI ")
             @test isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
         end
@@ -576,6 +595,10 @@ end
             for (key, value) in (("analysis.differential.replacement_delta", 0),
                                  ("analysis.differential.replacement_delta", 1),
                                  ("analysis.differential.bayesian_alpha", -1),
+                                 ("analysis.differential.max_iter", 1.5),
+                                 ("analysis.differential.tolerance", 0),
+                                 ("analysis.differential.max_seconds", -1),
+                                 ("analysis.differential.mn_penalty", -0.1),
                                  ("analysis.differential.replacement_method", "pseudocount"))
                 response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", url,
                     ["Content-Type" => "application/json"], JSON3.write(Dict(key => value))))
@@ -1671,6 +1694,18 @@ end
                                         "table" => "merged", "rank" => "Genus"))
             @test r.status == 400
             @test JSON3.read(String(r.body)).error == "invalid_config"
+
+            # Invalid optimiser settings are a client configuration error,
+            # including conversion failures, never an uncaught HTTP 500.
+            for (key, value) in (("max_iter", "1.5"), ("tolerance", "0"),
+                                 ("max_seconds", "-1"), ("mn_penalty", "-0.1"))
+                write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                      "analysis:\n  differential:\n    method: clr_welch\n    $key: $value\n")
+                r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                            "table" => "merged", "rank" => "Genus"))
+                @test r.status == 400
+                @test JSON3.read(String(r.body)).error == "invalid_config"
+            end
         end
     end
 

@@ -164,6 +164,29 @@ function _config_value_error(key::String, value)
         return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
             "$key must be empty or a finite number greater than 0"
     end
+    if key == "analysis.differential.max_iter"
+        valid = v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) && v >= 1
+        if valid
+            # An integral Float64 can still be outside Int's representable
+            # range (and typemax(Int) itself rounds when converted to Float64).
+            valid = try
+                Int(v)
+                true
+            catch e
+                (e isa InexactError || e isa OverflowError) || rethrow()
+                false
+            end
+        end
+        return valid ? nothing : "$key must be a positive whole number representable as Int"
+    end
+    if key in ("analysis.differential.tolerance", "analysis.differential.max_seconds")
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
+            "$key must be a finite number greater than 0"
+    end
+    if key == "analysis.differential.mn_penalty"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v >= 0) ? nothing :
+            "$key must be a finite number greater than or equal to 0"
+    end
     if key == "analysis.differential.mc_samples"
         return (v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) &&
                 Differential.MIN_MC_SAMPLES <= v <= Differential.MAX_MC_SAMPLES) ? nothing :

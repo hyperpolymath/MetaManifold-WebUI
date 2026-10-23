@@ -1219,6 +1219,16 @@ function _differential_config(study::String)
     mc_val = mc_raw isa Real ? mc_raw : throw(ArgumentError(
         "analysis.differential.mc_samples must be a whole number in " *
         "[$(Differential.MIN_MC_SAMPLES), $(Differential.MAX_MC_SAMPLES)], not '$mc_raw'"))
+    max_iter_raw = val("analysis.differential.max_iter", 500)
+    max_iter_error = _config_value_error("analysis.differential.max_iter", max_iter_raw)
+    isnothing(max_iter_error) || throw(ArgumentError(max_iter_error))
+    max_iter_val = try
+        Int(max_iter_raw)
+    catch e
+        (e isa InexactError || e isa OverflowError) || rethrow()
+        throw(ArgumentError(
+            "analysis.differential.max_iter must be a positive whole number representable as Int, not '$max_iter_raw'"))
+    end
     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
                        Float64(val("analysis.differential.min_prevalence", 0.0));
                        method=String(val("analysis.differential.method", "nb_glm")),
@@ -1230,7 +1240,7 @@ function _differential_config(study::String)
                        mn_reference_taxon=isnothing(reference) ? nothing : string(reference),
                        mn_penalty=Float64(val("analysis.differential.mn_penalty", 0.0)),
                        dm_overdispersion_method=String(val("analysis.differential.dm_overdispersion_method", "mle")),
-                       max_iter=Int(val("analysis.differential.max_iter", 500)),
+                       max_iter=max_iter_val,
                        tol=Float64(val("analysis.differential.tolerance", 1e-8)),
                        max_seconds=Float64(val("analysis.differential.max_seconds", 300.0)),
                        mc_samples=mc_val)
