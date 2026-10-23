@@ -10,10 +10,13 @@ using SHA
 
 export NUMERIC_MODES, ORDINARY_PRECISION_BITS, DEFAULT_HIGH_PRECISION_BITS,
        DEFAULT_MAX_DENOMINATOR_BITS, MAX_PRECISION_BITS, MAX_DENOMINATOR_BITS,
-       MAX_COUNT_BITS, MAX_CELLS, MAX_EXACT_FLOAT,
+       MAX_COUNT_BITS, MAX_CELLS, MAX_EXACT_FLOAT, MAX_REQUEST_BYTES,
+       MAX_ROUND_DIGITS,
        NumericPolicySpec, numeric_policy, validate_policy, policy_fingerprint,
        policy_to_storage, assert_mode,
        CountOverflowError, ResourceLimitError, UnsupportedRepresentationError,
+       OperationCancelledError, CancellationToken, cancel!, check_cancelled!,
+       check_cancelled_periodically!,
        require_count, checked_count_sum, exact_fraction, exact_relative_abundance,
        exact_rational_sum, with_precision,
        EXACT, APPROXIMATE, ROUNDED, NumericValue, exact_value, approximate_value,
@@ -30,6 +33,9 @@ const MAX_PRECISION_BITS = 1_000_000
 const MAX_DENOMINATOR_BITS = 1_000_000
 const MAX_COUNT_BITS = 1_000_000
 const MAX_CELLS = 100_000
+# The validated-statistics HTTP body limit. It lives here so the catalogue and
+# the route cannot disagree about what an accepted request is.
+const MAX_REQUEST_BYTES = 16 * 1024 * 1024
 const MAX_ROUND_DIGITS = 100_000
 # Every integer through 2^53 is representable in Float64. Only through 2^53-1
 # is safe for the I-JSON/browser contract used for JSON numbers.
@@ -59,6 +65,69 @@ struct UnsupportedRepresentationError <: Exception
 end
 Base.showerror(io::IO, e::UnsupportedRepresentationError) = print(io,
     "$(e.target) cannot carry $(e.value) as $(e.what) without loss or a false claim")
+
+struct OperationCancelledError <: Exception
+    reason::String
+end
+Base.showerror(io::IO, e::OperationCancelledError) = print(io,
+    "validated statistics operation cancelled: ", e.reason,
+    "; no partial result was returned")
+
+"""Cooperative cancellation for a bounded validated-statistics request.
+
+Cancellation is checked between cells, samples and DuckDB rows, not inside a
+single MPFR operation. A deadline is therefore an upper bound on when the next
+check can observe it, not a hard real-time interrupt. The token is deliberately
+small and explicit: it is never ambient process state, so concurrent analyses
+cannot cancel one another.
+"""
+mutable struct CancellationToken
+    cancelled::Threads.Atomic{Bool}
+    deadline_ns::UInt64
+end
+
+function CancellationToken(; deadline_seconds::Union{Nothing,Real}=nothing)
+    deadline = UInt64(0)
+    if !isnothing(deadline_seconds)
+        seconds = Float64(deadline_seconds)
+        isfinite(seconds) && seconds > 0 || throw(ArgumentError(
+            "deadline_seconds must be a finite positive number"))
+        seconds <= 3600 || throw(ArgumentError(
+            "deadline_seconds must not exceed 3600"))
+        deadline = time_ns() + UInt64(round(Int64, seconds * 1e9))
+    end
+    CancellationToken(Threads.Atomic{Bool}(false), deadline)
+end
+
+function cancel!(token::CancellationToken)
+    Threads.atomic_xchg!(token.cancelled, true)
+    token
+end
+
+check_cancelled!(::Nothing) = nothing
+
+function check_cancelled!(token::CancellationToken)
+    # atomic_xchg with `false` both reads and clears a caller cancellation, so a
+    # second check cannot silently forget it. The deadline remains armed.
+    Threads.atomic_xchg!(token.cancelled, false) &&
+        throw(OperationCancelledError("cancelled by caller"))
+    if !iszero(token.deadline_ns) && time_ns() >= token.deadline_ns
+        Threads.atomic_xchg!(token.cancelled, true)
+        throw(OperationCancelledError("time limit exceeded"))
+    end
+    nothing
+end
+
+# Checking every cell would dominate the arithmetic for ordinary tables. 256
+# cells is small enough to bound a large request and large enough to be free.
+const _CANCELLATION_CHECK_INTERVAL = 256
+
+@inline function check_cancelled_periodically!(token, counter::Int)
+    if (counter % _CANCELLATION_CHECK_INTERVAL) == 0
+        check_cancelled!(token)
+    end
+    nothing
+end
 
 """Immutable numeric configuration for one analysis; never ambient mutable state."""
 struct NumericPolicySpec

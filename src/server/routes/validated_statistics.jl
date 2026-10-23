@@ -8,15 +8,21 @@ using ..NumericPolicy
 using ..ExactSummaries
 using ..HighPrecision
 using ..DerivedAnalyses
+using ..MethodCatalogue
 
-const _STATISTICS_REQUEST_LIMIT = 16 * 1024 * 1024
+# The limit is owned by NumericPolicy so the catalogue, route and tests
+# cannot drift apart.
+const _STATISTICS_REQUEST_LIMIT = MAX_REQUEST_BYTES
 const _EXACT_JSON_INTEGER_MAX = 2^53 - 1
 const _DUCKDB_INTEGER_TYPES = Set([
     "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT",
 ])
 
+# Responses are I-JSON values in RFC 8785 canonical bytes. `JSON3.write` emits
+# neither key order nor ECMAScript number formatting, so it cannot be used here:
+# the K9 trust contract and docs/ijson-jcs.md both claim JCS for this surface.
 function _statistics_json(payload; status::Int=200)
-    HTTP.Response(status, ["Content-Type" => "application/json"], body=JSON3.write(payload))
+    jcs_json(payload; status)
 end
 
 function _statistics_guard(f::Function)
@@ -24,6 +30,8 @@ function _statistics_guard(f::Function)
         f()
     catch err
         err isa InterruptException && rethrow()
+        err isa OperationCancelledError && return json_error(
+            408, "statistics_cancelled", sprint(showerror, err))
         err isa ResourceLimitError && return json_error(
             413, "numeric_resource_limit", sprint(showerror, err))
         err isa UnsupportedRepresentationError && return json_error(
@@ -165,7 +173,7 @@ function _validated_filter_params(body)
     end
 end
 
-function _direct_count_input(body)
+function _direct_count_input(body; cancellation=nothing)
     sample_raw = get(body, :sample_labels, nothing)
     feature_raw = get(body, :feature_labels, nothing)
     rows = get(body, :counts, nothing)
@@ -182,6 +190,7 @@ function _direct_count_input(body)
         "table cells", MAX_CELLS, length(rows) * length(labels)))
     counts = Matrix{BigInt}(undef, length(features), length(labels))
     for i in eachindex(features)
+        check_cancelled_periodically!(cancellation, i)
         row = rows[i]
         row isa AbstractVector || throw(ArgumentError("counts row $i must be an array"))
         length(row) == length(labels) || throw(ArgumentError(
@@ -199,17 +208,38 @@ function _direct_count_input(body)
     counts, labels, features, groups
 end
 
-function _run_statistics(counts, labels, features, groups, policy)
+function _run_statistics(counts, labels, features, groups, policy; cancellation=nothing)
     if policy.mode === :exact_counts
         summary = exact_summary(counts; sample_labels=labels, feature_labels=features,
-            groups, policy, allow_approximate=false)
+            groups, policy, allow_approximate=false, cancellation)
         return summary_to_storage(summary)
     end
     isnothing(groups) || throw(ArgumentError(
         "groups are supported for exact_counts only; high_precision is per-sample"))
     summary = high_precision_summary(counts; sample_labels=labels,
-        feature_labels=features, policy)
+        feature_labels=features, policy, cancellation)
     high_precision_to_storage(summary)
+end
+
+"""Optional cooperative deadline for one request.
+
+The deadline is operational, not part of the numeric policy: it does not change
+a value or a precision, and it is not persisted in a derived record. It is
+bounded to one hour so a client cannot pin a worker indefinitely.
+"""
+function _statistics_cancellation(body)
+    raw = get(body, :time_limit_seconds, nothing)
+    isnothing(raw) && return nothing
+    value = if raw isa Integer && !(raw isa Bool)
+        Float64(raw)
+    elseif raw isa AbstractFloat
+        Float64(raw)
+    else
+        throw(ArgumentError("time_limit_seconds must be a number, not $(repr(raw))"))
+    end
+    isfinite(value) && value > 0 && value <= 3600 || throw(ArgumentError(
+        "time_limit_seconds must be greater than 0 and at most 3600"))
+    CancellationToken(; deadline_seconds=value)
 end
 
 _sql_identifier(name::AbstractString) = "\"" * replace(name, "\"" => "\"\"") * "\""
@@ -245,7 +275,9 @@ and filtering; feature grouping and all count addition use Julia BigInt. No SQL
 SUM, arbitrary grouped value, or Float64 matrix is used."""
 function _validated_duckdb_counts(con, table::String, columns::Vector{String};
                                   prefix=nothing, taxonomic_level=nothing,
-                                  where_clause::String="", where_params=Any[])
+                                  where_clause::String="", where_params=Any[],
+                                  cancellation=nothing)
+    check_cancelled!(cancellation)
     samples = _validated_integer_sample_columns(con, table, columns)
     if !isnothing(prefix)
         samples = filter(c -> startswith(c, prefix), samples)
@@ -289,6 +321,7 @@ function _validated_duckdb_counts(con, table::String, columns::Vector{String};
                 chunk_columns = DuckDB.Tables.columns(chunk)
                 for row in DuckDB.Tables.rows(chunk_columns)
                     raw_rows += 1
+                    check_cancelled_periodically!(cancellation, raw_rows)
                     ismissing(row.feature) && throw(UnsupportedRepresentationError(
                         "a non-missing feature label", "missing",
                         "validated run statistics row $raw_rows"))
@@ -372,8 +405,9 @@ end
     _statistics_guard() do
         body = _statistics_body(req; reject_noninteger_tokens=true)
         policy = _statistics_policy(body)
-        counts, labels, features, groups = _direct_count_input(body)
-        result = _run_statistics(counts, labels, features, groups, policy)
+        cancellation = _statistics_cancellation(body)
+        counts, labels, features, groups = _direct_count_input(body; cancellation)
+        result = _run_statistics(counts, labels, features, groups, policy; cancellation)
         persist = get(body, :persist, false)
         persist isa Bool || throw(ArgumentError("persist must be a Boolean"))
         if persist
@@ -393,6 +427,7 @@ end
         group = _req_group(req)
         body = _statistics_body(req)
         policy = _statistics_policy(body)
+        cancellation = _statistics_cancellation(body)
         haskey(body, :sampleReads) && throw(ArgumentError(
             "sampleReads filtering uses the legacy Float64/SQL-SUM path and is not supported for validated statistics"))
         table = string(get(body, :table, "merged"))
@@ -413,10 +448,10 @@ end
             where_clause, where_params = _analysis_where_clause(params, columns;
                 exclude_conditions=exclusions)
             counts, labels, features = _validated_duckdb_counts(con, table, columns;
-                prefix, taxonomic_level=level, where_clause, where_params)
+                prefix, taxonomic_level=level, where_clause, where_params, cancellation)
             !isnothing(groups) && length(groups) != length(labels) && throw(ArgumentError(
                 "groups has $(length(groups)) labels; expected $(length(labels)) after sample selection"))
-            result = _run_statistics(counts, labels, features, groups, policy)
+            result = _run_statistics(counts, labels, features, groups, policy; cancellation)
             source = Dict{String,Any}(
                 "schema" => "metamanifold.run-count-input.v1",
                 "source_format" => "duckdb-read-only-bigint-aggregation",
@@ -443,6 +478,17 @@ function _check_derived_source(record, key::String, expected)
     isnothing(source) && throw(DerivedAnalysisError("invalid_record", "derived record has no source"))
     get(source, Symbol(key), nothing) == expected || throw(DerivedAnalysisError(
         "not_found", "derived analysis does not belong to the requested source"))
+end
+
+@get "/api/v1/statistics/catalogue" function(req)
+    _statistics_guard() do
+        loaded = load_method_catalogue()
+        payload = catalogue_to_storage(loaded.document)
+        payload["supported_method_ids"] = supported_method_ids(loaded.document)
+        payload["method_count"] = length(loaded.document["methods"])
+        payload["file"] = "config/defaults/validated_statistics.kyaml"
+        _statistics_json(payload)
+    end
 end
 
 @get "/api/v1/statistics/derived/{id}" function(req, id::String)
