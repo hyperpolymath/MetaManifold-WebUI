@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { AnalysisChart } from './AnalysisChart'
+import { ConstrainedOrdinationPanel } from './ConstrainedOrdinationPanel'
 import { useAlphaMetricSelection, AlphaMetricToggles, ALPHA_METRICS, extractAlphaPanel } from './alphaMetrics'
 import { useToast } from './Toast'
 import { errorMessage } from '../api/errorMessage'
 import type { AnalysisOption } from './annotationShared'
 import type { ColFilter, ComparisonRunSpec, PermanovaResult } from '../api/types'
 
-/** Alpha comparison, NMDS and PERMANOVA across the runs/sub-groups in `runs`. */
+/** Alpha comparison, NMDS, PERMANOVA and constrained ordination across the runs/sub-groups in `runs`. */
 export function DiversityPanel({ study, runs, option, aggregate }: {
   study: string
   runs: ComparisonRunSpec[]
@@ -169,6 +170,16 @@ export function DiversityPanel({ study, runs, option, aggregate }: {
             </>
           )}
         </div>
+      )}
+
+      {option && (
+        <ConstrainedOrdinationPanel
+          study={study}
+          runs={runs}
+          table={option.table}
+          aggregate={aggregate}
+          rAvailable={rAvailable}
+        />
       )}
     </div>
   )

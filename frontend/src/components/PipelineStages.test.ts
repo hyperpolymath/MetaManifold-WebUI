@@ -52,3 +52,18 @@ test('advanced compositional settings retain their editors and descriptions', ()
   expect(CONFIG_TYPES['analysis.differential.max_iter']).toEqual({ kind: 'int' })
   expect(CONFIG_DESCRIPTIONS['analysis.differential.mn_reference_taxon']).toContain('reference')
 })
+
+test('constrained ordination settings expose methods, distances, scaling, permutations and variance partitioning', () => {
+  expect(CONFIG_TYPES['analysis.ordination.method']).toEqual({
+    kind: 'enum', options: ['none', 'dbrda', 'cap', 'rda', 'cca'],
+  })
+  expect(CONFIG_TYPES['analysis.ordination.distance']).toEqual({
+    kind: 'enum',
+    options: ['bray', 'jaccard', 'euclidean', 'aitchison', 'chisq', 'unweighted_unifrac', 'weighted_unifrac'],
+  })
+  expect(CONFIG_TYPES['analysis.ordination.scaling']).toEqual({ kind: 'int' })
+  expect(CONFIG_TYPES['analysis.ordination.permutations']).toEqual({ kind: 'int' })
+  expect(CONFIG_TYPES['analysis.ordination.variance_partitioning']).toEqual({ kind: 'boolean' })
+  expect(CONFIG_DESCRIPTIONS['analysis.ordination.distance']).toContain('rda + bray')
+})
+
