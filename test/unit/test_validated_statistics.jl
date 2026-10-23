@@ -1,25 +1,25 @@
 using Test
 using JSON3
 using MetaManifold
-SV = MetaManifold.Server
+const VS_SERVER = MetaManifold.Server
 
 function _vs_request(method::String, path::String, body; raw::Bool=false)
     payload = raw ? body : JSON3.write(body)
-    req = SV.HTTP.Request(method, path, ["Content-Type" => "application/json"], payload)
-    SV.Oxygen.internalrequest(req)
+    req = VS_SERVER.HTTP.Request(method, path, ["Content-Type" => "application/json"], payload)
+    VS_SERVER.Oxygen.internalrequest(req)
 end
 _vs_post(path, body; raw=false) = _vs_request("POST", path, body; raw)
 _vs_get(path) = _vs_request("GET", path, "")
 
 function _vs_with_root(f::Function)
     root = mktempdir()
-    old = SV.ServerState._root[]
+    old = VS_SERVER.ServerState._root[]
     try
-        SV.ServerState.set_root!(root)
+        VS_SERVER.ServerState.set_root!(root)
         mkpath(joinpath(root, "projects"))
         f(root)
     finally
-        SV.ServerState._root[] = old
+        VS_SERVER.ServerState._root[] = old
         rm(root; recursive=true, force=true)
     end
 end

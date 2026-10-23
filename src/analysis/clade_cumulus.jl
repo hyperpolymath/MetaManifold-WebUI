@@ -1821,6 +1821,10 @@ function _reaggregate_after_move(
             end
         end
 
+        # Match `clade_faith_pd`: an active non-root clade contributes its own
+        # incoming branch in addition to the branches accumulated below it.
+        !is_root && any_active && (sub_pd += max(0.0, u.branch_length))
+
         dom_tx = nothing
         dom_n = 0
         for (tx, c) in merged_taxa

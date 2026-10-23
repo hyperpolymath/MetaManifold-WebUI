@@ -71,19 +71,14 @@ function _load_run_table_df(study::String, run::String, table::String; group::Un
     db_path = joinpath(dir, "results.duckdb")
     isfile(db_path) || return (nothing, nothing, json_error(404, "no_results",
         "No results database for run '$run'"))
-    db = DuckDB.DB(db_path)
-    con = DBInterface.connect(db)
-    try
+    with_results_db(dir) do con
         cols = _duckdb_columns(con, table)
         isempty(cols) && return (nothing, nothing, json_error(404, "table_not_found",
             "Table '$table' not found in run '$run'"))
         scols = _sample_count_columns(con, table)
         order = _stable_order_clause(cols)
         df = DataFrame(DBInterface.execute(con, "SELECT * FROM \"$table\" $order"))
-        return (df, (db_path = db_path, sample_cols = scols, columns = cols), nothing)
-    finally
-        DBInterface.close!(con)
-        close(db)
+        (df, (db_path = db_path, sample_cols = scols, columns = cols), nothing)
     end
 end
 
@@ -138,20 +133,20 @@ end
     dir = _require_duckdb(study, run; group)
     db_path = isnothing(dir) ? nothing : joinpath(dir, "results.duckdb")
     tables_info = OrderedDict{String,Any}[]
-    if !isnothing(db_path) && isfile(db_path)
-        db = DuckDB.DB(db_path)
-        con = DBInterface.connect(db)
-        try
+    if !isnothing(dir) && !isnothing(db_path) && isfile(db_path)
+        tables_info = with_results_db(dir) do con
+            available = OrderedDict{String,Any}[]
             names_df = DataFrame(DBInterface.execute(con, "SHOW TABLES"))
             tlist = sort(String[string(r.name) for r in eachrow(names_df)])
             for t in tlist
                 cols = _duckdb_columns(con, t)
                 scols = _sample_count_columns(con, t)
                 isempty(scols) && continue
-                nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
+                nrows = Int(only(DataFrame(DBInterface.execute(con,
+                    "SELECT COUNT(*) AS n FROM \"$t\""))).n)
                 has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
                 ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
-                push!(tables_info, OrderedDict{String,Any}(
+                push!(available, OrderedDict{String,Any}(
                     "table"        => t,
                     "row_count"    => nrows,
                     "sample_count" => length(scols),
@@ -159,9 +154,7 @@ end
                     "ranks"        => ranks,
                 ))
             end
-        finally
-            DBInterface.close!(con)
-            close(db)
+            available
         end
     end
 
