@@ -118,10 +118,14 @@ have at least one read to be tested. `replacement_delta`, in (0, 1), is the
 `frac` passed to `zCompositions::cmultRepl` by `clr_welch`.
 `replacement_method` selects `"bayesian_multiplicative"` (GBM) or
 `"multiplicative_replacement"` (CZM), with optional positive `bayesian_alpha`
-for `"bayesian_multiplicative"`. The multinomial settings select a reference
-taxon, an optional non-negative ridge penalty, the Dirichlet overdispersion
-estimator, and explicit iteration/tolerance/runtime limits. `mc_samples` is
-the bounded ALDEx2 Monte-Carlo instance count.
+for `"bayesian_multiplicative"`. For the two multinomial methods,
+`mn_reference_taxon=nothing` or blank text selects the most abundant fitted
+taxon; other names are stripped of surrounding whitespace. `mn_penalty` is a
+finite, non-negative ridge penalty. `dm_overdispersion_method` selects `"mle"`
+or `"mom"` for the Dirichlet-multinomial model. `max_iter` must be at least 1;
+`tol` is a positive, finite convergence tolerance and `max_seconds` a positive,
+finite runtime budget in seconds. `mc_samples` is the ALDEx2 Monte-Carlo
+instance count, a whole number in [16, 4096]; booleans are refused.
 `dispersion` names the per-taxon dispersion `nb_glm` uses (`"ml"` or
 `"glmGamPoi"`): `"ml"` takes the maximum-likelihood theta from `MASS::glm.nb`,
 `"glmGamPoi"` uses `overdispersion_shrinkage_list.dispersion_trend` from
@@ -135,9 +139,13 @@ The trend is plugged into an NB Wald model; its estimation uncertainty is not
 propagated. This option does not implement glmGamPoi's quasi-likelihood test.
 Method and offset names are stripped and lowercased; dispersion names are
 stripped and matched without regard to case, then stored as `"ml"` or
-`"glmGamPoi"`. Throws `ArgumentError` for unsupported names, incompatible
-method and dispersion choices, or non-finite or out-of-range fractions,
-including settings unused by the selected method.
+`"glmGamPoi"`. Throws `ArgumentError` for unsupported names, invalid numeric
+settings, or incompatible method choices: an explicit reference or non-zero
+penalty requires a multinomial method, and `"mom"` requires
+`"dirichlet_multinomial"`. Numeric bounds are checked even for settings unused
+by the selected method. Errors converting validated values to the stored
+numeric types propagate, including `InexactError` for `max_iter` outside the
+range of `Int`.
 """
 struct DifferentialConfig
     method             :: String

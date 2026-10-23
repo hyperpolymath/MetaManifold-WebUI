@@ -140,8 +140,17 @@ const _CASE_FOLDED_ENUMS = Dict(
 """
     _config_value_error(key, value) -> Union{String,Nothing}
 
-Why a value cannot be saved under this key, or nothing. The type follows the
-factory default; a key whose default is ~ accepts a string, number or boolean.
+Return a reason a value cannot be saved under the dotted config `key`, or
+`nothing` if it passes the checks for that key. Types follow factory defaults
+unless the key has explicit enum, nullable, numeric or naming constraints;
+keys without either a constraint or a typed default pass unchecked.
+
+Differential optimiser settings reject booleans and non-finite values:
+`max_iter` must be a positive whole number representable as `Int`, tolerance
+and runtime in seconds must be positive, and the ridge penalty non-negative.
+`InexactError` and `OverflowError` from the iteration-limit conversion become
+validation messages. This checks individual values without saving them;
+method compatibility is checked separately by `_differential_settings_error`.
 """
 function _config_value_error(key::String, value)
     v = value isa JSON3.Array ? collect(value) : value
