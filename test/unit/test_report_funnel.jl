@@ -19,6 +19,9 @@ _rf_request(method, path, body="", headers=["Content-Type" => "application/json"
         base = "/api/v1/studies/StudyR/report"
         @test isempty(JSON3.read(String(_rf_request("GET", base).body)))
         svg = "<svg xmlns='http://www.w3.org/2000/svg'/>"
+        @test _rf_request("POST", "$base?kind=figure&title=%EF%B7%90&ext=.svg", svg,
+                          ["Content-Type" => "application/octet-stream"]).status == 400
+        @test !isdir(joinpath(tmp, "projects", "StudyR", "report"))
         r = _rf_request("POST", "$base?kind=figure&title=Alpha&ext=.svg", svg,
                         ["Content-Type" => "application/octet-stream"])
         @test r.status == 200

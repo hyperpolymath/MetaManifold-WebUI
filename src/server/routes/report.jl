@@ -64,6 +64,14 @@ end
     ext in _REPORT_EXTENSIONS || return json_error(400, "invalid_ext", "ext must be one of $(join(_REPORT_EXTENSIONS, ", "))")
     title = strip(get(q, "title", ""))
     isempty(title) && (title = "Untitled $kind")
+    # Reject invalid I-JSON Unicode before writing the upload: an invalid
+    # title would otherwise make the index unsavable and orphan the file.
+    try
+        jcs_bytes(title)
+    catch e
+        e isa ArgumentError || rethrow()
+        return json_error(400, "invalid_title", "Title contains invalid Unicode")
+    end
     bytes = req.body
     isempty(bytes) && return json_error(400, "empty", "The item has no content")
     length(bytes) <= _REPORT_MAX_BYTES || return json_error(413, "too_large", "Report items are limited to 50 MB")

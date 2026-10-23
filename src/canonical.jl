@@ -240,7 +240,8 @@ existing callers need not change their field access.
 function ijson_read(raw::Union{AbstractString,AbstractVector{UInt8}})
     text = raw isa AbstractString ? String(raw) : String(copy(raw))
     isvalid(text) || throw(ArgumentError("I-JSON requires UTF-8"))
-    # Let JSON3 enforce the RFC 8259 grammar (including trailing garbage).
+    # JSON3 parses the value; the raw-token walk also checks grammar and
+    # trailing content, which JSON3 may otherwise ignore.
     parsed = try
         JSON3.read(text)
     catch err
@@ -327,30 +328,32 @@ function ijson_read(raw::Union{AbstractString,AbstractVector{UInt8}})
                 pos[] += 1
             end
             token = String(bytes[start:pos[]-1])
-            if occursin(r"^-?[0-9]", token)
-                if occursin(r"^-?(0|[1-9][0-9]*)$", token)
-                    # Bound the token before parsing: an HTTP body could contain
-                    # millions of digits, but a safe integer has at most 16.
-                    length(token) <= 17 &&
-                        -SAFE_INT_MAX <= parse(BigInt, token) <= SAFE_INT_MAX ||
-                        throw(ArgumentError("I-JSON refuses an unsafe integer token $token"))
-                else
-                    x = tryparse(Float64, token)
-                    (!isnothing(x) && isfinite(x)) || throw(ArgumentError(
-                        "I-JSON refuses a non-finite number $token"))
-                    # Exponent/fraction input may stringify as an integer in
-                    # JCS. Never accept a value whose canonical token would be
-                    # rejected as an unsafe integer on the next read.
-                    canonical = String(jcs_bytes(x))
-                    if occursin(r"^-?(0|[1-9][0-9]*)$", canonical) &&
-                       !(abs(x) <= SAFE_INT_MAX)
-                        throw(ArgumentError("I-JSON refuses a number canonicalizing to an unsafe integer token $canonical"))
-                    end
+            if occursin(r"^-?(0|[1-9][0-9]*)$", token)
+                # Bound the token before parsing: an HTTP body could contain
+                # millions of digits, but a safe integer has at most 16.
+                length(token) <= 17 &&
+                    -SAFE_INT_MAX <= parse(BigInt, token) <= SAFE_INT_MAX ||
+                    throw(ArgumentError("I-JSON refuses an unsafe integer token $token"))
+            elseif occursin(r"^-?(0|[1-9][0-9]*)\.[0-9]+([eE][+-]?[0-9]+)?$|^-?(0|[1-9][0-9]*)[eE][+-]?[0-9]+$", token)
+                x = tryparse(Float64, token)
+                (!isnothing(x) && isfinite(x)) || throw(ArgumentError(
+                    "I-JSON refuses a non-finite number $token"))
+                # Exponent/fraction input may stringify as an integer in
+                # JCS. Never accept a value whose canonical token would be
+                # rejected as an unsafe integer on the next read.
+                canonical = String(jcs_bytes(x))
+                if occursin(r"^-?(0|[1-9][0-9]*)$", canonical) &&
+                   !(abs(x) <= SAFE_INT_MAX)
+                    throw(ArgumentError("I-JSON refuses a number canonicalizing to an unsafe integer token $canonical"))
                 end
+            elseif !(token in ("true", "false", "null"))
+                throw(ArgumentError("invalid JSON token $token"))
             end
         end
     end
     value!()
+    whitespace!()
+    pos[] > n || throw(ArgumentError("invalid JSON: trailing content"))
     parsed
 end
 

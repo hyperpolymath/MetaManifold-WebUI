@@ -107,7 +107,8 @@ end
                   "{\"n\":2.4499999999999998e16}",
                   "[-9007199254740992]", "[1e400]", "{\"key\":\"\\ud800\"}",
                   "{\"key\":\"\\udc00\"}",
-                  "{\"\\ufdd0\":0}", "[\"\\uFFFF\"]")
+                  "{\"\\ufdd0\":0}", "[\"\\uFFFF\"]",
+                  "01", "1.", "-", "[1] x", "{\"a\":1}{\"a\":2}")
         @test_throws ArgumentError ijson_read(input)
     end
     @test_throws ArgumentError ijson_read(UInt8[0xff])
@@ -122,4 +123,6 @@ end
     @test ijson_read("{\"n\":1e21}").n == 1e21 # JCS retains exponent notation
     @test ijson_read("{\"n\":9e15}").n == 9e15 # within exact range
     @test String(jcs_bytes(ijson_read("{\"b\":2,\"a\":1}"))) == "{\"a\":1,\"b\":2}"
+    @test ijson_read(Vector{UInt8}(codeunits("{\"a\":1}"))) isa JSON3.Object
+    @test ijson_read("[1]  \n") isa JSON3.Array
 end
