@@ -51,8 +51,8 @@ end
     tight = numeric_policy(mode=:exact_counts, max_denominator_bits=32)
     @test_throws ResourceLimitError exact_fraction(1, big(2)^40; policy=tight)
     @test_throws ResourceLimitError exact_fraction(big(2)^40, 1; policy=tight)
-    # Each addend fits the 32-bit budget on its own; their sum 1/2^31 + 1/3 needs
-    # 33 bits, so the limit must fire on the running total, not only on inputs.
+    # Each addend fits the 32-bit budget on its own; their reduced sum has a
+    # 62-bit denominator, so the limit must fire on the running total.
     @test_throws ResourceLimitError exact_rational_sum(
         [big(1)//big(2)^31, big(1)//(big(2)^31 - 1)]; policy=tight)
 end
