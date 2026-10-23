@@ -172,8 +172,6 @@ jobs:
     # silently. If a matrix is ever genuinely wanted here, the required context must move
     # to a matrix-free aggregator job first.
     name: Julia tests
-    # R/Julia setup and integration tests are expensive, but may not hang for 6h.
-    timeout-minutes: 90
     needs: gate
     if: needs.gate.outputs.relevant == 'true'
     # Explicit, not ubuntu-latest: the R pin below names an apt package revision built
