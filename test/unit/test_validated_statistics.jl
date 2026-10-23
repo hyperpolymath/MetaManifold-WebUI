@@ -96,12 +96,19 @@ end
             payload = merge(_VS_EXACT_BODY, Dict("persist" => false,
                 "counts" => [[bad, 1], [1, 0], [1, 0]]))
             response = _vs_post("/api/v1/statistics/summaries", payload)
+            if response.status != 422
+                @error "numeric input did not fail closed" value=repr(bad) status=response.status body=String(response.body)
+            end
             @test response.status == 422
             @test JSON3.read(String(response.body)).error == "invalid_numeric_input"
         end
         # Exponent notation is a float token even though its value is integral.
         raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1e0]]}"""
-        @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 422
+        exponent_response = _vs_post("/api/v1/statistics/summaries", raw; raw=true)
+        if exponent_response.status != 422
+            @error "exponent numeric token did not fail closed" status=exponent_response.status body=String(exponent_response.body)
+        end
+        @test exponent_response.status == 422
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))
         @test _vs_post("/api/v1/statistics/summaries", negative_string).status == 422

@@ -406,7 +406,7 @@ jobs:
             enc() { head -c 3500 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
             awk '
               /Test Summary:/ { left = 0 }
-              /(Error: validated run statistics|Test Failed at|Error During Test at)/ || (left == 0 && /Got exception outside of a @test/) { n++; left = 60 }
+              /(Error: (validated run statistics|numeric input did not fail closed|exponent numeric token did not fail closed)|Test Failed at|Error During Test at)/ || (left == 0 && /Got exception outside of a @test/) { n++; left = 60 }
               left > 0 { print > ("/tmp/validated-failure-" n ".txt"); left-- }
             ' /tmp/validated-statistics-tests.log
             shown=0
