@@ -1338,6 +1338,25 @@ end
               Differential.DM_METHODS
     end
 
+    @testset "Multinomial: the Wald p-value uses the normal tail" begin
+        # `_erfc` carries the two-sided normal tail for the Wald test. The
+        # reference values are the complementary error function from libm, an
+        # implementation independent of the series/continued fraction here.
+        for (t, expected) in ((0.0, 1.0), (0.25, 0.7236736098317631),
+                              (0.5, 0.47950012218695348), (0.75, 0.28884436634648486),
+                              (1.0, 0.15729920705028513), (1.25, 0.07709987174354177),
+                              (1.5, 0.033894853524689274), (2.0, 0.0046777349810472654),
+                              (2.5, 0.00040695201744495892), (3.0, 2.2090496998585438e-05),
+                              (4.0, 1.541725790028002e-08), (5.0, 1.5374597944280351e-12),
+                              (7.0, 4.1838256077794142e-23), (10.0, 2.0884875837625449e-45))
+            @test CM._erfc(t) ≈ expected rtol = 1e-12
+        end
+        @test CM._erfc(-0.5) ≈ 2.0 - CM._erfc(0.5) atol = 1e-15
+        # The tail keeps falling where a naive 1 - cdf would have collapsed to 0.
+        @test 0.0 < CM._erfc(20.0) < 1e-170
+        @test CM._erfc(0.0) == 1.0
+    end
+
     @testset "Multinomial: coefficients, standard errors and likelihood" begin
         fit = CM.fit_multinomial(mn_counts, mn_design; reference=1)
         @test fit.converged
@@ -1643,10 +1662,14 @@ end
         end
         @test e isa ArgumentError
         @test occursin("is not fitted", sprint(showerror, e))
-        # Every taxon filtered out is an explicit error, not an empty table.
+        # Every taxon filtered out is an explicit error, not an empty table. No
+        # taxon below is present in all eight samples, so min_prevalence = 1.0
+        # leaves no composition to model; every sample still has reads, so the
+        # refusal is the prevalence one and not an empty sample.
+        all_thin = [1 0; 2 3; 0 4; 5 0;
+                    1 2; 0 3; 4 0; 2 1]
         e = try
-            differential_abundance([1 0; 2 3; 0 4; 5 0], ["s1", "s2", "s3", "s4"],
-                                   ["a", "b"], groups8[1:4];
+            differential_abundance(all_thin, samples8, ["a", "b"], groups8;
                                    kw..., config=DifferentialConfig("tss", 1.0;
                                                                     method="multinomial"))
             nothing

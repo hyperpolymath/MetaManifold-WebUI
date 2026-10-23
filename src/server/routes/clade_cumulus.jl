@@ -97,8 +97,8 @@ function _resolve_tree_inputs_from_request(
     source_digests::OrderedDict{String,String},
 )
     tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
-    tree_file = strip(string(get(body, :treeFile, "")))
-    inline_newick = strip(string(get(body, :newick, "")))
+    tree_file = String(strip(string(get(body, :treeFile, ""))))
+    inline_newick = String(strip(string(get(body, :newick, ""))))
 
     if tree_source == "study_tree" || (!isempty(tree_file) && tree_source == "auto")
         _valid_tree_file(tree_file) || return (nothing, nothing, :auto,
@@ -217,7 +217,7 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))
@@ -408,7 +408,7 @@ end
     (isempty(source_id) || isempty(target_id)) &&
         return json_error(400, "missing_clade_ids", "Both sourceId and targetId are required")
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))

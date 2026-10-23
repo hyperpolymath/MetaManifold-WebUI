@@ -14,12 +14,12 @@ const EP = MetaManifold.Epistemic
 const CC = MetaManifold.CladeCumulus
 const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
-SV = MetaManifold.Server
+const CLADE_SV = MetaManifold.Server
 
 _cc_req(method::String, path::String, body::String = "") =
-    SV.Oxygen.internalrequest(
-        SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
-        middleware = SV._MIDDLEWARE,
+    CLADE_SV.Oxygen.internalrequest(
+        CLADE_SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
+        middleware = CLADE_SV._MIDDLEWARE,
     )
 
 @testset "CladeCumulus & Phylogenetic Integration" begin
@@ -277,8 +277,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
 
     @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
-        old_root = SV.ServerState._root[]
-        SV.ServerState.set_root!(tmp)
+        old_root = CLADE_SV.ServerState._root[]
+        CLADE_SV.ServerState.set_root!(tmp)
         try
             data_dir = joinpath(tmp, "data", "StudyCC", "run1")
             mkpath(data_dir)
@@ -310,6 +310,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             con = DBInterface.connect(db)
             DuckDB.register_data_frame(con, df, "src_df")
             DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            # Registration creates a persistent view backed by this Julia object;
+            # only the materialized table should remain in the on-disk fixture.
+            DuckDB.unregister_data_frame(con, "src_df")
             DBInterface.close!(con)
             close(db)
             before_db_sha = bytes2hex(open(sha256, db_path))
@@ -330,8 +333,6 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                 "supportThreshold" => 0.85,
                 "lwrThreshold" => 0.95,
             )))
-            # On failure this puts the structured error body in the CI annotation.
-            @test (r_comb.status == 200 ? "" : String(r_comb.body)) == ""
             @test r_comb.status == 200
             comb = JSON3.read(String(r_comb.body))
             @test comb.root.cumulative_count ≈ 110.0 atol = 1e-9
@@ -423,7 +424,7 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                 "treeFile" => "../secret.nwk",
             ))).status == 400
         finally
-            SV.ServerState._root[] = old_root
+            CLADE_SV.ServerState._root[] = old_root
             rm(tmp; recursive = true, force = true)
         end
     end
