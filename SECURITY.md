@@ -10,9 +10,9 @@ revision before reporting a problem that may already have been fixed.
 
 Use [GitHub private vulnerability reporting](https://github.com/hyperpolymath/MetaManifold-WebUI/security/advisories/new)
 for suspected vulnerabilities in this fork. If private reporting is not
-available, contact the maintainer at `jjewell23@rvc.ac.uk` (the contact already
-published in `CITATION.cff`). Do not disclose an unpatched vulnerability in a
-public issue or pull request.
+available, contact the fork maintainer at `j.d.a.jewell@open.ac.uk` (the
+contact already published in `MetaManifold-WebUI_chora.deed`). Do not disclose
+an unpatched vulnerability in a public issue or pull request.
 
 Include the affected revision, a minimal reproduction, the security impact, and
 any suggested mitigation. Remove real study data, credentials, access tokens,
