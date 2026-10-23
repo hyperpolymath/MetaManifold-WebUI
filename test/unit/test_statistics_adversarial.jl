@@ -211,15 +211,19 @@ end
             @test response.status != 500
         end
 
-        # Booleans are not counts, and neither is a JSON float token.
+        # Booleans are not counts, and neither is a JSON float token. The
+        # assertion carries the input: a bare status mismatch would not say
+        # which of the four cases was accepted.
         for value in (true, false, 1.5, -1)
             body = _adv_body("counts" => [[value, 2], [3, 4]])
-            @test _adv_post("/api/v1/statistics/summaries", body).status == 422
+            status = _adv_post("/api/v1/statistics/summaries", body).status
+            @test (repr(value), status) == (repr(value), 422)
         end
         # Counts at 2^53 and above must arrive as whole-number strings.
         for bad in (9007199254740992, "-1", "1.5", "1e3")
             body = _adv_body("counts" => [[bad, 2], [3, 4]])
-            @test _adv_post("/api/v1/statistics/summaries", body).status == 422
+            status = _adv_post("/api/v1/statistics/summaries", body).status
+            @test (repr(bad), status) == (repr(bad), 422)
         end
     end
 end
