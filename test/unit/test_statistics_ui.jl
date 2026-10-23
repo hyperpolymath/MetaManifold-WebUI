@@ -230,7 +230,7 @@ end
     _ui_with_root() do _
         samples = join(["s$i" for i in 1:142], ",")
         features = join(["f$i" for i in 1:141], ",")
-        rows = join(("0," ^ 141) * "0" for _ in 1:141, "\n")
+        rows = join((("0," ^ 141) * "0" for _ in 1:141), "\n")
         fields = merge(_ui_form(), Dict{String,String}(
             "sample_labels" => samples, "feature_labels" => features,
             "counts" => rows))

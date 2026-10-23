@@ -226,7 +226,7 @@ end
 The deadline is operational, not part of the numeric policy: it does not change
 a value or a precision, and it is not persisted in a derived record. It is
 bounded to one hour so a client cannot pin a worker indefinitely.
-""")
+"""
 function _statistics_cancellation(body)
     raw = get(body, :time_limit_seconds, nothing)
     isnothing(raw) && return nothing
