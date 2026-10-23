@@ -193,6 +193,45 @@ function compositional_digamma(x::Real)
         inv2 * (1 / 252 - inv2 * (1 / 240 - inv2 / 132)))) - shift
 end
 
+const _LOG_SQRT_PI = 0.5723649429247000870717136756765293558
+
+function _erfc(t::Float64)::Float64
+    t < 0.0 && return 2.0 - _erfc(-t)
+    iszero(t) && return 1.0
+    x = t * t
+    log_prefactor = -x + 0.5 * log(x) - _LOG_SQRT_PI
+    if x < 1.5
+        ap = 0.5
+        term = 1.0 / ap
+        acc = term
+        for _ in 1:200
+            ap += 1.0
+            term *= x / ap
+            acc += term
+            abs(term) <= abs(acc) * 1e-16 && break
+        end
+        return 1.0 - acc * exp(log_prefactor)
+    end
+    tiny = 1e-300
+    b = x + 0.5
+    c = 1.0 / tiny
+    d = 1.0 / b
+    h = d
+    for i in 1:200
+        an = -float(i) * (float(i) - 0.5)
+        b += 2.0
+        d = an * d + b
+        abs(d) < tiny && (d = tiny)
+        c = b + an / c
+        abs(c) < tiny && (c = tiny)
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        abs(delta - 1.0) <= 1e-16 && break
+    end
+    exp(log_prefactor) * h
+end
+
 ## Geometry
 
 """
@@ -860,7 +899,7 @@ function _wald(coefficients::Matrix{Float64}, variances::Vector{Float64})
         se[l, k] = s
         if s > 0.0 && isfinite(s)
             z[l, k] = coefficients[l, k] / s
-            p[l, k] = erfc(abs(z[l, k]) / sqrt(2.0))
+            p[l, k] = _erfc(abs(z[l, k]) / sqrt(2.0))
         else
             z[l, k] = NaN
             p[l, k] = NaN

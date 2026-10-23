@@ -105,6 +105,11 @@ end
         for token in ("1.0", "1e0")
             raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[$token]]}"""
             @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 422
+            @test _vs_post("/api/v1/statistics/summaries",
+                Vector{UInt8}(codeunits(raw)); raw=true).status == 422
+            integer_raw = replace(raw, token => "1")
+            @test _vs_post("/api/v1/statistics/summaries",
+                Vector{UInt8}(codeunits(integer_raw)); raw=true).status == 200
         end
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))
