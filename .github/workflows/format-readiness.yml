@@ -67,7 +67,7 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
-          python3 scripts/formats/conformance.py --tool "$RUNNER_TEMP/format-reference/bin/ijson-jcs"
+          PATH="$RUNNER_TEMP/format-reference/bin:$PATH" python3 scripts/formats/conformance.py --adapter reference
           {
             echo '## Format migration evidence'
             echo 'Pinned ijson-jcs raw-byte corpus passed. This is not application-wide conformance.'

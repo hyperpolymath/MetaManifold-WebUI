@@ -2,11 +2,13 @@
 """Tests of the harness itself; fake children are NOT parser conformance evidence."""
 import contextlib
 import io
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/formats"))
@@ -22,7 +24,8 @@ def run_python(body, data=b"", **kwargs):
         path = Path(tmp) / "ijson-jcs"
         path.write_text(f"#!{sys.executable}\n{body}\n")
         path.chmod(0o700)
-        return run([str(path), "canon"], data, **kwargs)
+        with patch.dict(os.environ, {"PATH": tmp + os.pathsep + os.environ["PATH"]}):
+            return run("ijson-canon", data, **kwargs)
 
 
 class ProcessTests(unittest.TestCase):
@@ -36,8 +39,8 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual((result.code, result.stdout, result.stderr), (7, b"", b"private"))
 
     def test_missing_binary_is_infrastructure_not_document_rejection(self):
-        with self.assertRaises(ToolError):
-            run(["/nonexistent/format-tool"])
+        with patch.dict(os.environ, {"PATH": ""}), self.assertRaises(ToolError):
+            run("ijson-canon")
 
     def test_timeout(self):
         with self.assertRaisesRegex(ToolError, "time budget"):
@@ -61,8 +64,9 @@ class ProcessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "ijson-jcs"
             path.symlink_to(sys.executable)
-            with self.assertRaises(ToolError):
-                run([str(path), "canon"])
+            with patch.dict(os.environ, {"PATH": tmp + os.pathsep + os.environ["PATH"]}):
+                with self.assertRaises(ToolError):
+                    run("ijson-canon")
 
     def test_descendant_keeping_pipe_open_is_bounded(self):
         with self.assertRaisesRegex(ToolError, "time budget"):
@@ -101,13 +105,15 @@ class CorpusTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 list(load_cases(path))
 
+    @contextlib.contextmanager
     def fake(self, directory, body):
         folder = Path(directory) / "tool with spaces"
         folder.mkdir()
         path = folder / "ijson-jcs"
         path.write_text(f"#!{sys.executable}\n{body}\n")
         path.chmod(0o700)
-        return str(path)
+        with patch.dict(os.environ, {"PATH": str(folder) + os.pathsep + os.environ["PATH"]}):
+            yield "reference"
 
     def test_mutants_cannot_pass_as_canonicalizers(self):
         cases = [("valid", b' {"a":1} ', True, b'{"a":1}'),
@@ -117,7 +123,8 @@ class CorpusTests(unittest.TestCase):
                      "raise SystemExit(1)", "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())"):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
                 with contextlib.redirect_stdout(io.StringIO()):
-                    self.assertFalse(check(self.fake(tmp, body), cases))
+                    with self.fake(tmp, body) as adapter:
+                        self.assertFalse(check(adapter, cases))
 
     def test_correct_adapter_protocol_passes_and_redacts_diagnostics(self):
         cases = [("valid", b"true", True, b"true"), ("invalid", b"broken", False, b"")]
@@ -130,20 +137,22 @@ else:
     raise SystemExit(2)
 """
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()) as out:
-            self.assertTrue(check(self.fake(tmp, body), cases))
+            with self.fake(tmp, body) as adapter:
+                self.assertTrue(check(adapter, cases))
         self.assertNotIn("private input", out.getvalue())
 
     def test_exact_bytes_no_newline_or_wrong_order(self):
         cases = [("order", b'{}', True, b'{"a":1,"z":2}')]
         for output in (b'{"z":2,"a":1}', b'{"a":1,"z":2}\n'):
             with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()):
-                executable = self.fake(tmp, f"import sys; sys.stdout.buffer.write({output!r})")
-                self.assertFalse(check(executable, cases))
+                with self.fake(tmp, f"import sys; sys.stdout.buffer.write({output!r})") as adapter:
+                    self.assertFalse(check(adapter, cases))
 
     def test_missing_tool_cli_fails_closed_without_echoing_input(self):
         out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = conformance_main(["--tool", "/nonexistent/format-tool"])
+        with patch.dict(os.environ, {"PATH": ""}):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = conformance_main([])
         self.assertEqual(code, 2)
         self.assertIn("no conformance pass", err.getvalue())
         self.assertNotIn("9007199254740992", out.getvalue() + err.getvalue())

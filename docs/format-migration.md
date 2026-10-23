@@ -48,7 +48,7 @@ replace it with another language or publish another tool under the kyq name.
 Reproduce using a clean clone at the pinned commit:
 
 ```sh
-python3 scripts/formats/probe_kyq.py --source /path/to/kyq --just /path/to/just
+PATH="/path/to/trusted/just/bin:$PATH" python3 scripts/formats/probe_kyq.py --source /path/to/kyq
 ```
 
 Probe exit codes: 0 means only the three source recipes returned success;
@@ -105,7 +105,7 @@ escaped and raw controls, integer boundaries, beyond-uint64 counts, exponent
 thresholds, negative zero, array order, trailing input and truncation.
 
 ```sh
-python3 scripts/formats/conformance.py --tool /path/to/ijson-jcs
+PATH="/path/to/trusted/reference/bin:$PATH" python3 scripts/formats/conformance.py --adapter reference
 python3 -m unittest discover -s scripts/tests -p 'test_format*.py' -v
 ```
 
@@ -116,10 +116,12 @@ missing tools, changed byte order and extra newlines cannot pass. This runner
 implements no parser/canonicalizer of its own. A future kyq adapter may implement
 this protocol; it is **not** a claim that kyq has a `canon` command today.
 
-The subprocess runner accepts only named installed tools (`ijson-jcs`, a future
-`kyq-json-adapter`, `git`, `just`) with closed argument protocols. It rejects
-arbitrary commands/flags and symlinks to unrelated interpreters. These are trusted
-installed executables, not sandboxed plugins. Corpus paths are repository
+The subprocess runner selects only complete literal commands from an internal
+operation table (`ijson-jcs`, a future `kyq-json-adapter`, `git`, `just`). No program
+path or argument string is accepted from the CLI. The `--adapter` selector is a
+closed choice of reference/candidate, not a command. A trusted PATH provides the
+installed executables; symlinks to unrelated interpreters are refused. These are
+trusted tools, not sandboxed plugins. Corpus paths are repository
 constants/test fixtures, never CLI-supplied paths. The runner limits input/output
 bytes and wall time, keeps diagnostics
 out of logs and kills the process group on completion/failure. It currently

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MPL-2.0
 """Bounded POSIX IO for a deliberately closed set of format-probe commands.
 
-Installed tools are trusted executables, not sandboxed plugins. CLI input may
-select their location, never a shell command, arbitrary program or arguments.
+Installed tools are trusted executables, not sandboxed plugins. A trusted PATH
+provides their location; no program paths or argument strings come from a CLI.
 Child diagnostics can contain secrets and are not printed by the probe CLIs.
 """
 import math
@@ -16,11 +16,15 @@ import time
 from dataclasses import dataclass
 
 TIMEOUT = "tool exceeded its time budget"
-_ALLOWED = {
-    "ijson-jcs": {("canon",)},
-    "kyq-json-adapter": {("canon",)},
-    "git": {("rev-parse", "HEAD"), ("status", "--porcelain", "--untracked-files=all")},
-    "just": {(name,) for name in ("--version", "build", "wasm", "test")},
+_COMMANDS = {
+    "ijson-canon": ("ijson-jcs", "canon"),
+    "kyq-canon": ("kyq-json-adapter", "canon"),
+    "git-head": ("git", "rev-parse", "HEAD"),
+    "git-status": ("git", "status", "--porcelain", "--untracked-files=all"),
+    "just-version": ("just", "--version"),
+    "just-build": ("just", "build"),
+    "just-wasm": ("just", "wasm"),
+    "just-test": ("just", "test"),
 }
 
 
@@ -35,19 +39,18 @@ class Result:
     stderr: bytes
 
 
-def _command(argv):
-    if not argv or not all(isinstance(arg, str) for arg in argv):
-        raise ToolError("invalid command")
+def _command(name):
+    if not isinstance(name, str) or name not in _COMMANDS:
+        raise ToolError("unknown probe operation")
+    # Only select complete, literal commands. Neither program paths nor argv
+    # strings from a CLI are passed through to process creation.
+    argv = _COMMANDS[name]
     location = shutil.which(argv[0])
     if location is None:
-        raise ToolError("tool not found")
-    program = Path(location).resolve(strict=True)
-    # Check the final name, so a symlink to an unrelated executable cannot turn
-    # `--tool /path/ijson-jcs` into rm, sh, Python, etc. No arbitrary flags.
-    allowed = _ALLOWED.get(program.name, set())
-    if tuple(argv[1:]) not in allowed:
-        raise ToolError("program or arguments are outside the probe protocol")
-    return [str(program), *argv[1:]]
+        raise ToolError("tool not found on trusted PATH")
+    if Path(location).resolve(strict=True).name != argv[0]:
+        raise ToolError("tool resolves to an unrelated executable")
+    return argv
 
 
 class _Pump:
@@ -128,14 +131,14 @@ def _cleanup(child):
             stream.close()
 
 
-def run(argv, data=b"", *, cwd=None, timeout=5.0, limit=131072):
+def run(operation, data=b"", *, cwd=None, timeout=5.0, limit=131072):
     if not math.isfinite(timeout) or timeout <= 0 or limit <= 0 or len(data) > limit:
         raise ToolError("invalid process budget or oversized test input")
     if os.name != "posix":
         raise ToolError("this probe currently supports POSIX pipe IO only")
     try:
         child = subprocess.Popen(
-            _command(argv), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            _command(operation), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, start_new_session=True, shell=False,
         )
     except OSError as error:

@@ -67,10 +67,11 @@ def load_cases(path):
         yield case
 
 
-def check(executable, cases, *, timeout=5.0):
+def check(adapter, cases, *, timeout=5.0):
+    operation = {"reference": "ijson-canon", "candidate": "kyq-canon"}[adapter]
     passed = True
     for name, data, valid, expected in cases:
-        result = run([executable, "canon"], data, timeout=timeout)
+        result = run(operation, data, timeout=timeout)
         # Rejection must be the documented invalid-input exit, not a crash,
         # missing library, usage failure from a wrapper, or arbitrary nonzero.
         wanted = 0 if valid else 2
@@ -82,13 +83,14 @@ def check(executable, cases, *, timeout=5.0):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tool", required=True, help="installed binary or canon-protocol adapter")
+    parser.add_argument("--adapter", choices=("reference", "candidate"), default="reference",
+                        help="named installed adapter on trusted PATH, never a command/path")
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args(argv)
     try:
         # Validate the entire corpus before invoking the first child.
         cases = list(load_cases(ROOT / "test/fixtures/formats/ijson-jcs.toml"))
-        ok = check(args.tool, cases, timeout=args.timeout)
+        ok = check(args.adapter, cases, timeout=args.timeout)
         print(f"Corpus: {len(cases)} cases; runtime migration remains separately gated")
         return 0 if ok else 1
     except (ToolError, ValueError, TypeError, OSError) as error:

@@ -16,19 +16,19 @@ from process import ToolError, run
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def probe(source, just, timeout):
+def probe(source, timeout):
     with (ROOT / "config/format-tools.toml").open("rb") as stream:
         pin = tomllib.load(stream)["kyq"]
-    actual = run(["git", "rev-parse", "HEAD"], cwd=source)
-    clean = run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=source)
+    actual = run("git-head", cwd=source)
+    clean = run("git-status", cwd=source)
     if actual.code or actual.stdout.decode().strip() != pin["revision"] or clean.code or clean.stdout:
         raise ToolError("source is not the clean pinned revision")
-    version = run([just, "--version"])
+    version = run("just-version")
     if version.code or version.stdout.decode().strip() != f"just {pin['just_version']}":
         raise ToolError("unexpected just version")
     ok = True
     for recipe in ("build", "wasm", "test"):
-        result = run([just, recipe], cwd=source, timeout=timeout)
+        result = run(f"just-{recipe}", cwd=source, timeout=timeout)
         print(f"{recipe}: exit={result.code}")
         ok = ok and result.code == 0
     print("install: NOT_RUN (no isolated-prefix contract has been established)")
@@ -40,11 +40,10 @@ def probe(source, just, timeout):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--just", default="just")
     parser.add_argument("--timeout", type=float, default=120.0)
     args = parser.parse_args(argv)
     try:
-        return probe(args.source, args.just, args.timeout)
+        return probe(args.source, args.timeout)
     except (ToolError, OSError, ValueError, KeyError) as error:
         print(f"INFRASTRUCTURE: {type(error).__name__}; kyq readiness not established", file=sys.stderr)
         return 2
