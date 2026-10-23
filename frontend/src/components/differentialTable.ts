@@ -46,13 +46,48 @@ export function formatStat(value: number | null): string {
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
-  if (c.method !== 'clr_welch')
-    return `method ${c.method}, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+  // Historical result files name methods the current API no longer offers
+  // (ancom_bc, aldex2, songbird). They still have to export a truthful
+  // provenance line, so the formatter widens the method to a plain string
+  // rather than narrowing the API type to what used to be selectable.
+  const method: string = c.method
+  const prevalence = `min_prevalence ${c.min_prevalence}`
+  // Each model family has its own settings, and a setting that does not apply
+  // to the fitted method is left out rather than printed as `undefined`: this
+  // line is exported into the CSV, where a wrong provenance note is worse than
+  // a short one.
+  if (method === 'multinomial' || method === 'dirichlet_multinomial') {
+    const parts = [`method ${method}`]
+    if (method === 'dirichlet_multinomial' && c.dm_overdispersion_method)
+      parts.push(`overdispersion ${c.dm_overdispersion_method}`)
+    if (c.mn_reference_taxon) parts.push(`reference ${c.mn_reference_taxon}`)
+    if (c.mn_penalty !== undefined) parts.push(`penalty ${c.mn_penalty}`)
+    parts.push(prevalence)
+    return `${parts.join(', ')}; estimates are log2 fold changes against the reference taxon`
+  }
+  if (method === 'ancom_bc')
+    return `method ancom_bc, ${prevalence}; effect is bias-corrected log2 fold change (Lin & Peddada 2020)`
+  if (method === 'aldex2') {
+    const parts = ['method aldex2']
+    if (c.mc_samples !== undefined) parts.push(`mc_samples ${c.mc_samples}`)
+    if (c.seed !== undefined) parts.push(`seed ${c.seed}`)
+    parts.push(prevalence)
+    return `${parts.join(', ')}; estimate is an ALDEx2 standardized CLR effect size, not a fold change`
+  }
+  if (method === 'songbird')
+    return `method songbird, ${prevalence}; estimate is a CLR-centred multinomial differential, not an absolute fold change`
+  if (method !== 'clr_welch') {
+    const offset = c.offset === undefined ? '' : `offset ${c.offset}, `
+    return `method ${method}, ${offset}${prevalence}`
+  }
   const replacement = c.replacement_method ?? 'bayesian_multiplicative'
+  // The concentration prior belongs to the Bayesian replacement only; printing
+  // it for the multiplicative one would claim a setting that was never used.
   const alpha = c.bayesian_alpha === null || c.bayesian_alpha === undefined
     ? 'estimated' : String(c.bayesian_alpha)
-  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}, ` +
-    `bayesian_alpha ${alpha}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
+  const alphaText = replacement === 'bayesian_multiplicative' ? `, bayesian_alpha ${alpha}` : ''
+  return `method clr_welch, replacement_method ${replacement}, replacement_delta ${c.replacement_delta}` +
+    `${alphaText}, ${prevalence}; estimate is a CLR difference, not a fold change`
 }
 
 /** The effect size of one row, from the field the result names in `effect`. */

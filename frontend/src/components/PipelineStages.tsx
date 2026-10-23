@@ -150,9 +150,16 @@ export const CONFIG_DESCRIPTIONS: Record<string, string> = {
   'analysis.alpha.rarefaction_iterations': 'rarefy draws averaged for each alpha diversity value.',
   'analysis.beta.normalisation':  'Preparation before the Bray-Curtis dissimilarity used by NMDS and PERMANOVA: hellinger (square root of relative abundances), none, rarefy or srs.',
   'analysis.beta.depth':          'Reads per sample for rarefy or srs; 0 uses the smallest non-empty sample.',
-  'analysis.differential.method': 'Model per taxon: nb_glm (negative-binomial GLM); clr_welch (Welch test on CLR values after configured zero replacement); zinb (zero-inflated negative binomial); hurdle_nb (logistic zero process plus zero-truncated negative binomial). Two-part NB p-values jointly test group effects in both processes; use only with evidence for excess zeros and interpret cautiously.',
+  'analysis.differential.method': 'Per taxon: nb_glm (negative-binomial GLM); clr_welch (Welch test on CLR values after configured zero replacement); zinb (zero-inflated negative binomial); hurdle_nb (logistic zero process plus zero-truncated negative binomial). Whole composition: multinomial and dirichlet_multinomial, fitted once for all taxa, reporting log2 ratios against a reference taxon. Two-part NB p-values jointly test group effects in both processes; use only with evidence for excess zeros and interpret cautiously.',
   'analysis.differential.offset': 'Library-size offset in the count component of nb_glm, zinb and hurdle_nb: tss (total reads per sample) or rle (median-of-ratios over taxa present in every sample; refused when there are none).',
   'analysis.differential.dispersion': 'nb_glm only: ml estimates theta separately with MASS::glm.nb; glmGamPoi uses a cross-taxon dispersion trend in fixed-scale negative-binomial Wald fits.',
+  'analysis.differential.mc_samples': 'aldex2 only: Dirichlet Monte-Carlo instances drawn to estimate the CLR sampling distribution. More instances reduce Monte-Carlo noise, not biological uncertainty.',
+  'analysis.differential.mn_reference_taxon': 'multinomial and dirichlet_multinomial: the taxon every log ratio is taken against. Empty chooses the most abundant fitted taxon and records which one was used.',
+  'analysis.differential.mn_penalty': 'multinomial and dirichlet_multinomial: L2 penalty on the coefficients. The default 0 is maximum likelihood; a positive value is needed when separation leaves the likelihood flat, and it shrinks standard errors, so do not tune it for significance.',
+  'analysis.differential.dm_overdispersion_method': 'dirichlet_multinomial only: mle profiles the Dirichlet concentration by likelihood; mom matches it to the observed between-sample variance in one step.',
+  'analysis.differential.max_iter': 'multinomial and dirichlet_multinomial: the Newton iteration cap. Reaching it reports the fit as not converged rather than raising.',
+  'analysis.differential.tolerance': 'multinomial and dirichlet_multinomial: convergence threshold on the largest coefficient update, relative to the coefficient size.',
+  'analysis.differential.max_seconds': 'multinomial and dirichlet_multinomial: wall-clock budget for one fit. Exceeding it fails the request instead of holding it open.',
   'analysis.differential.min_prevalence': 'Fraction of samples, 0 to 1, in which a taxon must have reads to be tested; taxa below it are listed as filtered.',
   'analysis.differential.replacement_method': 'clr_welch only: bayesian_multiplicative uses cmultRepl GBM posterior estimates (Martín-Fernández et al. 2015); multiplicative_replacement uses CZM (Martín-Fernández et al. 2003). Both preserve observed-part ratios, but every replacement is biased. For sparse data consider NB on raw counts, prevalence filtering, occupancy or zero-inflated models instead.',
   'analysis.differential.replacement_delta': "clr_welch only: cmultRepl frac, strictly between 0 and 1. CZM starts at delta × 0.5/sample total; either method caps high imputations at delta × the taxon's smallest observed proportion. Below 0.01 or at least 0.9 warns. Do not tune delta for significance; every replacement is biased.",
@@ -198,6 +205,7 @@ export type ConfigType =
   | { kind: 'boolean' }
   | { kind: 'int'; nullable?: boolean }
   | { kind: 'float'; nullable?: boolean; min?: number; max?: number; step?: number }
+  | { kind: 'string'; nullable?: boolean }
   | { kind: 'enum'; options: string[] }
   | { kind: 'multiselect'; optionsFrom: string }
   | { kind: 'string_list' }
@@ -253,7 +261,14 @@ export const CONFIG_TYPES: Record<string, ConfigType> = {
   'analysis.alpha.rarefaction_iterations': { kind: 'int' },
   'analysis.beta.normalisation':  { kind: 'enum', options: ['hellinger', 'none', 'rarefy', 'srs'] },
   'analysis.beta.depth':          { kind: 'int' },
-  'analysis.differential.method': { kind: 'enum', options: ['nb_glm', 'clr_welch', 'zinb', 'hurdle_nb'] },
+  'analysis.differential.method': {
+    kind: 'enum',
+    options: [
+      'nb_glm', 'clr_welch', 'zinb', 'hurdle_nb',
+      'ancom_bc', 'aldex2', 'songbird',
+      'multinomial', 'dirichlet_multinomial',
+    ],
+  },
   'analysis.differential.offset': { kind: 'enum', options: ['tss', 'rle'] },
   'analysis.differential.dispersion': { kind: 'enum', options: ['ml', 'glmGamPoi'] },
   'analysis.differential.min_prevalence': { kind: 'float', min: 0, max: 1, step: 0.05 },
@@ -261,6 +276,12 @@ export const CONFIG_TYPES: Record<string, ConfigType> = {
   'analysis.differential.replacement_delta': { kind: 'float', min: 0, max: 1, step: 0.05 },
   'analysis.differential.bayesian_alpha': { kind: 'float', nullable: true, min: 0, step: 0.1 },
   'analysis.differential.mc_samples': { kind: 'int' },
+  'analysis.differential.mn_reference_taxon': { kind: 'string', nullable: true },
+  'analysis.differential.mn_penalty': { kind: 'float', min: 0, step: 0.1 },
+  'analysis.differential.dm_overdispersion_method': { kind: 'enum', options: ['mle', 'mom'] },
+  'analysis.differential.max_iter': { kind: 'int' },
+  'analysis.differential.tolerance': { kind: 'float', min: 0, step: 1e-9 },
+  'analysis.differential.max_seconds': { kind: 'float', min: 0, step: 1 },
   'analysis.alpha.show_points':   { kind: 'boolean' },
   'analysis.alpha.annotate_significance': { kind: 'boolean' },
   'analysis.alpha.pairwise_brackets': { kind: 'boolean' },

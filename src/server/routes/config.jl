@@ -245,11 +245,34 @@ function _differential_settings_error(effective::AbstractDict)
         current = get(effective, k, _DIFFERENTIAL_SETTING_DEFAULTS[k])
         current isa NamedTuple ? current.value : current
     end
-    method = value(keys_[1], "nb_glm")
-    dispersion = value(keys_[2], "ml")
-    if method isa AbstractString && dispersion isa AbstractString &&
-       lowercase(strip(method)) != "nb_glm" && lowercase(strip(dispersion)) == "glmgampoi"
-        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with $(strip(method))"
+    # Keys are named in full rather than by position: the defaults dictionary is
+    # a Dict, and a merge that reorders it must not silently swap the settings
+    # this validation is comparing.
+    method = value("analysis.differential.method")
+    dispersion = value("analysis.differential.dispersion")
+    reference = value("analysis.differential.mn_reference_taxon")
+    penalty = value("analysis.differential.mn_penalty")
+    overdispersion = value("analysis.differential.dm_overdispersion_method")
+    method isa AbstractString || return nothing
+    m = lowercase(strip(String(method)))
+    compositional = m in Differential.COMPOSITIONAL_METHODS
+    if dispersion isa AbstractString && m != "nb_glm" &&
+       lowercase(strip(String(dispersion))) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; " *
+               "use dispersion: ml with $(strip(String(method)))"
+    end
+    if reference isa AbstractString && !isempty(strip(String(reference))) && !compositional
+        return "analysis.differential.mn_reference_taxon: a reference taxon requires " *
+               "method: multinomial or dirichlet_multinomial, not $(strip(String(method)))"
+    end
+    if penalty isa Real && !(penalty isa Bool) && Float64(penalty) != 0.0 && !compositional
+        return "analysis.differential.mn_penalty: a ridge penalty requires " *
+               "method: multinomial or dirichlet_multinomial, not $(strip(String(method)))"
+    end
+    if overdispersion isa AbstractString && m != "dirichlet_multinomial" &&
+       lowercase(strip(String(overdispersion))) != "mle"
+        return "analysis.differential.dm_overdispersion_method: this setting requires " *
+               "method: dirichlet_multinomial, not $(strip(String(method)))"
     end
     nothing
 end

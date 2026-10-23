@@ -1222,7 +1222,20 @@ function _differential_config(study::String)
                        replacement_method=String(val("analysis.differential.replacement_method",
                                                        "bayesian_multiplicative")),
                        bayesian_alpha=alpha_val,
-                       mc_samples=mc_val)
+                       mc_samples=mc_val,
+                       # Compositional models. The settings are read for every
+                       # method because the constructor, not this route, is what
+                       # refuses one that belongs to a different model.
+                       mn_reference_taxon=let r = val("analysis.differential.mn_reference_taxon", nothing)
+                           (isnothing(r) || (r isa AbstractString && isempty(strip(r)))) ? nothing : string(r)
+                       end,
+                       mn_penalty=Float64(val("analysis.differential.mn_penalty", 0.0)),
+                       dm_overdispersion_method=String(val("analysis.differential.dm_overdispersion_method",
+                                                            "mle")),
+                       max_iter=Int(val("analysis.differential.max_iter", Differential.DEFAULT_MAX_ITER)),
+                       tol=Float64(val("analysis.differential.tolerance", Differential.DEFAULT_TOL)),
+                       max_seconds=Float64(val("analysis.differential.max_seconds",
+                                               Differential.DEFAULT_MAX_SECONDS)))
 end
 
 """

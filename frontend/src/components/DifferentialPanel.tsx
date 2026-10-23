@@ -313,7 +313,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
                   <th style={{ ...head, textAlign: 'left' }}>{result.rank}</th>
                   <th style={head}>{result.effect.label}</th>
-                  {['nb_glm', 'zinb', 'hurdle_nb'].includes(result.config.method) && <th style={head}>Estimate (ln)</th>}
+                  {result.effect.key === 'log2_fold_change' && <th style={head}>Estimate (ln)</th>}
                   {['zinb', 'hurdle_nb'].includes(result.config.method) && <th style={head}>Zero-process log-odds</th>}
                   <th style={head}>SE</th>
                   <th style={head}>p</th>
@@ -326,7 +326,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                   <tr key={r.taxon} style={{ borderBottom: '1px solid var(--color-border)' }}>
                     <td style={{ ...cell, textAlign: 'left' }}>{r.taxon}</td>
                     <td style={cell}>{formatStat(effectValue(result, r))}</td>
-                    {['nb_glm', 'zinb', 'hurdle_nb'].includes(result.config.method) && <td style={cell}>{formatStat(r.estimate)}</td>}
+                    {result.effect.key === 'log2_fold_change' && <td style={cell}>{formatStat(r.estimate)}</td>}
                     {['zinb', 'hurdle_nb'].includes(result.config.method) && <td style={cell}>{formatStat(r.zero_process_log_odds ?? null)}</td>}
                     <td style={cell}>{formatStat(r.standard_error)}</td>
                     <td style={cell}>{formatStat(r.pvalue)}</td>

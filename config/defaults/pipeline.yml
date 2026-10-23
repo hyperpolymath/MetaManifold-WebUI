@@ -346,10 +346,26 @@ analysis:
   # Differential abundance: compares two conditions on the raw read counts, with
   # mandatory Benjamini-Hochberg adjusted p-values across the fitted family.
   differential:
-    # Per-taxon model: nb_glm (negative-binomial GLM), clr_welch (Welch test on
-    # zero-replaced CLR values), zinb (zero-inflated NB), or hurdle_nb (logistic
-    # occurrence plus zero-truncated NB). Two-part models test both group effects
-    # jointly; their count-process fold change is reported separately.
+    # The model fitted across the two conditions.
+    # - nb_glm: negative-binomial GLM on read counts with a library-size offset;
+    #   the effect is a log2 fold change.
+    # - zinb / hurdle_nb: a zero/occurrence process plus a count process, tested
+    #   jointly; the count-process fold change is reported and the zero-process
+    #   effect stays in diagnostics.
+    # - clr_welch: Welch's t-test on centred log-ratios over the taxa passing
+    #   min_prevalence after zCompositions::cmultRepl zero replacement; the
+    #   effect is a CLR difference, not a fold change.
+    # - ancom_bc: bias-corrected log-linear model (Lin & Peddada 2020) that
+    #   estimates sample-specific and between-group sampling-fraction shifts via
+    #   an E-M Gaussian mixture; the effect is a bias-corrected log2 fold change.
+    # - aldex2: Dirichlet(count + 0.5) Monte-Carlo CLR instances with consistent-sign
+    #   Welch's t-test and Fernandes et al. (2014) standardized CLR effect size.
+    # - songbird: compositional baseline-category multinomial regression with
+    #   reference-frame invariant CLR-centred differentials (Morton et al. 2019;
+    #   Zhang et al. 2017); the effect is a CLR log-ratio differential, not an
+    #   absolute fold change.
+    # - multinomial / dirichlet_multinomial: one joint fit of the whole
+    #   composition, reported as log ratios against a reference taxon.
     method: nb_glm
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).

@@ -305,6 +305,33 @@ not exclude samples from this analysis.
   multiplicative (CZM) replacement; `replacement_delta` sets the replacement
   fraction and optional `bayesian_alpha` overrides GBM's concentration. The
   offset is not used. See [zero-handling notes](docs/statistics/zero-handling.md).
+- `ancom_bc`: ANCOM-BC sampling-fraction bias-corrected log-linear model
+  (Lin & Peddada 2020, *Nat. Commun.* 11:3514). Estimates within-group sample
+  offsets and between-group sampling-fraction bias via an E-M Gaussian mixture
+  on `log(counts + 1)`, propagating bias-estimation variance into two-sided Wald
+  tests. The effect is a bias-corrected log2 fold change; recommended when
+  asymmetric shifts or microbial load changes would bias standard CLR centering
+  (requires at least 3 tested taxa; assumes fewer than half are differential).
+- `aldex2`: Dirichlet(`count + 0.5`) Monte-Carlo CLR model (Fernandes et al.
+  2013, 2014). Draws `mc_samples` (default 128, seeded by the study's `seed`)
+  posterior instances per sample and reports standardized CLR effect sizes with
+  consistent-sign posterior predictive Welch's t-test p-values; recommended for
+  sparse or variable-depth cohorts where deterministic zero imputation is
+  undesirable.
+- `songbird`: compositional baseline-category multinomial regression with
+  reference-frame invariant CLR-centred differentials summing to zero across
+  fitted taxa (Morton et al. 2019, *Nat. Commun.* 10:2719; Zhang et al. 2017).
+  Conditions on read totals without extra-multinomial biological overdispersion;
+  completely separated single-group taxa are marked `failed` rather than
+  diverging.
+- `multinomial` and `dirichlet_multinomial`: one model for the whole
+  composition rather than a fit per taxon, reported as log ratios against a
+  reference taxon — `mn_reference_taxon`, or the most abundant fitted taxon when
+  empty, which must have reads in at least half the samples. `mn_penalty` is a
+  ridge penalty (0 for maximum likelihood); `dm_overdispersion_method` (`mle` or
+  `mom`) applies to the Dirichlet-multinomial only. A taxon with no reads in one
+  condition has an unbounded ratio: it is reported as failed with a
+  `complete separation` note and left out of the fit.
 
 ZINB and hurdle models can overfit sparse data; do not select ZINB solely
 because counts are sparse. Compare against NB diagnostics. The methods report
@@ -325,6 +352,41 @@ unavailable required R package produces an explicit error.
 Implementation and reference tests: `src/analysis/differential.jl`,
 `src/server/routes/analysis.jl`, `bench/compositional_differential/benchmark.jl`,
 and `test/unit/test_differential.jl`.
+
+### Evidence Mode
+
+The **Evidence** tab turns a run's outputs into a citable epistemic record. A
+claim is a sentence a reader could disagree with, a **scope** naming the part of
+the data it is about (its *fibre*: the rows whose value at a rank, or whose
+category in a set, is one of the named labels), and a **warrant** saying why it
+follows. Claims are stored in `projects/{study}/[<group>/]<run>/evidence/claims.yml`
+and can be downloaded as that exact YAML.
+
+Three views share one record:
+
+- **Claims** — the epistemic editor (avec fibre). A claim cannot be saved
+  without a scope and at least one value, and cannot be marked `supported`
+  without a measurement, citation or inference warrant: a definition alone
+  supports nothing.
+- **Fibre & echo** — the fibre's share of every sample, its largest members, and
+  the same fibre seen through a second projection: the other classifier at the
+  same rank, and the parent rank. Agreement is reported with a verdict;
+  disagreement is a limit on how strongly the claim may be stated, and an echo
+  that cannot be computed says so rather than vanishing.
+- **Residuals** — where the fibre departs from a null you declare, either
+  `proportional` (the fibre distributed across samples as the library is) or a
+  stated `claim_share`, with Pearson residuals, a log2 ratio and a χ² statistic
+  printed without a p-value. The worst departure is shown first.
+
+The tab's Provenance card states whether `attestation.yml` is absent, degraded
+or internally inconsistent before any claim is read. Longer notes on the
+definitions, the schema and the limits are kept in `docs/evidence-mode.md`
+(documentation under `docs/` is kept local by policy — see `.gitignore`).
+
+Implementation: `src/core/evidence.jl` (schema, residuals, verdicts),
+`src/server/routes/evidence.jl` (the SQL), `frontend/src/evidence/`
+(editor, fibre visualiser, residual explorer) and `test/unit/test_evidence.jl`
+with `test/unit/test_evidence_routes.jl`.
 
 ### Figures and report
 
@@ -662,13 +724,22 @@ analysis:
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
   differential:
-    method: nb_glm               # nb_glm | clr_welch | ancom_bc | aldex2 | songbird
+    method: nb_glm               # nb_glm | clr_welch | zinb | hurdle_nb | ancom_bc
+                                 #   | aldex2 | songbird | multinomial | dirichlet_multinomial
+    offset: tss                  # count models: tss | rle
     dispersion: ml               # nb_glm: ml | glmGamPoi
+    min_prevalence: 0.0          # fraction of samples a taxon must appear in
     replacement_method: bayesian_multiplicative
                                  # clr_welch: bayesian_multiplicative | multiplicative_replacement
     replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
     bayesian_alpha: ~            # clr_welch: null (GBM estimate) or a number > 0
     mc_samples: 128              # aldex2: Dirichlet Monte-Carlo instances in [16, 4096]
+    mn_reference_taxon: ~        # multinomial/dirichlet: null = most abundant fitted taxon
+    mn_penalty: 0.0              # multinomial/dirichlet: L2 penalty, 0 = maximum likelihood
+    dm_overdispersion_method: mle  # dirichlet_multinomial: mle | mom
+    max_iter: 500                # multinomial models: Newton iteration cap
+    tolerance: 1.0e-8            # multinomial models: convergence threshold
+    max_seconds: 300.0           # multinomial models: wall-clock budget for one fit
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
 ```

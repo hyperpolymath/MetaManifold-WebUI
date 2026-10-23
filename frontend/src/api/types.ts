@@ -423,7 +423,16 @@ export interface DifferentialRow {
   prevalence: number
 }
 
-export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+/**
+ * Methods accepted by `POST .../analysis/differential`. The first four model each
+ * taxon separately; `multinomial` and `dirichlet_multinomial` fit the whole
+ * composition at once, so they take a reference taxon and a penalty where the
+ * per-taxon models take a size-factor offset.
+ */
+export type DifferentialMethod =
+  | 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+  | 'ancom_bc' | 'aldex2' | 'songbird'
+  | 'multinomial' | 'dirichlet_multinomial'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -457,6 +466,16 @@ export interface DifferentialResult {
     mc_samples?: number
     /** aldex2 only. */
     seed?: number
+    /** multinomial and dirichlet_multinomial: taxon every log ratio is taken against. */
+    mn_reference_taxon?: string | null
+    /** multinomial and dirichlet_multinomial: L2 penalty on the coefficients. */
+    mn_penalty?: number
+    /** dirichlet_multinomial only: how the concentration is estimated. */
+    dm_overdispersion_method?: 'mle' | 'mom'
+    /** Compositional solvers: convergence threshold and cost ceiling. */
+    tolerance?: number
+    max_iter?: number
+    max_seconds?: number
   }
   diagnostics: {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
@@ -486,6 +505,18 @@ export interface DifferentialResult {
     aldex2?: {
       mc_samples: number; seed: number; dirichlet_prior: number; test: string
       n_taxa_in_composition: number; n_taxa_unobserved: number
+    }
+    /** Compositional models only: what the fit that produced these rows cost. */
+    model?: {
+      n_taxa_fitted: number
+      runtime_seconds: number
+      /** The taxon every log ratio was taken against. */
+      reference_taxon?: string | null
+      penalty?: number
+      n_parameters?: number
+      iterations?: number
+      converged?: boolean
+      loglik?: number
     }
     /** songbird only. */
     songbird?: {
