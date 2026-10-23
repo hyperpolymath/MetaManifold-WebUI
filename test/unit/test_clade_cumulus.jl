@@ -583,6 +583,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test jp_body.diversity.mapped_tips == 2
             @test jp_body.diversity.unplaced_reads.SampleA ≈ 21.0 atol = 1e-9
             @test jp_body.diversity.unplaced_reads.SampleB ≈ 35.0 atol = 1e-9
+            @test jp_body.diversity.weighted_unifrac[1][2] ≈
+                  0.15636363636363636 atol = 1e-9
             # The clade tree is a count view of the table and still conserves
             # every observed read; only the abundance-weighted diversity matrix
             # discounts the unplaced mass.
