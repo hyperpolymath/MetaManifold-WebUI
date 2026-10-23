@@ -33,6 +33,11 @@ export interface CladeCumulusPanelProps {
   runs: CladeCumulusRunOption[]
 }
 
+/**
+ * Explore a study run's clade hierarchy, diversity and unplaced reads. Loads
+ * available sources and computes results on request; move checks can preview
+ * counterfactual trees or save sidecar proposals without changing canonical tables.
+ */
 export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
   const toast = useToast()
   const reqCounter = useRef(0)

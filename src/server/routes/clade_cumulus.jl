@@ -205,6 +205,19 @@ end
     end
 end
 
+"""
+    _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
+
+Build a clade explorer JSON response from a run's results table and the requested
+tree source, including a provenance receipt, without modifying canonical tables.
+Diversity is `nothing` unless a phylogeny, sample columns and matching tips are
+available. Placed `.jplace` abundances use raw like-weight ratios; unplaced reads
+include unmapped ASVs and remain in the weighted UniFrac library-size denominators.
+
+Return HTTP error responses for request validation, missing inputs and failures
+building the clade tree (the latter become HTTP 400). Other exceptions, including
+diversity calculation failures, propagate to the route wrapper's HTTP 500 handler.
+"""
 function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
     group = _req_group(req)
     err = _validate_run_request(study, run)

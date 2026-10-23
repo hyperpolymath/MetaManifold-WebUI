@@ -851,13 +851,21 @@ end
 """
     parse_jplace(raw_json::AbstractString) -> JplaceDocument
 
-Strictly parse a `.jplace` document before any display normalization:
+Strictly parse a `.jplace` document before any display normalisation:
 - Validates unique integer `{edge_num}` annotations across the tree
 - Validates explicit unique `"like_weight_ratio"` column in `"fields"`
-- Validates each query's `p` candidates, finite weights in `[0, 1]`, edge
-  references present on non-root edges, and total weight within `1e-5` of `1.0`
+- Validates each query's `p` candidates, finite weights in `[0, 1]`, and edge
+  references present on non-root edges. A single candidate requires a weight
+  of at least `0.5`; multiple candidates must sum to within `1e-5` of `1.0`.
 - Preserves raw query/candidate ordinals and `n` / `nm` multiplicities without
-  re-normalizing weights or collapsing tied maxima.
+  renormalising weights or collapsing tied maxima.
+
+Candidate validation failures produce `:undecided` queries with a reason and
+`max_lwr = nothing`; a lone weight below `0.5` gives the reason
+`single_candidate_below_min_lwr (<weight>)`. Missing required fields, invalid
+query names or multiplicities, duplicate edge numbers, and missing or duplicate
+required field columns throw `ArgumentError`. JSON decoding, Newick parsing,
+and value conversion errors propagate.
 """
 function parse_jplace(raw_json::AbstractString)::JplaceDocument
     doc = JSON3.read(raw_json)
@@ -1138,6 +1146,11 @@ true library size instead, so that share stays off the tree rather than being
 renormalised onto the tips that were placed. Without this, down-weighting a tip
 to express placement uncertainty achieves nothing: dividing by the placed-only
 total scales it straight back up.
+
+`declared = nothing` returns the sum of `abund`. Otherwise, throw `ArgumentError`
+if the declared total is non-finite, negative, or below
+`sum(values(abund)) * (1 - 1e-9) - 1e-9`. A smaller total within that tolerance
+is raised to the on-tree sum. `name` identifies the total in error messages.
 """
 function _sample_total(
     abund::Dict{String,Float64},
@@ -1162,7 +1175,7 @@ end
     weighted_unifrac(counts_a, counts_b, taxa, tree; normalized=false,
                      total_a=nothing, total_b=nothing) -> Float64
 
-Lozupone et al. (2007) raw (`normalized=false`) or normalized (`normalized=true`)
+Lozupone et al. (2007) raw (`normalized=false`) or normalised (`normalized=true`)
 weighted UniFrac distance: branch-length-weighted L1 distance between the two
 samples' CladeCumulus cumulative relative abundance trees.
 
@@ -1170,6 +1183,16 @@ samples' CladeCumulus cumulative relative abundance trees.
 the mass on the tree. Pass the sample's true library size when part of it could
 not be placed, so the unplaced share is absent from the tree instead of being
 renormalised onto the tips that were.
+
+Raw distances have the tree's branch-length units. Normalised distances divide
+by the abundance-weighted sum of root-to-tip lengths, returning `0.0` when that
+denominator is zero. A sample with zero total contributes zero abundance.
+
+Throw `ArgumentError` for counts that are non-finite, negative, or differ in
+length from `taxa`, or for taxa absent from the tree. Duplicate taxa have their
+counts added. Invalid totals throw `ArgumentError` as described by
+`_sample_total`; errors parsing a Newick tree also propagate. Trees with more
+than two root children are midpoint-rooted before calculating the distance.
 """
 function weighted_unifrac(
     counts_a::AbstractVector{<:Real},
@@ -1221,6 +1244,20 @@ function weighted_unifrac(
     den <= 0.0 ? 0.0 : num / den
 end
 
+"""
+    branch_unifrac_contributions(counts_a, counts_b, taxa, tree;
+                                 total_a=nothing, total_b=nothing)
+
+Return the positive contributions of non-root branches to raw weighted UniFrac,
+sorted by decreasing contribution. Each record contains `clade_id`, `label`,
+`is_tip`, `branch_length`, cumulative relative abundances `freq_a` and `freq_b`,
+and `contribution` (branch length times the absolute abundance difference).
+Their contributions sum to `weighted_unifrac(...; normalized=false)` with the
+same totals; return an empty vector when no branch contributes.
+
+Counts, taxa, tree rooting, and `total_a` / `total_b` follow `weighted_unifrac`,
+including its `ArgumentError` validation and propagated Newick parsing errors.
+"""
 function branch_unifrac_contributions(
     counts_a::AbstractVector{<:Real},
     counts_b::AbstractVector{<:Real},
@@ -1282,6 +1319,22 @@ function branch_unifrac_contributions(
     contribs
 end
 
+"""
+    unifrac_matrix(sample_matrix, taxa, samples, tree;
+                   metric=:weighted, normalized=false, totals=nothing) -> Matrix{Float64}
+
+Return a symmetric pairwise UniFrac matrix in `samples` order with a zero
+diagonal. Rows of `sample_matrix` correspond to `taxa` and columns to `samples`.
+Use `metric=:weighted` or `:unweighted`; `normalized` affects only the weighted
+metric. Optional `totals` supplies library sizes in `samples` order using
+`weighted_unifrac`'s denominator rules. The unweighted metric ignores their
+values, but their length must still match `samples`.
+
+Throw `ArgumentError` for inconsistent matrix dimensions or totals length.
+Pairwise metric validation errors (including unsupported metrics, invalid
+counts, missing taxa, or invalid weighted totals) and tree parsing errors
+propagate. With fewer than two samples, no pairwise validation is performed.
+"""
 function unifrac_matrix(
     sample_matrix::AbstractMatrix{<:Real},
     taxa::AbstractVector{<:AbstractString},
@@ -2181,6 +2234,20 @@ function _is_descendant(candidate_desc::AbstractString, ancestor::CladeNode)::Bo
     false
 end
 
+"""
+    _reaggregate_after_move(root, moving, target_id, case_obj, total_reads) -> CladeNode
+
+Return a rebuilt tree with `moving` detached from its old parent and attached
+beneath `target_id`, without mutating the input nodes. The caller must validate
+the move first, as `validate_drag_drop` does. Recompute counts, residuals,
+subtree PD and taxonomic summaries for the proposed topology; epistemic statuses
+come from the supplied `case_obj`. Frequencies use `total_reads` as their
+denominator, or zero when it is non-positive. A clade left childless carries
+only its direct reads and has zero residual and PD when those reads are zero.
+
+Throw `ErrorException` if `moving` is the root. Invalid residuals propagate
+`ArgumentError` from `Epistemic.cloud_size_by_residual`.
+"""
 function _reaggregate_after_move(
     root::CladeNode,
     moving::CladeNode,
