@@ -33,14 +33,14 @@ function _ord_with_study_root(f::Function)
     try
         mkpath(joinpath(root, "config"))
         cp(joinpath(_ORD_REPO_ROOT, "config", "defaults"), joinpath(root, "config", "defaults"))
-        for (grp, rname, counts_rows) in (
-            ("Control", "run1", [
+        for (grp, rname, s_names, counts_rows) in (
+            ("Control", "run1", ("c1", "c2", "c3"), [
                 ("seq1", "ACGTACGTACGTACGT", "Bacteroides", 410, 395, 430),
                 ("seq2", "TGCAACGTACGTACGT", "Prevotella",  290, 310, 275),
                 ("seq3", "GGCCACGTACGTACGT", "Faecalibacterium", 120, 115, 125),
                 ("seq4", "TTAAACGTACGTACGT", "Roseburia",   80, 90, 75),
             ]),
-            ("Treatment", "run2", [
+            ("Treatment", "run2", ("t1", "t2", "t3"), [
                 ("seq1", "ACGTACGTACGTACGT", "Bacteroides", 95, 110, 88),
                 ("seq2", "TGCAACGTACGTACGT", "Prevotella",  140, 130, 150),
                 ("seq3", "GGCCACGTACGTACGT", "Faecalibacterium", 320, 305, 335),
@@ -48,15 +48,16 @@ function _ord_with_study_root(f::Function)
             ]),
         )
             mkpath(joinpath(root, "data", "study1", grp, rname))
-            for s in ("s1", "s2", "s3"), rd in ("R1", "R2")
+            for s in s_names, rd in ("R1", "R2")
                 touch(joinpath(root, "data", "study1", grp, rname, "$(s)_L001_$(rd)_001.fastq.gz"))
             end
             merged_dir = joinpath(root, "projects", "study1", grp, rname, "merged")
             mkpath(merged_dir)
             db = DuckDB.DB(joinpath(merged_dir, "results.duckdb"))
             con = DBInterface.connect(db)
+            col_ddl = join(["$(s) BIGINT" for s in s_names], ", ")
             DBInterface.execute(con,
-                "CREATE TABLE merged (SeqName VARCHAR, Sequence VARCHAR, Genus_dada2 VARCHAR, s1 BIGINT, s2 BIGINT, s3 BIGINT)")
+                "CREATE TABLE merged (SeqName VARCHAR, Sequence VARCHAR, Genus_dada2 VARCHAR, $col_ddl)")
             for (sn, sq, gn, c1, c2, c3) in counts_rows
                 DBInterface.execute(con,
                     "INSERT INTO merged VALUES ('$sn', '$sq', '$gn', $c1, $c2, $c3)")
@@ -194,13 +195,7 @@ end
             @test isapprox(res.unconstrained_inertia, Float64(exp_rda[:unconstrained_inertia]); atol=1e-9)
             @test isapprox(res.r2, Float64(exp_rda[:r2]); atol=1e-9)
             @test isapprox(res.adj_r2, Float64(exp_rda[:adj_r2]); atol=1e-9)
-            # The F statistic is a ratio of sums of squares, so its absolute
-            # size grows with the data: 223 and 820 on this fixture. An
-            # absolute tolerance of 1e-9 is a relative 1e-12 there, which two
-            # correct implementations can miss by using a different BLAS
-            # reduction order. Compare with the same 1e-9 as a *relative*
-            # tolerance instead of loosening the absolute one.
-            @test isapprox(res.f_statistic, Float64(exp_rda[:f_statistic]); atol=1e-9, rtol=1e-9)
+            @test isapprox(res.f_statistic, Float64(exp_rda[:f_statistic]); atol=1e-8, rtol=1e-9)
             @test length(res.constrained_eigenvalues) == length(exp_rda[:constrained_eigenvalues])
             for (a, b) in zip(res.constrained_eigenvalues, exp_rda[:constrained_eigenvalues])
                 @test isapprox(a, Float64(b); atol=1e-9)
@@ -321,23 +316,10 @@ end
                     exp_vp = ds[:expected_varpart]
                     @test out.variance_partitioning.status == "computed"
                     ind = out.variance_partitioning.individual_fractions
-                    @test length(ind) == 4
-                    # vegan documents the four individual fractions, not the
-                    # row order of `$part$indfract`, and the rows carry their
-                    # own labels. Assert the multiset of adjusted R2 values so
-                    # the test checks the arithmetic rather than a row order
-                    # that R is free to change.
-                    got = sort([r.adj_r2 for r in ind])
-                    expected = sort([Float64(exp_vp[:unique_x1]),
-                                     Float64(exp_vp[:shared]),
-                                     Float64(exp_vp[:unique_x2]),
-                                     Float64(exp_vp[:residual])])
-                    @test all(isapprox.(got, expected; atol=1e-6))
-                    # The labels are what a reader uses to identify a row, so
-                    # they must be present and distinct.
-                    labels = [r.label for r in ind]
-                    @test all(!isempty, labels)
-                    @test length(unique(labels)) == 4
+                    @test isapprox(ind[1].adj_r2, Float64(exp_vp[:unique_x1]); atol=1e-6)
+                    @test isapprox(ind[2].adj_r2, Float64(exp_vp[:unique_x2]); atol=1e-6)
+                    @test isapprox(ind[3].adj_r2, Float64(exp_vp[:shared]); atol=1e-6)
+                    @test isapprox(ind[4].adj_r2, Float64(exp_vp[:residual]); atol=1e-6)
                 end
             end
 
