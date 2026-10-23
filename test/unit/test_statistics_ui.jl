@@ -144,6 +144,22 @@ end
     end
 end
 
+@testset "The run path is callable without the HTTP handler" begin
+    # The handler turns any exception into a 500 page, which hides the cause
+    # behind "No result is claimed". Calling the run path directly means a
+    # failure reaches the test as the exception it is.
+    _ui_with_root() do _
+        params = Dict{String,String}(
+            "mode" => "high_precision", "precision_bits" => "128",
+            "sample_labels" => "A, B", "feature_labels" => "t1, t2",
+            "counts" => "1, 0\n1, 0", "round_digits" => "6")
+        outcome = _UI_SV._ui_run(params)
+        @test outcome.result["status"] == "partial"
+        @test outcome.result["samples"][1]["shannon"]["precision_bits"] == 128
+        @test isnothing(outcome.result["samples"][2]["shannon"])
+    end
+end
+
 @testset "High-precision form labels approximations as approximate" begin
     _ui_with_root() do _
         fields = merge(_ui_form(), Dict{String,String}(
