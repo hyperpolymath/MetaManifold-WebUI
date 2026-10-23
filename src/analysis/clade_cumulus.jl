@@ -2279,7 +2279,11 @@ function _reaggregate_after_move(
     # and purity are exact everywhere on the proposed tree.
     total_tips_per_taxon = Dict{String,Int}()
     function count_leaf_taxa!(u::CladeNode)
-        if isempty(u.children)
+        # A clade emptied by the graft is childless but is not a tree tip:
+        # counting it would inflate tip counts, purity and monophyly with a
+        # taxon whose reads have all moved elsewhere. Terminal `tip`/`ASV`
+        # nodes are real tips even when they carry no reads in this table.
+        if isempty(u.children) && (u.direct_count > 0.0 || u.rank in ("tip", "ASV"))
             u.dominant_taxon !== nothing &&
                 (total_tips_per_taxon[u.dominant_taxon] = get(total_tips_per_taxon, u.dominant_taxon, 0) + 1)
         else
@@ -2308,9 +2312,12 @@ function _reaggregate_after_move(
             # residual is derived from the same count as everything else here.
             own_residual = own_count > 0.0 ? u.residual_count : 0.0
             freq = total_reads > 0.0 ? own_count / total_reads : 0.0
+            # Same tip eligibility as `count_leaf_taxa!` above: an emptied
+            # internal clade contributes no taxon tip to its parent.
+            counts_as_tip = own_count > 0.0 || u.rank in ("tip", "ASV")
             tmap = Dict{String,Int}()
             mono = u.monophyletic
-            if u.dominant_taxon !== nothing
+            if counts_as_tip && u.dominant_taxon !== nothing
                 tmap[u.dominant_taxon] = 1
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
@@ -2323,7 +2330,7 @@ function _reaggregate_after_move(
                 u.branch_length, u.support, sub_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
-            return (leaf_node, tmap, 1, active_here)
+            return (leaf_node, tmap, counts_as_tip ? 1 : 0, active_here)
         end
 
         rebuilt_kids = CladeNode[]

@@ -746,9 +746,12 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         # cloud) of the subtree that has just left. Read as a leaf, that stale
         # count would keep the emptied clade active and give it a nonzero
         # `subtree_pd` and frequency for reads it no longer holds.
+        # Two domains, two ASVs each, so the proposed root's taxon purity
+        # distinguishes "four real tips" (0.5) from "four tips plus the
+        # emptied wrapper counted as a fifth Bacteria tip" (0.6).
         df = DataFrame(
             SeqName = ["ASV_1", "ASV_2", "ASV_3", "ASV_4"],
-            Domain  = fill("Bacteria", 4),
+            Domain  = ["Bacteria", "Bacteria", "Archaea", "Archaea"],
             SampleA = [10.0, 20.0, 30.0, 40.0],
         )
         # `wrapper` has exactly one child (the ASV_1/ASV_2 clade); the other
@@ -803,6 +806,11 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                 @test Float64(relocated["residual_count"]) == moved_residual
             end
             @test Float64(proposed_root["cumulative_count"]) ≈ before_total atol = 1e-9
+            # The emptied wrapper is childless but is not a tip: it must not
+            # add its departed subtree's taxon to the tip counts behind
+            # purity/monophyly. Four real tips, two per domain, give 0.5;
+            # counting the wrapper as a fifth Bacteria tip would give 0.6.
+            @test Float64(proposed_root["taxon_purity"]) ≈ 0.5 atol = 1e-9
         end
     end
 
