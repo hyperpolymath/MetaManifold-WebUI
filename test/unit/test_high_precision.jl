@@ -66,7 +66,8 @@ end
         sample_labels=HP_LABELS, feature_labels=HP_FEATURES, policy=policy)
     @test_throws ArgumentError high_precision_summary([1 -2; 3 4];
         sample_labels=HP_LABELS, feature_labels=["x", "y"], policy=policy)
-    # A policy for another mode is a caller error, not an unrepresentable value.
+    # A policy for another mode is a caller error, not a value that cannot be
+    # represented: assert_mode raises ArgumentError.
     @test_throws ArgumentError high_precision_summary(HP_FIXTURE;
         sample_labels=HP_LABELS, feature_labels=HP_FEATURES,
         policy=numeric_policy(:exact_counts))

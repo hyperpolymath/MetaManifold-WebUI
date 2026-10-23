@@ -260,7 +260,9 @@ function summary_to_display(s::ExactSummary; digits::Integer=s.policy.round_digi
                 continue
             end
             for (feature, proportion) in zip(x.features, x.proportions)
-                println(io, "    ", feature, ": ", to_display(exact_value(proportion); digits))
+                rendered = isnothing(proportion) ? "undefined (not observed)" :
+                    to_display(exact_value(proportion); digits)
+                println(io, "    ", feature, ": ", rendered)
             end
         end
     end

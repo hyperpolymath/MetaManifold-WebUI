@@ -1159,6 +1159,66 @@ _row(taxon, prevalence, note) = Dict{String,Any}(
     "pvalue" => nothing, "padj" => nothing, "dispersion_theta" => nothing,
     "prevalence" => prevalence)
 
+"""
+    _calibration_caveat(dispersion, n_ref, n_con) -> Union{Dict{String,Any},Nothing}
+
+A result-level calibration caveat for the negative-binomial Wald tests, or
+`nothing` when none is recorded. Every `"ml"` result carries one, scaled by
+the smaller group size: `MASS::glm.nb` estimates theta taxon by taxon and the
+fixed-scale Wald test then treats that estimate as known, ignoring its
+sampling uncertainty (issue #193). The `"glmGamPoi"` dispersion trend shares
+information across taxa, so its caveat is recorded only through 12 samples in
+the smaller group; even there, this implementation plugs the trend into the
+same fixed-theta Wald test rather than propagating trend uncertainty or using
+glmGamPoi's quasi-likelihood F-test. The caveat changes no statistic: it is
+provenance and interpretation guidance recorded with the result.
+"""
+function _calibration_caveat(dispersion::AbstractString, n_ref::Integer, n_con::Integer)
+    min_group_n = min(n_ref, n_con)
+    # "caution" runs through 20, the largest group size the bench measured:
+    # the ml Wald test was still anti-conservative there. Beyond the measured
+    # range the caveat drops to "info" but, for "ml", never disappears.
+    severity = min_group_n <= 4 ? "strong" : min_group_n <= 20 ? "caution" : "info"
+    if dispersion == "ml"
+        message = if severity == "strong"
+            "The smallest group has $min_group_n sample(s). With dispersion \"ml\", " *
+            "theta is estimated separately for each taxon and the fixed-scale Wald test " *
+            "then treats that estimate as known. Null simulations for issue #193 rejected " *
+            "substantially too often at 4 samples per group; treat small p-values and " *
+            "Benjamini-Hochberg adjusted p-values at this size as exploratory rather than " *
+            "confirmatory. See bench/null_calibration."
+        elseif severity == "caution"
+            "The smallest group has $min_group_n samples. With dispersion \"ml\", theta " *
+            "is estimated separately for each taxon and the fixed-scale Wald test then " *
+            "treats that estimate as known. Null simulations in bench/null_calibration " *
+            "(issue #193) found above-nominal rejection at every measured group size " *
+            "through 20 per group, so interpret borderline p-values and " *
+            "Benjamini-Hochberg adjusted p-values cautiously."
+        else
+            "With dispersion \"ml\", theta is estimated separately for each taxon and " *
+            "the fixed-scale Wald test treats that estimate as known; theta uncertainty is " *
+            "not propagated. Null simulations in bench/null_calibration (issue #193) " *
+            "found above-nominal rejection through 20 samples per group, the largest " *
+            "size measured; beyond that range the approximation is expected to improve, " *
+            "but it has not been measured there."
+        end
+        return Dict{String,Any}("severity" => severity, "dispersion" => "ml",
+                                 "min_group_n" => min_group_n, "message" => message)
+    elseif dispersion == "glmGamPoi" && min_group_n <= 12
+        message = "The smallest group has $min_group_n sample(s). The glmGamPoi " *
+                  "dispersion trend shares information across taxa and steadies theta " *
+                  "relative to a separate maximum-likelihood estimate for every taxon, " *
+                  "but this implementation still plugs the trend into a fixed-theta, " *
+                  "fixed-scale Wald test. It does not propagate trend uncertainty and " *
+                  "does not implement glmGamPoi's quasi-likelihood F-test, so interpret " *
+                  "borderline p-values cautiously at this sample size. " *
+                  "See bench/null_calibration and issue #193."
+        return Dict{String,Any}("severity" => severity, "dispersion" => "glmGamPoi",
+                                 "min_group_n" => min_group_n, "message" => message)
+    end
+    nothing
+end
+
 # Two-group ANCOM-BC (Lin & Peddada 2020, Nat. Commun. 11:3514):
 # (1) Estimate within-group sample-specific sampling-fraction offsets on
 #     log(counts + 1) by inverse-variance-weighted least squares, centred within
@@ -2023,7 +2083,12 @@ enter each negative-binomial model as `log(factor)`; the estimate is a
 natural-log fold change. `config.dispersion` selects per-taxon maximum-likelihood
 theta (`"ml"`) or fixed theta from `glmGamPoi::glm_gp`'s cross-taxon dispersion trend
 (`"glmGamPoi"`), fitted in one call on the taxa passing the prevalence filter.
-The result's `config` includes the selected dispersion name.
+The result's `config` includes the selected dispersion name. Its `diagnostics`
+also records a `calibration_caveat` for every `"ml"` result (scaled by the
+smaller group) and for a `"glmGamPoi"` result whose smaller group has at most
+12 samples: both fixed-theta Wald paths treat the dispersion used by the test
+as known rather than propagating its estimation uncertainty. The caveat alters
+no estimate, p-value or adjusted p-value.
 
 `clr_welch`, in this order: (1) `min_prevalence` chooses the taxa, and taxa with
 no reads in any sample are always left out; (2) the zeros of those taxa only
@@ -2131,6 +2196,8 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
         config_echo = Dict{String,Any}("method" => config.method, "offset" => config.offset,
                                        "min_prevalence" => config.min_prevalence,
                                        "dispersion" => config.dispersion)
+        caveat = _calibration_caveat(config.dispersion, n_ref, n_con)
+        isnothing(caveat) || (diagnostics["calibration_caveat"] = caveat)
     elseif config.method == "clr_welch"
         (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
             "Welch's t-test needs at least 2 samples in each group to estimate its variance; " *
