@@ -1535,6 +1535,26 @@ end
         @test CM.compositional_digamma(1.0) ≈ -0.5772156649015329 rtol=1e-12
         @test CM.compositional_digamma(10.0) ≈ 2.251752589066721 rtol=1e-12
         @test CM.compositional_digamma(0.5) ≈ -1.9635100260214235 rtol=1e-12
+
+        # erfc is the regularised incomplete gamma at a = 1/2, with the series
+        # and the continued fraction swapping over at x^2 = 1.5. Both sides of
+        # that crossover are pinned here, against the C library's erfc.
+        @test CM.compositional_erfc(0.0) == 1.0
+        @test CM.compositional_erfc(0.1) ≈ 0.8875370839817152 rtol=1e-13
+        @test CM.compositional_erfc(0.5) ≈ 0.47950012218695348 rtol=1e-13
+        @test CM.compositional_erfc(1.2) ≈ 0.08968602177036465 rtol=1e-13   # x^2 < 1.5
+        @test CM.compositional_erfc(1.3) ≈ 0.06599205505934755 rtol=1e-13   # x^2 > 1.5
+        @test CM.compositional_erfc(2.0) ≈ 0.0046777349810472654 rtol=1e-13
+        @test CM.compositional_erfc(5.0) ≈ 1.5374597944280351e-12 rtol=1e-13
+        # erfc(-x) = 2 - erfc(x), so the reflection has to be exact.
+        @test CM.compositional_erfc(-1.0) ≈ 1.842700792949715 rtol=1e-13
+        @test CM.compositional_erfc(-3.0) + CM.compositional_erfc(3.0) ≈ 2.0 rtol=1e-15
+        @test_throws ArgumentError CM.compositional_erfc(NaN)
+        @test_throws ArgumentError CM.compositional_erfc(Inf)
+
+        # The only call site: the two-sided p-value of a normal deviate.
+        @test CM.compositional_erfc(1.959963984540054 / sqrt(2.0)) ≈ 0.05 rtol=1e-12
+        @test CM.compositional_erfc(6.0 / sqrt(2.0)) ≈ 1.9731752900754024e-09 rtol=1e-13
     end
 
     @testset "Multinomial: the DA engine reports a composition, not per-taxon fits" begin
@@ -1644,11 +1664,17 @@ end
         @test e isa ArgumentError
         @test occursin("is not fitted", sprint(showerror, e))
         # Every taxon filtered out is an explicit error, not an empty table.
+        # `min_prevalence` is the second positional argument of
+        # `DifferentialConfig`, not a keyword; and both groups have to be
+        # populated, or the earlier "each group needs at least one sample"
+        # guard answers first and the prevalence filter is never reached.
+        # Taxon 'a' is in 3 of 4 samples and 'b' in 2, so a threshold of 1.0
+        # leaves nothing to fit.
         e = try
             differential_abundance([1 0; 2 3; 0 4; 5 0], ["s1", "s2", "s3", "s4"],
-                                   ["a", "b"], groups8[1:4];
-                                   kw..., config=DifferentialConfig(; method="multinomial",
-                                                                    min_prevalence=1.0))
+                                   ["a", "b"], ["A", "A", "B", "B"];
+                                   kw..., config=DifferentialConfig("tss", 1.0;
+                                                                    method="multinomial"))
             nothing
         catch err
             err
