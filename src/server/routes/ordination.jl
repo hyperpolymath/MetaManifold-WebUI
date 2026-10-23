@@ -309,7 +309,12 @@ end
     end
 
     beta_transform = if haskey(body, :beta_transform) && !isnothing(body[:beta_transform])
-        String(strip(string(body[:beta_transform])))
+        requested = lowercase(String(strip(string(body[:beta_transform]))))
+        if cfg.ordination_distance === :aitchison && requested != "none"
+            return json_error(400, "incompatible_beta_transform",
+                "beta_transform '$requested' is not applied to distance 'aitchison'; omit beta_transform or set it to 'none'")
+        end
+        requested
     elseif cfg.ordination_distance in (:aitchison, :chisq, :unweighted_unifrac, :weighted_unifrac)
         "none"
     else
