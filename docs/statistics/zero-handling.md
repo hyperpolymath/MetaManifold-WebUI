@@ -105,6 +105,10 @@ there is no silent fallback to another estimator.
   valid observations under that model.
 - Raise `min_prevalence` when rare taxa would make imputed values dominate the
   composition. The result reports median and maximum imputed mass per sample.
+- Use `multinomial` or `dirichlet_multinomial` when the whole composition is the
+  unit of inference: a zero count is part of the likelihood, no size factor is
+  fitted, and conditioning on each sample's read total makes every effect a log
+  ratio against a reference taxon rather than an absolute abundance.
 - Consider an occupancy/observation model when detection itself is the object of
   inference, or a zero-inflated or hurdle model when structural and sampling
   zeros must be separated. Those models are not implemented by `clr_welch`, and
