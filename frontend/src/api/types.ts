@@ -403,20 +403,21 @@ export interface DifferentialRow {
   status: DifferentialStatus
   note: string
   /**
-   * nb_glm / ancom_bc: natural-log fold change, contrast over reference.
+   * nb_glm, two-part NB, ancom_bc and joint multinomial models: natural-log
+   * fold change, contrast over reference (or over the reference taxon).
    * clr_welch: mean CLR difference. aldex2: standardized CLR effect size.
    * songbird: CLR-centred multinomial differential.
    */
   estimate: number | null
-  /** nb_glm and ancom_bc; null for CLR/differential methods. */
+  /** Count models, ancom_bc and joint multinomial models; null for CLR effects. */
   log2_fold_change: number | null
   standard_error: number | null
-  /** Wald z / W (nb_glm, ancom_bc, songbird) or Welch's t (clr_welch, aldex2). */
+  /** Wald z / W, Welch's t, or the two-part model's likelihood-ratio statistic. */
   statistic: number | null
   pvalue: number | null
   /** Benjamini-Hochberg adjusted; null outside the tested family. */
   padj: number | null
-  /** nb_glm only. */
+  /** nb_glm and two-part NB count-process dispersion. */
   dispersion_theta: number | null
   /** Group coefficient in the logistic zero/occurrence component (two-part NB only). */
   zero_process_log_odds?: number | null
@@ -442,7 +443,7 @@ export interface DifferentialResult {
   groups: { reference: string; contrast: string }
   n_samples: Record<string, number>
   effect: DifferentialEffect
-  /** Empty for clr_welch; count models report their size factors. */
+  /** Count models report size factors; compositional models return an empty list. */
   size_factors: { sample: string; group: string; factor: number }[]
   config: {
     method: DifferentialMethod
@@ -461,7 +462,7 @@ export interface DifferentialResult {
     /** aldex2 only. */
     seed?: number
     /** multinomial and dirichlet_multinomial: the taxon every ratio is against. */
-    mn_reference_taxon?: string
+    mn_reference_taxon?: string | null
     /** multinomial and dirichlet_multinomial: L2 penalty on the log-odds. */
     mn_penalty?: number
     /** dirichlet_multinomial only: how the concentration was estimated. */
@@ -499,6 +500,15 @@ export interface DifferentialResult {
         concentration: { sample: string; value: number }[]
       }
     }
+    /** multinomial and dirichlet_multinomial only. */
+    model?: {
+      reference_taxon: string; penalty: number; n_parameters: number; iterations: number
+      converged: boolean; log_likelihood: number; runtime_seconds: number; n_taxa_fitted: number
+    }
+    /** dirichlet_multinomial only: c and theta = 1 / (1 + c) in (0, 1). */
+    overdispersion?: {
+      method: 'mle' | 'mom'; concentration: number; theta: number; at_bound: boolean
+    }
     /** ancom_bc only. */
     ancom_bc?: {
       delta: number | null; delta_se: number | null
@@ -519,15 +529,6 @@ export interface DifferentialResult {
       iterations?: number; loglik?: number; max_abs_gradient?: number; newton_decrement?: number
       n_taxa_in_composition: number; n_taxa_unobserved: number
       caveat?: string
-    }
-    /** multinomial and dirichlet_multinomial only. */
-    model?: {
-      reference_taxon: string; penalty: number; n_parameters: number; iterations: number
-      converged: boolean; log_likelihood: number; runtime_seconds: number; n_taxa_fitted: number
-    }
-    /** dirichlet_multinomial only: c and theta = 1 / (1 + c) in (0, 1). */
-    overdispersion?: {
-      method: 'mle' | 'mom'; concentration: number; theta: number; at_bound: boolean
     }
   }
   rows: DifferentialRow[]

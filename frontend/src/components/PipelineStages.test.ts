@@ -8,11 +8,14 @@ test('dispersion uses the enum editor with both supported models', () => {
   })
 })
 
-test('differential model editor exposes supported two-part NB methods', () => {
-  const method = CONFIG_TYPES['analysis.differential.method']
-  expect(method.kind).toBe('enum')
-  expect(method.options).toContain('zinb')
-  expect(method.options).toContain('hurdle_nb')
+test('differential model editor exposes all nine supported methods', () => {
+  expect(CONFIG_TYPES['analysis.differential.method']).toEqual({
+    kind: 'enum',
+    options: [
+      'nb_glm', 'clr_welch', 'zinb', 'hurdle_nb', 'ancom_bc', 'aldex2', 'songbird',
+      'multinomial', 'dirichlet_multinomial',
+    ],
+  })
 })
 
 test('advanced zero handling exposes both methods, bounded delta and nullable alpha', () => {
@@ -25,11 +28,13 @@ test('advanced zero handling exposes both methods, bounded delta and nullable al
   expect(CONFIG_DESCRIPTIONS['analysis.differential.bayesian_alpha']).toContain('no posterior draws')
 })
 
-test('differential method enum lists every count and compositional model', () => {
-  expect(CONFIG_TYPES['analysis.differential.method']).toEqual({
-    kind: 'enum',
-    options: ['nb_glm', 'clr_welch', 'zinb', 'hurdle_nb', 'ancom_bc', 'aldex2', 'songbird', 'multinomial', 'dirichlet_multinomial'],
-  })
+test('advanced compositional settings retain their editors and descriptions', () => {
   expect(CONFIG_TYPES['analysis.differential.mc_samples']).toEqual({ kind: 'int' })
   expect(CONFIG_DESCRIPTIONS['analysis.differential.mc_samples']).toContain('Dirichlet')
+  expect(CONFIG_TYPES['analysis.differential.dm_overdispersion_method']).toEqual({
+    kind: 'enum', options: ['mle', 'mom'],
+  })
+  expect(CONFIG_TYPES['analysis.differential.mn_penalty']).toMatchObject({ kind: 'float', min: 0 })
+  expect(CONFIG_TYPES['analysis.differential.max_iter']).toEqual({ kind: 'int' })
+  expect(CONFIG_DESCRIPTIONS['analysis.differential.mn_reference_taxon']).toContain('reference')
 })
