@@ -933,6 +933,11 @@ _saved_root = SV.ServerState._root[]
 end
 
 @testset "Registered routes" begin
+    # Every route file is `include`d once into `Server`, and each routing macro
+    # appends to `Server.ROUTES`. A file included twice registers its routes
+    # twice, and no request test can reveal that: the second registration
+    # simply shadows the first. Assert the table holds no duplicate
+    # method+path pair.
     registered = [(m, string(p)) for (m, p, _) in SV.ROUTES]
     @test !isempty(registered)
 
@@ -940,12 +945,20 @@ end
     for k in registered
         seen[k] = get(seen, k, 0) + 1
     end
+    # Compared against an empty vector rather than asserted with `isempty`, so
+    # a failure names the route that doubled up instead of printing `false`.
     duplicated = sort([k for (k, n) in seen if n > 1])
     @test duplicated == Tuple{String,String}[]
 
-    paths = Set(p for (_, p) in registered)
-    @test any(occursin("/cladistics", p) for p in paths)
-    @test any(occursin("/clade-cumulus", p) for p in paths)
+    # The Cladistics tab and the run-level CladeCumulus evidence view are
+    # served by two different route files; both must be registered. These are
+    # whole method+path pairs, not substrings: `occursin` would also accept a
+    # misregistered `/api/v1/studies/{study}/cladistics-legacy` or a longer
+    # nested path, which is exactly the breakage this guards against.
+    @test ("GET", "/api/v1/studies/{study}/cladistics") in registered
+    @test ("GET", "/api/v1/studies/{study}/runs/{run}/clade-cumulus/sources") in registered
+    @test ("POST", "/api/v1/studies/{study}/runs/{run}/clade-cumulus") in registered
+    @test ("POST", "/api/v1/studies/{study}/runs/{run}/clade-cumulus/validate-move") in registered
 end
 
 # Testsets above point the server at temporary roots.

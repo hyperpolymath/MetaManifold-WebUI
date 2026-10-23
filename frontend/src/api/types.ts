@@ -968,6 +968,17 @@ export interface CladeCumulusRequest {
 export interface CladeCumulusDiversity {
   samples: string[]
   mapped_tips: number
+  /**
+   * Reads per sample that no tip on the tree carries: a query whose kept
+   * `.jplace` like-weight ratios do not reach 1 contributes only that share,
+   * and an ASV the tree does not cover contributes nothing.
+   *
+   * These reads are excluded from the tree-tip abundances, but they are still
+   * counted in each sample's library size, which is the denominator the
+   * weighted UniFrac metrics divide by. That is what keeps the shortfall off
+   * the tree instead of renormalising a partially placed sample back up to
+   * abundance 1. Absent for responses produced before this field existed.
+   */
   unplaced_reads?: Record<string, number>
   faith_pd: Record<string, number>
   unweighted_unifrac: number[][]

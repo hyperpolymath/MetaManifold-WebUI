@@ -28,11 +28,30 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# Multi-candidate placements partition probability mass across kept edges and
-# must sum to 1 within floating-point tolerance; single-candidate placements
-# leave unplaced mass off the tree and require at least half the mass at the
-# reported site (`PLACEMENT_SINGLE_MIN_LWR`).
+# A multi-candidate placement partitions one query's probability mass across
+# the edges it kept, so those like-weight ratios must sum to one: anything else
+# is a malformed or truncated record. This is a floating-point tolerance on an
+# exact identity, not slack for missing mass.
 const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
+
+# A single-candidate placement is the other shape the same file can take: the
+# tool reports one row whose `like_weight_ratio` is the share of the mass behind
+# that site, and the remainder is mass it did not place anywhere. Such a record
+# cannot be held to the sum-to-one identity above, so it is judged on its own
+# share instead and is decisive while at least half the mass supports it.
+#
+# These two rules replace a single blanket tolerance: widening
+# `PLACEMENT_WEIGHT_SUM_TOL` far enough to admit a lone 0.98 placement would
+# also stop a genuinely malformed multi-candidate partition from being caught.
+#
+# Accepting a placement and trusting all of its mass are different questions,
+# and the two consumers answer the second one differently on purpose.
+# `_graft_jplace_queries` builds a count view of the observed ASV table and
+# conserves reads: an unsplit query keeps its whole count at its one edge.
+# The `/clade-cumulus` diversity block instead weights each tip by the raw
+# like-weight ratio, so the mass the tool never placed stays off the tree and
+# is reported as `unplaced_reads` rather than renormalised onto the edge that
+# happened to be kept.
 const PLACEMENT_SINGLE_MIN_LWR = 0.5
 
 ## Phylogenetic tree structures & Newick / jplace parsers
@@ -209,9 +228,11 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
 
     function read_label_and_quoted(; capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
                                      capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing)::Tuple{String,Bool}
-        # An NHX comment immediately after ')' precedes the (usually empty)
-        # label, so the capture refs must be threaded through this first skip
-        # or the support tag is consumed as an anonymous comment.
+        # A support tag may sit between the label and the branch length, or
+        # directly after ')' with no label at all (`)[&&NHX:B=92]:0.1`). That
+        # leading comment is consumed by this first skip, so the capture refs
+        # have to be threaded through it or the tag is read as an anonymous
+        # comment and the support is lost.
         skip_ws_and_leading_comments!(capture_nhx = capture_nhx, capture_edge = capture_edge)
         pos[] > n && return ("", false)
         if bytes[pos[]] == UInt8('\'')
@@ -575,8 +596,12 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
         elseif length(cands) == 1 && cands[1].like_weight < PLACEMENT_SINGLE_MIN_LWR
+            # One candidate and less than half the mass supports it: the rest of
+            # the mass is unexplained, so the placement is not decisive. The
+            # single-candidate sum is in tolerance by construction, so this
+            # branch reports the share it actually has, not a weight-sum error.
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
-                "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
+                "single_candidate_below_min_lwr ($(round(cands[1].like_weight; digits=6)))", nothing))
         elseif length(cands) > 1 && abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
@@ -741,11 +766,48 @@ function unweighted_unifrac(
 end
 
 """
-    weighted_unifrac(counts_a, counts_b, taxa, tree; normalized=false) -> Float64
+    _sample_total(abund, declared, name) -> Float64
+
+The denominator for one sample's relative abundances. It defaults to the mass
+that actually sits on the tree, which is the ordinary case. A caller that knows
+part of the sample could not be placed on the tree -- `.jplace` like-weight mass
+the tool left on no edge, or table ASVs the tree does not cover -- passes the
+true library size instead, so that share stays off the tree rather than being
+renormalised onto the tips that were placed. Without this, down-weighting a tip
+to express placement uncertainty achieves nothing: dividing by the placed-only
+total scales it straight back up.
+"""
+function _sample_total(
+    abund::Dict{String,Float64},
+    declared::Union{Real,Nothing},
+    name::AbstractString,
+)::Float64
+    on_tree = sum(values(abund); init = 0.0)
+    declared === nothing && return on_tree
+    t = Float64(declared)
+    (isfinite(t) && t >= 0.0) ||
+        throw(ArgumentError("$name must be finite and non-negative, got $declared"))
+    # Below what the tree already carries would put a relative abundance above
+    # one. That is a caller error, not a discrepancy to round away -- but the
+    # equality case must survive floating-point summation, hence the slack.
+    t >= on_tree * (1 - 1e-9) - 1e-9 ||
+        throw(ArgumentError(
+            "$name ($t) is below the $on_tree reads this sample already maps onto the tree"))
+    max(t, on_tree)
+end
+
+"""
+    weighted_unifrac(counts_a, counts_b, taxa, tree; normalized=false,
+                     total_a=nothing, total_b=nothing) -> Float64
 
 Lozupone et al. (2007) raw (`normalized=false`) or normalized (`normalized=true`)
 weighted UniFrac distance: branch-length-weighted L1 distance between the two
 samples' CladeCumulus cumulative relative abundance trees.
+
+`total_a` / `total_b` override the per-sample denominator, which otherwise is
+the mass on the tree. Pass the sample's true library size when part of it could
+not be placed, so the unplaced share is absent from the tree instead of being
+renormalised onto the tips that were.
 """
 function weighted_unifrac(
     counts_a::AbstractVector{<:Real},
@@ -753,12 +815,14 @@ function weighted_unifrac(
     taxa::AbstractVector{<:AbstractString},
     tree::Union{PhyloNode,AbstractString};
     normalized::Bool = false,
+    total_a::Union{Real,Nothing} = nothing,
+    total_b::Union{Real,Nothing} = nothing,
 )::Float64
     root = _ensure_rooted_tree(tree)
     ab_a = _validate_counts_and_taxa(counts_a, taxa, root)
     ab_b = _validate_counts_and_taxa(counts_b, taxa, root)
-    tot_a = sum(values(ab_a); init = 0.0)
-    tot_b = sum(values(ab_b); init = 0.0)
+    tot_a = _sample_total(ab_a, total_a, "total_a")
+    tot_b = _sample_total(ab_b, total_b, "total_b")
     (tot_a <= 0.0 && tot_b <= 0.0) && return 0.0
 
     function walk(u::PhyloNode, depth_from_root::Float64, is_root::Bool)::Tuple{Float64,Float64,Float64,Float64}
@@ -799,13 +863,17 @@ function branch_unifrac_contributions(
     counts_a::AbstractVector{<:Real},
     counts_b::AbstractVector{<:Real},
     taxa::AbstractVector{<:AbstractString},
-    tree::Union{PhyloNode,AbstractString},
+    tree::Union{PhyloNode,AbstractString};
+    total_a::Union{Real,Nothing} = nothing,
+    total_b::Union{Real,Nothing} = nothing,
 )::Vector{OrderedDict{String,Any}}
     root = _ensure_rooted_tree(tree)
     ab_a = _validate_counts_and_taxa(counts_a, taxa, root)
     ab_b = _validate_counts_and_taxa(counts_b, taxa, root)
-    tot_a = sum(values(ab_a); init = 0.0)
-    tot_b = sum(values(ab_b); init = 0.0)
+    # Same denominators as `weighted_unifrac`, so the per-branch table adds up
+    # to the distance it is meant to explain.
+    tot_a = _sample_total(ab_a, total_a, "total_a")
+    tot_b = _sample_total(ab_b, total_b, "total_b")
 
     contribs = OrderedDict{String,Any}[]
     function walk(u::PhyloNode, is_root::Bool)::Tuple{Float64,Float64}
@@ -859,11 +927,17 @@ function unifrac_matrix(
     tree::Union{PhyloNode,AbstractString};
     metric::Symbol = :weighted,
     normalized::Bool = false,
+    totals::Union{AbstractVector{<:Real},Nothing} = nothing,
 )::Matrix{Float64}
     size(sample_matrix, 1) == length(taxa) ||
         throw(ArgumentError("sample_matrix rows ($(size(sample_matrix, 1))) != length(taxa) ($(length(taxa)))"))
     size(sample_matrix, 2) == length(samples) ||
         throw(ArgumentError("sample_matrix cols ($(size(sample_matrix, 2))) != length(samples) ($(length(samples)))"))
+    # Per-sample library sizes for the weighted metric, in `samples` order. See
+    # `_sample_total`: they keep mass that could not be placed off the tree
+    # rather than renormalised onto the tips that were.
+    isnothing(totals) || length(totals) == length(samples) ||
+        throw(ArgumentError("totals ($(length(totals))) != length(samples) ($(length(samples)))"))
     root = _ensure_rooted_tree(tree)
     k = length(samples)
     M = zeros(Float64, k, k)
@@ -874,7 +948,9 @@ function unifrac_matrix(
             d = if metric === :unweighted
                 unweighted_unifrac(ci, cj, taxa, root)
             elseif metric === :weighted
-                weighted_unifrac(ci, cj, taxa, root; normalized = normalized)
+                weighted_unifrac(ci, cj, taxa, root; normalized = normalized,
+                    total_a = isnothing(totals) ? nothing : totals[i],
+                    total_b = isnothing(totals) ? nothing : totals[j])
             else
                 throw(ArgumentError("Unsupported UniFrac metric $(repr(metric))"))
             end
@@ -1787,18 +1863,27 @@ function _reaggregate_after_move(
 
     function recompute(u::CladeNode, is_root::Bool)::Tuple{CladeNode,Dict{String,Int},Int,Bool}
         if isempty(u.children)
-            freq = total_reads > 0.0 ? u.cumulative_count / total_reads : 0.0
+            # The graft can leave a clade with no children: its only child was
+            # the clade that moved out. Its `cumulative_count` still counts the
+            # subtree that has just left, so trusting it would keep the emptied
+            # clade "active" and give it a nonzero `subtree_pd` and frequency
+            # for reads it no longer holds. A node with no children carries
+            # exactly its own reads, so recompute the count from
+            # `direct_count`, as the internal-node branch below recomputes its
+            # own from the rebuilt children.
+            own_count = u.direct_count
+            freq = total_reads > 0.0 ? own_count / total_reads : 0.0
             tmap = Dict{String,Int}()
             mono = u.monophyletic
             if u.dominant_taxon !== nothing
                 tmap[u.dominant_taxon] = 1
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
-            active_here = u.cumulative_count > 0.0
+            active_here = own_count > 0.0
             sub_pd = active_here && !is_root ? max(0.0, u.branch_length) : 0.0
             st = Epistemic.epistemic_status(case_obj, u.id)
             leaf_node = CladeNode(
-                u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
+                u.id, u.name, u.rank, u.direct_count, own_count, freq,
                 u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
                 u.branch_length, u.support, sub_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
