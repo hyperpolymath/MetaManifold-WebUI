@@ -149,6 +149,38 @@ _cc_req(method::String, path::String, body::String = "") =
         @test jp.queries[4].status === :undecided
         @test startswith(jp.queries[4].reason, "weight_sum_out_of_tolerance")
 
+        # Two acceptance rules, not one blanket tolerance. A single-candidate
+        # record is the tool naming one site and leaving the rest of the mass
+        # unplaced, so it is judged on its own share; a multi-candidate record
+        # partitions the mass and must still sum to one. Widening the sum
+        # tolerance far enough to admit a lone 0.98 would also have waved
+        # through a truncated 0.96 partition, which these cases pin down.
+        _lwr_doc(ps) = JSON3.write(OrderedDict(
+            "version" => 3,
+            "tree" => "((Ref_1:0.1{0},Ref_2:0.2{1})95:0.3{2},Ref_3:0.4{3}){4};",
+            "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
+            "placements" => ps,
+        ))
+        _single_at(w) = CC.parse_jplace(_lwr_doc([
+            OrderedDict("n" => ["Q"], "p" => [[0, -100.0, w, 0.01, 0.02]]),
+        ])).queries[1]
+        _partition(a, b) = CC.parse_jplace(_lwr_doc([
+            OrderedDict("n" => ["Q"], "p" => [[0, -100.0, a, 0.01, 0.02], [1, -100.4, b, 0.01, 0.03]]),
+        ])).queries[1]
+
+        @test _single_at(0.60).status === :valid
+        @test _single_at(0.60).max_lwr ≈ 0.60 atol = 1e-12
+        @test _single_at(CC.PLACEMENT_SINGLE_MIN_LWR).status === :valid
+        @test _single_at(0.49).status === :undecided
+        @test startswith(_single_at(0.49).reason, "weight_sum_out_of_tolerance")
+
+        @test _partition(0.70, 0.30).status === :valid
+        @test _partition(0.80, 0.16).status === :undecided   # 0.96: truncated partition
+        @test _partition(0.80, 0.24).status === :undecided   # 1.04: over-complete partition
+        # A partition stays strict even where each part alone would clear the
+        # single-candidate bar, so the single rule cannot leak into the many.
+        @test _partition(0.60, 0.60).status === :undecided
+
         # Placed query read counts project onto the reference tree edges without losing reads,
         # and `lwr_threshold = 0.95` marks `Q_borderline` (LWR = 0.85) as `present_in_some`
         # even when `support_threshold = 0.80`.
@@ -252,6 +284,8 @@ done
 echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_000004:0.08);" > "$OUT"
 """)
             chmod(mock_ft, 0o755)
+            # `Phylogeny` imports `tool_bin` from `Tools` but does not bind the
+            # module itself, so the registry is reached through `MetaManifold`.
             old_ft = get(MetaManifold.Tools._tools, "fasttree", nothing)
             MetaManifold.Tools._tools["fasttree"] = mock_ft
             try
@@ -410,6 +444,40 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             v_allow2 = JSON3.read(String(r_allow2.body))
             @test v_allow2.allowed == true
             @test String(v_allow2.proposal_file) != String(v_allow.proposal_file)
+
+            # 5. A `.jplace` study tree: the diversity block weights each tip by
+            # the raw like-weight ratio, so mass the placement file left on no
+            # edge is reported rather than renormalised onto the edge that was
+            # kept. ASV_1 is placed once at LWR 0.60, ASV_2 once at LWR 1.00, so
+            # ASV_1 contributes only 60% of its reads and the missing 40%
+            # (SampleA 40 x 0.4 = 16, SampleB 0) is counted as unplaced.
+            write(joinpath(trees_dir, "placed.jplace"), JSON3.write(OrderedDict(
+                "version" => 3,
+                "tree" => "((Ref_1:0.10{0},Ref_2:0.20{1})0.96:0.30{2},Ref_3:0.40{3}){4};",
+                "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
+                "placements" => [
+                    OrderedDict("n" => ["ASV_1"], "p" => [[0, -100.0, 0.60, 0.05, 0.02]]),
+                    OrderedDict("n" => ["ASV_2"], "p" => [[1, -99.0, 1.00, 0.05, 0.02]]),
+                ],
+            )))
+            r_jp = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "placed.jplace",
+                "supportThreshold" => 0.85,
+                "lwrThreshold" => 0.95,
+            )))
+            @test r_jp.status == 200
+            jp_body = JSON3.read(String(r_jp.body))
+            @test jp_body.diversity !== nothing
+            @test jp_body.diversity.mapped_tips == 2
+            @test jp_body.diversity.unplaced_reads.SampleA ≈ 16.0 atol = 1e-9
+            @test jp_body.diversity.unplaced_reads.SampleB ≈ 0.0 atol = 1e-9
+            # The clade tree is a count view of the table and still conserves
+            # every observed read; only the abundance-weighted diversity matrix
+            # discounts the unplaced mass.
+            @test jp_body.root.cumulative_count ≈ 110.0 atol = 1e-9
 
             # Canonical DuckDB database is strictly untouched byte-for-byte!
             @test bytes2hex(open(sha256, db_path)) == before_db_sha

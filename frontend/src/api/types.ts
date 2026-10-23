@@ -968,6 +968,13 @@ export interface CladeCumulusRequest {
 export interface CladeCumulusDiversity {
   samples: string[]
   mapped_tips: number
+  /**
+   * Reads per sample the `.jplace` file left on no edge: the like-weight
+   * ratios kept for a query need not reach 1, and the shortfall is counted
+   * here rather than redistributed onto the edges that survived. Absent for
+   * responses produced before this field existed.
+   */
+  unplaced_reads?: Record<string, number>
   faith_pd: Record<string, number>
   unweighted_unifrac: number[][]
   weighted_unifrac: number[][]

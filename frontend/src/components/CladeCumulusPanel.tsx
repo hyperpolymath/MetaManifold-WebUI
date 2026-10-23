@@ -249,6 +249,17 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
     return div.normalized_weighted_unifrac
   }, [result, unifracKind])
 
+  // Only samples that actually lost mass are worth naming; a run with a
+  // complete placement file (or one produced before the field existed) reports
+  // nothing here.
+  const unplacedSamples = useMemo<[string, number][]>(() => {
+    const div = result?.diversity
+    if (!div?.unplaced_reads) return []
+    return div.samples
+      .map(s => [s, div.unplaced_reads?.[s] ?? 0] as [string, number])
+      .filter(([, n]) => n > 0)
+  }, [result])
+
   const exportMatrixCsv = () => {
     if (!result?.diversity || !activeMatrix) return
     const csv = formatDistanceMatrixCsv(result.diversity.samples, activeMatrix)
@@ -699,6 +710,22 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
                   </div>
                 ))}
               </div>
+
+              {/*
+                Reads the placement file left on no edge. They are excluded
+                from the abundances above rather than renormalised onto the
+                edges a query did keep, so the shortfall is stated instead of
+                being silently absorbed.
+              */}
+              {unplacedSamples.length > 0 && (
+                <p style={{ fontSize: '.75rem', margin: '0 0 12px', color: 'var(--color-fg-muted, #57606a)' }}>
+                  Unplaced reads (like-weight mass the placement file left on no edge, excluded
+                  from the abundances above):{' '}
+                  {unplacedSamples
+                    .map(([s, n]) => `${s} ${n.toFixed(2)}`)
+                    .join(', ')}
+                </p>
+              )}
 
               {/* Pairwise UniFrac table */}
               {activeMatrix && (

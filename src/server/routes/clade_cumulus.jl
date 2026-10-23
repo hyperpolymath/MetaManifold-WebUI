@@ -10,7 +10,7 @@
 # Canonical run DuckDB tables are read-only here; staged reassignment proposals
 # write only study-local sidecars under `projects/{study}/trees/.clade_cumulus/`.
 
-using DataFrames, OrderedCollections, SHA, Dates, JSON3
+using DataFrames, OrderedCollections, SHA, Dates, JSON3, DuckDB, DBInterface
 
 const _CC_SIDECAR_MAX_BYTES = 5 * 1024 * 1024
 
@@ -270,19 +270,29 @@ end
             tid = String(strip(string(r[id_col])))
             !haskey(row_by_id, tid) && (row_by_id[tid] = ri)
         end
-        # Map split `.jplace` tip IDs back to `(base_query_name, share)` weights.
+        # Map split `.jplace` tip IDs back to the share of their query's reads
+        # that belongs on that edge. The share is the candidate's raw
+        # like-weight ratio, never a ratio renormalised over the retained
+        # candidates: a multi-candidate placement already partitions the mass
+        # (its ratios sum to 1 within `PLACEMENT_WEIGHT_SUM_TOL`), while a
+        # single-candidate placement accepted at `PLACEMENT_SINGLE_MIN_LWR`
+        # carries only the mass behind that one site. Dividing by the retained
+        # total would turn a lone 0.6 placement into a weight of 1.0 and push
+        # the 0.4 the tool left unplaced onto the reported edge, inflating that
+        # tip in weighted UniFrac and in Faith's PD. The shortfall is reported
+        # as `unplaced_reads` below instead.
         tip_weights = Dict{String,Float64}()
         if jplace_str !== nothing && !isempty(strip(jplace_str))
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.weight for c in q.candidates); init = 0.0)
-                tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.weight / tw
+                        # `parse_jplace` has already rejected any ratio outside
+                        # [0, 1], so this needs no further clamping.
+                        tip_weights[tid] = cand.like_weight
                     end
                 end
             end
@@ -304,6 +314,32 @@ end
                     v = col_vals[ri]
                     mat[mi, ci] = ismissing(v) ? 0.0 : max(0.0, Float64(v)) * w
                 end
+            end
+
+            # Reads whose placement the file left on no edge at all: the
+            # like-weight ratios kept for a query need not reach 1, and the
+            # shortfall belongs to edges the placement tool discarded. Those
+            # reads are counted here rather than redistributed onto the edges
+            # that survived, so an abundance-weighted result can be read
+            # against the evidence that was actually placed. A row whose tips
+            # carry the full mass (every non-jplace ASV, and any partition
+            # complete within `PLACEMENT_WEIGHT_SUM_TOL`) contributes nothing.
+            row_weight = Dict{Int,Float64}()
+            for (ri, w) in taxa_rows
+                row_weight[ri] = get(row_weight, ri, 0.0) + w
+            end
+            short_rows = [(ri, 1.0 - wsum) for (ri, wsum) in row_weight
+                          if wsum < 1.0 - MetaManifold.CladeCumulus.PLACEMENT_WEIGHT_SUM_TOL]
+            unplaced_reads = OrderedDict{String,Float64}()
+            for sc in scols
+                col_vals = df[!, sc]
+                tot = 0.0
+                for (ri, lost_share) in short_rows
+                    v = col_vals[ri]
+                    ismissing(v) && continue
+                    tot += max(0.0, Float64(v)) * lost_share
+                end
+                unplaced_reads[sc] = tot
             end
             pd_by_sample = OrderedDict{String,Float64}(
                 sc => MetaManifold.CladeCumulus.faith_pd(@view(mat[:, ci]), taxa_vec, cc_res.phylo_root)
@@ -329,6 +365,7 @@ end
             diversity_payload = OrderedDict{String,Any}(
                 "samples"                     => scols,
                 "mapped_tips"                 => length(taxa_vec),
+                "unplaced_reads"              => unplaced_reads,
                 "faith_pd"                    => pd_by_sample,
                 "unweighted_unifrac"          => [uw[i, :] for i in 1:size(uw, 1)],
                 "weighted_unifrac"            => [w_raw[i, :] for i in 1:size(w_raw, 1)],

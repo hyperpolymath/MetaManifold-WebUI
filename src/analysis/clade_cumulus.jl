@@ -28,11 +28,31 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-# Placement tools may truncate a query's candidate list, so retained
-# like-weight ratios can legitimately sum to slightly less than 1 (a single
-# retained placement at 0.98 is complete evidence). Sums far from 1 indicate
-# a malformed or partial record and stay undecided.
-const PLACEMENT_WEIGHT_SUM_TOL = 0.05
+# A multi-candidate placement partitions one query's probability mass across
+# the edges it kept, so those like-weight ratios must sum to one: anything else
+# is a malformed or truncated record. This is a floating-point tolerance on an
+# exact identity, not slack for missing mass.
+const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
+
+# A single-candidate placement is the other shape the same file can take: the
+# tool reports one row whose `like_weight_ratio` is the share of the mass behind
+# that site, and the remainder is mass it did not place anywhere. Such a record
+# cannot be held to the sum-to-one identity above, so it is judged on its own
+# share instead and is decisive while at least half the mass supports it.
+#
+# These two rules replace a single blanket tolerance: widening
+# `PLACEMENT_WEIGHT_SUM_TOL` far enough to admit a lone 0.98 placement would
+# also stop a genuinely malformed multi-candidate partition from being caught.
+#
+# Accepting a placement and trusting all of its mass are different questions,
+# and the two consumers answer the second one differently on purpose.
+# `_graft_jplace_queries` builds a count view of the observed ASV table and
+# conserves reads: an unsplit query keeps its whole count at its one edge.
+# The `/clade-cumulus` diversity block instead weights each tip by the raw
+# like-weight ratio, so the mass the tool never placed stays off the tree and
+# is reported as `unplaced_reads` rather than renormalised onto the edge that
+# happened to be kept.
+const PLACEMENT_SINGLE_MIN_LWR = 0.5
 
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
@@ -208,9 +228,11 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
 
     function read_label_and_quoted(; capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
                                      capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing)::Tuple{String,Bool}
-        # An NHX comment immediately after ')' precedes the (usually empty)
-        # label, so the capture refs must be threaded through this first skip
-        # or the support tag is consumed as an anonymous comment.
+        # A support tag may sit between the label and the branch length, or
+        # directly after ')' with no label at all (`)[&&NHX:B=92]:0.1`). That
+        # leading comment is consumed by this first skip, so the capture refs
+        # have to be threaded through it or the tag is read as an anonymous
+        # comment and the support is lost.
         skip_ws_and_leading_comments!(capture_nhx = capture_nhx, capture_edge = capture_edge)
         pos[] > n && return ("", false)
         if bytes[pos[]] == UInt8('\'')
@@ -573,7 +595,12 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
 
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
-        elseif abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
+        elseif length(cands) == 1 && cands[1].like_weight < PLACEMENT_SINGLE_MIN_LWR
+            # One candidate but less than half the mass supports it: the rest of
+            # the mass is unexplained, so the placement is not decisive.
+            push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
+                "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
+        elseif length(cands) > 1 && abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
@@ -1029,8 +1056,8 @@ function _graft_jplace_queries(
 
     function walk(u::PhyloNode)::PhyloNode
         rebuilt_kids = PhyloNode[walk(ch) for ch in u.children]
-        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_num, rebuilt_kids)
-        specs = u.edge_num === nothing ? nothing : get(by_edge, u.edge_num, nothing)
+        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_number, rebuilt_kids)
+        specs = u.edge_number === nothing ? nothing : get(by_edge, u.edge_number, nothing)
         (specs === nothing || isempty(specs)) && return cur
 
         # Order grafts from most distal (closest to `cur`, smallest `distal`) to most proximal.
@@ -1048,7 +1075,7 @@ function _graft_jplace_queries(
             sub = PhyloNode(string("jplace_clade#", seq_auto[]), "", 0.0, 1.0, nothing, PhyloNode[sub, qtip])
         end
         rem_len = max(0.0, total_len - prev_distal)
-        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_num, sub.children)
+        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_number, sub.children)
     end
 
     walk(base_root)

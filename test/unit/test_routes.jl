@@ -932,5 +932,30 @@ _saved_root = SV.ServerState._root[]
 
 end
 
+@testset "Registered routes" begin
+    # Every route file is `include`d once into `Server`, and each routing macro
+    # appends to `Server.ROUTES`. A file included twice registers its routes
+    # twice, and no request test can reveal that: the second registration
+    # simply shadows the first. Assert the table holds no duplicate
+    # method+path pair.
+    registered = [(m, string(p)) for (m, p, _) in SV.ROUTES]
+    @test !isempty(registered)
+
+    seen = Dict{Tuple{String,String},Int}()
+    for k in registered
+        seen[k] = get(seen, k, 0) + 1
+    end
+    # Compared against an empty vector rather than asserted with `isempty`, so
+    # a failure names the route that doubled up instead of printing `false`.
+    duplicated = sort([k for (k, n) in seen if n > 1])
+    @test duplicated == Tuple{String,String}[]
+
+    # The Cladistics tab and the run-level CladeCumulus evidence view are
+    # served by two different route files; both must be registered.
+    paths = Set(p for (_, p) in registered)
+    @test any(occursin("/cladistics", p) for p in paths)
+    @test any(occursin("/clade-cumulus", p) for p in paths)
+end
+
 # Testsets above point the server at temporary roots.
 SV.ServerState._root[] = _saved_root
