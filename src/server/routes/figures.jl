@@ -26,21 +26,21 @@ function _figure_request_error(study::String, id::Union{String,Nothing}=nothing)
 end
 
 function _read_figure(study::String, id::String)
-    try JSON3.read(read(_figure_path(study, id), String)) catch; nothing end
+    try ijson_read(read(_figure_path(study, id))) catch; nothing end
 end
 
 @get "/api/v1/studies/{study}/figures" function(req, study::String)
     err = _figure_request_error(study)
     isnothing(err) || return err
     dir = _figures_dir(study)
-    isdir(dir) || return json([])
+    isdir(dir) || return jcs_json([])
     ids = [splitext(f)[1] for f in readdir(dir) if endswith(f, ".json") && _valid_figure_id(splitext(f)[1])]
     list = map(ids) do id
         doc = _read_figure(study, id)
         (; id, title = doc isa JSON3.Object ? string(get(doc, :title, id)) : id,
            modified = string(unix2datetime(mtime(_figure_path(study, id)))))
     end
-    json(sort(list; by = x -> x.modified, rev=true))
+    jcs_json(sort(list; by = x -> x.modified, rev=true))
 end
 
 @get "/api/v1/studies/{study}/figures/{id}" function(req, study::String, id::String)
@@ -64,12 +64,12 @@ end
 
 function _save_figure(req, study::String, id::String)
     length(req.body) <= _FIGURE_MAX_BYTES || return json_error(413, "too_large", "Figure documents are limited to 2 MB")
-    doc = try JSON3.read(String(req.body)) catch; nothing end
+    doc = try ijson_read(req.body) catch; nothing end
     doc isa JSON3.Object || return json_error(400, "invalid_body", "Body must be a JSON object")
     out = Dict{String,Any}(String(k) => v for (k, v) in doc)
     out["id"] = id
-    _write_atomic(_figure_path(study, id), JSON3.write(out))
-    json(out)
+    _write_atomic(_figure_path(study, id), String(jcs_bytes(out)))
+    jcs_json(out)
 end
 
 # Rendered copies are named after the figure's title and end in _{id}.png.
@@ -92,7 +92,7 @@ _figure_rasters(study::String, id::String) =
     write(tmp, bytes)
     foreach(f -> f == path || rm(f; force=true), _figure_rasters(study, id))
     mv(tmp, path; force=true)
-    json((; file=basename(path)))
+    jcs_json((; file=basename(path)))
 end
 
 @delete "/api/v1/studies/{study}/figures/{id}" function(req, study::String, id::String)
@@ -100,5 +100,5 @@ end
     isnothing(err) || return err
     foreach(f -> rm(f; force=true), _figure_rasters(study, id))
     rm(_figure_path(study, id); force=true)
-    json((; deleted=id))
+    jcs_json((; deleted=id))
 end

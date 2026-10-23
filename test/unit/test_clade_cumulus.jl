@@ -14,12 +14,12 @@ const EP = MetaManifold.Epistemic
 const CC = MetaManifold.CladeCumulus
 const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
-const SV = MetaManifold.Server
+const _CLADE_SV = MetaManifold.Server
 
 _cc_req(method::String, path::String, body::String = "") =
-    SV.Oxygen.internalrequest(
-        SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
-        middleware = SV._MIDDLEWARE,
+    _CLADE_SV.Oxygen.internalrequest(
+        _CLADE_SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
+        middleware = _CLADE_SV._MIDDLEWARE,
     )
 
 @testset "CladeCumulus & Phylogenetic Integration" begin
@@ -149,6 +149,28 @@ _cc_req(method::String, path::String, body::String = "") =
         @test jp.queries[4].status === :undecided
         @test startswith(jp.queries[4].reason, "weight_sum_out_of_tolerance")
 
+        _lwr_doc(ps) = JSON3.write(OrderedDict(
+            "version" => 3,
+            "tree" => "((Ref_1:0.1{0},Ref_2:0.2{1})95:0.3{2},Ref_3:0.4{3}){4};",
+            "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
+            "placements" => ps,
+        ))
+        _single_at(w) = CC.parse_jplace(_lwr_doc([
+            OrderedDict("n" => ["Q"], "p" => [[0, -100.0, w, 0.01, 0.02]]),
+        ])).queries[1]
+        _partition(a, b) = CC.parse_jplace(_lwr_doc([
+            OrderedDict("n" => ["Q"], "p" => [[0, -100.0, a, 0.01, 0.02], [1, -100.4, b, 0.01, 0.03]]),
+        ])).queries[1]
+
+        @test _single_at(0.60).status === :valid
+        @test _single_at(0.60).max_lwr ≈ 0.60 atol = 1e-12
+        @test _single_at(CC.PLACEMENT_SINGLE_MIN_LWR).status === :valid
+        @test _single_at(0.49).status === :undecided
+        @test _partition(0.70, 0.30).status === :valid
+        @test _partition(0.80, 0.16).status === :undecided
+        @test _partition(0.80, 0.24).status === :undecided
+        @test _partition(0.60, 0.60).status === :undecided
+
         # Placed query read counts project onto the reference tree edges without losing reads,
         # and `lwr_threshold = 0.95` marks `Q_borderline` (LWR = 0.85) as `present_in_some`
         # even when `support_threshold = 0.80`.
@@ -277,8 +299,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
 
     @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
-        old_root = SV.ServerState._root[]
-        SV.ServerState.set_root!(tmp)
+        old_root = _CLADE_SV.ServerState._root[]
+        _CLADE_SV.ServerState.set_root!(tmp)
         try
             data_dir = joinpath(tmp, "data", "StudyCC", "run1")
             mkpath(data_dir)
@@ -310,6 +332,7 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             con = DBInterface.connect(db)
             DuckDB.register_data_frame(con, df, "src_df")
             DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            DuckDB.unregister_data_frame(con, "src_df")
             DBInterface.close!(con)
             close(db)
             before_db_sha = bytes2hex(open(sha256, db_path))
@@ -394,7 +417,25 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test v_allow.proposal_file !== nothing
             @test isfile(joinpath(trees_dir, ".clade_cumulus", String(v_allow.proposal_file)))
             @test v_allow.proposed_root.cumulative_count ≈ 110.0 atol = 1e-9
-            @test Float64(v_allow.proposed_root.children[1].subtree_pd) > before_target_pd
+            # Subtree PD includes each active edge exactly once, including the
+            # target's own incoming edge (main's node-local PD convention).
+            function proposed_node(u, id)
+                u.id == id && return u
+                for child in u.children
+                    found = proposed_node(child, id)
+                    found !== nothing && return found
+                end
+                nothing
+            end
+            proposed_target = proposed_node(v_allow.proposed_root, high_clade.id)
+            @test proposed_target !== nothing
+            if proposed_target !== nothing
+                expected_pd = max(0.0, Float64(proposed_target.branch_length)) +
+                              sum((Float64(ch.subtree_pd) for ch in proposed_target.children
+                                   if ch.cumulative_count > 0); init=0.0)
+                @test Float64(proposed_target.subtree_pd) ≈ expected_pd atol = 1e-10
+                @test Float64(proposed_target.subtree_pd) != before_target_pd
+            end
 
             # Re-saving under a different threshold writes a distinct immutable sidecar file
             r_allow2 = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus/validate-move", JSON3.write(Dict(
@@ -414,6 +455,28 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             # Canonical DuckDB database is strictly untouched byte-for-byte!
             @test bytes2hex(open(sha256, db_path)) == before_db_sha
 
+            # 6. POST combined mode against a study `.jplace` artifact
+            jplace_payload = JSON3.write(OrderedDict(
+                "version" => 3,
+                "tree" => "((ASV_1:0.05{0},ASV_2:0.05{1})0.96:0.20{2},ASV_3:0.08{3}){4};",
+                "fields" => ["edge_num", "likelihood", "like_weight_ratio", "distal_length", "pendant_length"],
+                "placements" => [
+                    OrderedDict("n" => ["ASV_4"], "p" => [[3, -10.0, 0.99, 0.02, 0.03]]),
+                ],
+            ))
+            write(joinpath(trees_dir, "placed.jplace"), jplace_payload)
+            r_jp = _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus", JSON3.write(Dict(
+                "table" => "merged",
+                "mode" => "combined",
+                "treeSource" => "study_tree",
+                "treeFile" => "placed.jplace",
+            )))
+            @test r_jp.status == 200
+            jp_body = JSON3.read(String(r_jp.body))
+            @test jp_body.diversity !== nothing
+            @test jp_body.diversity.unplaced_reads.SampleA ≈ 0.05 atol = 1e-9
+            @test jp_body.diversity.unplaced_reads.SampleB ≈ 0.10 atol = 1e-9
+
             # Path traversal attempts are rejected with 400!
             @test _cc_req("GET", "/api/v1/studies/..%2Fetc/runs/run1/clade-cumulus/sources").status == 400
             @test _cc_req("POST", "/api/v1/studies/StudyCC/runs/run1/clade-cumulus", JSON3.write(Dict(
@@ -421,7 +484,7 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                 "treeFile" => "../secret.nwk",
             ))).status == 400
         finally
-            SV.ServerState._root[] = old_root
+            _CLADE_SV.ServerState._root[] = old_root
             rm(tmp; recursive = true, force = true)
         end
     end

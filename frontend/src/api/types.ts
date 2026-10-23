@@ -968,6 +968,7 @@ export interface CladeCumulusRequest {
 export interface CladeCumulusDiversity {
   samples: string[]
   mapped_tips: number
+  unplaced_reads?: Record<string, number>
   faith_pd: Record<string, number>
   unweighted_unifrac: number[][]
   weighted_unifrac: number[][]
