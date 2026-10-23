@@ -38,11 +38,97 @@ function _statistics_guard(f::Function)
     end
 end
 
+function _json_quoted_end(bytes, start::Int)
+    i = start + 1
+    while i <= length(bytes)
+        if bytes[i] == 0x5c # escaped byte
+            i += 2
+        elseif bytes[i] == 0x22
+            return i
+        else
+            i += 1
+        end
+    end
+    nothing
+end
+
+function _json_skip_whitespace(bytes, i::Int)
+    while i <= length(bytes) && bytes[i] in (0x20, 0x09, 0x0a, 0x0d)
+        i += 1
+    end
+    i
+end
+
+function _reject_noninteger_count_tokens(bytes, start::Int)
+    depth = 0
+    i = start
+    while i <= length(bytes)
+        byte = bytes[i]
+        if byte == 0x22
+            end_quote = _json_quoted_end(bytes, i)
+            isnothing(end_quote) && return nothing # JSON3 reports the syntax error.
+            i = end_quote + 1
+        elseif byte == 0x5b
+            depth += 1
+            i += 1
+        elseif byte == 0x5d
+            depth -= 1
+            i += 1
+            depth == 0 && return nothing
+        elseif byte == 0x2d || 0x30 <= byte <= 0x39
+            token_start = i
+            while i <= length(bytes) &&
+                  (bytes[i] in (0x2b, 0x2d, 0x2e, 0x45, 0x65) || 0x30 <= bytes[i] <= 0x39)
+                i += 1
+            end
+            token = String(collect(bytes[token_start:i-1]))
+            occursin(r"[.eE]", token) && throw(UnsupportedRepresentationError(
+                "an integer JSON count token", token,
+                "validated statistics; decimal and exponent tokens are not exact integers"))
+        else
+            i += 1
+        end
+    end
+    nothing
+end
+
+# JSON3 may normalise integral decimal/exponent tokens to an integer value,
+# losing the source representation. Inspect the raw `counts` array first so
+# `1.0` and `1e0` cannot silently pass an exact-count boundary as `1`.
+function _reject_approximate_count_tokens(raw::String)
+    bytes = codeunits(raw)
+    i = 1
+    while i <= length(bytes)
+        if bytes[i] != 0x22
+            i += 1
+            continue
+        end
+        end_quote = _json_quoted_end(bytes, i)
+        isnothing(end_quote) && return nothing # JSON3 reports the syntax error.
+        key = try
+            JSON3.read(String(collect(bytes[i:end_quote])))
+        catch
+            nothing
+        end
+        after_key = _json_skip_whitespace(bytes, end_quote + 1)
+        if key == "counts" && after_key <= length(bytes) && bytes[after_key] == 0x3a
+            value_start = _json_skip_whitespace(bytes, after_key + 1)
+            if value_start <= length(bytes) && bytes[value_start] == 0x5b
+                _reject_noninteger_count_tokens(bytes, value_start)
+            end
+        end
+        i = end_quote + 1
+    end
+    nothing
+end
+
 function _statistics_body(req)
     length(req.body) <= _STATISTICS_REQUEST_LIMIT || throw(ResourceLimitError(
         "request bytes", _STATISTICS_REQUEST_LIMIT, length(req.body)))
+    raw = String(req.body)
+    _reject_approximate_count_tokens(raw)
     parsed = try
-        JSON3.read(String(req.body))
+        JSON3.read(raw)
     catch
         throw(ArgumentError("request body is not valid JSON"))
     end
