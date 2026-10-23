@@ -98,6 +98,7 @@ function main()
         baseline = try
             JSON3.read(read(baseline_path, String))
         catch err
+            err isa InterruptException && rethrow()
             error("could not read benchmark baseline $(baseline_path): $(sprint(showerror, err))")
         end
         regressions = String[]
