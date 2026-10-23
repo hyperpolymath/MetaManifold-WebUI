@@ -41,8 +41,10 @@ end
 function _statistics_body(req)
     length(req.body) <= _STATISTICS_REQUEST_LIMIT || throw(ResourceLimitError(
         "request bytes", _STATISTICS_REQUEST_LIMIT, length(req.body)))
+    raw = String(req.body)
+    _reject_float_count_tokens(raw)
     parsed = try
-        JSON3.read(String(req.body))
+        JSON3.read(raw)
     catch
         throw(ArgumentError("request body is not valid JSON"))
     end
@@ -310,8 +312,9 @@ function _validated_integer_sample_columns(con, table::String, columns::Vector{S
     samples
 end
 
-"""Read and aggregate an integer-safe run table. Only GROUP BY is done in SQL;
-all count addition is Julia BigInt. No SQL SUM and no Float64 matrix is used."""
+"""Read and aggregate an integer-safe run table. SQL only selects bounded rows;
+feature grouping and all count addition happen in Julia BigInt. No SQL SUM or
+Float64 matrix is used."""
 function _reject_float_count_filters(sample_columns::Vector{String}, params::Dict{String,String})
     for sample in sample_columns, prefix in ("col_min.", "col_max.")
         key = prefix * sample
@@ -348,28 +351,29 @@ function _validated_duckdb_counts(con, table::String, columns::Vector{String};
         "COALESCE(NULLIF(CAST($(_sql_identifier(taxon)) AS VARCHAR), ''), 'Unassigned')"
     end
     count_columns = join([_sql_identifier(c) for c in samples], ", ")
-    # Rows sharing a feature (e.g. several sequences in one genus) are summed
-    # here, in BigInt, not in SQL: DuckDB refuses bare count columns beside
-    # GROUP BY, and SUM over HUGEINT counts would overflow exactly the values
-    # this path exists to keep exact. ORDER BY keeps features sorted and each
-    # feature's rows adjacent.
+    # Bound the raw rows before materialising the result. SQL deliberately does
+    # no SUM: feature-level addition is performed below with BigInt so HUGEINT
+    # values cannot overflow while duplicate taxonomy rows are aggregated.
+    max_rows = div(MAX_CELLS, length(samples))
+    count_sql = "SELECT COUNT(*) AS n FROM $(_sql_identifier(table)) " * where_clause
+    row_count = Int(only(DataFrame(DBInterface.execute(con, count_sql, where_params))).n)
+    if row_count > max_rows
+        observed_cells = Int(min(BigInt(row_count) * length(samples), BigInt(typemax(Int))))
+        throw(ResourceLimitError("input table cells", MAX_CELLS, observed_cells))
+    end
+    row_count > 0 || throw(ArgumentError("no rows remain after filtering"))
     sql = "SELECT $feature_expression AS feature, $count_columns FROM $(_sql_identifier(table)) " *
-          "$where_clause ORDER BY feature LIMIT $(MAX_CELLS + 1)"
+          "$where_clause ORDER BY feature LIMIT $max_rows"
     frame = DataFrame(DBInterface.execute(con, sql, where_params))
-    nrow(frame) <= MAX_CELLS || throw(ResourceLimitError("rows", MAX_CELLS, nrow(frame)))
-    nrow(frame) > 0 || throw(ArgumentError("no rows remain after filtering"))
 
-    features = String[]
-    feature_rows = Vector{BigInt}[]
+    aggregated = Dict{String,Vector{BigInt}}()
     for (i, row) in enumerate(eachrow(frame))
         ismissing(row.feature) && throw(UnsupportedRepresentationError(
             "a non-missing feature label", "missing", "validated run statistics row $i"))
         feature = string(row.feature)
-        if isempty(features) || features[end] != feature
-            push!(features, feature)
-            push!(feature_rows, zeros(BigInt, length(samples)))
+        feature_counts = get!(aggregated, feature) do
+            zeros(BigInt, length(samples))
         end
-        target = feature_rows[end]
         for (j, sample) in enumerate(samples)
             value = row[Symbol(sample)]
             ismissing(value) && throw(UnsupportedRepresentationError(
@@ -378,15 +382,15 @@ function _validated_duckdb_counts(con, table::String, columns::Vector{String};
                 "an integer count", repr(value), "feature '$feature', sample '$sample'"))
             value >= 0 || throw(ArgumentError(
                 "negative count $value at feature '$feature', sample '$sample'"))
-            target[j] += BigInt(value) # every addition is exact BigInt
+            feature_counts[j] += BigInt(value) # every addition is exact BigInt
         end
     end
+
+    features = sort!(collect(keys(aggregated)))
     counts = Matrix{BigInt}(undef, length(features), length(samples))
-    for (i, feature_row) in enumerate(feature_rows)
-        counts[i, :] = feature_row
+    for (i, feature) in enumerate(features)
+        counts[i, :] = aggregated[feature]
     end
-    length(features) * length(samples) <= MAX_CELLS || throw(ResourceLimitError(
-        "table cells", MAX_CELLS, length(features) * length(samples)))
     ExactSummaries.validate_coordinates(counts, samples, features)
     counts, samples, features
 end
@@ -425,7 +429,6 @@ end
 @post "/api/v1/statistics/summaries" function(req)
     _statistics_guard() do
         body = _statistics_body(req)
-        _reject_float_count_tokens(String(req.body))
         policy = _statistics_policy(body)
         counts, labels, features, groups = _direct_count_input(body)
         result = _run_statistics(counts, labels, features, groups, policy)

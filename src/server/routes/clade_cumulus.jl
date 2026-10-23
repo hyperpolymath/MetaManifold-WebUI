@@ -75,19 +75,14 @@ function _load_run_table_df(study::AbstractString, run::AbstractString, table::A
     db_path = joinpath(dir, "results.duckdb")
     isfile(db_path) || return (nothing, nothing, json_error(404, "no_results",
         "No results database for run '$run'"))
-    db = DuckDB.DB(db_path)
-    con = DBInterface.connect(db)
-    try
+    with_results_db(dir) do con
         cols = _duckdb_columns(con, table)
         isempty(cols) && return (nothing, nothing, json_error(404, "table_not_found",
             "Table '$table' not found in run '$run'"))
         scols = _sample_count_columns(con, table)
         order = _stable_order_clause(cols)
         df = DataFrame(DBInterface.execute(con, "SELECT * FROM \"$table\" $order"))
-        return (df, (db_path = db_path, sample_cols = scols, columns = cols), nothing)
-    finally
-        DBInterface.close!(con)
-        close(db)
+        (df, (db_path = db_path, sample_cols = scols, columns = cols), nothing)
     end
 end
 
@@ -97,7 +92,7 @@ function _resolve_tree_inputs_from_request(
     source_digests::OrderedDict{String,String},
 )
     tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
-    tree_file = strip(string(get(body, :treeFile, "")))
+    tree_file = String(strip(string(get(body, :treeFile, ""))))
     inline_newick = strip(string(get(body, :newick, "")))
 
     if tree_source == "study_tree" || (!isempty(tree_file) && tree_source == "auto")
@@ -142,10 +137,9 @@ end
     dir = _require_duckdb(study, run; group)
     db_path = isnothing(dir) ? nothing : joinpath(dir, "results.duckdb")
     tables_info = OrderedDict{String,Any}[]
-    if !isnothing(db_path) && isfile(db_path)
-        db = DuckDB.DB(db_path)
-        con = DBInterface.connect(db)
-        try
+    if !isnothing(dir) && !isnothing(db_path) && isfile(db_path)
+        tables_info = with_results_db(dir) do con
+            available = OrderedDict{String,Any}[]
             # Real tables only: SHOW TABLES also lists views, and a view backed
             # by a session-registered DataFrame cannot be bound (let alone
             # counted) from this fresh connection.
@@ -156,10 +150,11 @@ end
                 cols = _duckdb_columns(con, t)
                 scols = _sample_count_columns(con, t)
                 isempty(scols) && continue
-                nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
+                nrows = Int(only(DataFrame(DBInterface.execute(con,
+                    "SELECT COUNT(*) AS n FROM \"$t\""))).n)
                 has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
                 ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
-                push!(tables_info, OrderedDict{String,Any}(
+                push!(available, OrderedDict{String,Any}(
                     "table"        => t,
                     "row_count"    => nrows,
                     "sample_count" => length(scols),
@@ -167,9 +162,7 @@ end
                     "ranks"        => ranks,
                 ))
             end
-        finally
-            DBInterface.close!(con)
-            close(db)
+            available
         end
     end
 
@@ -208,7 +201,7 @@ end
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))
@@ -276,13 +269,13 @@ end
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.weight for c in q.candidates); init = 0.0)
+                tw = sum((c.like_weight for c in q.candidates); init = 0.0)
                 tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.weight / tw
+                        tip_weights[tid] = cand.like_weight / tw
                     end
                 end
             end
@@ -399,7 +392,7 @@ end
     (isempty(source_id) || isempty(target_id)) &&
         return json_error(400, "missing_clade_ids", "Both sourceId and targetId are required")
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))

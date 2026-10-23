@@ -1029,8 +1029,8 @@ function _graft_jplace_queries(
 
     function walk(u::PhyloNode)::PhyloNode
         rebuilt_kids = PhyloNode[walk(ch) for ch in u.children]
-        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_num, rebuilt_kids)
-        specs = u.edge_num === nothing ? nothing : get(by_edge, u.edge_num, nothing)
+        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_number, rebuilt_kids)
+        specs = u.edge_number === nothing ? nothing : get(by_edge, u.edge_number, nothing)
         (specs === nothing || isempty(specs)) && return cur
 
         # Order grafts from most distal (closest to `cur`, smallest `distal`) to most proximal.
@@ -1048,7 +1048,7 @@ function _graft_jplace_queries(
             sub = PhyloNode(string("jplace_clade#", seq_auto[]), "", 0.0, 1.0, nothing, PhyloNode[sub, qtip])
         end
         rem_len = max(0.0, total_len - prev_distal)
-        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_num, sub.children)
+        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_number, sub.children)
     end
 
     walk(base_root)
@@ -1791,11 +1791,12 @@ function _reaggregate_after_move(
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
             active_here = u.cumulative_count > 0.0
+            sub_pd = active_here && !is_root ? max(0.0, u.branch_length) : 0.0
             st = Epistemic.epistemic_status(case_obj, u.id)
             leaf_node = CladeNode(
                 u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
                 u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
-                u.branch_length, u.support, 0.0, u.dominant_taxon, u.taxon_purity, mono,
+                u.branch_length, u.support, sub_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
             return (leaf_node, tmap, 1, active_here)
@@ -1817,12 +1818,16 @@ function _reaggregate_after_move(
             n_sub_tips += nt
             if ch_active
                 any_active = true
-                sub_pd += max(0.0, rk.branch_length) + rk.subtree_pd
+                sub_pd += rk.subtree_pd
             end
             for (k, v) in ct
                 merged_taxa[k] = get(merged_taxa, k, 0) + v
             end
         end
+
+        # Match `clade_faith_pd`: an active non-root clade contributes its own
+        # incoming branch in addition to the branches accumulated below it.
+        !is_root && any_active && (sub_pd += max(0.0, u.branch_length))
 
         dom_tx = nothing
         dom_n = 0

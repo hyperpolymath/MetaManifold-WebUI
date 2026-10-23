@@ -1,25 +1,25 @@
 using Test
 using JSON3
 using MetaManifold
-SV = MetaManifold.Server
+const VS_SERVER = MetaManifold.Server
 
 function _vs_request(method::String, path::String, body; raw::Bool=false)
     payload = raw ? body : JSON3.write(body)
-    req = SV.HTTP.Request(method, path, ["Content-Type" => "application/json"], payload)
-    SV.Oxygen.internalrequest(req)
+    req = VS_SERVER.HTTP.Request(method, path, ["Content-Type" => "application/json"], payload)
+    VS_SERVER.Oxygen.internalrequest(req)
 end
 _vs_post(path, body; raw=false) = _vs_request("POST", path, body; raw)
 _vs_get(path) = _vs_request("GET", path, "")
 
 function _vs_with_root(f::Function)
     root = mktempdir()
-    old = SV.ServerState._root[]
+    old = VS_SERVER.ServerState._root[]
     try
-        SV.ServerState.set_root!(root)
+        VS_SERVER.ServerState.set_root!(root)
         mkpath(joinpath(root, "projects"))
         f(root)
     finally
-        SV.ServerState._root[] = old
+        VS_SERVER.ServerState._root[] = old
         rm(root; recursive=true, force=true)
     end
 end
@@ -99,12 +99,15 @@ end
             @test response.status == 422
             @test JSON3.read(String(response.body)).error == "invalid_numeric_input"
         end
-        # Decimal and exponent notation are float tokens even though their
-        # values are integral. These go through raw bodies: a Dict round-trip
-        # cannot represent the token distinction (JSON3.write(1.0) is "1").
-        for token in ("1.0", "1e0")
-            raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[$token]]}"""
-            @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 422
+        # Raw bodies preserve numeric syntax; JSON3.write may normalize 1.0 to 1.
+        for bad in ("1.0", "1.5", "-1", "9007199254740993", "1e0")
+            raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A","B"],"feature_labels":["f"],"counts":[[$bad,1]],"persist":false}"""
+            response = _vs_post("/api/v1/statistics/summaries", raw; raw=true)
+            if response.status != 422
+                @error "numeric input did not fail closed" token=bad status=response.status body=String(response.body)
+            end
+            @test response.status == 422
+            @test JSON3.read(String(response.body)).error == "invalid_numeric_input"
         end
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))
@@ -168,8 +171,10 @@ function _vs_make_run(root::String)
         DBInterface.execute(con, """CREATE TABLE merged_null (
             SeqName VARCHAR, Genus VARCHAR, s1 BIGINT)""")
         DBInterface.execute(con, "INSERT INTO merged_null VALUES ('x', 'G', NULL)")
+        DBInterface.execute(con, "CHECKPOINT")
     finally
         DBInterface.close!(con)
+        DBInterface.close!(db)
         close(db)
     end
 end
@@ -181,6 +186,9 @@ end
         request = Dict("numeric_policy" => Dict("mode" => "exact_counts"),
                        "table" => "merged", "taxonomic_level" => "Genus")
         response = _vs_post(path, request)
+        if response.status != 200
+            @error "validated run statistics request failed" status=response.status body=String(response.body)
+        end
         @test response.status == 200
         result = JSON3.read(String(response.body))
         @test result.status == "partial" # Empty has undefined proportions.
