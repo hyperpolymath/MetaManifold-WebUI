@@ -20,6 +20,10 @@ for file in files
                 issue = ex
                 break
             end
+            if ex === :end
+                issue = "stray `end` at top level (missing or duplicated opener in this file)"
+                break
+            end
             next_position > position ||
                 error("Julia parser made no progress at code unit $position")
             position = next_position
@@ -30,7 +34,7 @@ for file in files
     if !isnothing(issue)
         failed = true
         println(stderr, "Julia parse failed in $file:")
-        println(stderr, sprint(showerror, issue))
+        println(stderr, issue isa AbstractString ? issue : sprint(showerror, issue))
     end
 end
 failed && exit(1)

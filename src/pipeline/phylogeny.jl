@@ -35,6 +35,7 @@ export REFERENCE_STEPS, PLACEMENT_STEPS, Step, placement_settings, run_workflow,
     using ..Validation
     import ..Tools
     using ..Tools: tool_bin, _sq, _run_logged, _safe_optional_args, _num
+    import ..Tools
     using ..RemoteExec: run_remote, checked_target
     import ..Provenance
 

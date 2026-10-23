@@ -75,9 +75,7 @@ function _load_run_table_df(study::AbstractString, run::AbstractString, table::A
     db_path = joinpath(dir, "results.duckdb")
     isfile(db_path) || return (nothing, nothing, json_error(404, "no_results",
         "No results database for run '$run'"))
-    db = DuckDB.DB(db_path)
-    con = DBInterface.connect(db)
-    try
+    with_results_db(dir) do con
         cols = _duckdb_columns(con, table)
         isempty(cols) && return (nothing, nothing, json_error(404, "table_not_found",
             "Table '$table' not found in run '$run'"))
@@ -85,9 +83,6 @@ function _load_run_table_df(study::AbstractString, run::AbstractString, table::A
         order = _stable_order_clause(cols)
         df = DataFrame(DBInterface.execute(con, "SELECT * FROM \"$table\" $order"))
         return (df, (db_path = db_path, sample_cols = scols, columns = cols), nothing)
-    finally
-        DBInterface.close!(con)
-        close(db)
     end
 end
 
@@ -142,10 +137,9 @@ end
     dir = _require_duckdb(study, run; group)
     db_path = isnothing(dir) ? nothing : joinpath(dir, "results.duckdb")
     tables_info = OrderedDict{String,Any}[]
-    if !isnothing(db_path) && isfile(db_path)
-        db = DuckDB.DB(db_path)
-        con = DBInterface.connect(db)
-        try
+    if !isnothing(dir) && !isnothing(db_path) && isfile(db_path)
+        tables_info = with_results_db(dir) do con
+            available = OrderedDict{String,Any}[]
             # Real tables only: SHOW TABLES also lists views, and a view backed
             # by a session-registered DataFrame cannot be bound (let alone
             # counted) from this fresh connection.
@@ -159,7 +153,7 @@ end
                 nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
                 has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
                 ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
-                push!(tables_info, OrderedDict{String,Any}(
+                push!(available, OrderedDict{String,Any}(
                     "table"        => t,
                     "row_count"    => nrows,
                     "sample_count" => length(scols),
@@ -167,9 +161,7 @@ end
                     "ranks"        => ranks,
                 ))
             end
-        finally
-            DBInterface.close!(con)
-            close(db)
+            available
         end
     end
 
@@ -279,19 +271,19 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
             tid = String(strip(string(r[id_col])))
             !haskey(row_by_id, tid) && (row_by_id[tid] = ri)
         end
-        # Map split `.jplace` tip IDs back to `(base_query_name, share)` weights.
+        # Weight each placed `.jplace` tip by its raw like-weight ratio so any
+        # unplaced mass remains off the tree rather than renormalised onto the
+        # kept edge(s).
         tip_weights = Dict{String,Float64}()
         if jplace_str !== nothing && !isempty(strip(jplace_str))
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.like_weight for c in q.candidates); init = 0.0)
-                tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.like_weight / tw
+                        tip_weights[tid] = cand.like_weight
                     end
                 end
             end
@@ -313,6 +305,23 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
                     v = col_vals[ri]
                     mat[mi, ci] = ismissing(v) ? 0.0 : max(0.0, Float64(v)) * w
                 end
+            end
+            row_weight = Dict{Int,Float64}()
+            for (ri, w) in taxa_rows
+                row_weight[ri] = get(row_weight, ri, 0.0) + w
+            end
+            short_rows = [(ri, 1.0 - wsum) for (ri, wsum) in row_weight
+                          if wsum < 1.0 - MetaManifold.CladeCumulus.PLACEMENT_WEIGHT_SUM_TOL]
+            unplaced_reads = OrderedDict{String,Float64}()
+            for sc in scols
+                col_vals = df[!, sc]
+                tot = 0.0
+                for (ri, lost_share) in short_rows
+                    v = col_vals[ri]
+                    ismissing(v) && continue
+                    tot += max(0.0, Float64(v)) * lost_share
+                end
+                unplaced_reads[sc] = tot
             end
             pd_by_sample = OrderedDict{String,Float64}(
                 sc => MetaManifold.CladeCumulus.faith_pd(@view(mat[:, ci]), taxa_vec, cc_res.phylo_root)
@@ -338,6 +347,7 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
             diversity_payload = OrderedDict{String,Any}(
                 "samples"                     => scols,
                 "mapped_tips"                 => length(taxa_vec),
+                "unplaced_reads"              => unplaced_reads,
                 "faith_pd"                    => pd_by_sample,
                 "unweighted_unifrac"          => [uw[i, :] for i in 1:size(uw, 1)],
                 "weighted_unifrac"            => [w_raw[i, :] for i in 1:size(w_raw, 1)],
