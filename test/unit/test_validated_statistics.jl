@@ -264,3 +264,23 @@ end
         @test count(b -> b.derived_analysis.created, bodies) == 1
     end
 end
+
+@testset "Statistics request body preserves byte buffers and counts UTF-8 bytes" begin
+    raw_bytes = Vector{UInt8}(codeunits("{\"counts\":[[1,2]]}"))
+    parsed_bytes = VALIDATED_SV._statistics_body((; body = raw_bytes); reject_noninteger_tokens = true)
+    @test collect(parsed_bytes.counts[1]) == [1, 2]
+    # Julia 1.12 `String(::Vector{UInt8})` truncates in place; `_statistics_body` must copy first.
+    @test length(raw_bytes) == ncodeunits("{\"counts\":[[1,2]]}")
+
+    sub_body = SubString("  {\"label\":\"ok\"}  ", 3, 16)
+    parsed_sub = VALIDATED_SV._statistics_body((; body = sub_body))
+    @test String(parsed_sub.label) == "ok"
+
+    # Multi-byte UTF-8 input whose codepoint count is under the limit while its
+    # UTF-8 byte count exceeds `_STATISTICS_REQUEST_LIMIT` must fail on bytes.
+    limit = VALIDATED_SV._STATISTICS_REQUEST_LIMIT
+    multibyte_payload = SubString("{\"v\":\"" * repeat("é", div(limit, 2) + 8) * "\"}", 1)
+    @test length(multibyte_payload) < limit
+    @test ncodeunits(multibyte_payload) > limit
+    @test_throws MetaManifold.NumericPolicy.ResourceLimitError VALIDATED_SV._statistics_body((; body = multibyte_payload))
+end
