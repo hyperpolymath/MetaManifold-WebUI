@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 import sys
 
-PRECISION = 220
+PRECISION = 460
 
 
 def references() -> dict[str, str]:
