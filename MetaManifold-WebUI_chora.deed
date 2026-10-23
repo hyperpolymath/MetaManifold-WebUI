@@ -20,7 +20,7 @@
     :enforcement ".github/workflows/")
   (status
     :evidence-source ".github/workflows/governance.yml"
-    :evidence-status "Fork governance lane only: DEED syntax and the Hypatia verdict grid with gitbot-fleet report-backs. Upstream owns the code and its CI; this deed describes the fork.")
+    :evidence-status "Fork governance lane only: DEED syntax, the K9 conformance grid (no contracts yet; grey corpus), and the Hypatia verdict grid with gitbot-fleet report-backs. Upstream owns the code and its CI; this deed describes the fork.")
   (policies
     (licensing
       :initial-assignment "New files the fork authors carry MPL-2.0 with an SPDX header, as upstream CONTRIBUTING.md permits."

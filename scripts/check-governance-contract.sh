@@ -141,6 +141,48 @@ else
   fail "expected one SARIF upload site, found $upload_count"
 fi
 
+# These are independent conformance families. An empty K9 corpus must be
+# shown explicitly; missing semantic evidence must not become a green DEED row.
+contains "$caller" 'uses: ./.github/workflows/k9-conformance-reusable.yml' \
+  'K9 validation uses the guarded fork-local reusable'
+k9_workflow="$(cat .github/workflows/k9-conformance-reusable.yml)"
+contains "$k9_workflow" 'ref: c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \
+  'the K9 validator and renderer use the immutable standards source'
+not_contains "$k9_workflow" 'ref: ${{ job.workflow_sha }}' \
+  'the K9 standards checkout cannot use the caller SHA'
+contains "$k9_workflow" 'if [ -f "$RUNNER_TEMP/corpus.log" ]; then' \
+  'optional corpus-log copying cannot fail an empty K9 corpus'
+contains "$caller" 'fail-on-indeterminate: true' \
+  'missing K9 semantic evidence fails closed'
+contains "$caller" 'needs: [deed, k9, hypatia]' \
+  'the PR verdict waits for all three independent lanes'
+contains "$caller" 'name: k9-grid' 'the K9 artifact remains visible in the PR verdict'
+contains "$caller" '${K9_VERDICT:-orange}' 'an absent K9 verdict is indeterminate'
+
+secret_workflow="$(cat .github/workflows/secret-scanner.yml)"
+contains "$secret_workflow" 'uses: ./.github/workflows/secret-scanner-reusable.yml' \
+  'full-history secret scanning uses the guarded fork-local reusable'
+secret_reusable="$(cat .github/workflows/secret-scanner-reusable.yml)"
+contains "$secret_reusable" 'GITLEAKS_VERSION=8.30.1' 'Gitleaks uses the tested current detector'
+contains "$secret_reusable" 'SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb' \
+  'the scanner binary matches the upstream release-asset digest'
+contains "$secret_reusable" 'ref: c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \
+  'the estate baseline remains pinned to the audited standards source'
+contains "$secret_reusable" 'fetch-depth: 0' 'secret scanning retains full Git history'
+not_contains "$secret_reusable" 'ref: ${{ job.workflow_sha }}' \
+  'secret baseline checkout cannot use the caller SHA'
+not_contains "$secret_workflow" 'secrets:' 'the secret scanner receives no caller secrets'
+not_contains "$secret_workflow" 'continue-on-error:' 'secret scanner failures cannot be advisory'
+not_contains "$secret_workflow" 'pull_request_target:' 'secret scanning does not use a privileged PR trigger'
+scorecard_workflow="$(cat .github/workflows/scorecard.yml)"
+contains "$scorecard_workflow" 'uses: hyperpolymath/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \
+  'Scorecard uses the audited immutable reusable'
+if grep -Eq '^  pull_request(_target)?:' <<<"$scorecard_workflow"; then
+  fail 'Scorecard publication must not run against PR code'
+else
+  pass 'Scorecard OIDC publication is not enabled for PRs'
+fi
+
 if [ "$failures" -gt 0 ]; then
   printf 'governance contract: %d failure(s)\n' "$failures" >&2
   exit 1
