@@ -20,8 +20,15 @@ for file in files
                 issue = ex
                 break
             end
+            # A bare `end` at the top level parses without error and then fails
+            # at lowering (`syntax: "end" at top level`), which is how a file
+            # that lost its `module Foo` opener reaches CI looking syntactically
+            # fine. An `end` balances exactly one opener, so top level cannot
+            # hold one: this is a missing or duplicated opener, and the file
+            # would not load.
             if ex === :end
-                issue = "stray `end` at top level (missing or duplicated opener in this file)"
+                issue = "stray `end` at top level (a `module`/`function`/... opener " *
+                        "is missing or was duplicated in this file)"
                 break
             end
             next_position > position ||
