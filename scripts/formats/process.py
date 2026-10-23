@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
-"""Bounded POSIX IO for a deliberately closed set of format-probe commands.
+"""Bounded Linux IO for a deliberately closed set of format-probe commands.
 
 Installed tools are trusted executables, not sandboxed plugins. A trusted PATH
 provides their location; no program paths or argument strings come from a CLI.
@@ -14,6 +14,8 @@ import signal
 import subprocess
 import time
 from dataclasses import dataclass
+
+from descendants import Supervise, SupervisionError
 
 TIMEOUT = "tool exceeded its time budget"
 _COMMANDS = {
@@ -119,31 +121,33 @@ def _remaining(deadline):
 
 
 def _cleanup(child):
-    # A leader may exit while a descendant keeps a pipe open. Kill its session,
-    # not just the leader, so timed-out probes cannot leave children behind.
+    # Fast group cleanup; Supervise also adopts/kills detached descendants.
     try:
         os.killpg(child.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    child.wait()
-    for stream in (child.stdin, child.stdout, child.stderr):
-        if not stream.closed:
-            stream.close()
+    try:
+        child.wait(timeout=0.5)
+    except subprocess.TimeoutExpired as error:
+        raise ToolError("tool did not exit within cleanup budget") from error
+    finally:
+        for stream in (child.stdin, child.stdout, child.stderr):
+            if not stream.closed:
+                stream.close()
 
 
 def run(operation, data=b"", *, cwd=None, timeout=5.0, limit=131072):
     if not math.isfinite(timeout) or timeout <= 0 or limit <= 0 or len(data) > limit:
         raise ToolError("invalid process budget or oversized test input")
-    if os.name != "posix":
-        raise ToolError("this probe currently supports POSIX pipe IO only")
     try:
-        child = subprocess.Popen(
-            _command(operation), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, start_new_session=True, shell=False,
-        )
-    except OSError as error:
-        raise ToolError("tool could not be started") from error
-    try:
-        return _Pump(child, data, limit).collect(time.monotonic() + timeout)
-    finally:
-        _cleanup(child)
+        with Supervise():
+            child = subprocess.Popen(
+                _command(operation), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, start_new_session=True, shell=False,
+            )
+            try:
+                return _Pump(child, data, limit).collect(time.monotonic() + timeout)
+            finally:
+                _cleanup(child)
+    except (OSError, SupervisionError) as error:
+        raise ToolError("tool startup or descendant supervision failed") from error

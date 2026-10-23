@@ -124,8 +124,10 @@ installed executables; symlinks to unrelated interpreters are refused. These are
 trusted tools, not sandboxed plugins. Corpus paths are repository
 constants/test fixtures, never CLI-supplied paths. The runner limits input/output
 bytes and wall time, keeps diagnostics
-out of logs and kills the process group on completion/failure. It currently
-supports POSIX hosts. These harness budgets are **not** parser resource limits
+out of logs. Linux subreaper supervision adopts/kills detached or double-forked
+descendants as well as the original process group, with a bounded cleanup grace
+period. This standalone probe refuses threaded/pre-existing-child contexts and
+unsupported hosts rather than claiming portable lifecycle isolation. These harness budgets are **not** parser resource limits
 in the application. Fake subprocesses in unit tests test the harness only.
 
 The preparation workflow builds the real pinned Rust CLI with locked dependencies

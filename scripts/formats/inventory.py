@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-CODE = {".jl", ".ts", ".tsx", ".js", ".mjs", ".py", ".sh", ".R", ".r", ".rs"}
+CODE = {".yaml", ".yml", ".kyaml", ".jl", ".ts", ".tsx", ".js", ".mjs", ".py", ".sh", ".R", ".r", ".rs"}
 DATA = {".json", ".jsonl", ".yaml", ".yml", ".kyaml"}
 PATTERNS = {
     "JSON3.read": r"\bJSON3\.read\s*\(",

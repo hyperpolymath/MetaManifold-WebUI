@@ -68,6 +68,25 @@ class ProcessTests(unittest.TestCase):
                 with self.assertRaises(ToolError):
                     run("ijson-canon")
 
+    def test_detached_double_fork_is_killed_and_reaped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "detached.pid"
+            body = f"""import os,time
+if os.fork() == 0:
+    os.setsid()
+    if os.fork() == 0:
+        with open({str(pid_file)!r}, 'w') as stream:
+            stream.write(str(os.getpid()))
+        time.sleep(30)
+    os._exit(0)
+time.sleep(30)
+"""
+            with self.assertRaisesRegex(ToolError, "time budget"):
+                run_python(body, timeout=0.4)
+            pid = int(pid_file.read_text())
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+
     def test_descendant_keeping_pipe_open_is_bounded(self):
         with self.assertRaisesRegex(ToolError, "time budget"):
             run_python("import os,time; p=os.fork(); time.sleep(10) if p==0 else None", timeout=0.2)
@@ -169,7 +188,7 @@ class InventoryTests(unittest.TestCase):
             root = Path(tmp)
             subprocess.run(["git", "init", "-q", tmp], check=True)
             (root / ".github/workflows").mkdir(parents=True)
-            (root / ".github/workflows/probe.yml").write_text('name: "private-value"\n')
+            (root / ".github/workflows/probe.yml").write_text('name: "private-value"\nrun: jq -r .value\n')
             (root / "client.ts").write_text('res.json();\nJSON.parse("private-value")\n')
             (root / "foreign.json").symlink_to("/etc/passwd")
             (root / ".gitignore").write_text('ignored.py\n')
@@ -178,6 +197,8 @@ class InventoryTests(unittest.TestCase):
             self.assertTrue(any(r[2] == ".github/workflows/probe.yml" for r in rows))
             self.assertTrue(any(r[0] == "symlink" and r[2] == "foreign.json" for r in rows))
             self.assertTrue(any(r[3] == 2 and r[4] == "JSON.parse" for r in rows))
+            self.assertTrue(any(r[2] == ".github/workflows/probe.yml" and r[3] == 2
+                                and r[4] == "shell jq/yq candidate" for r in rows))
             self.assertFalse(any(r[2] == "ignored.py" for r in rows))
             self.assertNotIn("private-value", repr(rows))
 
