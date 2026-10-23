@@ -534,6 +534,12 @@ jobs:
       - name: Set up Julia
         run: bash scripts/install-ci-julia.sh
 
+      # The evidence scripts are ordinary project code: they load JSON3 and the
+      # statistics modules, so the environment must be instantiated before the
+      # standards tools are used.
+      - name: Instantiate Julia project
+        run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
+
       # The versions, the HTTPS restriction and the exact-commit fetches live in
       # the script (one reviewed place), not interpolated into this workflow.
       - name: Install pinned standards tools
