@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
-# Governance and security follow-up to PR #227
+# Governance and security follow-up to PRs #227 and #228
 
 ## Regression review
 
@@ -187,3 +187,40 @@ case checks the PERMANOVA entry point when R/vegan is available. The new Julia
 regressions require hosted CI: Julia and R are not installed in the local
 sandbox. These targeted fixes are not a blanket dismissal of the remaining
 advisory findings or a complete R-call-site security audit.
+
+
+## Approved rebase after #242 landed
+
+While the audit was being finalised, #242 merged into main as
+`b656d2a99e53267108d51ad87d7eaee13222d368` at 16:46:42 UTC. Its leaf-PD fix
+and regressions are now on main; the earlier unmerged status above records the
+initial review snapshot, not the current landing status. #228 is closed without
+merging and its stale leaf-PD review thread is resolved with a link to #242.
+
+With explicit user permission, #243 was rebased onto that main commit, without
+adding a merge commit. Four add/add conflicts were reconciled individually:
+
+- Preserve main's richer `.editorconfig` and existing `.gitignore` exceptions.
+- Retain Scorecard's default-branch-only publication and necessary SARIF/OIDC
+  grants; use the audited immutable standards pin and weekly schedule.
+- Retain the secret scanner's read-only/no-inherited-secrets contract and job
+  name, with the corrected local reusable and scheduled full-history scans.
+- Consolidate the security reporting contact, main-only support and upstream
+  disclosure guidance with deployment boundaries and evidence limitations.
+
+Main's leaf-PD code/regressions and frontend TreeShapes/PaneEditor fixes are
+unchanged byte-for-byte. Main's `.gitleaks.toml` is also preserved unchanged:
+its exact public-identifier exceptions and old-engine rule backports were
+already introduced by #242; this rebase adds no further suppressions. Both
+working-tree and full-history Gitleaks 8.30.1 scans pass with that actual
+repository config extending the pinned estate baseline, and its synthetic AWS
+sensitivity check still rejects the fixture. The local scanner reports and
+logs are retained outside Git under `/home/user/governance-audit/`.
+
+After rebasing, frozen frontend install, typecheck, all 72 tests/200 assertions,
+production build and the high/critical dependency audit pass again. Governance
+39 checks/8 mutations, 3 optional-log cases, 4 pipeline-exit cases, scanner
+boundary tests, full-history shell scanning, Sonar reliability lint, Julia
+syntax parsing and workflow parsing/shell syntax checks are revalidated. The
+Julia/R/Agda runtime checks must run against the rebased head; old-head check
+results are not carried forward as a semantic pass.
