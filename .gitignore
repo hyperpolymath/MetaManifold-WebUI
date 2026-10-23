@@ -247,10 +247,11 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-## Documentation kept local except published release notes and cladistics notes
+## Documentation kept local except published release, cladistics and format notes
 docs/*
 !docs/release-notes/
 !docs/cladistics/
+!docs/format-migration.md
 
 # translation temp files
 
