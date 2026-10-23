@@ -2,6 +2,11 @@
 import { expect, test } from 'bun:test'
 import { CONFIG_DESCRIPTIONS, CONFIG_TYPES } from './PipelineStages'
 
+const ALL_DIFFERENTIAL_METHODS = [
+  'nb_glm', 'clr_welch', 'zinb', 'hurdle_nb', 'ancom_bc', 'aldex2', 'songbird',
+  'multinomial', 'dirichlet_multinomial',
+]
+
 test('dispersion uses the enum editor with both supported models', () => {
   expect(CONFIG_TYPES['analysis.differential.dispersion']).toEqual({
     kind: 'enum', options: ['ml', 'glmGamPoi'],
@@ -10,12 +15,21 @@ test('dispersion uses the enum editor with both supported models', () => {
 
 test('differential model editor exposes all nine supported methods', () => {
   expect(CONFIG_TYPES['analysis.differential.method']).toEqual({
-    kind: 'enum',
-    options: [
-      'nb_glm', 'clr_welch', 'zinb', 'hurdle_nb', 'ancom_bc', 'aldex2', 'songbird',
-      'multinomial', 'dirichlet_multinomial',
-    ],
+    kind: 'enum', options: ALL_DIFFERENTIAL_METHODS,
   })
+})
+
+test('multinomial settings retain their enums and optimiser budgets', () => {
+  expect(CONFIG_TYPES['analysis.differential.dm_overdispersion_method']).toEqual({
+    kind: 'enum', options: ['mle', 'mom'],
+  })
+  expect(CONFIG_TYPES['analysis.differential.mn_penalty']).toEqual({
+    kind: 'float', min: 0, step: 0.05,
+  })
+  expect(CONFIG_TYPES['analysis.differential.max_seconds']).toEqual({
+    kind: 'float', min: 1,
+  })
+  expect(CONFIG_TYPES['analysis.differential.max_iter']).toEqual({ kind: 'int' })
 })
 
 test('advanced zero handling exposes both methods, bounded delta and nullable alpha', () => {

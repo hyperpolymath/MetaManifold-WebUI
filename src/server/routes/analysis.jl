@@ -1200,22 +1200,38 @@ end
 The study's `analysis.differential` settings, resolved through the config
 cascade. Missing or `nothing` values use the defaults in `DifferentialConfig`,
 including `dispersion="ml"`, GBM replacement and an estimated Bayesian alpha.
-Invalid settings propagate the constructor's
-`ArgumentError`; values that cannot be converted to strings or numbers also
-raise their conversion errors.
+Invalid settings propagate the constructor's `ArgumentError`; invalid types
+for alpha, the reference taxon or the Monte-Carlo count also raise
+`ArgumentError`. The iteration limit must be a positive whole number
+representable as `Int`; an invalid limit or an `InexactError` or `OverflowError`
+converting it raises `ArgumentError`. Other string and numeric conversion
+errors, and errors reading or parsing the configuration, propagate.
 """
 function _differential_config(study::String)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
-    val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    val(k, d) = begin
+        value = get(get(resolved, k, (; value=d)), :value, d)
+        isnothing(value) ? d : value
+    end
+    # Null is meaningful for alpha: it selects GBM's estimated concentration.
     alpha = get(get(resolved, "analysis.differential.bayesian_alpha", (; value=nothing)), :value, nothing)
     alpha_val = isnothing(alpha) || alpha isa Real ? alpha : throw(ArgumentError(
         "analysis.differential.bayesian_alpha must be empty or a finite number greater than 0, not '$alpha'"))
+    reference = val("analysis.differential.mn_reference_taxon", nothing)
     mc_raw = val("analysis.differential.mc_samples", Differential.DEFAULT_MC_SAMPLES)
     mc_val = mc_raw isa Real ? mc_raw : throw(ArgumentError(
         "analysis.differential.mc_samples must be a whole number in " *
         "[$(Differential.MIN_MC_SAMPLES), $(Differential.MAX_MC_SAMPLES)], not '$mc_raw'"))
-    reference = get(get(resolved, "analysis.differential.mn_reference_taxon",
-                        (; value=nothing)), :value, nothing)
+    max_iter_raw = val("analysis.differential.max_iter", 500)
+    max_iter_error = _config_value_error("analysis.differential.max_iter", max_iter_raw)
+    isnothing(max_iter_error) || throw(ArgumentError(max_iter_error))
+    max_iter_val = try
+        Int(max_iter_raw)
+    catch e
+        (e isa InexactError || e isa OverflowError) || rethrow()
+        throw(ArgumentError(
+            "analysis.differential.max_iter must be a positive whole number representable as Int, not '$max_iter_raw'"))
+    end
     reference_val = isnothing(reference) || reference isa AbstractString ? reference :
         throw(ArgumentError("analysis.differential.mn_reference_taxon must be text or empty"))
     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
@@ -1231,7 +1247,7 @@ function _differential_config(study::String)
                        mn_penalty=Float64(val("analysis.differential.mn_penalty", 0.0)),
                        dm_overdispersion_method=String(val(
                            "analysis.differential.dm_overdispersion_method", "mle")),
-                       max_iter=Int(val("analysis.differential.max_iter", 500)),
+                       max_iter=max_iter_val,
                        tol=Float64(val("analysis.differential.tolerance", 1e-8)),
                        max_seconds=Float64(val("analysis.differential.max_seconds", 300.0)))
 end

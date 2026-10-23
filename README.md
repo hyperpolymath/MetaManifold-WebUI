@@ -299,6 +299,7 @@ not exclude samples from this analysis.
   calibration caveat in its diagnostics, shown with the result and written
   into its CSV export. The caveat changes no p-value; the null-simulation
   evidence and full replication protocol live in `bench/null_calibration`.
+  The glmGamPoi path uses fixed-theta NB Wald fits, not a quasi-likelihood test.
 - `zinb`: a zero-inflated negative-binomial model with separate logistic
   zero and count components, a count-component library-size offset, a joint
   2-df likelihood-ratio test, and BH correction.
@@ -316,12 +317,15 @@ not exclude samples from this analysis.
   on `log(counts + 1)`, propagating bias-estimation variance into two-sided Wald
   tests. The effect is a bias-corrected log2 fold change; useful when asymmetric
   shifts or load changes would bias standard CLR centering (needs at least 3
-  tested taxa; assumes fewer than half are differential).
+  tested taxa). The implementation reports its mixture and bias diagnostics.
+  Its assumption that fewer than half of tested taxa are differential must be
+  checked rather than treated as a guarantee.
 - `aldex2`: Dirichlet(`count + 0.5`) Monte-Carlo CLR model (Fernandes et al.
   2013, 2014). Draws `mc_samples` (default 128, seeded by the study's `seed`)
   instances per sample and reports standardized CLR effect sizes with
   consistent-sign posterior predictive Welch p-values; suited to sparse or
   variable-depth cohorts where deterministic zero imputation is undesirable.
+  The reported estimate is a standardized CLR effect size, not an absolute fold change.
 - `songbird`: compositional baseline-category multinomial regression with
   reference-frame invariant CLR-centred differentials summing to zero across
   fitted taxa (Morton et al. 2019, *Nat. Commun.* 10:2719; Zhang et al. 2017).
@@ -336,7 +340,8 @@ not exclude samples from this analysis.
   composition (La Rosa et al. 2012), which absorbs between-sample
   overdispersion; `dm_overdispersion_method` picks `mle` (profiled) or `mom`.
   Both multinomial models bound their Newton fit with `max_iter`, `tolerance`
-  and `max_seconds`, and a fit that does not converge is refused.
+  and `max_seconds`, and a fit that does not converge is refused. Dirichlet-
+  multinomial diagnostics report the concentration, theta, and boundary status.
 
 ZINB and hurdle models can overfit sparse data; do not select ZINB solely
 because counts are sparse. Compare against NB diagnostics. The methods report
@@ -818,23 +823,22 @@ analysis:
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
   differential:
-    method: nb_glm               # nb_glm | clr_welch | zinb | hurdle_nb | ancom_bc
-                                 #   | aldex2 | songbird | multinomial | dirichlet_multinomial
+    method: nb_glm               # nb_glm | clr_welch | multinomial | dirichlet_multinomial
+                                 # ancom_bc | aldex2 | songbird | zinb | hurdle_nb
     offset: tss                  # count models: tss | rle
     dispersion: ml               # nb_glm: ml | glmGamPoi
     min_prevalence: 0.0          # fraction of samples a taxon must be seen in
     replacement_method: bayesian_multiplicative
                                  # clr_welch: bayesian_multiplicative | multiplicative_replacement
     replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
-    bayesian_alpha: ~            # clr_welch: null (GBM estimate) or a number > 0
-    mc_samples: 128              # aldex2: Dirichlet Monte-Carlo instances in [16, 4096]
-    mn_reference_taxon: ~        # multinomial models: null picks the most abundant taxon
-    mn_penalty: 0.0              # multinomial models: L2 ridge penalty, >= 0
-    dm_overdispersion_method: mle
-                                 # dirichlet_multinomial: mle | mom
+    bayesian_alpha: ~            # Bayesian replacement: null (GBM estimate) or a number > 0
+    mn_reference_taxon: ~        # multinomial models: null selects the most abundant fitted taxon
+    mn_penalty: 0.0              # multinomial models: non-negative L2 penalty
+    dm_overdispersion_method: mle # dirichlet_multinomial: mle | mom
     max_iter: 500                # multinomial models: Newton iteration cap
-    tolerance: 1.0e-8            # multinomial models: convergence tolerance
+    tolerance: 0.00000001        # multinomial models: convergence tolerance
     max_seconds: 300.0           # multinomial models: wall-clock budget
+    mc_samples: 128              # aldex2: Dirichlet Monte-Carlo instances in [16, 4096]
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
 ```

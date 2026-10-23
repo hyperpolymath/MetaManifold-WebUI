@@ -21,9 +21,9 @@ import type {
   TreeFileInfo, TreeFile, RunRef, ReadFunnelData, ReportItem, ReportKind,
   PlacementDoc, PlacementSummary, PlacementDetail, PlacementQueries, PhyloStep,
   ReferenceTreeDoc, ReferenceTreeSummary, ReferenceTreeDetail, AlignmentQC, TrimSettings,
+  CladisticsCreateRequest, CladisticsSummary, CladisticsDetail,
   CladeCumulusSourcesResponse, CladeCumulusRequest, CladeCumulusResponse,
   CladeMoveValidationRequest, CladeMoveValidationResponse,
-  CladisticsSummary, CladisticsDetail, CladisticsCreateRequest,
 } from './types'
 
 import type { FigureDoc } from '../figure/types'

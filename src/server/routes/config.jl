@@ -140,8 +140,17 @@ const _CASE_FOLDED_ENUMS = Dict(
 """
     _config_value_error(key, value) -> Union{String,Nothing}
 
-Why a value cannot be saved under this key, or nothing. The type follows the
-factory default; a key whose default is ~ accepts a string, number or boolean.
+Return a reason a value cannot be saved under the dotted config `key`, or
+`nothing` if it passes the checks for that key. Types follow factory defaults
+unless the key has explicit enum, nullable, numeric or naming constraints;
+keys without either a constraint or a typed default pass unchecked.
+
+Differential optimiser settings reject booleans and non-finite values:
+`max_iter` must be a positive whole number representable as `Int`, tolerance
+and runtime in seconds must be positive, and the ridge penalty non-negative.
+`InexactError` and `OverflowError` from the iteration-limit conversion become
+validation messages. This checks individual values without saving them;
+method compatibility is checked separately by `_differential_settings_error`.
 """
 function _config_value_error(key::String, value)
     v = value isa JSON3.Array ? collect(value) : value
@@ -163,6 +172,29 @@ function _config_value_error(key::String, value)
         isnothing(v) && return nothing
         return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
             "$key must be empty or a finite number greater than 0"
+    end
+    if key == "analysis.differential.max_iter"
+        valid = v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) && v >= 1
+        if valid
+            # An integral Float64 can still be outside Int's representable
+            # range (and typemax(Int) itself rounds when converted to Float64).
+            valid = try
+                Int(v)
+                true
+            catch e
+                (e isa InexactError || e isa OverflowError) || rethrow()
+                false
+            end
+        end
+        return valid ? nothing : "$key must be a positive whole number representable as Int"
+    end
+    if key in ("analysis.differential.tolerance", "analysis.differential.max_seconds")
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
+            "$key must be a finite number greater than 0"
+    end
+    if key == "analysis.differential.mn_penalty"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v >= 0) ? nothing :
+            "$key must be a finite number greater than or equal to 0"
     end
     if key == "analysis.differential.mc_samples"
         return (v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) &&

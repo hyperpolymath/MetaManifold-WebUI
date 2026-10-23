@@ -12,8 +12,6 @@
 #   log-ratios, over the taxa that pass `min_prevalence`, after their zeros are
 #   replaced by zCompositions::cmultRepl (Bayesian GBM/user or multiplicative
 #   CZM, for counts). The estimate is a difference in CLR units, not a fold change.
-# - zinb / hurdle_nb: two-part negative-binomial models with a logistic zero or
-#   occurrence process and a joint 2-df test of both group effects.
 # - ancom_bc: bias-corrected log-linear model (Lin & Peddada 2020) estimating
 #   within-group sample-specific offsets and between-group sampling-fraction
 #   bias via a safeguarded SQUAREM 3-component Gaussian mixture. The effect is
@@ -25,8 +23,11 @@
 #   reference-frame invariant CLR-centred differentials (Morton et al. 2019;
 #   Zhang et al. 2017) fitted by damped Newton-Raphson with exact O(K)
 #   Sherman-Morrison Fisher-information inversion.
-# - multinomial / dirichlet_multinomial: joint compositional regression against
-#   a reference taxon, with optional Dirichlet-multinomial overdispersion.
+# - multinomial and dirichlet_multinomial: joint compositional models fitted in
+#   Julia against a reference taxon; the latter estimates extra-multinomial
+#   overdispersion. Neither uses a library-size offset or zero replacement.
+# - zinb and hurdle_nb: two-part negative-binomial models with a joint test of
+#   group effects in the zero/occurrence and count processes.
 #
 # Count matrices here are samples x taxa, as everywhere else in `Analysis`.
 # Anything that is not a non-negative integer count is refused rather than
@@ -41,16 +42,19 @@ using ..CompositionalModels: CompositionalFit, CompositionalRefusal, RuntimeRefu
        DM_METHODS, CONCENTRATION_MIN, CONCENTRATION_MAX, fit_multinomial,
        fit_dirichlet_multinomial
 export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
-       GlmGamPoiUnavailable, RStatsUnavailable, CompositionalRefusal, RuntimeRefusal,
-       OFFSET_METHODS, METHODS, DISPERSIONS, REPLACEMENT_METHODS, COMPOSITIONAL_METHODS,
+       GlmGamPoiUnavailable, CompositionalRefusal, RuntimeRefusal, RStatsUnavailable,
+       OFFSET_METHODS, METHODS, COMPOSITIONAL_METHODS, DISPERSIONS, REPLACEMENT_METHODS,
        MIN_MC_SAMPLES, MAX_MC_SAMPLES, DEFAULT_MC_SAMPLES,
        tss_factors, rle_factors, size_factors, bh_adjust, validate_counts, replace_zeros,
        clr_transform, fit_nb, fit_two_part_nb, fit_occupancy, fit_welch,
-       differential_abundance, volcano_chart
+       fit_ancom_bc, fit_aldex2, fit_songbird, differential_abundance, volcano_chart
 
-# Methods accepted under `analysis.differential.method`.
+# The two joint models use a reference taxon and the optimiser settings below.
+# Keep the other method groups in the public tuple as well: a configuration
+# must never silently lose a model because two feature branches were merged.
+const COMPOSITIONAL_METHODS = ("multinomial", "dirichlet_multinomial")
 const METHODS = ("nb_glm", "clr_welch", "zinb", "hurdle_nb", "ancom_bc",
-                 "aldex2", "songbird", "multinomial", "dirichlet_multinomial")
+                 "aldex2", "songbird", COMPOSITIONAL_METHODS...)
 
 # The per-taxon dispersion `nb_glm` uses: maximum likelihood (MASS::glm.nb's
 # own theta) or glmGamPoi's shrinkage estimator, which shares information
@@ -74,10 +78,10 @@ const THETA_LOWER = 1e-8
 # zCompositions::cmultRepl's default `frac`, as in Martín-Fernández et al. (2003).
 const DEFAULT_DELTA = 0.65
 
-# Joint multinomial/Dirichlet-multinomial models and optimiser bounds.
-const COMPOSITIONAL_METHODS = ("multinomial", "dirichlet_multinomial")
-const COMPOSITIONAL_MAX_ITER = 500
-const COMPOSITIONAL_TOL = 1.0e-8
+# Optimiser defaults for the two multinomial models. These must match
+# CompositionalModels.DEFAULT_* (asserted in the unit tests).
+const COMPOSITIONAL_MAX_ITER    = 500
+const COMPOSITIONAL_TOL         = 1e-8
 const COMPOSITIONAL_MAX_SECONDS = 300.0
 
 # Bounds and default for `analysis.differential.mc_samples` (`aldex2` Dirichlet draws).
@@ -100,23 +104,48 @@ end
     DifferentialConfig(offset="tss", min_prevalence=0.0; method="nb_glm",
                        replacement_delta=0.65, dispersion="ml",
                        replacement_method="bayesian_multiplicative",
-                       bayesian_alpha=nothing, mc_samples=128,
-                       mn_reference_taxon=nothing, mn_penalty=0.0,
-                       dm_overdispersion_method="mle", max_iter=500,
-                       tol=1e-8, max_seconds=300.0)
+                       bayesian_alpha=nothing, mn_reference_taxon=nothing,
+                       mn_penalty=0.0, dm_overdispersion_method="mle",
+                       max_iter=500, tol=1e-8, max_seconds=300.0, mc_samples=128)
 
-Settings for one differential abundance analysis. `METHODS` contains the
-per-taxon count models (`nb_glm`, `zinb`, `hurdle_nb`), the zero-replaced CLR
-model (`clr_welch`), the advanced compositional models (`ancom_bc`, `aldex2`,
-`songbird`) and the joint multinomial models in `COMPOSITIONAL_METHODS`.
-
-`offset` is used by the count models. Zero-replacement settings belong to
-`clr_welch`; `mc_samples` belongs to `aldex2`; and the reference, penalty,
-concentration and optimiser settings belong to the two joint multinomial
-models. Settings incompatible with the selected method are rejected rather
-than silently ignored. Method names are stripped and lowercased, dispersion
-and overdispersion names are canonicalised, and every numeric setting is
-validated before a fit starts.
+Settings for one differential abundance analysis, read from
+`analysis.differential` in the pipeline config. `method` is one of `"nb_glm"`,
+`"clr_welch"`, `"multinomial"`, `"dirichlet_multinomial"`, `"ancom_bc"`,
+`"aldex2"`, `"songbird"`, `"zinb"` or `"hurdle_nb"`. `offset` names the
+size factor method (`"tss"` or `"rle"`) and is used by the count models.
+`min_prevalence` is the fraction of samples, in [0, 1], in which a taxon must
+have at least one read to be tested. `replacement_delta`, in (0, 1), is the
+`frac` passed to `zCompositions::cmultRepl` by `clr_welch`.
+`replacement_method` selects `"bayesian_multiplicative"` (GBM) or
+`"multiplicative_replacement"` (CZM), with optional positive `bayesian_alpha`
+for `"bayesian_multiplicative"`. For the two multinomial methods,
+`mn_reference_taxon=nothing` or blank text selects the most abundant fitted
+taxon; other names are stripped of surrounding whitespace. `mn_penalty` is a
+finite, non-negative ridge penalty. `dm_overdispersion_method` selects `"mle"`
+or `"mom"` for the Dirichlet-multinomial model. `max_iter` must be at least 1;
+`tol` is a positive, finite convergence tolerance and `max_seconds` a positive,
+finite runtime budget in seconds. `mc_samples` is the ALDEx2 Monte-Carlo
+instance count, a whole number in [16, 4096]; booleans are refused.
+`dispersion` names the per-taxon dispersion `nb_glm` uses (`"ml"` or
+`"glmGamPoi"`): `"ml"` takes the maximum-likelihood theta from `MASS::glm.nb`,
+`"glmGamPoi"` uses `overdispersion_shrinkage_list.dispersion_trend` from
+`glmGamPoi::glm_gp` for the taxa passing the prevalence filter, with `theta = 1 / dispersion` fixed
+in each negative-binomial GLM. Both options use a Wald test of the group
+coefficient with fixed scale 1; `"glmGamPoi"` is refused outside `nb_glm`. `zinb` and `hurdle_nb`
+fit a zero-process and negative-binomial count process per taxon, then use a 2-df likelihood-ratio
+test for the group effect in both processes. Their count-component fold change is reported; the zero
+process effect remains in diagnostics.
+The trend is plugged into an NB Wald model; its estimation uncertainty is not
+propagated. This option does not implement glmGamPoi's quasi-likelihood test.
+Method and offset names are stripped and lowercased; dispersion names are
+stripped and matched without regard to case, then stored as `"ml"` or
+`"glmGamPoi"`. Throws `ArgumentError` for unsupported names, invalid numeric
+settings, or incompatible method choices: an explicit reference or non-zero
+penalty requires a multinomial method, and `"mom"` requires
+`"dirichlet_multinomial"`. Numeric bounds are checked even for settings unused
+by the selected method. Errors converting validated values to the stored
+numeric types propagate, including `InexactError` for `max_iter` outside the
+range of `Int`.
 """
 struct DifferentialConfig
     method             :: String
@@ -126,26 +155,26 @@ struct DifferentialConfig
     dispersion         :: String
     replacement_method :: String
     bayesian_alpha     :: Union{Float64,Nothing}
-    mc_samples         :: Int
     mn_reference_taxon :: Union{Nothing,String}
     mn_penalty         :: Float64
     dm_overdispersion_method :: String
     max_iter           :: Int
     tol                :: Float64
     max_seconds        :: Float64
+    mc_samples         :: Int
     function DifferentialConfig(offset::AbstractString="tss", min_prevalence::Real=0.0;
                                 method::AbstractString="nb_glm",
                                 replacement_delta::Real=DEFAULT_DELTA,
                                 dispersion::AbstractString="ml",
                                 replacement_method::AbstractString="bayesian_multiplicative",
                                 bayesian_alpha::Union{Real,Nothing}=nothing,
-                                mc_samples::Real=DEFAULT_MC_SAMPLES,
                                 mn_reference_taxon::Union{Nothing,AbstractString}=nothing,
                                 mn_penalty::Real=0.0,
                                 dm_overdispersion_method::AbstractString="mle",
                                 max_iter::Integer=COMPOSITIONAL_MAX_ITER,
                                 tol::Real=COMPOSITIONAL_TOL,
-                                max_seconds::Real=COMPOSITIONAL_MAX_SECONDS)
+                                max_seconds::Real=COMPOSITIONAL_MAX_SECONDS,
+                                mc_samples::Real=DEFAULT_MC_SAMPLES)
         m = lowercase(strip(String(method)))
         m in METHODS || throw(ArgumentError(
             "analysis.differential.method must be one of $(join(METHODS, ", ")), not '$method'"))
@@ -158,8 +187,8 @@ struct DifferentialConfig
             "analysis.differential.dispersion must be one of $(join(DISPERSIONS, ", ")), not '$dispersion'"))
         d = DISPERSIONS[di]
         (d == "ml" || m == "nb_glm") || throw(ArgumentError(
-            "analysis.differential.dispersion is a negative-binomial GLM setting, but method is " *
-            "'$m'; only nb_glm uses the glmGamPoi dispersion trend"))
+            "analysis.differential.dispersion is a negative-binomial setting, but method is " *
+            "'$m'; only nb_glm has a dispersion to choose"))
         (isfinite(min_prevalence) && 0 <= min_prevalence <= 1) || throw(ArgumentError(
             "analysis.differential.min_prevalence must be a fraction in [0, 1], not $min_prevalence"))
         (isfinite(replacement_delta) && 0 < replacement_delta < 1) || throw(ArgumentError(
@@ -178,10 +207,10 @@ struct DifferentialConfig
         compositional = m in COMPOSITIONAL_METHODS
         (isnothing(ref) || compositional) || throw(ArgumentError(
             "analysis.differential.mn_reference_taxon applies to method multinomial or " *
-            "dirichlet_multinomial, but method is '$m'"))
+            "dirichlet_multinomial, but method is '$m'; only those two models have a reference taxon"))
         (mn_penalty == 0 || compositional) || throw(ArgumentError(
             "analysis.differential.mn_penalty applies to method multinomial or " *
-            "dirichlet_multinomial, but method is '$m'"))
+            "dirichlet_multinomial, but method is '$m'; only those two models are penalised"))
         (dm == "mle" || m == "dirichlet_multinomial") || throw(ArgumentError(
             "analysis.differential.dm_overdispersion_method is a Dirichlet-multinomial setting, " *
             "but method is '$m'; set it to mle or select method dirichlet_multinomial"))
@@ -201,9 +230,9 @@ struct DifferentialConfig
             "analysis.differential.mc_samples must be a whole number in " *
             "[$MIN_MC_SAMPLES, $MAX_MC_SAMPLES], not $mc_samples"))
         a = isnothing(bayesian_alpha) ? nothing : Float64(bayesian_alpha)
-        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d, r, a,
-            Int(mc_samples), ref, Float64(mn_penalty), dm, Int(max_iter),
-            Float64(tol), Float64(max_seconds))
+        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d, r, a, ref,
+            Float64(mn_penalty), dm, Int(max_iter), Float64(tol), Float64(max_seconds),
+            Int(mc_samples))
     end
 end
 
@@ -2045,8 +2074,9 @@ end
 
 Test every taxon (column) of the samples x taxa read-count matrix for a
 difference in abundance between the samples labelled `contrast` and those
-labelled `reference` in `groups`, by the method selected in `config.method`
-(one of `METHODS`).
+labelled `reference` in `groups`, by `config.method` (`"nb_glm"`, `"clr_welch"`,
+`"multinomial"`, `"dirichlet_multinomial"`, `"ancom_bc"`, `"aldex2"`,
+`"songbird"`, `"zinb"` or `"hurdle_nb"`).
 
 `nb_glm`: size factors are computed on the full matrix by `config.offset` and
 enter each negative-binomial model as `log(factor)`; the estimate is a
@@ -2071,6 +2101,17 @@ reference, relative to the geometric mean of the tested taxa. Replaced zeros are
 not measurements; `diagnostics.zero_replacement` reports their share of each
 sample. Each group needs at least 2 samples.
 
+`multinomial` and `dirichlet_multinomial` fit one joint composition against a
+reference taxon, without size factors or zero replacement. Their estimates are
+log ratios against that reference; the Dirichlet-multinomial additionally
+reports its concentration and overdispersion diagnostics. A reference that is
+not fitted or is present in fewer than half the samples is refused.
+
+`ancom_bc`, `aldex2` and `songbird` retain their method-specific compositional
+estimators and diagnostics. `ancom_bc` reports bias-corrected log2 fold changes,
+`aldex2` standardized CLR effect sizes, and `songbird` CLR-centred differentials;
+these are not interchangeable with an absolute fold change.
+
 `zinb` and `hurdle_nb` use a count-process negative binomial with a library-size
 offset and a group-specific logistic zero/occurrence process. Their reported
 count effect is the NB coefficient; the p-value is a joint 2-df likelihood-ratio
@@ -2080,7 +2121,7 @@ uses a zero-truncated NB for positive counts. These models can overfit; compare
 against NB diagnostics and do not interpret the zero component as biological
 absence without validation.
 
-Across methods, taxa present in fewer than `config.min_prevalence` of the
+For both methods, taxa present in fewer than `config.min_prevalence` of the
 samples are reported as `filtered` and not fitted, and the Benjamini-Hochberg
 family is the fitted taxa that produced a p-value; failed, filtered and
 reference taxa carry `padj = nothing`. The result's `effect` names the row key

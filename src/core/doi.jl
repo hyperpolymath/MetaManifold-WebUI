@@ -16,8 +16,6 @@
 #   * Durable write-ahead journal; immutable DOI/provenance receipts
 #   * DOI insertion never rewrites scientific objects
 
-module DOI
-
 using Dates, SHA, HTTP, JSON3, Logging
 
 export DOIConfig, Deposition, PublicationReceipt,

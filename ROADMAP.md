@@ -6,7 +6,7 @@ occupancy work. The GitHub Wiki roadmap still needs a synchronized update; see
 
 ## Available now
 
-- The differential-abundance config offers four per-taxon count models
+- The differential-abundance config offers four per-taxon methods
   (`nb_glm`, `clr_welch`, `zinb`, `hurdle_nb`) and five compositional models
   (`ancom_bc`, `aldex2`, `songbird`, `multinomial`, `dirichlet_multinomial`);
   see [the differential-abundance section](README.md#differential-abundance).
