@@ -1662,10 +1662,14 @@ end
         end
         @test e isa ArgumentError
         @test occursin("is not fitted", sprint(showerror, e))
-        # Every taxon filtered out is an explicit error, not an empty table.
+        # Every taxon filtered out is an explicit error, not an empty table. No
+        # taxon below is present in all eight samples, so min_prevalence = 1.0
+        # leaves no composition to model; every sample still has reads, so the
+        # refusal is the prevalence one and not an empty sample.
+        all_thin = [1 0; 2 3; 0 4; 5 0;
+                    1 2; 0 3; 4 0; 2 1]
         e = try
-            differential_abundance([1 0; 2 3; 0 4; 5 0], ["s1", "s2", "s3", "s4"],
-                                   ["a", "b"], groups8[1:4];
+            differential_abundance(all_thin, samples8, ["a", "b"], groups8;
                                    kw..., config=DifferentialConfig("tss", 1.0;
                                                                     method="multinomial"))
             nothing
