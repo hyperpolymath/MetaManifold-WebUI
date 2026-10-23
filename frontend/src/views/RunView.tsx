@@ -20,10 +20,9 @@ import { DADA2Panel } from './run/DADA2Panel'
 import { TablesPanel } from './run/TablesPanel'
 import { RunAlpha } from './run/RunAlpha'
 import { ReadFunnel } from './run/ReadFunnel'
-import { EvidencePanel } from '../evidence/EvidencePanel'
 import { useNavRefresh } from '../hooks/useNavRefresh'
 
-const TABS = ['pipeline', 'qc', 'dada2', 'tables', 'composition', 'analysis-dada2', 'analysis-vsearch', 'evidence'] as const
+const TABS = ['pipeline', 'qc', 'dada2', 'tables', 'composition', 'analysis-dada2', 'analysis-vsearch'] as const
 type Tab = (typeof TABS)[number]
 
 // Maps tabs to the backend stages whose staleness should show a yellow dot
@@ -218,8 +217,7 @@ export function RunView({ runName }: { runName?: string } = {}) {
             : t === 'tables' ? `Tables (${tables?.length ?? 0})`
             : t === 'composition' ? 'Composition'
             : t === 'analysis-dada2' ? 'DADA2 analysis'
-            : t === 'analysis-vsearch' ? 'VSEARCH analysis'
-            : 'Evidence'
+            : 'VSEARCH analysis'
           const stale = isTabStale(t)
           const source: AnnotationSource | null = t === 'analysis-dada2' ? 'DADA2' : t === 'analysis-vsearch' ? 'VSEARCH' : null
           const missing = source != null && runData != null && !carriesSource(runData, source)
@@ -272,7 +270,6 @@ export function RunView({ runName }: { runName?: string } = {}) {
           selected={tableSel} setSelected={setTableSel}
           filters={tableFilters} setFilters={setTableFilters} />
       )}
-      {tab === 'evidence' && <EvidencePanel study={study!} run={run!} group={group} />}
       {tab === 'composition' && (
         <CompositionPanel
           study={study!}
