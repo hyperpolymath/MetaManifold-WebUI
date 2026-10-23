@@ -44,6 +44,17 @@ function _adonis2_reference(mat, meta, perm_expr)
 end
 
 @testset "PERMANOVA" begin
+    @testset "formula names are data, never R expressions" begin
+        @test Analysis._permanova_formula_rhs(["group", "run_2", ".batch", "x.y"]) ==
+              "group + run_2 + .batch + x.y"
+        for name in ("I(1 + 1)", "system('echo unsafe')", "group + run", "group:run",
+                     "group; stop('unsafe')", "`group`", "x\"", "x\\", "x\n", "x\r",
+                     "x\t", "x\0", "", "1group", ".1group", "_group", "has space",
+                     "if", "TRUE", "NA_real_", ".", "...", "..1")
+            @test_throws ArgumentError Analysis._permanova_formula_rhs(["group", name])
+        end
+    end
+
     @testset "_varies_within_any_block" begin
         blocks = ["i1", "i1", "i2", "i2"]
         @test !Analysis._varies_within_any_block(["a", "a", "b", "b"], blocks)
@@ -58,6 +69,11 @@ end
         meta = DataFrame(sample = ["s$k" for k in 1:12],
                          group = [cld(k, 2) <= 3 ? "A" : "B" for k in 1:12],
                          run = repeat(["r1", "r2"], 6))
+
+        @testset "the public entry point rejects formula expressions" begin
+            expression_meta = rename(copy(meta), "run" => "I(seq_len(12))")
+            @test_throws ArgumentError Analysis.run_permanova(mat, expression_meta; seed=123)
+        end
 
         @testset "each term is tested on its own, as vegan by = \"terms\"" begin
             res = Analysis.run_permanova(mat, meta; seed=123)
