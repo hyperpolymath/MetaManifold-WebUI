@@ -177,6 +177,9 @@ end
         request = Dict("numeric_policy" => Dict("mode" => "exact_counts"),
                        "table" => "merged", "taxonomic_level" => "Genus")
         response = _vs_post(path, request)
+        if response.status != 200
+            @error "validated run statistics request failed" status=response.status body=String(response.body)
+        end
         @test response.status == 200
         result = JSON3.read(String(response.body))
         @test result.status == "partial" # Empty has undefined proportions.
