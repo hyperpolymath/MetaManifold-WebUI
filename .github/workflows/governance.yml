@@ -60,9 +60,9 @@ jobs:
       contents: read
       pull-requests: read
     with:
-      # No K9 contracts are committed yet: report grey, never pretend that
-      # DEED syntax validation establishes K9 semantic conformance.
-      require-files: false
+      # Require the committed .machine_readable/contractiles/ K9 corpus across
+      # L0–L2; an accidentally emptied corpus or orange state fails closed.
+      require-files: true
       fail-on-indeterminate: true
 
   hypatia:
@@ -164,7 +164,7 @@ jobs:
 
   badges:
     name: Publish badges
-    needs: [deed, hypatia]
+    needs: [deed, k9, hypatia]
     if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -172,6 +172,13 @@ jobs:
       contents: write
       actions: read
     steps:
+      - name: Download the K9 conformance grid
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: k9-grid
+          path: k9-grid
+
       - name: Download the verdict grid
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -183,6 +190,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEED_RESULT: ${{ needs.deed.result }}
+          K9_RESULT: ${{ needs.k9.result }}
         run: |
           set -euo pipefail
           # shields.io endpoint JSON, one file per lane, on an orphan branch
@@ -195,6 +203,14 @@ jobs:
             *)       msg=indeterminate; colour=orange ;;
           esac
           jq -n --arg m "$msg" --arg c "$colour" '{schemaVersion: 1, label: "DEED syntax", message: $m, color: $c}' > out/deed.json
+          if [ "$K9_RESULT" = "success" ] && [ -s k9-grid/badge.json ]; then
+            cp k9-grid/badge.json out/k9-grid.json
+          elif [ "$K9_RESULT" = "failure" ]; then
+            jq -n '{schemaVersion: 1, label: "K9 contracts", message: "failing", color: "red"}' > out/k9-grid.json
+          else
+            jq -n '{schemaVersion: 1, label: "K9 contracts", message: "indeterminate", color: "orange"}' > out/k9-grid.json
+          fi
+          [ -s k9-grid/report.json ] && cp k9-grid/report.json out/k9-grid.report.json
           if [ -s verdict-grid/badge.json ]; then
             cp verdict-grid/badge.json out/hypatia-grid.json
           else

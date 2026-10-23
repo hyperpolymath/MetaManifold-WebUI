@@ -473,7 +473,8 @@ end
 @patch "/api/v1/config" function(req)
     root      = dirname(ServerState.data_dir())
     user_path = joinpath(root, "config", "pipeline.yml")
-    body = JSON3.read(req.body)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     for (k, v) in body
         string(k) in _ALLOWED_CONFIG_KEYS || return json_error(400, "invalid_config_key",
             "Config key '$(string(k))' is not a recognised pipeline option")
@@ -736,7 +737,8 @@ end
 @patch "/api/v1/studies/{study}/config" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body = JSON3.read(req.body)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     for (k, v) in body
         string(k) in _ALLOWED_CONFIG_KEYS || return json_error(400, "invalid_config_key",
             "Config key '$(string(k))' is not a recognised pipeline option")
@@ -820,7 +822,8 @@ end
                                                      "Study '$study' not found")
     group in _group_names(study) || return json_error(404, "group_not_found",
                                                           "Group '$group' not found")
-    body = JSON3.read(req.body)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     for (k, v) in body
         string(k) in _ALLOWED_CONFIG_KEYS || return json_error(400, "invalid_config_key",
             "Config key '$(string(k))' is not a recognised pipeline option")
@@ -868,7 +871,8 @@ end
     isnothing(err) || return err
     group = let g = _req_group(req); isnothing(g) ? _run_group(study, run) : g end
     run_path = isnothing(group) ? run : joinpath(group, run)
-    body = JSON3.read(req.body)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     for (k, v) in body
         string(k) in _ALLOWED_CONFIG_KEYS || return json_error(400, "invalid_config_key",
             "Config key '$(string(k))' is not a recognised pipeline option")
