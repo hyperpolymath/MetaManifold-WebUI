@@ -22,7 +22,9 @@ _rf_request(method, path, body="", headers=["Content-Type" => "application/json"
         r = _rf_request("POST", "$base?kind=figure&title=Alpha&ext=.svg", svg,
                         ["Content-Type" => "application/octet-stream"])
         @test r.status == 200
-        a = JSON3.read(String(r.body))
+        # String(Vector{UInt8}) may take ownership and empty the input vector.
+        # Keep the response bytes intact for the canonical-byte assertion.
+        a = JSON3.read(String(copy(r.body)))
         @test r.body == jcs_bytes(a)
         @test read(joinpath(tmp, "projects", "StudyR", "report", "items.json")) ==
               jcs_bytes([a])
@@ -136,7 +138,7 @@ end
         @test isempty(JSON3.read(String(_rf_request("GET", base).body)))
         r = _rf_request("POST", base, JSON3.write(Dict("title" => "Fig 1", "groups" => [])))
         @test r.status == 200
-        @test r.body == jcs_bytes(JSON3.read(String(r.body)))
+        @test r.body == jcs_bytes(JSON3.read(String(copy(r.body))))
         id = JSON3.read(String(r.body)).id
         @test occursin(r"^[0-9a-f]{8}$", id)
         r = _rf_request("PUT", "$base/$id", JSON3.write(Dict("id" => "ffffffff", "title" => "Renamed")))

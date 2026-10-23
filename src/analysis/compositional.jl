@@ -860,7 +860,9 @@ function _wald(coefficients::Matrix{Float64}, variances::Vector{Float64})
         se[l, k] = s
         if s > 0.0 && isfinite(s)
             z[l, k] = coefficients[l, k] / s
-            p[l, k] = erfc(abs(z[l, k]) / sqrt(2.0))
+            # Julia's Base does not export erfc; use the bundled libm so
+            # two-sided normal tail probabilities need no extra dependency.
+            p[l, k] = ccall((:erfc, Base.Math.libm), Cdouble, (Cdouble,), abs(z[l, k]) / sqrt(2.0))
         else
             z[l, k] = NaN
             p[l, k] = NaN
