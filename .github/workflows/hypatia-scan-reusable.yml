@@ -4,7 +4,7 @@
 #
 # Fork-local copy of hyperpolymath/standards/.github/workflows/
 # hypatia-scan-reusable.yml at 01c9b0c9f2646ebea0b30a9588462642ac94aee9.
-# Keep that source pin when updating this file and reapply the two fork deltas:
+# Keep that source pin when updating this file and reapply the three fork deltas:
 #   1. Do not upload SARIF for pull_request events. This lane is advisory on
 #      PRs; uploading error-level results creates a separate, blocking
 #      "Code scanning results / Hypatia" check even when the scan job passes.
@@ -12,7 +12,10 @@
 #      manual runs continue to reconcile code scanning on the default branch.
 #   2. Pin the standards checkout explicitly. job.workflow_sha now names a
 #      MetaManifold commit, not a commit in hyperpolymath/standards.
-# scripts/check-governance-contract.sh guards both deltas.
+#   3. Filter only upstream-inherited TypeScript paths from the effective
+#      findings, validate the raw/effective JSON with pinned ijson-jcs, and keep
+#      raw scanner outputs plus fork-only paths/rules.
+# scripts/check-governance-contract.sh guards these deltas.
 #
 # Hypatia Neurosymbolic CI/CD Security Scan — Reusable Workflow
 name: Hypatia Reusable Scan
@@ -83,6 +86,56 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Read the pinned ijson-jcs identity
+        id: ijson_jcs_pin
+        run: |
+          python3 - <<'PY'
+          import os, re, tomllib
+          with open('config/format-tools.toml', 'rb') as stream:
+              pin = tomllib.load(stream)['ijson_jcs']
+          if pin['repository'] != 'https://github.com/hyperpolymath/ijson-jcs':
+              raise SystemExit('unexpected ijson-jcs repository')
+          if not re.fullmatch(r'[0-9a-f]{40}', pin['revision']):
+              raise SystemExit('ijson-jcs must be pinned to an immutable commit')
+          if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', pin['rust_toolchain']):
+              raise SystemExit('ijson-jcs Rust toolchain must be an explicit release')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write(f"repository={pin['repository']}\n")
+              stream.write(f"revision={pin['revision']}\n")
+              stream.write(f"rust_toolchain={pin['rust_toolchain']}\n")
+          PY
+
+      - name: Cache the pinned ijson-jcs binary
+        id: ijson_jcs_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/ijson-jcs
+          key: ijson-jcs-${{ steps.ijson_jcs_pin.outputs.revision }}-${{ steps.ijson_jcs_pin.outputs.rust_toolchain }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install pinned ijson-jcs
+        if: steps.ijson_jcs_cache.outputs.cache-hit != 'true'
+        env:
+          IJSON_JCS_REPOSITORY: ${{ steps.ijson_jcs_pin.outputs.repository }}
+          IJSON_JCS_REVISION: ${{ steps.ijson_jcs_pin.outputs.revision }}
+          IJSON_JCS_RUST_TOOLCHAIN: ${{ steps.ijson_jcs_pin.outputs.rust_toolchain }}
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$IJSON_JCS_RUST_TOOLCHAIN" --profile minimal
+          cargo "+$IJSON_JCS_RUST_TOOLCHAIN" install --quiet \
+            --git "$IJSON_JCS_REPOSITORY" --rev "$IJSON_JCS_REVISION" \
+            --locked --root "$HOME/.cargo" ijson-jcs
+
+      - name: Verify ijson-jcs and test the exception output
+        run: |
+          set -euo pipefail
+          IJSON_JCS="$HOME/.cargo/bin/ijson-jcs"
+          test -x "$IJSON_JCS"
+          "$IJSON_JCS" --version
+          printf '%s' '{"b":2,"a":1}' | "$IJSON_JCS" canon > "$RUNNER_TEMP/ijson-jcs-smoke.json"
+          printf '%s' '{"a":1,"b":2}' | cmp - "$RUNNER_TEMP/ijson-jcs-smoke.json"
+          "$IJSON_JCS" check "$RUNNER_TEMP/ijson-jcs-smoke.json" >/dev/null
+          IJSON_JCS="$IJSON_JCS" bash scripts/tests/test-hypatia-inherited-language-exception.sh
 
       - name: Setup Elixir for Hypatia scanner
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
@@ -201,7 +254,14 @@ jobs:
           # Missing/truncated/multi-document output is a scanner error and fails
           # closed; a single well-formed `[]` is a valid clean scan when the
           # scanner step succeeded (standards#1054).
-          if [ ! -s hypatia-findings.json ] || ! jq -e -s '
+          if [ ! -s hypatia-findings.json ]; then
+            echo "::error::Hypatia did not produce hypatia-findings.json"
+            exit 2
+          fi
+          # Validate original bytes as I-JSON before jq can parse or normalize
+          # them. The raw scanner artifact itself remains untouched.
+          "$HOME/.cargo/bin/ijson-jcs" canon < hypatia-findings.json > /dev/null
+          if ! jq -e -s '
             length == 1 and (.[0] | type == "array" and all(.[];
               type == "object" and (.severity as $s |
                 ["critical", "high", "medium", "warn", "low", "info", "informational"] | index($s) != null)))
@@ -224,7 +284,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           {
-            echo "## Hypatia Scan Results"
+            echo "## Raw Hypatia Scan Results (before fork exception)"
             echo ""
             echo "| Severity | Count |"
             echo "|----------|-------|"
@@ -232,6 +292,8 @@ jobs:
             echo "| High     | $HIGH |"
             echo "| Medium   | $MEDIUM |"
             echo "| **Total**| $FINDING_COUNT |"
+            echo ""
+            echo "These are the unmodified scanner counts. The fork-local upstream TypeScript exception and the effective counts used by the verdict grid and gates are reported below."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Relativize finding paths
@@ -249,6 +311,51 @@ jobs:
                   else . end)
             ' hypatia-findings.json > hypatia-findings.relativized.json
           fi
+
+      - name: Apply upstream-inherited TypeScript exception
+        id: inherited-language
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          # The raw scanner outputs stay intact for audit. This fork-local
+          # exception changes only the effective JSON/SARIF projections used by
+          # the verdict grid, severity advisory, baseline gate, and code scanning.
+          if [ ! -s hypatia-findings.relativized.json ] || [ ! -s hypatia.sarif ]; then
+            echo "::notice::Raw Hypatia output is unavailable; no inherited-TypeScript exception was applied."
+            exit 0
+          fi
+          allowlist=config/hypatia/upstream-typescript-allowlist.txt
+          bash scripts/filter-hypatia-inherited-language.sh \
+            hypatia-findings.relativized.json hypatia.sarif "$allowlist" \
+            hypatia-findings.effective.json hypatia-effective.sarif \
+            "$HOME/.cargo/bin/ijson-jcs"
+
+          RAW_COUNT=$(jq 'length' hypatia-findings.relativized.json)
+          EFFECTIVE_COUNT=$(jq 'length' hypatia-findings.effective.json)
+          EXCLUDED_COUNT=$((RAW_COUNT - EFFECTIVE_COUNT))
+          CRITICAL=$(jq '[.[] | select(.severity == "critical")] | length' hypatia-findings.effective.json)
+          HIGH=$(jq '[.[] | select(.severity == "high")] | length' hypatia-findings.effective.json)
+          MEDIUM=$(jq '[.[] | select(.severity == "medium" or .severity == "warn")] | length' hypatia-findings.effective.json)
+          {
+            echo "raw_findings_count=$RAW_COUNT"
+            echo "excluded_count=$EXCLUDED_COUNT"
+            echo "findings_count=$EFFECTIVE_COUNT"
+            echo "critical=$CRITICAL"
+            echo "high=$HIGH"
+            echo "medium=$MEDIUM"
+          } >> "$GITHUB_OUTPUT"
+          UPSTREAM_SOURCE=$(sed -n 's/^# Source: //p' "$allowlist")
+          {
+            echo "## Fork-local upstream TypeScript exception"
+            echo ""
+            echo "Source snapshot: $UPSTREAM_SOURCE. Only cicd_rules/banned_language_file findings for exact .ts/.tsx paths in $allowlist are exempted."
+            echo ""
+            echo "- Raw findings retained: $RAW_COUNT"
+            echo "- Inherited TypeScript findings excluded from effective results: $EXCLUDED_COUNT"
+            echo "- Findings sent to the verdict grid and gates: $EFFECTIVE_COUNT ($CRITICAL critical, $HIGH high, $MEDIUM medium/warn)"
+            echo "- Fork-only TypeScript paths and all other rules remain reportable."
+            echo "- Raw JSON remains unchanged in hypatia-findings.json; hypatia-findings.effective.json is I-JSON validated and JCS canonicalized with the repo-pinned tool."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # panic-attack is ADVISORY: it never fails this job, because this
       # reusable is called estate-wide and the owner has not made it a gate.
@@ -549,7 +656,7 @@ jobs:
           # Use the CALLER's apply-baseline.sh — the same copy the gate runs,
           # so the SARIF and the gate cannot disagree about what is acknowledged.
           APPLY_BASELINE=scripts/apply-baseline.sh \
-            bash "$FILTER" hypatia.sarif hypatia-findings.relativized.json .hypatia-baseline.json
+            bash "$FILTER" hypatia-effective.sarif hypatia-findings.effective.json .hypatia-baseline.json
 
       - name: Upload SARIF to code scanning
         # Advisory PR scans must not create a second, blocking code-scanning
@@ -566,7 +673,7 @@ jobs:
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.38.0 (4.38.1 blocked estate-wide; nexia-list#100)
         with:
-          sarif_file: hypatia.sarif
+          sarif_file: hypatia-effective.sarif
           category: hypatia
 
       - name: Upload findings artifacts
@@ -575,6 +682,7 @@ jobs:
           name: hypatia-scan-findings
           path: |
             hypatia-findings.json
+            hypatia-findings.effective.json
             panic-attack-findings.json
             pons-findings.json
           retention-days: 90
@@ -641,8 +749,12 @@ jobs:
             echo "state=orange" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Prefer the exception-aware projection. If that step could not run,
+          # fall back to raw findings so a failed exception transform can never
+          # hide scanner output; the job itself still records the failure.
           findings=hypatia-findings.json
           [ -f hypatia-findings.relativized.json ] && findings=hypatia-findings.relativized.json
+          [ -f hypatia-findings.effective.json ] && findings=hypatia-findings.effective.json
           enrolment=""
           [ -f .gitbot-fleet/enrolment.json ] && enrolment=.gitbot-fleet/enrolment.json
           # The renderer appends the grid to the step summary and writes
@@ -667,7 +779,7 @@ jobs:
           retention-days: 90
 
       - name: Gate on baseline (blocking when a baseline is committed)
-        if: '!inputs.block-on-high && steps.scan.outputs.findings_count > 0'
+        if: '!inputs.block-on-high && steps.inherited-language.outputs.findings_count > 0'
         run: |
           # Wave-8 gate promotion: when the calling repo commits a
           # .hypatia-baseline.json (schema: .machine_readable/hypatia-baseline.
@@ -678,11 +790,10 @@ jobs:
           # itself the moment a baseline lands (standards#399/#437/#446).
           if [ -f scripts/apply-baseline.sh ] && [ -f .hypatia-baseline.json ]; then
             echo "Baseline present — running BLOCKING gate (threshold: high)."
-            # Paths were relativized in an earlier step so the SARIF filter and
-            # this gate agree on what a finding's path is. Two definitions of
-            # "the same finding" is how the baseline came to mean one thing to
-            # the gate and nothing to the security tab.
-            bash scripts/apply-baseline.sh hypatia-findings.relativized.json .hypatia-baseline.json blocking
+            # Use the exception-aware findings so inherited upstream TypeScript
+            # is treated consistently by the gate and the Security tab. Paths
+            # were relativized before applying the fork-local exception.
+            bash scripts/apply-baseline.sh hypatia-findings.effective.json .hypatia-baseline.json blocking
           else
             echo "No committed baseline — gate stays advisory (see next step)."
           fi
@@ -709,7 +820,7 @@ jobs:
               echo "::error::A committed baseline requires scripts/apply-baseline.sh"
               exit 2
             fi
-            bash scripts/apply-baseline.sh hypatia-findings.relativized.json .hypatia-baseline.json advisory >/dev/null
+            bash scripts/apply-baseline.sh hypatia-findings.effective.json .hypatia-baseline.json advisory >/dev/null
             if [ "${HYPATIA_BASELINE_FILTERED:-}" != "true" ]; then
               echo "::error::Baseline validation passed but SARIF filtering did not complete"
               exit 2
@@ -725,11 +836,11 @@ jobs:
                 all(.results[];
                   type == "object" and (.ruleId | type == "string" and length > 0) and
                   (.level as $level | ["error", "warning", "note", "none"] | index($level) != null))))
-          ' hypatia.sarif >/dev/null; then
-            echo "::error::Hypatia did not produce one valid SARIF findings document"
+          ' hypatia-effective.sarif >/dev/null; then
+            echo "::error::Hypatia did not produce one valid exception-aware SARIF findings document"
             exit 2
           fi
-          count=$(jq '[.runs[].results[] | select(.level == "error")] | length' hypatia.sarif)
+          count=$(jq '[.runs[].results[] | select(.level == "error")] | length' hypatia-effective.sarif)
           if [ "$count" -gt 0 ]; then
             echo "::error::Hypatia found $count current high or critical finding(s); see the SARIF artifact"
             exit 1
@@ -737,17 +848,17 @@ jobs:
           echo "Hypatia blocking gate: no current high or critical findings after baseline filtering"
 
       - name: Check for critical issues (ADVISORY — does not gate)
-        if: '!inputs.block-on-high && steps.scan.outputs.critical > 0'
+        if: '!inputs.block-on-high && steps.inherited-language.outputs.critical > 0'
         run: |
           # This scan is ADVISORY / fix-forward WHEN NO BASELINE IS COMMITTED
           # (the step above becomes the blocking gate once .hypatia-baseline.json
           # lands). The label and summary state that explicitly so a green check
           # carrying critical findings is not mistaken for "no critical findings".
-          echo "::warning title=Hypatia (ADVISORY, non-blocking)::${{ steps.scan.outputs.critical }} critical finding(s). This scan does not gate — review hypatia-findings.json and fix forward."
+          echo "::warning title=Hypatia (ADVISORY, non-blocking)::${{ steps.inherited-language.outputs.critical }} effective critical finding(s). This scan does not gate — review hypatia-findings.effective.json; raw findings remain in hypatia-findings.json."
           {
             echo "### Hypatia scan — ADVISORY (does not gate)"
             echo ""
-            echo "**${{ steps.scan.outputs.critical }} critical finding(s)** reported."
+            echo "**${{ steps.inherited-language.outputs.critical }} effective critical finding(s)** reported after the upstream TypeScript exception."
             echo "This scan is fix-forward and **never fails the build**; a green"
             echo "check here does not mean zero critical findings. See the"
             echo "\`hypatia-scan-findings\` artifact. Blocking promotion: standards#399/#437."

@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# Guard the fork-local Hypatia advisory-scan contract. In particular, a PR scan
-# must remain visible in artifacts/the verdict grid without uploading SARIF to
-# GitHub's independent, blocking code-scanning-results check.
+# Guard the fork-local Hypatia scan contract. A PR scan remains visible without
+# creating an independent blocking SARIF check, and the upstream TypeScript
+# exception stays exact-path, narrow-rule, and audit-preserving.
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,7 +12,10 @@ cd "$ROOT"
 
 CALLER=.github/workflows/governance.yml
 REUSABLE=.github/workflows/hypatia-scan-reusable.yml
+ALLOWLIST=config/hypatia/upstream-typescript-allowlist.txt
+FORMAT_TOOLS=config/format-tools.toml
 STANDARDS_SHA=01c9b0c9f2646ebea0b30a9588462642ac94aee9
+UPSTREAM_SHA=a325589d3d318847c15b21cd34fb7d6e7a6d2f7b
 failures=0
 checks=0
 
@@ -58,8 +61,46 @@ for file in "$CALLER" "$REUSABLE"; do
     fail "$file is missing or empty"
   fi
 done
+if [ -s "$ALLOWLIST" ]; then
+  pass "$ALLOWLIST exists"
+else
+  fail "$ALLOWLIST is missing or empty"
+fi
+if [ -s "$FORMAT_TOOLS" ]; then
+  pass "$FORMAT_TOOLS exists"
+else
+  fail "$FORMAT_TOOLS is missing or empty"
+fi
 
-# Do not continue with misleading secondary errors if either input is absent.
+# Do not continue with misleading secondary errors if an input is absent.
+if [ "$failures" -gt 0 ]; then
+  exit 1
+fi
+
+if grep -Fq "# Source: JoshuaJewell/MetaManifold-WebUI @ $UPSTREAM_SHA " "$ALLOWLIST"; then
+  pass 'the TypeScript exception records its immutable upstream source snapshot'
+else
+  fail "the TypeScript exception must record upstream commit $UPSTREAM_SHA"
+fi
+if grep -Fqx 'frontend/src/App.tsx' "$ALLOWLIST"; then
+  pass 'an upstream TypeScript path is included in the exact-path allowlist'
+else
+  fail 'the exact-path allowlist includes the known upstream App.tsx path'
+fi
+if grep -Fqx 'frontend/src/utils/text.test.ts' "$ALLOWLIST"; then
+  fail 'the fork-only TypeScript path must remain outside the upstream allowlist'
+else
+  pass 'the fork-only TypeScript path remains outside the upstream allowlist'
+fi
+allowlist_entries="$(grep -Ev '^(#|$)' "$ALLOWLIST" || true)"
+if [ -n "$allowlist_entries" ] && ! grep -Eq '[*?]' <<<"$allowlist_entries" \
+    && ! grep -Eqv '\.(ts|tsx)$' <<<"$allowlist_entries"; then
+  pass 'the allowlist contains exact TypeScript paths, not globs or other languages'
+else
+  fail 'the allowlist must contain only exact .ts/.tsx paths, without glob syntax'
+fi
+
+# Stop after a broken exception manifest rather than emitting secondary noise.
 if [ "$failures" -gt 0 ]; then
   exit 1
 fi
@@ -89,11 +130,40 @@ contains "$reusable" "hypatia-scan-reusable.yml at $STANDARDS_SHA." \
 not_contains "$reusable" 'ref: ${{ job.workflow_sha }}' \
   'a standards checkout cannot use the MetaManifold workflow SHA'
 
+if jcs_pin="$(step_block "$REUSABLE" 'Read the pinned ijson-jcs identity')"; then
+  contains "$jcs_pin" 'config/format-tools.toml' \
+    'the JCS tool pin comes from the repository format-tools manifest'
+  contains "$jcs_pin" "['ijson_jcs']" \
+    'the JCS installer reads the ijson-jcs identity from the manifest'
+  contains "$jcs_pin" "pin['rust_toolchain']" \
+    'the JCS Rust toolchain is resolved from the same manifest'
+else
+  fail 'the pinned ijson-jcs identity step exists'
+fi
+if jcs_install="$(step_block "$REUSABLE" 'Install pinned ijson-jcs')"; then
+  contains "$jcs_install" 'cargo "+$IJSON_JCS_RUST_TOOLCHAIN" install --quiet' \
+    'ijson-jcs is built with the pinned Rust toolchain'
+  contains "$jcs_install" '--git "$IJSON_JCS_REPOSITORY" --rev "$IJSON_JCS_REVISION"' \
+    'ijson-jcs is built from the immutable repository revision'
+  contains "$jcs_install" '--locked' \
+    'ijson-jcs dependencies are installed from Cargo.lock'
+else
+  fail 'the pinned ijson-jcs install step exists'
+fi
+if jcs_verify="$(step_block "$REUSABLE" 'Verify ijson-jcs and test the exception output')"; then
+  contains "$jcs_verify" 'IJSON_JCS="$IJSON_JCS" bash scripts/tests/test-hypatia-inherited-language-exception.sh' \
+    'the exception transform is tested with the real pinned canonicalizer'
+else
+  fail 'the pinned ijson-jcs smoke and exception test step exists'
+fi
+
 if upload="$(step_block "$REUSABLE" 'Upload SARIF to code scanning')"; then
   contains "$upload" "if: github.event_name != 'pull_request'" \
     'advisory pull-request scans skip SARIF upload'
   contains "$upload" 'uses: github/codeql-action/upload-sarif@' \
     'push and manual scans retain code-scanning reconciliation'
+  contains "$upload" 'sarif_file: hypatia-effective.sarif' \
+    'code scanning receives the exception-aware SARIF projection'
 else
   fail 'the SARIF upload step exists'
 fi
@@ -107,9 +177,32 @@ else
   fail 'the Hypatia scan step exists'
 fi
 
+if exception="$(step_block "$REUSABLE" 'Apply upstream-inherited TypeScript exception')"; then
+  contains "$exception" 'if: ${{ always() }}' \
+    'the exception step records a result even after scan failures'
+  contains "$exception" 'scripts/filter-hypatia-inherited-language.sh' \
+    'the fork-local allowlist transform is applied after path normalization'
+  contains "$exception" 'hypatia-findings.effective.json' \
+    'the exception creates a distinct effective findings projection'
+  contains "$exception" 'hypatia-effective.sarif' \
+    'the exception creates a distinct effective SARIF projection'
+  contains "$exception" '"$HOME/.cargo/bin/ijson-jcs"' \
+    'the effective findings are canonicalized with the pinned CLI'
+else
+  fail 'the upstream-inherited TypeScript exception step exists'
+fi
+if raw_validation="$(step_block "$REUSABLE" 'Validate findings and count severities')"; then
+  contains "$raw_validation" 'ijson-jcs" canon < hypatia-findings.json' \
+    'raw findings are strict I-JSON validated before jq parses them'
+else
+  fail 'raw I-JSON validation is part of the findings check'
+fi
+
 if artifacts="$(step_block "$REUSABLE" 'Upload findings artifacts')"; then
   contains "$artifacts" 'hypatia-findings.json' \
     'raw findings remain available on advisory pull-request runs'
+  contains "$artifacts" 'hypatia-findings.effective.json' \
+    'the exception-aware findings remain available alongside raw evidence'
   not_contains "$artifacts" 'if: github.event_name' \
     'artifact upload is not accidentally restricted by event'
 else
@@ -121,9 +214,38 @@ if grid="$(step_block "$REUSABLE" 'Render the verdict grid')"; then
     'the verdict grid still renders after scanner failures'
   contains "$grid" '--hypatia' \
     'the verdict grid still consumes Hypatia findings'
+  contains "$grid" 'hypatia-findings.effective.json' \
+    'the verdict grid prefers the exception-aware projection'
 else
   fail 'the verdict-grid render step exists'
 fi
+
+if baseline="$(step_block "$REUSABLE" 'Filter SARIF through the baseline before upload')"; then
+  contains "$baseline" 'hypatia-effective.sarif hypatia-findings.effective.json' \
+    'baseline filtering uses the same exception-aware findings as the grid'
+else
+  fail 'the SARIF baseline-filter step exists'
+fi
+if gate="$(step_block "$REUSABLE" 'Gate on baseline (blocking when a baseline is committed)')"; then
+  contains "$gate" 'hypatia-findings.effective.json' \
+    'the baseline gate consumes exception-aware findings'
+else
+  fail 'the baseline gate step exists'
+fi
+if blocking="$(step_block "$REUSABLE" 'Block high and critical findings when requested')"; then
+  contains "$blocking" 'hypatia-effective.sarif' \
+    'the blocking gate evaluates exception-aware SARIF'
+else
+  fail 'the requested high/critical gate step exists'
+fi
+if advisory="$(step_block "$REUSABLE" 'Check for critical issues (ADVISORY — does not gate)')"; then
+  contains "$advisory" 'steps.inherited-language.outputs.critical' \
+    'the critical advisory count excludes only the inherited TypeScript exception'
+else
+  fail 'the critical advisory step exists'
+fi
+not_contains "$reusable" 'steps.scan.outputs.critical > 0' \
+  'the raw critical count cannot drive an exception-inconsistent advisory'
 
 if renderer="$(step_block "$REUSABLE" 'Check out the verdict grid renderer at this workflow'"'"'s commit')"; then
   contains "$renderer" 'repository: hyperpolymath/standards' \
