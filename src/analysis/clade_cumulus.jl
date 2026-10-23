@@ -1919,21 +1919,23 @@ function _reaggregate_after_move(
 
     function recompute(u::CladeNode, is_root::Bool)::Tuple{CladeNode,Dict{String,Int},Int,Bool}
         if isempty(u.children)
-            freq = total_reads > 0.0 ? u.cumulative_count / total_reads : 0.0
+            # A clade emptied by the graft retains only its own direct reads.
+            cum = u.direct_count
+            freq = total_reads > 0.0 ? cum / total_reads : 0.0
             tmap = Dict{String,Int}()
             mono = u.monophyletic
             if u.dominant_taxon !== nothing
                 tmap[u.dominant_taxon] = 1
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
-            active_here = u.cumulative_count > 0.0
+            active_here = cum > 0.0
             # `subtree_pd` is node-local, as in `clade_faith_pd`: a node's own
             # (non-root) branch counts once, here, and its parent adds only the
             # value it returns.
             own_pd = (active_here && !is_root) ? max(0.0, u.branch_length) : 0.0
             st = Epistemic.epistemic_status(case_obj, u.id)
             leaf_node = CladeNode(
-                u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
+                u.id, u.name, u.rank, u.direct_count, cum, freq,
                 u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
                 u.branch_length, u.support, own_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],

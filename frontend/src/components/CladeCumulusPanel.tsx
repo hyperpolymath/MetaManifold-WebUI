@@ -718,16 +718,15 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
 
               {/*
                 Reads no tip carries: like-weight mass a placement left on no
-                edge, plus ASVs the tree does not cover. They are held out of
-                the weighted UniFrac denominators rather than renormalised onto
-                the tips that were placed, so the shortfall is stated here
-                instead of being silently absorbed.
+                edge, plus ASVs the tree does not cover. They remain in each
+                sample's library-size denominator for weighted UniFrac but are
+                excluded from tree-tip abundances.
               */}
               {unplacedSamples.length > 0 && (
                 <p style={{ fontSize: '.75rem', margin: '0 0 12px', color: 'var(--color-fg-muted, #57606a)' }}>
                   Unplaced reads (carried by no tip — like-weight mass left on no edge, plus
-                  ASVs the tree does not cover — and held out of the weighted UniFrac
-                  denominators):{' '}
+                  ASVs the tree does not cover — included in each sample’s library-size
+                  denominator for weighted UniFrac but excluded from tree-tip abundances):{' '}
                   {unplacedSamples
                     .map(([s, n]) => `${s} ${n.toFixed(2)}`)
                     .join(', ')}

@@ -354,6 +354,37 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
         end
     end
 
+    @testset "Moving the last child clears clade abundance and PD activity" begin
+        df = DataFrame(SeqName = ["ASV_1", "ASV_2", "ASV_3"], Sample1 = [10, 20, 0])
+        tree = CC.build_clade_tree(df; mode = :phylogenetic,
+            newick = "(((ASV_1:0.10)0.99:0.20)0.99:0.30,(ASV_2:0.40,ASV_3:0.50)0.99:0.60)Root;")
+        ancestor = tree.root.children[1]
+        source = only(ancestor.children)
+        target = tree.root.children[2]
+        proposal = CC.validate_drag_drop(tree, "ASV_1", target.id)
+        @test proposal["allowed"]
+        proposed = JSON3.read(JSON3.write(proposal["proposed_root"]))
+        emptied = _cc_find(proposed, source.id)
+        @test isempty(emptied.children)
+        @test emptied.cumulative_count == 0.0
+        @test emptied.cumulative_frequency == 0.0
+        @test emptied.subtree_pd == 0.0
+        inactive_ancestor = _cc_find(proposed, ancestor.id)
+        @test inactive_ancestor.cumulative_count == 0.0
+        @test inactive_ancestor.cumulative_frequency == 0.0
+        @test inactive_ancestor.subtree_pd == 0.0
+        @test proposed.cumulative_count == tree.root.cumulative_count == 30.0
+        @test proposed.cumulative_frequency == 1.0
+        @test _cc_find(proposed, target.id).cumulative_count == 30.0
+        @test _cc_find(proposed, "ASV_1").subtree_pd ≈ 0.10 atol = 1e-12
+        @test _cc_find(proposed, "ASV_3").subtree_pd == 0.0
+        @test proposed.subtree_pd ≈ 1.10 atol = 1e-12
+        @test _cc_find(proposed, target.id).subtree_pd ≈ 1.10 atol = 1e-12
+        @test source.cumulative_count == 10.0
+        @test only(source.children).id == "ASV_1"
+        @test tree.root.subtree_pd ≈ 1.60 atol = 1e-12
+    end
+
     @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
         old_root = CLADE_SV.ServerState._root[]
