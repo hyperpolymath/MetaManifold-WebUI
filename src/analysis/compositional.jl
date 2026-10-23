@@ -50,7 +50,7 @@ export CompositionalFit, CompositionalRefusal, RuntimeRefusal, MAX_TAXA,
        CONCENTRATION_MAX, DM_METHODS, fit_multinomial, fit_dirichlet_multinomial,
        multinomial_loglik, dirichlet_multinomial_loglik, dm_concentration_mle,
        dm_concentration_mom, observed_information, composition_probabilities,
-       compositional_loggamma, compositional_digamma
+       compositional_loggamma, compositional_digamma, compositional_erfc
 
 # At most this many taxa are fitted. The observed information is
 # ((K-1) q) x ((K-1) q) doubles: 500 taxa with two covariates is about 8 MB,
@@ -191,6 +191,56 @@ function compositional_digamma(x::Real)
     inv2 = inv * inv
     log(xf) - 0.5 * inv - inv2 * (1 / 12 - inv2 * (1 / 120 -
         inv2 * (1 / 252 - inv2 * (1 / 240 - inv2 / 132)))) - shift
+end
+
+"""
+    compositional_erfc(x) -> Float64
+
+The complementary error function erfc(x) = 1 - erf(x), computed as the
+regularised upper incomplete gamma Q(1/2, x^2): a series for x^2 < 3/2 and a
+Lentz continued fraction above that (Numerical Recipes `gser`/`gcf`), reusing
+`compositional_loggamma`. Accurate to about 1e-15 relative over the Wald
+z-range, so two-sided normal p-values `erfc(|z| / sqrt(2))` need no
+SpecialFunctions dependency either.
+"""
+function compositional_erfc(x::Real)
+    xf = Float64(x)
+    xf < 0 && return 2.0 - compositional_erfc(-xf)
+    xf == 0 && return 1.0
+    isfinite(xf) || return 0.0
+    a = 0.5
+    x2 = xf * xf
+    kernel = -x2 + a * log(x2) - compositional_loggamma(a)
+    if x2 < a + 1
+        ap = a
+        term = 1.0 / a
+        total = term
+        for _ in 1:1000
+            ap += 1
+            term *= x2 / ap
+            total += term
+            abs(term) < abs(total) * 1e-15 && break
+        end
+        return 1.0 - total * exp(kernel)
+    end
+    tiny = 1e-300
+    b = x2 + 1 - a
+    c = 1 / tiny
+    d = 1 / b
+    h = d
+    for i in 1:1000
+        an = -i * (i - a)
+        b += 2
+        d = an * d + b
+        abs(d) < tiny && (d = tiny)
+        d = 1 / d
+        c = b + an / c
+        abs(c) < tiny && (c = tiny)
+        delta = d * c
+        h *= delta
+        abs(delta - 1) < 1e-15 && break
+    end
+    exp(kernel) * h
 end
 
 ## Geometry
@@ -860,7 +910,7 @@ function _wald(coefficients::Matrix{Float64}, variances::Vector{Float64})
         se[l, k] = s
         if s > 0.0 && isfinite(s)
             z[l, k] = coefficients[l, k] / s
-            p[l, k] = erfc(abs(z[l, k]) / sqrt(2.0))
+            p[l, k] = compositional_erfc(abs(z[l, k]) / sqrt(2.0))
         else
             z[l, k] = NaN
             p[l, k] = NaN
