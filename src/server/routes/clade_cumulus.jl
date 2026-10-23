@@ -11,6 +11,10 @@
 # write only study-local sidecars under `projects/{study}/trees/.clade_cumulus/`.
 
 using DataFrames, OrderedCollections, SHA, Dates, JSON3
+# Named here rather than inherited from results.jl, which is included
+# earlier: relying on a sibling file's `using` breaks when this file is
+# evaluated on its own, and a missing DuckDB binding is a 500 at runtime.
+using DuckDB, DBInterface
 
 const _CC_SIDECAR_MAX_BYTES = 5 * 1024 * 1024
 

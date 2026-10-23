@@ -20,6 +20,14 @@ for file in files
                 issue = ex
                 break
             end
+            # A stray `end` at top level parses cleanly and only fails at
+            # lowering (""end" at top level"), so this gate has to reject it
+            # explicitly: a dropped `module` opener is otherwise invisible here.
+            if ex === :end
+                issue = "top-level `end` at code unit $position: a block opener " *
+                        "(module, function, begin) is missing or was removed"
+                break
+            end
             next_position > position ||
                 error("Julia parser made no progress at code unit $position")
             position = next_position

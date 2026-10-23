@@ -930,6 +930,45 @@ _saved_root = SV.ServerState._root[]
         end
     end
 
+
+    ## Registration itself
+    # A duplicated `include` in server.jl registers every route in that file
+    # twice. No request test can see that: the second registration simply
+    # shadows the first, and both answer. These checks read the sources, so
+    # they fail on the merge that reintroduces a duplicate.
+    @testset "Registered routes" begin
+        src_dir = joinpath(@__DIR__, "..", "..", "src", "server")
+        server_src = read(joinpath(src_dir, "server.jl"), String)
+        # Every `include(joinpath(@__DIR__, "a", "b.jl"))` path, in order.
+        included = String[]
+        for m in eachmatch(r"include\(joinpath\(@__DIR__((?:,\s*\"[^\"]+\")+)\)\)",
+                           server_src)
+            push!(included, join([c[2:end-1] for c in
+                                  eachmatch(r"\"[^\"]+\"", m.captures[1])], "/"))
+        end
+        @test !isempty(included)
+        # The duplicate that shipped in 8b76b71: routes/cladistics.jl twice.
+        # No request test can see this — the second registration shadows the
+        # first and both answer — so the invariant is checked on the sources.
+        @test allunique(included)
+        @test count(==("routes/cladistics.jl"), included) == 1
+        @test count(==("routes/clade_cumulus.jl"), included) == 1
+
+        # And no route file declares the same method+path twice.
+        routes = Tuple{String,String}[]
+        for file in sort(readdir(joinpath(src_dir, "routes"); join = true))
+            endswith(file, ".jl") || continue
+            for m in eachmatch(r"@(get|post|put|patch|delete)\s+(\"[^\"]+\")",
+                               read(file, String))
+                push!(routes, (m.captures[1], m.captures[2]))
+            end
+        end
+        @test !isempty(routes)
+        @test allunique(routes)
+        @test any(r -> occursin("/cladistics", r[2]), routes)
+        @test any(r -> occursin("/clade-cumulus", r[2]), routes)
+    end
+
 end
 
 # Testsets above point the server at temporary roots.
