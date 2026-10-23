@@ -351,7 +351,7 @@ function _ui_high_precision_value(value)
     display = get(value, "display", "")
     bits = get(value, "precision_bits", "")
     kind = get(value, "kind", "approximate")
-    String("<code>", _html(print_value), "</code><br><span class=\"display\">",
+    string("<code>", _html(print_value), "</code><br><span class=\"display\">",
            _html(kind), " · ", _html(string(bits)), "-bit · display: ",
            _html(display), "</span>")
 end

@@ -49,6 +49,10 @@ const _ADV_BASE = Dict{String,Any}(
 )
 
 _adv_body(overrides::Dict) = merge(_ADV_BASE, overrides)
+# The call sites pass pairs, not keyword arguments: `_adv_body("k" => v)` is
+# one positional Pair, and without this method it is a MethodError rather than
+# a request body.
+_adv_body(pairs::Pair...) = merge(_ADV_BASE, Dict{String,Any}(pairs...))
 _adv_body(key::String, value) = merge(_ADV_BASE, Dict(key => value))
 
 """Assert a refused request: documented status, documented code, canonical body."""
