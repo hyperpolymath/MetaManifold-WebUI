@@ -311,7 +311,9 @@ export function ConstrainedOrdinationPanel({
       setVariancePartitioning(vpRaw)
       const fRaw = cfg['analysis.ordination.formula']?.value
       if (typeof fRaw === 'string' && fRaw.trim() !== '') setFormula(fRaw)
-    }).catch(() => {})
+    }).catch(() => {
+      if (loadedStudyCfg.current === study) loadedStudyCfg.current = null
+    })
   }, [open, study])
 
   const needsPhylo = distance === 'weighted_unifrac' || distance === 'unweighted_unifrac'
