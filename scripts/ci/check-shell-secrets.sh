@@ -29,18 +29,21 @@ ignored() {
 }
 found=0
 scan_file() {
-  local file=$1 path=$2 revision=$3 pattern rc line number content previous
+  local file=$1 path=$2 revision=$3 pattern rc line number content source_line previous
   ignored "$path" && return 0
   for pattern in "${patterns[@]}"; do
     rc=0
-    grep -nE "$pattern" "$file" > "$scratch/matches" || rc=$?
+    grep -noE "$pattern" "$file" > "$scratch/matches" || rc=$?
     if [ "$rc" -gt 1 ]; then echo 'ERROR: shell-secret matcher failed' >&2; return "$rc"; fi
     while IFS= read -r line; do
       number=${line%%:*}; content=${line#*:}
       # PASSWORD allows arbitrary characters, including variable-only RHSs.
       [[ "$content" =~ $parameter_rhs ]] && continue
-      [[ "$content" =~ ^[[:space:]]*# ]] && continue
-      [[ "$content" =~ $pragma ]] && continue
+      # Check exemptions against each assignment separately; a variable on
+      # one side of `;` cannot hide a literal credential later on the line.
+      source_line=$(sed -n "${number}p" "$file")
+      [[ "$source_line" =~ ^[[:space:]]*# ]] && continue
+      [[ "$source_line" =~ $pragma ]] && continue
       if [ "$number" -gt 1 ]; then
         previous=$(sed -n "$((number - 1))p" "$file")
         [[ "$previous" =~ $pragma ]] && continue
