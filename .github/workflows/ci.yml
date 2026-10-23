@@ -420,9 +420,17 @@ jobs:
             # failure but the last one. Pair each location with its assertion,
             # cut long lines (an evaluated HTML page is useless in a digest),
             # then publish the first few chunks.
-            grep -E "Test Failed at |Error During Test at |^  Expression: |^   Evaluated: |^  Test threw exception" \
-              /tmp/validated-statistics-tests.log |
-              cut -c1-320 > /tmp/validated-statistics-failures.log
+            # Print each failure's location and the lines that explain it: the
+            # expression and evaluated value for an assertion, the exception for
+            # an error. Long lines are cut because an evaluated HTML page would
+            # otherwise fill the whole digest.
+            awk '
+              /Test Failed at / { print; remaining = 2; next }
+              /Error During Test at / { print; remaining = 4; next }
+              /statistics UI request failed/ { print; remaining = 6; next }
+              remaining > 0 { print; remaining-- }
+            ' /tmp/validated-statistics-tests.log |
+              cut -c1-260 > /tmp/validated-statistics-failures.log
             rm -f /tmp/validated-statistics-digest-*
             split -b 3800 /tmp/validated-statistics-failures.log /tmp/validated-statistics-digest-
             index=0
