@@ -489,13 +489,20 @@ end
 """
     parse_jplace(raw_json::AbstractString) -> JplaceDocument
 
-Strictly parse a `.jplace` document before any display normalization:
+Strictly parse a `.jplace` document before any display normalisation:
 - Validates unique integer `{edge_num}` annotations across the tree
 - Validates explicit unique `"like_weight_ratio"` column in `"fields"`
-- Validates each query's `p` candidates, finite weights in `[0, 1]`, edge
-  references present on non-root edges, and total weight within `1e-5` of `1.0`
+- Validates each query's `p` candidates, finite weights in `[0, 1]`, and edge
+  references present on non-root edges. A single candidate needs weight at
+  least `0.5`; multiple candidates need total weight within `1e-5` of `1.0`.
 - Preserves raw query/candidate ordinals and `n` / `nm` multiplicities without
-  re-normalizing weights or collapsing tied maxima.
+  renormalising weights or collapsing tied maxima.
+
+Return the parsed tree, edge index, query placements and tree warnings. Missing
+or invalid candidate data and insufficient weights produce `:undecided` queries
+with a reason rather than an exception. Invalid document structure, edge
+annotations, required columns or query names raise `ArgumentError`; Newick
+parsing, JSON decoding and data conversion errors propagate.
 """
 function parse_jplace(raw_json::AbstractString)::JplaceDocument
     doc = JSON3.read(raw_json)
@@ -774,6 +781,11 @@ true library size instead, so that share stays off the tree rather than being
 renormalised onto the tips that were placed. Without this, down-weighting a tip
 to express placement uncertainty achieves nothing: dividing by the placed-only
 total scales it straight back up.
+
+`declared=nothing` returns the sum of `abund`; otherwise return at least that
+sum, allowing a shortfall of `1e-9 * on_tree + 1e-9` for rounding. A declared
+total that is non-finite, negative or further below the sum raises
+`ArgumentError`. `name` identifies the offending parameter in these errors.
 """
 function _sample_total(
     abund::Dict{String,Float64},
@@ -798,7 +810,7 @@ end
     weighted_unifrac(counts_a, counts_b, taxa, tree; normalized=false,
                      total_a=nothing, total_b=nothing) -> Float64
 
-Lozupone et al. (2007) raw (`normalized=false`) or normalized (`normalized=true`)
+Lozupone et al. (2007) raw (`normalized=false`) or normalised (`normalized=true`)
 weighted UniFrac distance: branch-length-weighted L1 distance between the two
 samples' CladeCumulus cumulative relative abundance trees.
 
@@ -806,6 +818,18 @@ samples' CladeCumulus cumulative relative abundance trees.
 the mass on the tree. Pass the sample's true library size when part of it could
 not be placed, so the unplaced share is absent from the tree instead of being
 renormalised onto the tips that were.
+
+Counts correspond to `taxa`; repeated taxon names have their counts summed.
+`tree` may be Newick text or a parsed tree and is midpoint-rooted when its root
+has more than two children. The raw result uses the tree's branch-length units;
+the normalised result divides by the sum of each tip's root distance weighted
+by its relative abundance in both samples, returning `0.0` if that sum is zero.
+Two samples with zero totals also return `0.0`.
+
+Raise `ArgumentError` for mismatched count and taxon lengths, non-finite or
+negative counts, taxa absent from the tree, or explicit totals that are
+non-finite, negative or below the mapped count sum beyond rounding tolerance.
+Newick parsing errors propagate.
 """
 function weighted_unifrac(
     counts_a::AbstractVector{<:Real},
@@ -857,6 +881,21 @@ function weighted_unifrac(
     den <= 0.0 ? 0.0 : num / den
 end
 
+"""
+    branch_unifrac_contributions(counts_a, counts_b, taxa, tree;
+                                 total_a=nothing, total_b=nothing)
+
+Return positive contributions from non-root branches to raw weighted UniFrac,
+sorted by decreasing contribution. Each record contains `clade_id`, `label`,
+`is_tip`, `branch_length`, cumulative relative abundances `freq_a` and `freq_b`,
+and `contribution` (branch length times the absolute frequency difference).
+The contributions sum to [`weighted_unifrac`](@ref) with `normalized=false`
+and the same totals; no positive contributions yields an empty vector.
+
+Counts, taxa, tree rooting and optional sample totals have the same meaning
+and validation as in `weighted_unifrac`. Its `ArgumentError` conditions and
+Newick parsing errors propagate here too.
+"""
 function branch_unifrac_contributions(
     counts_a::AbstractVector{<:Real},
     counts_b::AbstractVector{<:Real},
@@ -918,6 +957,25 @@ function branch_unifrac_contributions(
     contribs
 end
 
+"""
+    unifrac_matrix(sample_matrix, taxa, samples, tree;
+                   metric=:weighted, normalized=false, totals=nothing) -> Matrix{Float64}
+
+Return a symmetric pairwise UniFrac distance matrix with a zero diagonal, in
+`samples` order. Input rows correspond to `taxa` and columns to `samples`.
+`metric=:weighted` uses [`weighted_unifrac`](@ref), including its `normalized`
+option; `metric=:unweighted` uses [`unweighted_unifrac`](@ref).
+
+For weighted distances, `totals` supplies library sizes in `samples` order,
+including unplaced reads; by default each sample uses its mapped count sum.
+For unweighted distances, `normalized` and the values of `totals` are ignored.
+
+Raise `ArgumentError` for mismatched matrix dimensions or `totals` length.
+Newick parsing errors propagate. Pairwise evaluation also propagates the
+chosen metric's input validation errors and rejects unsupported metrics with
+`ArgumentError`. With fewer than two samples, return the zero matrix without
+pairwise validation.
+"""
 function unifrac_matrix(
     sample_matrix::AbstractMatrix{<:Real},
     taxa::AbstractVector{<:AbstractString},

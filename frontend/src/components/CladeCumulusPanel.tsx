@@ -33,6 +33,11 @@ export interface CladeCumulusPanelProps {
   runs: CladeCumulusRunOption[]
 }
 
+/**
+ * Explore a study's run trees, diversity and unplaced reads, with CSV export
+ * and move previews that can be saved as sidecar proposals. Move checks use
+ * the last computed inputs until the user recomputes the result.
+ */
 export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
   const toast = useToast()
   const reqCounter = useRef(0)
