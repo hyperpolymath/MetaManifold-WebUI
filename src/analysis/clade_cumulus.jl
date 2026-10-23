@@ -28,7 +28,9 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
+# Placement weights are often rounded or truncated in serialized jplace output.
+# Accept small omissions without treating materially incomplete evidence as valid.
+const PLACEMENT_WEIGHT_SUM_TOL = 0.05
 
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
@@ -202,8 +204,11 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
         end
     end
 
-    function read_label_and_quoted()::Tuple{String,Bool}
-        skip_ws_and_leading_comments!()
+    function read_label_and_quoted(;
+        capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
+        capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing,
+    )::Tuple{String,Bool}
+        skip_ws_and_leading_comments!(capture_nhx = capture_nhx, capture_edge = capture_edge)
         pos[] > n && return ("", false)
         if bytes[pos[]] == UInt8('\'')
             pos[] += 1
@@ -260,7 +265,8 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
 
         nhx_sup = Ref{Union{Float64,Nothing}}(nothing)
         edge_num = Ref{Union{Int,Nothing}}(nothing)
-        raw_lbl, was_quoted = read_label_and_quoted()
+        raw_lbl, was_quoted = read_label_and_quoted(
+            capture_nhx = nhx_sup, capture_edge = edge_num)
         skip_ws_and_leading_comments!(capture_nhx = nhx_sup, capture_edge = edge_num)
 
         branch_len = 0.0
@@ -991,7 +997,7 @@ function _graft_jplace_queries(
 
     for q in jd.queries
         q.status === :valid && !isempty(q.candidates) || continue
-        total_w = sum((c.weight for c in q.candidates); init = 0.0)
+        total_w = sum((c.like_weight for c in q.candidates); init = 0.0)
         total_w > 0.0 || continue
         multi = length(q.candidates) > 1
         for (qname, mult) in q.names
@@ -1000,7 +1006,7 @@ function _graft_jplace_queries(
             tx = get(asv_deepest_taxon, qname, nothing)
             tconf = get(asv_tax_conf, qname, 1.0)
             for (ci, cand) in enumerate(q.candidates)
-                share = cand.weight / total_w
+                share = cand.like_weight / total_w
                 tip_id = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
                 if multi
                     asv_reads[tip_id] = get(asv_reads, tip_id, 0.0) + base_cnt * share
@@ -1009,9 +1015,10 @@ function _graft_jplace_queries(
                 elseif !haskey(asv_reads, tip_id)
                     asv_reads[tip_id] = base_cnt
                 end
-                query_lwr[tip_id] = cand.weight
+                query_lwr[tip_id] = cand.like_weight
                 push!(get!(by_edge, cand.edge_num, _GraftedQuerySpec[]),
-                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_length), max(0.0, cand.pendant_length), cand.weight))
+                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_len),
+                        max(0.0, cand.pendant_len), cand.like_weight))
             end
         end
     end

@@ -310,6 +310,9 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             con = DBInterface.connect(db)
             DuckDB.register_data_frame(con, df, "src_df")
             DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
+            # Registration creates a persistent view backed by this Julia object;
+            # only the materialized table should remain in the on-disk fixture.
+            DuckDB.unregister_data_frame(con, "src_df")
             DBInterface.close!(con)
             close(db)
             before_db_sha = bytes2hex(open(sha256, db_path))
