@@ -19,7 +19,7 @@ _tree_view_path(study::String, file::String) = joinpath(_trees_dir(study), ".vie
 
 _tree_format(file::String) = endswith(lowercase(file), ".jplace") ? "jplace" : "newick"
 
-function _valid_tree_file(file::String)::Bool
+function _valid_tree_file(file::AbstractString)::Bool
     _valid_name(file) && any(ext -> endswith(lowercase(file), ext), _TREE_EXTENSIONS)
 end
 
