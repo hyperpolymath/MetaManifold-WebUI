@@ -14,7 +14,7 @@ const EP = MetaManifold.Epistemic
 const CC = MetaManifold.CladeCumulus
 const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
-const SV = MetaManifold.Server
+SV = MetaManifold.Server
 
 _cc_req(method::String, path::String, body::String = "") =
     SV.Oxygen.internalrequest(
@@ -332,6 +332,55 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             )))
             # TEMP diagnostic: surface the handler's own error text.
             r_comb.status == 200 || error("combine failed: ", String(r_comb.body))
+            # TEMP diag: run the handler's steps here so the exception text
+            # lands in the CI annotation instead of a bare 500.
+            let
+                df2, meta2, lerr2 = SV._load_run_table_df("StudyCC", "run1", "merged")
+                lerr2 === nothing || error("load: ", lerr2)
+                digs2 = OrderedDict{String,String}("duckdb:merged" => "x")
+                bod2 = JSON3.read(JSON3.write(Dict("treeSource" => "study_tree",
+                                                   "treeFile" => "amplicon.nwk")))
+                nwk2, jp2, tm2, terr2 = SV._resolve_tree_inputs_from_request("StudyCC", bod2, digs2)
+                terr2 === nothing || error("tree inputs: ", terr2)
+                cc2 = CC.build_clade_tree(df2; mode = :combined, newick = nwk2,
+                                          jplace_json = jp2, sample_cols = meta2.sample_cols,
+                                          support_threshold = 0.85, lwr_threshold = 0.95,
+                                          tree_method = tm2, max_asvs = 500, seed = 42)
+                d2 = CC.clade_node_to_dict(cc2.root)
+                pl2 = CC.to_plotly_figure(cc2.root)
+                tips2 = sort!(collect(CC._collect_tree_tips!(Set{String}(), cc2.phylo_root)))
+                idc2 = CC._detect_id_col(df2)
+                rbi2 = Dict{String,Int}()
+                for (ri2, r2) in enumerate(eachrow(df2))
+                    t2 = String(strip(string(r2[idc2])))
+                    haskey(rbi2, t2) || (rbi2[t2] = ri2)
+                end
+                tv2 = String[]
+                tr2 = Tuple{Int,Float64}[]
+                for t2 in tips2
+                    if haskey(rbi2, t2)
+                        push!(tv2, t2); push!(tr2, (rbi2[t2], 1.0))
+                    end
+                end
+                mat2 = zeros(Float64, length(tv2), length(meta2.sample_cols))
+                for (ci2, sc2) in enumerate(meta2.sample_cols)
+                    cv2 = df2[!, sc2]
+                    for (mi2, (ri2, w2)) in enumerate(tr2)
+                        v2 = cv2[ri2]
+                        mat2[mi2, ci2] = ismissing(v2) ? 0.0 : max(0.0, Float64(v2)) * w2
+                    end
+                end
+                pd2 = OrderedDict{String,Float64}(sc2 => CC.faith_pd(@view(mat2[:, ci2]), tv2, cc2.phylo_root)
+                                                  for (ci2, sc2) in enumerate(meta2.sample_cols))
+                uw2 = CC.unifrac_matrix(mat2, tv2, meta2.sample_cols, cc2.phylo_root; metric = :unweighted)
+                wr2 = CC.unifrac_matrix(mat2, tv2, meta2.sample_cols, cc2.phylo_root; metric = :weighted, normalized = false)
+                rcpt2 = EP.create_receipt(; study = "StudyCC", run = "run1",
+                                          source_digests = digs2, tool_records = cc2.tool_records,
+                                          parameters = OrderedDict{String,Any}("x" => 1),
+                                          warnings = cc2.warnings)
+                EP.receipt_dict(rcpt2)
+                error("diag reached the end: ", length(pd2), " ", size(uw2), " ", size(wr2), " ", length(tips2))
+            end
             @test r_comb.status == 200
             comb = JSON3.read(String(r_comb.body))
             @test comb.root.cumulative_count ≈ 110.0 atol = 1e-9
