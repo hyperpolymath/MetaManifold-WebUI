@@ -140,7 +140,16 @@ check, builds `hyperpolymath/ijson-jcs` at `3a9a4ee`, then runs:
   `yq -p yaml -o kyaml`, i.e. flow style, quoted strings, two-space indent,
   `---` and a final newline);
 - `scripts/check-ijson-jcs.sh --enforce` over the repository's tracked JSON
-  (JSON-POLICY J-1 / D306).
+  (JSON-POLICY J-1 / D306);
+- `scripts/statistics/simulation_study.jl` and
+  `scripts/statistics/mutation_check.jl` under `scripts/ci/run-with-log.sh`,
+  which preserves the command's own exit status (a `tee` pipeline would report
+  the logger's) and annotates a failure with the escaped tail of its log.
+
+`scripts/ci/install-r-runtime.sh` installs the pinned `r-base-core` first: RCall
+refuses to precompile and then to initialise without an R present, so a Julia
+job that runs no R still needs one. The version is read from
+`config/defaults/tool_versions.yml`, never from whatever apt calls current.
 
 The canonical renderings and the check log are uploaded as the
 `statistics-standards` artifact. A missing tool is exit 2 in both standards

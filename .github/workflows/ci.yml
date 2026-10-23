@@ -252,22 +252,7 @@ jobs:
       # R.Version in renv.lock; CRAN's Ubuntu repository retains older revisions, so
       # this resolves rather than merely requesting the newest.
       - name: Set up R
-        run: |
-          wget --https-only -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
-            | sudo gpg --dearmor -o /usr/share/keyrings/r-project.gpg
-          echo "deb [signed-by=/usr/share/keyrings/r-project.gpg] https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/" \
-            | sudo tee /etc/apt/sources.list.d/r-project.list
-          sudo apt-get update -qq
-          sudo apt-get install -y \
-            r-base-core="$R_APT_VERSION" \
-            r-base-dev="$R_APT_VERSION" \
-            r-base-html="$R_APT_VERSION" \
-            r-recommended="$R_APT_VERSION" \
-            r-base="$R_APT_VERSION"
-          Rscript -e 'cat(R.version.string, "\n")'
-
-      - name: Install R system dependencies
-        run: sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev libfontconfig1-dev
+        run: bash scripts/ci/install-r-runtime.sh full
 
       # The R packages are restored from renv.lock, the same pin a developer restores
       # from, rather than resolved against whatever the repositories serve that day.
@@ -545,14 +530,7 @@ jobs:
       - name: Install the pinned R runtime
         run: |
           R_APT_VERSION="$(yq -r '.runtimes.r.apt_version' config/defaults/tool_versions.yml)"
-          test -n "$R_APT_VERSION"
-          wget --https-only -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc \
-            | sudo gpg --dearmor -o /usr/share/keyrings/r-project.gpg
-          echo "deb [signed-by=/usr/share/keyrings/r-project.gpg] https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/" \
-            | sudo tee /etc/apt/sources.list.d/r-project.list
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends r-base-core="$R_APT_VERSION"
-          R --version | head -1
+          R_APT_VERSION="$R_APT_VERSION" bash scripts/ci/install-r-runtime.sh core
 
       # The evidence scripts are ordinary project code: they load JSON3 and the
       # statistics modules, so the environment must be instantiated after R.
@@ -586,40 +564,29 @@ jobs:
       # A failing study must say why in the checks API, not only in a log the
       # reviewer cannot open from every client. Annotations are the same channel
       # the Julia suite uses for failing assertions.
+      # run-with-log.sh keeps the command's own exit status and annotates a
+      # failure with the tail of its log. The workflow carries no copy of that
+      # logic, so the exit-preserving pipeline stays a single tested construct.
       - name: Seeded simulation study
-        shell: bash
+        env:
+          RUN_LOG_TITLE: Seeded simulation study
         run: |
-          set +e
-          julia --project=. -t2 scripts/statistics/simulation_study.jl \
-            --output "$RUNNER_TEMP/statistics-simulation-report.json" 2>&1 | tee /tmp/simulation.log
-          statuses=("${PIPESTATUS[@]}")
-          status="${statuses[0]}"
-          if [ "$status" -eq 0 ]; then status="${statuses[1]}"; fi
-          if [ "$status" -ne 0 ]; then
-            enc() { head -c 3000 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
-            echo "::error title=Simulation study failed::$(tail -c 3000 /tmp/simulation.log | enc)"
-          fi
-          exit "$status"
+          bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/simulation.log" -- \
+            julia --project=. -t2 scripts/statistics/simulation_study.jl \
+              --output "$RUNNER_TEMP/statistics-simulation-report.json"
 
       # Six mutants are defined; four keep the campaign inside the job timeout.
       # The script restores every file and re-verifies its digest, so a failed
       # run cannot leave a planted defect behind.
       - name: Mutation campaign
         if: always()
-        shell: bash
+        env:
+          RUN_LOG_TITLE: Mutation campaign
         run: |
-          set +e
-          julia --project=. -t2 scripts/statistics/mutation_check.jl --max-mutants 4 \
-            --output "$RUNNER_TEMP/statistics-mutation-report.json" \
-            --keep-logs "$RUNNER_TEMP/mutation-logs" 2>&1 | tee /tmp/mutation.log
-          statuses=("${PIPESTATUS[@]}")
-          status="${statuses[0]}"
-          if [ "$status" -eq 0 ]; then status="${statuses[1]}"; fi
-          if [ "$status" -ne 0 ]; then
-            enc() { head -c 3000 | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
-            echo "::error title=Mutation campaign failed::$(tail -c 3000 /tmp/mutation.log | enc)"
-          fi
-          exit "$status"
+          bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/mutation.log" -- \
+            julia --project=. -t2 scripts/statistics/mutation_check.jl --max-mutants 4 \
+              --output "$RUNNER_TEMP/statistics-mutation-report.json" \
+              --keep-logs "$RUNNER_TEMP/mutation-logs"
 
       - name: Retain statistics evidence
         if: always()

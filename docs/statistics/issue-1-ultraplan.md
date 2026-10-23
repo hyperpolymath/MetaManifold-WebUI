@@ -254,11 +254,19 @@ julia --project=. -t2 bench/validated_statistics.jl \
 julia --project=. -t2 scripts/statistics/mutation_check.jl
 julia --project=. -t2 scripts/statistics/mutation_check.jl --output mutation-evidence.json
 
-# standards gates
+# standards gates (CI fetches the tools with scripts/ci/fetch-statistics-tools.sh)
 bash .standards/scripts/kyaml-format.sh --check \
   config/defaults/validated_statistics.kyaml
 bash .standards/scripts/check-ijson-jcs.sh --enforce \
   frontend/public/config.json
+
+# evidence runs, as the standards job performs them
+R_APT_VERSION="$(yq -r '.runtimes.r.apt_version' config/defaults/tool_versions.yml)" \
+  bash scripts/ci/install-r-runtime.sh core
+bash scripts/ci/run-with-log.sh simulation.log -- \
+  julia --project=. -t2 scripts/statistics/simulation_study.jl
+bash scripts/ci/run-with-log.sh mutation.log -- \
+  julia --project=. -t2 scripts/statistics/mutation_check.jl --max-mutants 4
 ```
 
 ## 6. Risks and mitigations
