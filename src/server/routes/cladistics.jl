@@ -205,7 +205,7 @@ function _cc_compute(study::String, id::String)
     isnothing(doc) && error("The Cladistics source document is unreadable")
     counts, tips, samples, counts_doc = _cc_read_counts(study, id)
     tree_text = read(_clad_files(study, id)["reference.treefile"], String)
-    tree = CC.parse_newick(tree_text)
+    tree = CC.parse_phylogenetic_tree(tree_text)
     Set(keys(tree.tips)) == Set(tips) ||
         error("The inferred tree tips do not exactly match the saved ASV count columns")
     analysed = CC.analyse_phylogeny(tree, counts, tips, samples)
