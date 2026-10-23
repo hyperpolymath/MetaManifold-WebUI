@@ -24,10 +24,10 @@
 # would call a style remark, and why the only warning used to arrive ~90
 # seconds after a push, from a service the contributor cannot run.
 #
-# This script is the local, sub-second reproduction of the two rules that have
-# actually failed this check, so the finding arrives before the push. It is a
-# guard, not a linter: it covers the rules that have bitten, and says so rather
-# than implying it covers the gate.
+# This script is the local, sub-second reproduction of the rule that failed
+# this check and the one reported alongside it, so the finding arrives before
+# the push. It is a guard, not a linter: it covers the rules that have bitten,
+# and says so rather than implying it covers the gate.
 #
 #   S2871  "Array.prototype.sort() and toSorted() should use a compare function"
 #          CRITICAL, reliability HIGH. Fired on PR #224 line 53 of

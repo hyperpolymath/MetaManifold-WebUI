@@ -1,8 +1,9 @@
 # The SonarCloud check, and why it fails on a frontend change
 
 **Status: diagnosis and local guard.** `scripts/lint-sonar-reliability.sh`
-reproduces, locally and in about 0.1 s, the two SonarCloud rules that have
-actually failed this repository's required check. It does not replace the gate.
+reproduces, locally and in about 0.1 s, the SonarCloud rule that failed this
+repository's required check and the one that was reported alongside it. It does
+not replace the gate.
 
 ## What the check is
 
@@ -54,7 +55,7 @@ failed the check.
 sliding window**, so a finding merged into `main` keeps `main` red for three
 days and re-running the analysis does not clear it.
 
-## The two rules that have failed it
+## The two rules SonarCloud reported on PR #224
 
 ### `typescript:S2871` — a `sort()` with no compare function
 
