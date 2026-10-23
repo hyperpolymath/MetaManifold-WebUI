@@ -310,8 +310,15 @@ function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
             for (ri, w) in taxa_rows
                 row_weight[ri] = get(row_weight, ri, 0.0) + w
             end
+            # `unplaced_reads` reports how much of each row's abundance never
+            # reached the tree, so its floor is floating-point noise, not the
+            # *validity* tolerance. `PLACEMENT_WEIGHT_SUM_TOL` (0.05) exists so
+            # that a candidate list truncated by the placement tool stays
+            # `:valid`; reusing it here reported 0 unplaced reads for a
+            # placement at LWR 0.99 whose remaining 1% really is off the tree.
+            noise_floor = MetaManifold.CladeCumulus.PLACEMENT_WEIGHT_OVER_TOL
             short_rows = [(ri, 1.0 - wsum) for (ri, wsum) in row_weight
-                          if wsum < 1.0 - MetaManifold.CladeCumulus.PLACEMENT_WEIGHT_SUM_TOL]
+                          if 1.0 - wsum > noise_floor]
             unplaced_reads = OrderedDict{String,Float64}()
             for sc in scols
                 col_vals = df[!, sc]
