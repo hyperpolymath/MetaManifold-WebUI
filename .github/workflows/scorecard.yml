@@ -2,10 +2,14 @@
 # Pinned reusable implementation; do not replace with a floating branch tag.
 name: Scorecard
 
+# Scorecard publishes SARIF for the default branch. Keep its required
+# security-events upload permission off pull requests: otherwise Scorecard
+# scans this caller, flags that necessary permission, and creates a blocking
+# code-scanning check on its own security workflow. Scheduled and main-branch
+# scans retain the findings without that self-referential PR gate.
 on:
   push:
     branches: [main]
-  pull_request:
   schedule:
     - cron: '0 6 1 * *'
   workflow_dispatch:
