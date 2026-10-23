@@ -96,9 +96,16 @@ function _resolve_tree_inputs_from_request(
     body,
     source_digests::OrderedDict{String,String},
 )
+    # JSON3 hands request fields back as SubStrings and `strip` keeps them that
+    # way, but `_valid_tree_file` and `_tree_format` are String-typed -- an
+    # unnormalised `treeFile` reached them as a SubString and raised a
+    # MethodError, which the handler had no catch for, so every `study_tree`
+    # request answered 500. Normalise once at this boundary, as
+    # `_load_run_table_df` does above and as `cladistics.jl` does at its own
+    # call into `_valid_tree_file`. (`lowercase` already returns a String.)
     tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
-    tree_file = strip(string(get(body, :treeFile, "")))
-    inline_newick = strip(string(get(body, :newick, "")))
+    tree_file = String(strip(string(get(body, :treeFile, ""))))
+    inline_newick = String(strip(string(get(body, :newick, ""))))
 
     if tree_source == "study_tree" || (!isempty(tree_file) && tree_source == "auto")
         _valid_tree_file(tree_file) || return (nothing, nothing, :auto,
