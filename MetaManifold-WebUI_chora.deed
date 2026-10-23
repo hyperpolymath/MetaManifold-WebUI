@@ -17,10 +17,11 @@
     :analysis "src/analysis/"
     :cladistics "docs/cladistics/"
     :proofs "proofs/"
+    :contractiles ".machine_readable/contractiles/"
     :enforcement ".github/workflows/")
   (status
     :evidence-source ".github/workflows/governance.yml"
-    :evidence-status "Fork governance lane only: DEED syntax, the K9 conformance grid (no contracts yet; grey corpus), and the Hypatia verdict grid with gitbot-fleet report-backs. Upstream owns the code and its CI; this deed describes the fork.")
+    :evidence-status "Fork governance lane: DEED syntax, K9 L0-L2 contract conformance (must, trust, intend at Yard tier; L3 signatures not verified in CI), and the Hypatia verdict grid with gitbot-fleet report-backs. Upstream owns the application code and its CI; this deed describes the fork.")
   (policies
     (licensing
       :initial-assignment "New files the fork authors carry MPL-2.0 with an SPDX header, as upstream CONTRIBUTING.md permits."

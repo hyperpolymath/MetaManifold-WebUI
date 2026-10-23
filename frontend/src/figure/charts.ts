@@ -115,7 +115,14 @@ export function paneFigure(raw: unknown, pane: FigurePane, doc: FigureDoc, opts:
   widthPx: number
   heightPx: number
 }): PlotSpec {
-  const fig = JSON.parse(JSON.stringify(raw)) as PlotSpec
+  let fig: PlotSpec
+  try {
+    const encoded = JSON.stringify(raw)
+    if (encoded === undefined) throw new TypeError('Chart figure must be JSON-serialisable')
+    fig = JSON.parse(encoded) as PlotSpec
+  } catch (err) {
+    throw new Error(`Invalid chart figure payload: ${err instanceof Error ? err.message : String(err)}`)
+  }
   const base = doc.font.sizePt * PX_PER_PT
   const tick = tickPt(doc) * PX_PER_PT
   const style = pane.style ?? {}

@@ -152,11 +152,14 @@ not_contains "$k9_workflow" 'ref: ${{ job.workflow_sha }}' \
   'the K9 standards checkout cannot use the caller SHA'
 contains "$k9_workflow" 'if [ -f "$RUNNER_TEMP/corpus.log" ]; then' \
   'optional corpus-log copying cannot fail an empty K9 corpus'
+contains "$caller" 'require-files: true' \
+  'the committed K9 corpus cannot silently become empty'
 contains "$caller" 'fail-on-indeterminate: true' \
   'missing K9 semantic evidence fails closed'
 contains "$caller" 'needs: [deed, k9, hypatia]' \
   'the PR verdict waits for all three independent lanes'
 contains "$caller" 'name: k9-grid' 'the K9 artifact remains visible in the PR verdict'
+contains "$caller" 'out/k9-grid.json' 'the governance-badges branch publishes the K9 badge'
 contains "$caller" '${K9_VERDICT:-orange}' 'an absent K9 verdict is indeterminate'
 
 secret_workflow="$(cat .github/workflows/secret-scanner.yml)"
