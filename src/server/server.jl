@@ -70,9 +70,16 @@ module Server
 
     function json_error(status::Int, code::String, message::String; detail=nothing)
         body = isnothing(detail) ? (; error=code, message) : (; error=code, message, detail)
-        HTTP.Response(status,
-            ["Content-Type" => "application/json"],
-            body = jcs_bytes(body))
+        bytes = try
+            jcs_bytes(body)
+        catch e
+            e isa ArgumentError || rethrow()
+            # Error messages can interpolate untrusted path/query segments.
+            # If they contain invalid I-JSON Unicode, still return the intended
+            # HTTP status rather than turning a client error into a server error.
+            jcs_bytes((; error=code, message="Invalid request"))
+        end
+        HTTP.Response(status, ["Content-Type" => "application/json"], body=bytes)
     end
 
     ## Route registration

@@ -338,6 +338,14 @@ function ijson_read(raw::Union{AbstractString,AbstractVector{UInt8}})
                     x = tryparse(Float64, token)
                     (!isnothing(x) && isfinite(x)) || throw(ArgumentError(
                         "I-JSON refuses a non-finite number $token"))
+                    # Exponent/fraction input may stringify as an integer in
+                    # JCS. Never accept a value whose canonical token would be
+                    # rejected as an unsafe integer on the next read.
+                    canonical = String(jcs_bytes(x))
+                    if occursin(r"^-?(0|[1-9][0-9]*)$", canonical) &&
+                       !(abs(x) <= SAFE_INT_MAX)
+                        throw(ArgumentError("I-JSON refuses a number canonicalizing to an unsafe integer token $canonical"))
+                    end
                 end
             end
         end

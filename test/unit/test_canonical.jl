@@ -102,6 +102,9 @@ end
                   "{\"a\":1,\"\\u0061\":2}",
                   "{\"nested\":[{\"b\":0,\"b\":1}]}",
                   "{\"n\":9007199254740992}",
+                  "{\"n\":9.007199254740992e15}",
+                  "{\"n\":-9.007199254740992e15}",
+                  "{\"n\":2.4499999999999998e16}",
                   "[-9007199254740992]", "[1e400]", "{\"key\":\"\\ud800\"}",
                   "{\"key\":\"\\udc00\"}",
                   "{\"\\ufdd0\":0}", "[\"\\uFFFF\"]")
@@ -116,5 +119,7 @@ end
                   "{\"float\":1e-7}")
         @test ijson_read(String(jcs_bytes(ijson_read(input)))) isa JSON3.Object
     end
+    @test ijson_read("{\"n\":1e21}").n == 1e21 # JCS retains exponent notation
+    @test ijson_read("{\"n\":9e15}").n == 9e15 # within exact range
     @test String(jcs_bytes(ijson_read("{\"b\":2,\"a\":1}"))) == "{\"a\":1,\"b\":2}"
 end
