@@ -97,8 +97,8 @@ function _resolve_tree_inputs_from_request(
     source_digests::OrderedDict{String,String},
 )
     tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
-    tree_file = strip(string(get(body, :treeFile, "")))
-    inline_newick = strip(string(get(body, :newick, "")))
+    tree_file = String(strip(string(get(body, :treeFile, ""))))
+    inline_newick = String(strip(string(get(body, :newick, ""))))
 
     if tree_source == "study_tree" || (!isempty(tree_file) && tree_source == "auto")
         _valid_tree_file(tree_file) || return (nothing, nothing, :auto,
@@ -208,7 +208,7 @@ end
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))
@@ -276,13 +276,13 @@ end
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.weight for c in q.candidates); init = 0.0)
+                tw = sum((c.like_weight for c in q.candidates); init = 0.0)
                 tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.weight / tw
+                        tip_weights[tid] = cand.like_weight / tw
                     end
                 end
             end
@@ -399,7 +399,7 @@ end
     (isempty(source_id) || isempty(target_id)) &&
         return json_error(400, "missing_clade_ids", "Both sourceId and targetId are required")
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))

@@ -1792,11 +1792,15 @@ function _reaggregate_after_move(
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
             active_here = u.cumulative_count > 0.0
+            # `subtree_pd` is node-local, as in `clade_faith_pd`: a node's own
+            # (non-root) branch counts once, here, and its parent adds only the
+            # value it returns.
+            own_pd = (active_here && !is_root) ? max(0.0, u.branch_length) : 0.0
             st = Epistemic.epistemic_status(case_obj, u.id)
             leaf_node = CladeNode(
                 u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
                 u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
-                u.branch_length, u.support, 0.0, u.dominant_taxon, u.taxon_purity, mono,
+                u.branch_length, u.support, own_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
             return (leaf_node, tmap, 1, active_here)
@@ -1818,12 +1822,18 @@ function _reaggregate_after_move(
             n_sub_tips += nt
             if ch_active
                 any_active = true
-                sub_pd += max(0.0, rk.branch_length) + rk.subtree_pd
+                # The child's own branch is already inside `rk.subtree_pd`;
+                # adding `rk.branch_length` again would count every active
+                # internal edge twice.
+                sub_pd += rk.subtree_pd
             end
             for (k, v) in ct
                 merged_taxa[k] = get(merged_taxa, k, 0) + v
             end
         end
+        # Match clade_faith_pd: an active non-root clade adds the branch
+        # connecting it to its parent, once, on top of its descendants' values.
+        any_active && !is_root && (sub_pd += max(0.0, u.branch_length))
 
         dom_tx = nothing
         dom_n = 0

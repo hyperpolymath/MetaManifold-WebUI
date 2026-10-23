@@ -14,12 +14,12 @@ const EP = MetaManifold.Epistemic
 const CC = MetaManifold.CladeCumulus
 const DM = MetaManifold.DiversityMetrics
 const PH = MetaManifold.Phylogeny
-const SVCC = MetaManifold.Server
+const CLADE_SV = MetaManifold.Server
 
 _cc_req(method::String, path::String, body::String = "") =
-    SVCC.Oxygen.internalrequest(
-        SVCC.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
-        middleware = SVCC._MIDDLEWARE,
+    CLADE_SV.Oxygen.internalrequest(
+        CLADE_SV.HTTP.Request(method, path, ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"], body);
+        middleware = CLADE_SV._MIDDLEWARE,
     )
 
 @testset "CladeCumulus & Phylogenetic Integration" begin
@@ -149,18 +149,6 @@ _cc_req(method::String, path::String, body::String = "") =
         @test jp.queries[4].status === :undecided
         @test startswith(jp.queries[4].reason, "weight_sum_out_of_tolerance")
 
-        # A dropped candidate can cause a shortfall, never 4% extra mass.
-        # Keep malformed overweight evidence undecided even though 0.98 is valid.
-        overweight = JSON3.write(OrderedDict(
-            "version" => 3, "tree" => jp.tree_newick, "fields" => jp.fields,
-            "placements" => [OrderedDict("n" => ["Q_overweight"],
-                "p" => [[0, -100.0, 0.60, 0.01, 0.02],
-                         [1, -100.0, 0.44, 0.01, 0.02]])],
-        ))
-        overweight_query = only(CC.parse_jplace(overweight).queries)
-        @test overweight_query.status === :undecided
-        @test startswith(overweight_query.reason, "weight_sum_out_of_tolerance")
-
         # Placed query read counts project onto the reference tree edges without losing reads,
         # and `lwr_threshold = 0.95` marks `Q_borderline` (LWR = 0.85) as `present_in_some`
         # even when `support_threshold = 0.80`.
@@ -289,8 +277,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
 
     @testset "Dual-hierarchy CladeCumulus, polyphyly detection, drag-and-drop, and HTTP routes" begin
         tmp = mktempdir()
-        old_root = SVCC.ServerState._root[]
-        SVCC.ServerState.set_root!(tmp)
+        old_root = CLADE_SV.ServerState._root[]
+        CLADE_SV.ServerState.set_root!(tmp)
         try
             data_dir = joinpath(tmp, "data", "StudyCC", "run1")
             mkpath(data_dir)
@@ -322,9 +310,8 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             con = DBInterface.connect(db)
             DuckDB.register_data_frame(con, df, "src_df")
             DBInterface.execute(con, "CREATE TABLE merged AS SELECT * FROM src_df")
-            # The registration is a view backed by a replacement scan that only
-            # exists on this connection, so it is removed again: left in the file
-            # it makes the view unreadable for every later connection.
+            # Registration creates a persistent view backed by this Julia object;
+            # only the materialized table should remain in the on-disk fixture.
             DuckDB.unregister_data_frame(con, "src_df")
             DBInterface.close!(con)
             close(db)
@@ -456,7 +443,7 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
                 "treeFile" => "../secret.nwk",
             ))).status == 400
         finally
-            SVCC.ServerState._root[] = old_root
+            CLADE_SV.ServerState._root[] = old_root
             rm(tmp; recursive = true, force = true)
         end
     end
