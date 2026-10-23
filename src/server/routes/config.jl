@@ -245,11 +245,32 @@ function _differential_settings_error(effective::AbstractDict)
         current = get(effective, k, _DIFFERENTIAL_SETTING_DEFAULTS[k])
         current isa NamedTuple ? current.value : current
     end
-    method = value(keys_[1], "nb_glm")
-    dispersion = value(keys_[2], "ml")
-    if method isa AbstractString && dispersion isa AbstractString &&
-       lowercase(strip(method)) != "nb_glm" && lowercase(strip(dispersion)) == "glmgampoi"
-        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with $(strip(method))"
+    method = value("analysis.differential.method")
+    dispersion = value("analysis.differential.dispersion")
+    reference = value("analysis.differential.mn_reference_taxon")
+    penalty = value("analysis.differential.mn_penalty")
+    overdispersion = value("analysis.differential.dm_overdispersion_method")
+    method isa AbstractString || return nothing
+    m = lowercase(strip(method))
+    compositional = m in Differential.COMPOSITIONAL_METHODS
+    if m in Differential.METHODS && m != "nb_glm" && dispersion isa AbstractString &&
+       lowercase(strip(dispersion)) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; " *
+               "use dispersion: ml with $m"
+    end
+    if !isnothing(reference) && !(reference isa AbstractString && isempty(strip(reference))) &&
+       !compositional
+        return "analysis.differential.mn_reference_taxon requires method: multinomial or " *
+               "dirichlet_multinomial; method is '$method'"
+    end
+    if penalty isa Real && !(penalty isa Bool) && penalty != 0 && !compositional
+        return "analysis.differential.mn_penalty requires method: multinomial or " *
+               "dirichlet_multinomial; method is '$method'"
+    end
+    if overdispersion isa AbstractString && lowercase(strip(overdispersion)) != "mle" &&
+       m != "dirichlet_multinomial"
+        return "analysis.differential.dm_overdispersion_method requires method: " *
+               "dirichlet_multinomial; method is '$method'"
     end
     nothing
 end

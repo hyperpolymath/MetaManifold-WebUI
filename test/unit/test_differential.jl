@@ -168,7 +168,9 @@ end
     end
 
     @testset "Configuration" begin
-        @test Differential.METHODS == ("nb_glm", "clr_welch", "zinb", "hurdle_nb")
+        @test Differential.METHODS ==
+              ("nb_glm", "clr_welch", "zinb", "hurdle_nb", "ancom_bc", "aldex2",
+               "songbird", "multinomial", "dirichlet_multinomial")
         @test DifferentialConfig().offset == "tss"
         @test DifferentialConfig().min_prevalence == 0.0
         @test DifferentialConfig("rle", 0.5).offset == "rle"
@@ -589,7 +591,8 @@ end
     @testset "Config rejects incompatible effective dispersion pairs" begin
         SV = MetaManifold.Server
         keym, keyd = "analysis.differential.method", "analysis.differential.dispersion"
-        for m in ("clr_welch", "ancom_bc", "aldex2", "songbird")
+        for m in Differential.METHODS
+            m == "nb_glm" && continue
             @test SV._differential_pair_error(Dict(keym=>m), Dict(keyd=>"glmGamPoi")) !== nothing
             @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>m)) !== nothing
             @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>m, keyd=>"ml")) === nothing
@@ -613,6 +616,25 @@ end
             @test response.status == 400
             @test read(path,String) == before
         end
+    end
+
+    @testset "Config rejects incompatible joint-compositional settings" begin
+        SV = MetaManifold.Server
+        keym = "analysis.differential.method"
+        keyr = "analysis.differential.mn_reference_taxon"
+        keyp = "analysis.differential.mn_penalty"
+        keyo = "analysis.differential.dm_overdispersion_method"
+        for m in filter(m -> !(m in Differential.COMPOSITIONAL_METHODS), Differential.METHODS)
+            @test SV._differential_pair_error(Dict(keym=>m), Dict(keyr=>"Up")) !== nothing
+            @test SV._differential_pair_error(Dict(keym=>m), Dict(keyp=>0.5)) !== nothing
+            @test SV._differential_pair_error(Dict(keym=>m), Dict(keyo=>"mom")) !== nothing
+        end
+        @test SV._differential_pair_error(Dict(keym=>"nb_glm"), Dict(keyr=>"  ")) === nothing
+        @test SV._differential_pair_error(Dict(keym=>"multinomial"),
+                                         Dict(keyr=>"Up", keyp=>0.5)) === nothing
+        @test SV._differential_pair_error(Dict(keym=>"multinomial"), Dict(keyo=>"mom")) !== nothing
+        @test SV._differential_pair_error(Dict(keym=>"dirichlet_multinomial"),
+                                         Dict(keyr=>"Up", keyp=>0.5, keyo=>"mom")) === nothing
     end
 
     @testset "Config PATCH publishes canonical, complete documents" begin
@@ -1200,7 +1222,8 @@ end
         # Both methods are selectable names, and the two are told apart from the
         # per-taxon models by one tuple.
         @test Differential.METHODS ==
-              ("nb_glm", "clr_welch", "multinomial", "dirichlet_multinomial")
+              ("nb_glm", "clr_welch", "zinb", "hurdle_nb", "ancom_bc", "aldex2",
+               "songbird", "multinomial", "dirichlet_multinomial")
         @test Differential.COMPOSITIONAL_METHODS == ("multinomial", "dirichlet_multinomial")
         c = DifferentialConfig(; method="multinomial")
         @test c.method == "multinomial"
@@ -1684,7 +1707,7 @@ end
         _da_fixture() do
             root = MetaManifold.Server.ServerState._root[]
             write(joinpath(root, "data", "studyD", "pipeline.yml"),
-                  "analysis:\n  differential:\n    method: multinomial\n")
+                  "analysis:\n  differential:\n    method: multinomial\n    mn_penalty: 0.0\n    max_iter: 50\n    tolerance: 0.00000001\n    max_seconds: 30.0\n")
             r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
                                         "table" => "merged", "rank" => "Genus"))
             body = JSON3.read(String(r.body))
@@ -1704,6 +1727,10 @@ end
             @test byt["Up"].estimate ≈ 1.972120415794 rtol=1e-6
             @test byt["Down"].estimate ≈ -2.185860818556 rtol=1e-6
             @test body.config.mn_reference_taxon == "Flat"
+            @test body.config.mn_penalty == 0.0
+            @test body.config.max_iter == 50
+            @test body.config.tolerance == 1e-8
+            @test body.config.max_seconds == 30.0
             @test body.diagnostics.model.reference_taxon == "Flat"
             @test body.diagnostics.model.n_taxa_fitted == 3
             @test isempty(body.size_factors)

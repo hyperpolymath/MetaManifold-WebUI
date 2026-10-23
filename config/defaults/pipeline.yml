@@ -346,15 +346,17 @@ analysis:
   # Differential abundance: compares two conditions on the raw read counts, with
   # mandatory Benjamini-Hochberg adjusted p-values across the fitted family.
   differential:
-    # Per-taxon model: nb_glm (negative-binomial GLM), clr_welch (Welch test on
-    # zero-replaced CLR values), zinb (zero-inflated NB), or hurdle_nb (logistic
-    # occurrence plus zero-truncated NB). Two-part models test both group effects
-    # jointly; their count-process fold change is reported separately.
+    # Differential model: nb_glm (negative-binomial GLM), clr_welch (Welch test
+    # on zero-replaced CLR values), zinb or hurdle_nb (two-part count models),
+    # ancom_bc (bias-corrected log-linear model), aldex2 (Monte-Carlo CLR),
+    # songbird (CLR-centred multinomial regression), multinomial, or
+    # dirichlet_multinomial (joint compositional models). Two-part models test
+    # both group effects jointly and report the count-process fold change.
     method: nb_glm
-    # How library size enters each model, as a log offset: tss (total reads per
-    # sample) or rle (median-of-ratios over the taxa present in every sample).
-    # rle is refused when no taxon is present in every sample.
-    # Used by count models (nb_glm, zinb, hurdle_nb); clr_welch ignores it.
+    # How library size enters each count model, as a log offset: tss (total reads
+    # per sample) or rle (median-of-ratios over taxa present in every sample).
+    # rle is refused when no taxon is present in every sample. Used by nb_glm,
+    # zinb, and hurdle_nb; compositional methods do not use a size-factor offset.
     offset: tss
     # nb_glm only: where each taxon's negative-binomial theta comes from. ml
     # (the default) takes the maximum-likelihood estimate MASS::glm.nb fits per
@@ -366,9 +368,8 @@ analysis:
     dispersion: ml
     # Fraction of samples, 0 to 1, in which a taxon must have reads to be
     # tested. Taxa below it are listed as filtered, without a p-value. Applied
-    # before compositional subcomposition construction in clr_welch, ancom_bc,
-    # aldex2, and songbird. Bayesian replacement refuses a taxon seen in fewer
-    # than 2 samples; CZM requires at least one.
+    # before compositional subcomposition construction. Bayesian replacement
+    # refuses a taxon seen in fewer than 2 samples; CZM requires at least one.
     min_prevalence: 0.0
     # clr_welch only: how cmultRepl replaces zeros before the centred log-ratio.
     # bayesian_multiplicative uses the geometric Bayesian-multiplicative (GBM)
