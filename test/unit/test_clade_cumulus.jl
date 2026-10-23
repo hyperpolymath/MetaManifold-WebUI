@@ -727,8 +727,14 @@ echo "(MMTIP_000001:0.05,(MMTIP_000002:0.03,MMTIP_000003:0.04)0.910:0.12,MMTIP_0
             @test jp_body.diversity.mapped_tips == 2
             @test jp_body.diversity.unplaced_reads.SampleA ≈ 21.0 atol = 1e-9
             @test jp_body.diversity.unplaced_reads.SampleB ≈ 35.0 atol = 1e-9
-            @test jp_body.diversity.weighted_unifrac[1][2] ≈
-                  0.15636363636363636 atol = 1e-9
+            # Raw weighted UniFrac against the 55-read library sizes (the
+            # `totals` denominators that keep unplaced mass off the tree): the
+            # grafted tree contributes 0.02 (ASV_1's pendant), 0.05 (the rest
+            # of Ref_1's branch), 0.02 (ASV_2's pendant), 0.15 (the rest of
+            # Ref_2's branch) and 0.30 (the clade joining them), so
+            #   (0.02*24 + 0.05*24 + 0.02*10 + 0.15*10 + 0.30*(34-20)) / 55
+            #   = 7.58 / 55 = 0.1378181...
+            @test jp_body.diversity.weighted_unifrac[1][2] ≈ 7.58 / 55 atol = 1e-9
             # The clade tree is a count view of the table and still conserves
             # every observed read; only the abundance-weighted diversity matrix
             # discounts the unplaced mass.
