@@ -9,7 +9,8 @@ import ..ExactSummaries
 import ..NumericPolicy
 using ..ExactSummaries: validate_coordinates, validated_count_columns
 using ..NumericPolicy: NumericPolicySpec, numeric_policy, assert_mode, exact_fraction,
-    approximate_value, to_storage, to_display, policy_to_storage, policy_fingerprint
+    approximate_value, to_storage, to_display, policy_to_storage, policy_fingerprint,
+    check_cancelled!, check_cancelled_periodically!
 
 export HighPrecisionSummary, HighPrecisionSample, high_precision_summary,
        high_precision_to_storage, high_precision_to_display
@@ -31,7 +32,8 @@ struct HighPrecisionSummary
     input_sha256::String
 end
 
-function _metric(column::Vector{BigInt}, policy::NumericPolicySpec)
+function _metric(column::Vector{BigInt}, policy::NumericPolicySpec; cancellation=nothing)
+    check_cancelled!(cancellation)
     total = sum(column; init=big(0))
     richness = count(!iszero, column)
     if iszero(total)
@@ -43,7 +45,8 @@ function _metric(column::Vector{BigInt}, policy::NumericPolicySpec)
     # avoiding a final 1 - x cancellation in floating point.
     shannon = zero(BigFloat)
     sum_squares = big(0)
-    for count in column
+    for (i, count) in enumerate(column)
+        check_cancelled_periodically!(cancellation, i)
         sum_squares += count * count
         iszero(count) && continue
         proportion = exact_fraction(count, total; policy)
@@ -63,17 +66,24 @@ function high_precision_summary(counts::AbstractMatrix{<:Real};
                                 sample_labels::AbstractVector{<:AbstractString},
                                 feature_labels::AbstractVector{<:AbstractString}=
                                     ["feature $i" for i in 1:size(counts, 1)],
-                                policy::NumericPolicySpec=numeric_policy(:high_precision))
+                                policy::NumericPolicySpec=numeric_policy(:high_precision),
+                                cancellation=nothing)
     assert_mode(policy, :high_precision)
     labels, features = validate_coordinates(counts, sample_labels, feature_labels)
     columns, _ = validated_count_columns(
-        counts, labels, features; allow_approximate=false)
+        counts, labels, features; allow_approximate=false, cancellation)
 
     metrics, achieved = NumericPolicy.with_precision(; bits=policy.precision_bits) do
-        [_metric(column, policy) for column in columns]
+        results = Vector{Any}(undef, length(columns))
+        for j in eachindex(columns)
+            check_cancelled!(cancellation)
+            results[j] = _metric(columns[j], policy; cancellation)
+        end
+        results
     end
     samples = Vector{HighPrecisionSample}(undef, length(labels))
     for j in eachindex(labels)
+        check_cancelled!(cancellation)
         warnings = String[]
         if iszero(metrics[j].total)
             push!(warnings, "'$(labels[j])' has zero reads: Shannon and Gini-Simpson are undefined, not zero")

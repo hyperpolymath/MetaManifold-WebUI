@@ -88,6 +88,64 @@ The matrix orientation is **features by samples**. For example:
 to `false` for direct input. If enabled, the persisted source includes the exact
 input matrix as strings, making the direct derived record self-contained.
 
+### Optional deadline and cancellation
+
+An optional `"time_limit_seconds"` field (a whole number of seconds greater
+than 0 and at most 3600) arms a cooperative deadline for that request. Decimal
+and exponent tokens are refused by the same raw-number rule as counts, so the
+JSON boundary accepts whole seconds only. Cancellation is checked
+between cells, samples, DuckDB rows and streamed chunks, so a bounded request
+stops rather than pinning a worker. A cancelled or expired request returns:
+
+```json
+{"error": "statistics_cancelled", "message": "…; no partial result was returned"}
+```
+
+with HTTP `408`. The deadline is operational only: it never changes a stored
+value, is never part of the numeric policy fingerprint, and is never written to
+a derived record. A request that times out publishes nothing. Missing or `null`
+means no deadline; zero, negative, non-finite, boolean or non-numeric values are
+`400`. The same contract applies to the run/DuckDB endpoint.
+
+## Method catalogue
+
+`GET /api/v1/statistics/catalogue`
+
+Returns the approved, bounded catalogue as canonical JCS. It contains the
+approval record (`approved_by`, `approved_on`, `approval_reference`), the
+`methods` array with a status of `supported`, `unsupported`, `deferred` or
+`out_of_scope`, the enforced `limits`, and response-only fields
+`catalogue_sha256`, `supported_method_ids`, `method_count` and `file`.
+
+A method that is not `supported` cannot produce a result: `parametric-model-fits`,
+`nonparametric-resampling` and `exact-statistical-tests` are published so that
+their absence is explicit, and `symbolic-mathematics` is out of scope. The
+machine-readable source of truth is `config/defaults/validated_statistics.kyaml`
+(KYAML); the loader refuses a catalogue whose status is not `approved` or whose
+limits differ from the constants the code enforces. See
+[docs/statistics/method-catalogue-v1.md](docs/statistics/method-catalogue-v1.md).
+
+## Julia-rendered statistics page
+
+`GET /statistics` and `POST /statistics` are a server-rendered, JavaScript-free
+surface for the same layer. The form accepts the numeric policy, an optional
+time limit and a features × samples count table, and renders:
+
+- the approved catalogue block with its fingerprint and approval reference;
+- per-sample totals, status and exact proportions (or MPFR metrics);
+- group summaries in `exact_counts` mode;
+- warnings, diagnostics and a provenance block with the numeric-policy
+  fingerprint and `input_sha256`;
+- explicit failure states with the documented status and "no result" wording;
+- an optional immutable derived record when `persist` is checked.
+
+The page is served with `Content-Security-Policy: default-src 'none';
+style-src 'unsafe-inline'; form-action 'self'; base-uri 'none';
+frame-ancestors 'none'` and contains no script. It is not a replacement for the
+React application and introduces no application TypeScript. The JSON endpoints
+remain the machine-readable contract. Per-cell tables are capped at 20,000
+cells for display; the summary and provenance stay authoritative.
+
 ### JSON number boundary
 
 - A non-negative integer JSON token is accepted only through `2^53 - 1`, the
@@ -125,8 +183,9 @@ The implementation intentionally does **not** call the legacy
 2. Sample columns discovered by the existing schema rules must have DuckDB type
    `TINYINT`, `SMALLINT`, `INTEGER`, `BIGINT`, or `HUGEINT`.
    `DOUBLE`/`FLOAT` storage is rejected, not rounded or relabelled as exact.
-3. SQL performs row selection, `GROUP BY`, and deterministic feature ordering
-   only. Missing and negative count cells are rejected with feature/sample
+3. SQL performs row selection and column projection only. Rows are streamed
+   and grouped in Julia, so no SQL `SUM` and no arbitrary per-group value is
+   involved. Missing and negative count cells are rejected with feature/sample
    coordinates.
 4. Integer cells are converted to `BigInt`; taxon and sample totals are then
    summed in Julia. This avoids both `Float64` rounding and fixed-width SQL sum
@@ -215,7 +274,9 @@ Focused tests:
 
 ```bash
 julia --project=. -t2 test/runtests.jl numeric_policy exact_summaries \
-  high_precision derived_analyses validated_statistics
+  high_precision derived_analyses validated_statistics \
+  method_catalogue statistics_boundaries statistics_adversarial \
+  statistics_properties statistics_ui
 ```
 
 Full suite (with the repository's integration and server gates):
@@ -237,6 +298,24 @@ python3 test/references/check_high_precision_references.py --check \
   test/unit/test_high_precision.jl
 ```
 
+Seeded simulation study with pre-declared tolerances, and the mutation
+campaign that proves the tests can fail:
+
+```bash
+julia --project=. -t2 scripts/statistics/simulation_study.jl \
+  --output simulation-report.json
+python3 scripts/statistics/mutation_check.py --output mutation-report.json
+```
+
+A representative biological count matrix is validated against the existing
+`DiversityMetrics` implementation (a separate Float64 code path) with a
+pre-declared relative tolerance:
+
+```bash
+julia --project=. -t2 scripts/statistics/biological_validation.jl \
+  --input counts.csv --source "study/run or DOI" --output biological-report.json
+```
+
 Benchmark and retained CI artifact:
 
 ```bash
@@ -252,13 +331,20 @@ of equal timing on another platform. CI retains the JSON as
 
 ## Remaining acceptance work
 
-See also the [method-by-method validation matrix](VALIDATED_STATISTICS_VALIDATION.md).
+See the acceptance-criterion map in
+[docs/statistics/validation-evidence.md](docs/statistics/validation-evidence.md)
+and the [method-by-method validation matrix](VALIDATED_STATISTICS_VALIDATION.md).
 
-This increment does not self-certify issue #1. Before closure, the project still
-needs the applicable representative biological comparisons and method-by-method
-acceptance table, UI/workflow validation for the new modes, retained review
-artifacts, independent statistical/scientific review, and explicit release
-approval. Expensive-operation cancellation and broader recovery/soak testing
-also remain validation work; bounded inputs and isolated precision/persistence
-are implemented, but are not a claim of full production certification. Exact
-statistical tests and symbolic mathematics remain out of scope.
+Implemented and evidenced here: the approved catalogue, numeric/cross-language
+and storage contracts, known-answer and independent references, adversarial and
+property-based tests, a seeded simulation study with pre-declared tolerances, a
+mutation campaign, cancellation and resource limits, the Julia-rendered UI
+surface with provenance and failure states, the regression suite for existing
+behaviour, the benchmark, and the CI jobs that rerun the standards gates.
+
+Not self-certified by this increment: the representative biological comparison
+(runner supplied by `scripts/statistics/biological_validation.jl`; it requires a
+real, licensed count matrix and a provenance string, and refuses to run without
+one) and independent statistical/scientific review with explicit release
+approval. Those are owner and reviewer gates. Exact statistical tests are
+deferred and symbolic mathematics remains out of scope; issue #2 stays blocked.

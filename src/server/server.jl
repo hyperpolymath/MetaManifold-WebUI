@@ -140,6 +140,8 @@ module Server
     # Opt-in exact/high-precision statistics; loaded after the shared analysis
     # and read-only DuckDB helpers it intentionally constrains.
     include(joinpath(@__DIR__, "routes", "validated_statistics.jl"))
+    # Julia-rendered validated-statistics page; no new application TypeScript.
+    include(joinpath(@__DIR__, "routes", "statistics_ui.jl"))
     include(joinpath(@__DIR__, "routes", "read_funnel.jl"))
     include(joinpath(@__DIR__, "routes", "composition.jl"))
     # Evidence Mode builds on the composition library (category projections)
@@ -417,6 +419,9 @@ module Server
 
             # Pass API requests through to Oxygen
             startswith(uri, "/api/") && return next(req)
+            # The Julia-rendered validated-statistics page is a real route, not
+            # an SPA path. Pass it through before the frontend catch-all.
+            (uri == "/statistics" || startswith(uri, "/statistics/")) && return next(req)
 
             # SPA catch-all: serve frontend build or index.html
             rel    = lstrip(HTTP.URIs.unescapeuri(uri), '/')
