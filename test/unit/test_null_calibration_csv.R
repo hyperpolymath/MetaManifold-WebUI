@@ -17,12 +17,14 @@ cell <- "null_original_tss_n4_t40_smoke"
 double_quote <- intToUtf8(34)
 note_multiline <- paste0("comma, quote ", double_quote, " and newline", intToUtf8(10), "continued")
 note_control <- paste0("second reason 50% and newline", intToUtf8(10), "continued")
+duplicate_test <- "duplicate_test"
+failed_status <- "failed"
 rows <- data.frame(
   truth = rep("null", 5), shape = rep("original", 5), offset = rep("tss", 5),
   n_per = rep(4L, 5), taxa = rep(40L, 5), sim = rep(1L, 5),
   taxon = seq_len(5), true_log2fc = rep(0, 5),
-  test = c("duplicate_test", "duplicate_test", "duplicate_test", "missing_note", "ok_test"),
-  status = c("failed", "failed", "failed", "failed", "ok"),
+  test = c(duplicate_test, duplicate_test, duplicate_test, "missing_note", "ok_test"),
+  status = c(failed_status, failed_status, failed_status, failed_status, "ok"),
   pvalue = c(NA_real_, NA_real_, NA_real_, NA_real_, 0.01),
   note = c(note_multiline, note_multiline, note_control, NA_character_, NA_character_),
   stringsAsFactors = FALSE
@@ -45,7 +47,7 @@ stopifnot(nrow(round_trip) == nrow(rows) + 1L,
 # repeated reasons, and still warn when a failed row has no note.
 r_messages <- capture.output(report_cell_failures(csv_path, cell))
 r_log <- paste(r_messages, collapse = "\n")
-stopifnot(sum(grepl(paste0("WARNING ", cell, ": test duplicate_test"),
+stopifnot(sum(grepl(paste0("WARNING ", cell, ": test ", duplicate_test),
                     r_messages, fixed = TRUE)) == 1L,
           grepl(note_multiline, r_log, fixed = TRUE),
           grepl(paste0("WARNING ", cell, ": test missing_note produced no p-value in this cell"),
@@ -65,19 +67,20 @@ stopifnot(nzchar(python))
 reader_script <- "bench/null_calibration/report_failures.py"
 annotations <- suppressWarnings(system2(
   python,
-  args = c(shQuote(reader_script), shQuote(csv_path), shQuote(cell)),
-  stdout = TRUE, stderr = TRUE
+  args = c(shQuote(reader_script), shQuote(cell)),
+  stdout = TRUE, stderr = TRUE, stdin = csv_path
 ))
 reader_status <- attr(annotations, "status")
-stopifnot(is.null(reader_status) || identical(reader_status, 0L))
 expected_annotations <- c(
   paste0("::warning title=", cell,
-         ": a requested test failed::duplicate_test :: comma, quote ", double_quote,
+         ": a requested test failed::", duplicate_test, " :: comma, quote ", double_quote,
          " and newline%0Acontinued"),
   paste0("::warning title=", cell,
-         ": a requested test failed::duplicate_test :: second reason 50%25 and newline%0Acontinued")
+         ": a requested test failed::", duplicate_test,
+         " :: second reason 50%25 and newline%0Acontinued")
 )
-stopifnot(identical(unname(annotations), expected_annotations))
+stopifnot(is.null(reader_status) || identical(reader_status, 0L),
+          identical(unname(annotations), expected_annotations))
 
 # Refuse legacy 11-column CSVs and mismatched provenance before any append.
 legacy <- rows[, RESULT_COLUMNS[-length(RESULT_COLUMNS)], drop = FALSE]
@@ -88,9 +91,9 @@ legacy_error <- tryCatch({
   validate_resume_cell(legacy_path, provenance_path, cell, 123)
   ""
 }, error = function(e) conditionMessage(e))
-stopifnot(grepl("incompatible CSV schema", legacy_error, fixed = TRUE))
+stopifnot(grepl("incompatible CSV schema", legacy_error, fixed = TRUE),
+          identical(validate_resume_cell(csv_path, provenance_path, cell, 123), 1L))
 
-stopifnot(identical(validate_resume_cell(csv_path, provenance_path, cell, 123), 1L))
 writeLines("cell key: 999", provenance_path)
 key_error <- tryCatch({
   validate_resume_cell(csv_path, provenance_path, cell, 123)
@@ -102,8 +105,8 @@ provenance_error <- tryCatch({
   validate_resume_cell(csv_path, provenance_path, cell, 123)
   ""
 }, error = function(e) conditionMessage(e))
-stopifnot(grepl("no provenance file", provenance_error, fixed = TRUE))
-stopifnot(identical(validate_resume_cell(tempfile(), provenance_path, cell, 123), integer(0)))
+stopifnot(grepl("no provenance file", provenance_error, fixed = TRUE),
+          identical(validate_resume_cell(tempfile(), provenance_path, cell, 123), integer(0)))
 unlink(c(csv_path, provenance_path, legacy_path, bad_csv_path))
 
 cat("Null-calibration CSV round-trip, warning reader and resume checks passed\n")

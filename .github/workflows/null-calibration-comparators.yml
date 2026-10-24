@@ -243,7 +243,7 @@ jobs:
           shopt -s nullglob
           for csv in bench/null_calibration/results/raw/pvalues_*.csv; do
             cell="$(basename "$csv" .csv)"
-            python3 bench/null_calibration/report_failures.py "$csv" "$cell"
+            python3 bench/null_calibration/report_failures.py "$cell" < "$csv"
           done
 
       - name: Publish the summaries as annotations
