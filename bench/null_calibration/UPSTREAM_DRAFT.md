@@ -1,9 +1,10 @@
 # Draft upstream report: null calibration of the `glm.nb` Wald test
 
-*Status: draft prepared downstream for review before anything is filed
-upstream. Every number is from `REPORT.md` in this directory, which defines
-exactly what ran, where, and what did not run. This replaces the earlier draft
-based on the reduced 2026-10-22 run.*
+*Status: draft prepared downstream for maintainer review; it has not been filed
+upstream. It includes the completed native comparator run #40091522843.
+`REPORT.md` and the run-specific summary/provenance CSVs define exactly what ran,
+where, and what remains unmeasured. This replaces the earlier draft based on
+the reduced 2026-10-22 run and does not recommend an automatic default change.*
 
 ## Summary
 
@@ -28,6 +29,21 @@ Two cheaper alternatives, measured on identical datasets:
   0.055 at 4, 0.058–0.060 through 8, 0.056 at 20. It remains ~1 point above
   nominal, not at nominal.
 
+## Native Bioconductor comparators
+
+The successful [native-R Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843) measured the same seeded null designs at original shape/TSS, n=4 and n=12, with 1,000 simulations × 40 taxa per cell (R 4.5.0, glmGamPoi 1.22.0, edgeR 4.8.2):
+
+| n/group | comparator | α=0.05 (Wilson 95% CI) | verdict |
+|---:|---|---|---|
+| 4 | glmGamPoi QL F (`glmgampoi_ql`) | **0.0525** (0.0503–0.0547) | narrowly anti-conservative |
+| 4 | edgeR QL F (`edger_ql`) | **0.0687** (0.0663–0.0713) | anti-conservative |
+| 4 | glmGamPoi trend Wald (`wald_trend`) | **0.0838** (0.0811–0.0865) | anti-conservative |
+| 12 | glmGamPoi QL F (`glmgampoi_ql`) | 0.0499 (0.0478–0.0520) | not flagged |
+| 12 | edgeR QL F (`edger_ql`) | **0.0712** (0.0687–0.0737) | anti-conservative |
+| 12 | glmGamPoi trend Wald (`wald_trend`) | **0.0764** (0.0739–0.0791) | anti-conservative |
+
+“Not flagged” means the Wilson interval includes 0.05; it is not proof of exact calibration. Rejection rates are conditional on successful fits (89 failed fits among 39,993 attempted at n=4; none among 40,000 at n=12). The native comparator lane tested nulls only: it did not measure power, BH-FDR under alternatives, other sample sizes, or other shapes/offsets. The complete 12-row output and per-cell provenance are retained in `results/native_comparator_summary_run_40091522843.csv` and `results/native_comparator_provenance_run_40091522843.csv`.
+
 The inflation is not specific to one data shape: constant dispersion, sparse
 zero-heavy tables, unequal library sizes and RLE offsets all reproduce it
 (4/group Wald 0.112–0.142; 12/group 0.070–0.081). RLE is not a remedy; at
@@ -47,9 +63,11 @@ Under a power design (25% of taxa at |log2FC| = 1, 400 sims), BH at 0.05:
 | 12 | QL F (`ql_f`) | 0.433 | 0.063 |
 
 The default's apparent power advantage at small n is an artefact of an
-uncontrolled FDR. The QL F test is the only measured option whose FDR is near
-nominal, but at 4/group it is nearly powerless after BH because its F reference
-has only six residual degrees of freedom (`F(1,6)` ≈ 5.99, |t| > 2.45).
+uncontrolled FDR. Among the three methods included in this power design, the
+tagwise QL F test is closest to nominal FDR, but at 4/group it is nearly
+powerless after BH because its F reference has only six residual degrees of
+freedom (`F(1,6)` ≈ 5.99, |t| > 2.45). The native Bioconductor comparator run
+was null-only and did not measure their power or FDR under alternatives.
 
 ## Options for the upstream maintainer's consideration
 
@@ -61,17 +79,22 @@ has only six residual degrees of freedom (`F(1,6)` ≈ 5.99, |t| > 2.45).
    but still anti-conservative everywhere, slower, and it fails more often at
    tiny n. It is a mitigation, not a calibration fix; the numbers above quantify
    the trade-off.
-3. **Quasi-likelihood F test below a group-size threshold.** Closest to nominal
-   at every size and the only option with near-nominal BH FDR, but it changes
-   critical values substantially at 3–4 samples per group and costs almost all
-   BH power there. glmGamPoi's own QL F-test (the calibrated path in the
-   downstream issue) is the version worth considering rather than a tagwise
-   reimplementation, and it was not measured in this sandbox (see `REPORT.md`
-   §"What was not run" for the native-R command).
+3. **Consider glmGamPoi's QL F test below a group-size threshold.** The native
+   null run places it closest to nominal among the two Bioconductor QL tests:
+   0.0525 at 4/group (Wilson 95% CI 0.0503–0.0547, narrowly anti-conservative)
+   and 0.0499 at 12/group (0.0478–0.0520, not flagged). edgeR QL is higher at
+   0.0687 and 0.0712. The separate `wald_trend` row is a glmGamPoi
+   dispersion-trend Wald test, not its QL test; the production fixed-θ Wald
+   path must not be described as glmGamPoi QL. These comparator cells are
+   null-only: they do not measure power/BH behaviour, other sample sizes, or
+   other shapes/offsets. The tagwise `ql_f` power results therefore cannot be
+   transferred to glmGamPoi QL. The measured row makes option 3 discussable,
+   not an automatic default recommendation.
 
-The downstream recommendation is **1 now, 2 and 3 as an upstream decision**.
-A default change would need the glmGamPoi QL F row measured on native R first;
-this bench provides the code path and the protocol for it.
+The downstream recommendation remains **1 now, 2 and 3 as an upstream
+maintainer decision**. The native run fills the requested QL calibration cells,
+but it does not establish a default threshold or quantify the power trade-off
+for glmGamPoi QL. No production default change is proposed by this draft.
 
 ## Reproducing
 
@@ -83,6 +106,10 @@ Rscript bench/null_calibration/calibration.R --shapes=original --offsets=tss \
 Rscript bench/null_calibration/summarise.R
 ```
 
-The committed `results/` CSVs carry every rate and interval quoted above;
-`results/provenance_summary.csv` carries the executor, the package versions and
-the input digests for each cell.
+The committed `results/` CSVs carry the baseline rates and intervals. The
+native comparator output and provenance are recorded separately in
+`results/native_comparator_summary_run_40091522843.csv` and
+`results/native_comparator_provenance_run_40091522843.csv`; the source is [Actions
+run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843),
+tag `null-calibration-run4-2026-10-24`. The raw Actions artifact is retained
+through 2026-11-23.
