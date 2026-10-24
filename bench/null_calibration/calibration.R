@@ -428,7 +428,7 @@ report_cell_failures <- function(results_file, cell) {
   if (nrow(cell_rows) == 0) return(invisible(NULL))
   for (test_name in unique(cell_rows$test)) {
     test_rows <- cell_rows[cell_rows$test == test_name, , drop = FALSE]
-    if (any(!is.na(test_rows$pvalue))) next
+    if (!all(is.na(test_rows$pvalue))) next
     reasons <- if ("note" %in% names(test_rows)) {
       unique(stats::na.omit(test_rows$note))
     } else {
@@ -443,41 +443,44 @@ report_cell_failures <- function(results_file, cell) {
 
 validate_resume_cell <- function(results_file, provenance_file, cell, cell_key) {
   if (!file.exists(results_file)) return(integer(0))
+  delete_prefix <- "; delete "
+  rerun_suffix <- " before rerunning"
   prev <- tryCatch(read.csv(results_file, stringsAsFactors = FALSE,
                             check.names = FALSE, fill = FALSE),
                    error = function(e) e)
   if (inherits(prev, "error")) {
-    stop("cell ", cell, " has an unreadable CSV (", conditionMessage(prev),
-         "); delete ", results_file, " and ", provenance_file,
-         " before rerunning", call. = FALSE)
+    stop("cell ", cell, " has an unreadable CSV (", conditionMessage(prev), ")",
+         delete_prefix, results_file, " and ", provenance_file, rerun_suffix,
+         call. = FALSE)
   }
   if (!identical(names(prev), RESULT_COLUMNS)) {
     stop("cell ", cell, " has an incompatible CSV schema; expected ",
          paste(RESULT_COLUMNS, collapse = ", "), " but found ",
-         paste(names(prev), collapse = ", "), "; delete ", results_file,
-         " and ", provenance_file, " before rerunning", call. = FALSE)
+         paste(names(prev), collapse = ", "), delete_prefix, results_file,
+         " and ", provenance_file, rerun_suffix, call. = FALSE)
   }
   if (!file.exists(provenance_file)) {
-    stop("cell ", cell, " has rows but no provenance file; delete ",
-         results_file, " before rerunning", call. = FALSE)
+    stop("cell ", cell, " has rows but no provenance file", delete_prefix,
+         results_file, rerun_suffix, call. = FALSE)
   }
   old_key <- tryCatch(
     grep("^cell key:", readLines(provenance_file, warn = FALSE), value = TRUE),
     error = function(e) e)
   if (inherits(old_key, "error")) {
-    stop("cell ", cell, " has unreadable provenance (", conditionMessage(old_key),
-         "); delete ", results_file, " and ", provenance_file,
-         " before rerunning", call. = FALSE)
+    stop("cell ", cell, " has unreadable provenance (", conditionMessage(old_key), ")",
+         delete_prefix, results_file, " and ", provenance_file, rerun_suffix,
+         call. = FALSE)
   }
   if (length(old_key) != 1L) {
-    stop("cell ", cell, " provenance must contain exactly one cell key; delete ",
-         results_file, " and ", provenance_file, " before rerunning", call. = FALSE)
+    stop("cell ", cell, " provenance must contain exactly one cell key",
+         delete_prefix, results_file, " and ", provenance_file, rerun_suffix,
+         call. = FALSE)
   }
   old_key_value <- trimws(sub("^cell key:[ ]*", "", old_key[1]))
   if (!identical(old_key_value, as.character(cell_key))) {
     stop("cell ", cell, " has a mismatched cell key (found ", old_key_value,
-         ", expected ", cell_key, "); delete ", results_file, " and ",
-         provenance_file, " before rerunning", call. = FALSE)
+         ", expected ", cell_key, ")", delete_prefix, results_file, " and ",
+         provenance_file, rerun_suffix, call. = FALSE)
   }
   unique(as.integer(prev$sim[!is.na(prev$sim)]))
 }

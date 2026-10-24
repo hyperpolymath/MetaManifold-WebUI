@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 """CSV parsing and annotation escaping for null-calibration package failures."""
 import csv
+import io
 from pathlib import Path
 import sys
 import tempfile
@@ -19,6 +20,10 @@ class FailureAnnotationTests(unittest.TestCase):
             writer.writerows(
                 {field: row.get(field) for field in fields} for row in rows
             )
+
+    def annotations_for(self, path, cell):
+        with path.open(encoding="utf-8", newline="") as stream:
+            return failure_annotations(stream, cell)
 
     def row(self, *, test, status, note=None):
         return {
@@ -54,7 +59,7 @@ class FailureAnnotationTests(unittest.TestCase):
             )
             cell = "null_original_tss_n4_t40_smoke"
             self.assertEqual(
-                failure_annotations(path, cell),
+                self.annotations_for(path, cell),
                 [
                     f"::warning title={cell}: a requested test failed::duplicate_test :: "
                     'comma, quote " and newline%0Acontinued',
@@ -62,6 +67,11 @@ class FailureAnnotationTests(unittest.TestCase):
                     "second 50%25 and carriage%0Dreturn%0Acontinued",
                 ],
             )
+
+    def test_unsafe_cell_label_is_rejected(self):
+        stream = io.StringIO(",".join(RESULT_FIELDS) + "\n")
+        with self.assertRaisesRegex(ValueError, "unsafe cell label"):
+            failure_annotations(stream, "bad\n::notice")
 
     def test_legacy_header_without_notes_and_missing_note_are_ignored(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -71,7 +81,7 @@ class FailureAnnotationTests(unittest.TestCase):
                 LEGACY_FIELDS,
                 [self.row(test="old_test", status="failed")],
             )
-            self.assertEqual(failure_annotations(path, "legacy_cell"), [])
+            self.assertEqual(self.annotations_for(path, "legacy_cell"), [])
 
     def test_extra_csv_field_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -81,8 +91,9 @@ class FailureAnnotationTests(unittest.TestCase):
                 + "null,original,tss,4,40,1,1,0,edger_ql,failed,NA,reason,extra\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "malformed CSV record"):
-                failure_annotations(path, "bad_cell")
+            with path.open(encoding="utf-8", newline="") as stream:
+                with self.assertRaisesRegex(ValueError, "malformed CSV record"):
+                    failure_annotations(stream, "bad_cell")
 
 
 if __name__ == "__main__":
