@@ -360,9 +360,14 @@ fit_glmgampoi_ql <- function(counts, offset, n_per) {
                             size_factors = exp(offset),
                             overdispersion_shrinkage = TRUE)
     # Numeric contrast weights on the design columns ((Intercept), gB):
-    # test_de parses a TEXT contrast as R code, so bench and production
-    # alike must never hand it a label.
-    glmGamPoi::test_de(gp, contrast = c(0, 1), sort_by = "none")
+    # test_de parses a TEXT contrast as R code, so bench and production alike
+    # must never hand it a label.
+    #
+    # No sort_by argument. test_de's sort_by names a COLUMN to sort by, or
+    # NULL for input order; the string "none" is neither, so passing it makes
+    # test_de error on every call. Rows then keep input order, which is what
+    # the taxon-by-taxon comparison below assumes.
+    glmGamPoi::test_de(gp, contrast = c(0, 1))
   }), error = function(e) e)
   if (inherits(res, "error")) return(loud_failure(out, "glmgampoi_ql", conditionMessage(res)))
   pcol <- p_value_column(res, "glmGamPoi::test_de")
