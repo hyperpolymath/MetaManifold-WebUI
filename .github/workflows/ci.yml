@@ -293,6 +293,12 @@ jobs:
       - name: Check DADA2 CSV assembly
         run: Rscript --vanilla test/unit/test_dada2_tables.R
 
+      - name: Check null-calibration CSV handling
+        run: Rscript --vanilla test/unit/test_null_calibration_csv.R
+
+      - name: Check null-calibration failure annotations
+        run: python3 -m unittest discover -s scripts/tests -p 'test_null_calibration_failures.py' -v
+
       # Saved on failure too, since the packages built before a failure are the ones
       # the next attempt should reuse. Root writes the cache, so it is made readable first.
       - name: Make the renv cache readable

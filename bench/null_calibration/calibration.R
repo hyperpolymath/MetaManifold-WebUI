@@ -410,10 +410,22 @@ fit_edger_ql <- function(counts, offset, n_per) {
                     ncol(counts), "topTags returned the wrong number of rows")
 }
 
+RESULT_COLUMNS <- c("truth", "shape", "offset", "n_per", "taxa", "sim",
+                    "taxon", "true_log2fc", "test", "status", "pvalue", "note")
+
 report_cell_failures <- function(results_file, cell) {
-  cell_rows <- tryCatch(read.csv(results_file, stringsAsFactors = FALSE),
-                        error = function(e) NULL)
-  if (is.null(cell_rows) || nrow(cell_rows) == 0) return(invisible(NULL))
+  if (!file.exists(results_file)) return(invisible(NULL))
+  cell_rows <- tryCatch(read.csv(results_file, stringsAsFactors = FALSE,
+                                 check.names = FALSE, fill = FALSE),
+                        error = function(e) e)
+  if (inherits(cell_rows, "error")) {
+    stop("cell ", cell, " has an unreadable result CSV (",
+         conditionMessage(cell_rows), ")", call. = FALSE)
+  }
+  if (!identical(names(cell_rows), RESULT_COLUMNS)) {
+    stop("cell ", cell, " has an incompatible result CSV schema", call. = FALSE)
+  }
+  if (nrow(cell_rows) == 0) return(invisible(NULL))
   for (test_name in unique(cell_rows$test)) {
     test_rows <- cell_rows[cell_rows$test == test_name, , drop = FALSE]
     if (any(!is.na(test_rows$pvalue))) next
@@ -428,9 +440,6 @@ report_cell_failures <- function(results_file, cell) {
   }
   invisible(NULL)
 }
-
-RESULT_COLUMNS <- c("truth", "shape", "offset", "n_per", "taxa", "sim",
-                    "taxon", "true_log2fc", "test", "status", "pvalue", "note")
 
 validate_resume_cell <- function(results_file, provenance_file, cell, cell_key) {
   if (!file.exists(results_file)) return(integer(0))
@@ -471,6 +480,17 @@ validate_resume_cell <- function(results_file, provenance_file, cell, cell_key) 
          provenance_file, " before rerunning", call. = FALSE)
   }
   unique(as.integer(prev$sim[!is.na(prev$sim)]))
+}
+
+write_cell_rows <- function(rows, results_file, header_done) {
+  if (!identical(names(rows), RESULT_COLUMNS)) {
+    stop("cell result rows do not match the expected CSV schema", call. = FALSE)
+  }
+  # Package error messages can contain commas, quotes, or newlines. Use RFC-style
+  # double-quote escaping so R and the workflow's CSV reader preserve each field.
+  write.table(rows, results_file, sep = ",", row.names = FALSE,
+              col.names = !header_done, append = header_done, quote = TRUE,
+              qmethod = "double")
 }
 
 ## ------------------------------------------------------------------- main
@@ -567,11 +587,7 @@ for (shape in shapes) for (off_m in offsets) for (n_per in n_pers) {
                  status = f$status, pvalue = f$pvalue, note = note,
                  stringsAsFactors = FALSE)
     }))
-    # Package error messages can contain commas or newlines; quote all text
-    # fields so both read.csv and CSV-aware workflow consumers preserve them.
-    write.table(rows, f, sep = ",", row.names = FALSE,
-                col.names = !header_done, append = header_done, quote = TRUE,
-                qmethod = "double")
+    write_cell_rows(rows, f, header_done)
     header_done <- TRUE
     if (s %% 25 == 0) { cat(sprintf("  %s sim %d/%d\n", cell, s, n_sims)); flush.console() }
   }

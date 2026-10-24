@@ -243,34 +243,7 @@ jobs:
           shopt -s nullglob
           for csv in bench/null_calibration/results/raw/pvalues_*.csv; do
             cell="$(basename "$csv" .csv)"
-            python3 - "$csv" "$cell" <<'PY'
-          import csv
-          import sys
-
-          path, cell = sys.argv[1:]
-          expected = ["truth", "shape", "offset", "n_per", "taxa", "sim",
-                      "taxon", "true_log2fc", "test", "status", "pvalue", "note"]
-          seen = set()
-          with open(path, encoding="utf-8", newline="") as stream:
-              reader = csv.DictReader(stream)
-              if reader.fieldnames not in (expected, expected[:-1]):
-                  raise SystemExit(f"{path}: unexpected CSV header {reader.fieldnames!r}")
-              for record_number, row in enumerate(reader, start=2):
-                  if None in row or any(value is None for value in row.values()):
-                      raise SystemExit(f"{path}: malformed CSV record {record_number}")
-                  if row.get("status") != "failed":
-                      continue
-                  note = row.get("note")
-                  if not note or note == "NA":
-                      continue
-                  key = (row.get("test", ""), note)
-                  if key in seen:
-                      continue
-                  seen.add(key)
-                  message = f"{key[0]} :: {note}"
-                  message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-                  print(f"::warning title={cell}: a requested test failed::{message}")
-          PY
+            python3 bench/null_calibration/report_failures.py "$csv" "$cell"
           done
 
       - name: Publish the summaries as annotations
