@@ -187,6 +187,8 @@ After measurement, the package-result normalization and cell-warning logic were 
 | 12 | `edger_ql` | edgeR 4.8.2 | 40,000 (0) | **0.0712** (0.0687–0.0737) | anti-conservative |
 | 12 | `wald_trend` | glmGamPoi 1.22.0 | 40,000 (0) | **0.0764** (0.0739–0.0791) | anti-conservative |
 
+**n=4 denominator note:** the run summary records 39,904 p-values and 89 failed fits (39,993 rows total), leaving seven of the 40,000 planned taxon-simulation positions unaccounted for by those counts. Rejection rates use the 39,904 reported p-values. Do not treat 39,993 as the number attempted or classify the seven missing positions as successes or failures. At n=12, all 40,000 p-values are reported with no failed fits.
+
 The verdict rule remains the one declared above: a Wilson 95% lower bound above 0.05 is anti-conservative; an interval containing 0.05 is “not flagged”, not proof of exact calibration. The glmGamPoi QL result is just above nominal at n=4 (its lower bound is 0.0503) and not flagged at n=12. edgeR QL is anti-conservative at both sizes. `wald_trend` is the glmGamPoi dispersion-trend Wald comparator, **not** glmGamPoi's QL test.
 
 Provenance: native R 4.5.0 (2025-04-11), x86_64 Linux, MASS 7.3.65, glmGamPoi 1.22.0, edgeR 4.8.2; `seed0=20261020`; `calibration.R` md5 `12a90679f74d2e1a9ab28cec643b5e76`; extracted production `_FIT_R` md5 `cc9efdfdd6e4efe2f9a393ba4d178ce0`. The run tested all six methods in its two cells; the full 12-row summary is retained in the run-specific CSV. The raw p-value artifact remains on Actions with 30-day retention, through 2026-11-23.
