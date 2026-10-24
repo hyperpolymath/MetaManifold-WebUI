@@ -29,7 +29,19 @@ for input in "$raw_findings" "$raw_sarif" "$allowlist"; do
   fi
 done
 
-if [[ "$raw_findings" == "$effective_findings" || "$raw_sarif" == "$effective_sarif" || "$effective_findings" == "$effective_sarif" ]]; then
+# Resolve relative components and symlinks even when output directories do not
+# exist yet. Neither output may overwrite either raw audit artifact.
+raw_findings=$(realpath -m -- "$raw_findings")
+raw_sarif=$(realpath -m -- "$raw_sarif")
+effective_findings=$(realpath -m -- "$effective_findings")
+effective_sarif=$(realpath -m -- "$effective_sarif")
+for output in "$effective_findings" "$effective_sarif"; do
+  if [[ "$output" == "$raw_findings" || "$output" == "$raw_sarif" || "$output" -ef "$raw_findings" || "$output" -ef "$raw_sarif" ]]; then
+    echo "Raw inputs and effective outputs must use distinct paths." >&2
+    exit 1
+  fi
+done
+if [[ "$effective_findings" == "$effective_sarif" || "$effective_findings" -ef "$effective_sarif" ]]; then
   echo "Raw inputs and effective outputs must use distinct paths." >&2
   exit 1
 fi

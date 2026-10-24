@@ -106,6 +106,61 @@ jq -e '.runs[0].results | length == 1 and .[0].locations[0].physicalLocation.art
 cmp "$tmpdir/raw-findings.json" "$tmpdir/raw-findings.original.json"
 cmp "$tmpdir/raw.sarif" "$tmpdir/raw.original.sarif"
 
+# Every output/input pairing must reject aliases before writing either output.
+mkdir -p "$tmpdir/child"
+ln -s "$tmpdir" "$tmpdir/parent-alias"
+for raw in raw-findings.json raw.sarif; do
+  ln -s "$tmpdir/$raw" "$tmpdir/symlink-$raw"
+  ln "$tmpdir/$raw" "$tmpdir/hardlink-$raw"
+  for alias in "$tmpdir/$raw" "$tmpdir/./$raw" "$tmpdir/child/../$raw" \
+      "$tmpdir/parent-alias/$raw" "$tmpdir/symlink-$raw" "$tmpdir/hardlink-$raw"; do
+    for output_kind in findings sarif; do
+      printf 'untouched companion output\n' > "$tmpdir/companion"
+      cp "$tmpdir/companion" "$tmpdir/companion.original"
+      outputs=("$alias" "$tmpdir/companion")
+      if [[ "$output_kind" == sarif ]]; then
+        outputs=("$tmpdir/companion" "$alias")
+      fi
+      if bash "$FILTER" "$tmpdir/raw-findings.json" "$tmpdir/raw.sarif" \
+          "$tmpdir/allowlist.txt" "${outputs[@]}" "$canonicalizer_arg" > "$tmpdir/collision.log" 2>&1; then
+        echo "ERROR: accepted $output_kind output colliding with $alias" >&2
+        exit 1
+      fi
+      grep -Fq 'Raw inputs and effective outputs must use distinct paths.' "$tmpdir/collision.log"
+      cmp "$tmpdir/raw-findings.json" "$tmpdir/raw-findings.original.json"
+      cmp "$tmpdir/raw.sarif" "$tmpdir/raw.original.sarif"
+      cmp "$tmpdir/companion" "$tmpdir/companion.original"
+    done
+  done
+done
+
+# Canonicalize raw input aliases too, and reject aliased effective outputs.
+for collision in raw-alias output-alias; do
+  inputs=("$tmpdir/raw-findings.json" "$tmpdir/raw.sarif")
+  outputs=("$tmpdir/companion" "$tmpdir/./companion")
+  if [[ "$collision" == raw-alias ]]; then
+    inputs=("$tmpdir/symlink-raw-findings.json" "$tmpdir/symlink-raw.sarif")
+    outputs=("$tmpdir/raw-findings.json" "$tmpdir/companion")
+  fi
+  if bash "$FILTER" "${inputs[@]}" "$tmpdir/allowlist.txt" \
+      "${outputs[@]}" "$canonicalizer_arg" > "$tmpdir/collision.log" 2>&1; then
+    echo "ERROR: accepted $collision collision" >&2
+    exit 1
+  fi
+  grep -Fq 'Raw inputs and effective outputs must use distinct paths.' "$tmpdir/collision.log"
+  cmp "$tmpdir/raw-findings.json" "$tmpdir/raw-findings.original.json"
+  cmp "$tmpdir/raw.sarif" "$tmpdir/raw.original.sarif"
+  cmp "$tmpdir/companion" "$tmpdir/companion.original"
+done
+
+# Missing output directories remain supported after canonicalization.
+bash "$FILTER" "$tmpdir/raw-findings.json" "$tmpdir/raw.sarif" \
+  "$tmpdir/allowlist.txt" "$tmpdir/new/findings/effective.json" \
+  "$tmpdir/new/sarif/effective.sarif" "$canonicalizer_arg"
+cmp "$tmpdir/effective-findings.json" "$tmpdir/new/findings/effective.json"
+cmp "$tmpdir/effective.sarif" "$tmpdir/new/sarif/effective.sarif"
+echo 'PASS: path collisions are rejected before writes; distinct new output paths remain supported.'
+
 if [[ -n "$canonicalizer_arg" ]]; then
   echo "PASS: inherited TypeScript paths are narrowly filtered; raw, fork-only, and unrelated findings remain; effective JSON is I-JSON/JCS checked."
 else

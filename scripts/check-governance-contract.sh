@@ -16,6 +16,8 @@ ALLOWLIST=config/hypatia/upstream-typescript-allowlist.txt
 FORMAT_TOOLS=config/format-tools.toml
 STANDARDS_SHA=01c9b0c9f2646ebea0b30a9588462642ac94aee9
 UPSTREAM_SHA=a325589d3d318847c15b21cd34fb7d6e7a6d2f7b
+# SHA-256 of the sorted unique paths audited at UPSTREAM_SHA, with a final LF.
+ALLOWLIST_SHA256=531f92fdf33487a03b03381c40a6cc9a53a771b870b92fc18feed18c9c1798a7
 failures=0
 checks=0
 
@@ -93,6 +95,12 @@ else
   pass 'the fork-only TypeScript path remains outside the upstream allowlist'
 fi
 allowlist_entries="$(grep -Ev '^(#|$)' "$ALLOWLIST" || true)"
+allowlist_digest="$(printf '%s\n' "$allowlist_entries" | LC_ALL=C sort -u | sha256sum)"
+if [ "${allowlist_digest%% *}" = "$ALLOWLIST_SHA256" ]; then
+  pass 'the complete allowlist matches the pinned upstream TypeScript snapshot'
+else
+  fail 'the complete allowlist must match the pinned upstream TypeScript snapshot'
+fi
 if [ -n "$allowlist_entries" ] && ! grep -Eq '[*?]' <<<"$allowlist_entries" \
     && ! grep -Eqv '\.(ts|tsx)$' <<<"$allowlist_entries"; then
   pass 'the allowlist contains exact TypeScript paths, not globs or other languages'
