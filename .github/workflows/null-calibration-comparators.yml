@@ -18,13 +18,23 @@
 #     dependency, so it is installed into the system library here and its
 #     version is recorded in the provenance file every cell writes.
 #
-# Results are returned two ways, because neither is guaranteed on every
-# repository: the summary CSVs are committed back to the branch that dispatched
-# the run (contents: write), and are also emitted as annotations, which the
-# checks API serves even where the job log is unavailable.
+# Triggers. `workflow_dispatch` is the intended one, but GitHub only registers a
+# dispatchable workflow once its file is on the default branch, so it cannot
+# start a run while this lane is still a pull request. A tag push is the
+# pre-registration equivalent and is equally deliberate: nothing else in this
+# repository pushes `null-calibration-*` tags, so a run cannot start by accident
+# and every run has a tag naming the commit it measured.
+#
+# Results are returned two ways, because neither is guaranteed: for a dispatched
+# run the summary CSVs are committed back to the branch that dispatched it
+# (contents: write); for every run they are emitted as annotations, which the
+# checks API serves even where the job log or artifacts are unavailable.
 name: Null-calibration comparators (manual)
 
 on:
+  push:
+    tags:
+      - "null-calibration-*"
   workflow_dispatch:
     inputs:
       n_per:
@@ -68,7 +78,33 @@ jobs:
     env:
       R_LIBS_SITE: /usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library
     steps:
-      - name: Check out the dispatched branch
+      # `inputs` is only populated for workflow_dispatch; a tag run falls back to
+      # the same defaults the dispatch form shows, and to annotations-only output.
+      - name: Resolve the run settings
+        env:
+          IN_N_PER: ${{ inputs.n_per }}
+          IN_SIMS: ${{ inputs.sims }}
+          IN_TAXA: ${{ inputs.taxa }}
+          IN_TESTS: ${{ inputs.tests }}
+          IN_COMMIT: ${{ inputs.commit_results }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          {
+            echo "NB_N_PER=${IN_N_PER:-4,12}"
+            echo "NB_SIMS=${IN_SIMS:-1000}"
+            echo "NB_TAXA=${IN_TAXA:-40}"
+            echo "NB_TESTS=${IN_TESTS:-wald_ml,lrt,ql_f,glmgampoi_ql,edger_ql,wald_trend}"
+          } >> "$GITHUB_ENV"
+          # A tag identifies the commit, not a branch to commit back to.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "${IN_COMMIT:-true}" != "false" ]; then
+            echo "TARGET_BRANCH=$REF_NAME" >> "$GITHUB_ENV"
+          else
+            echo "TARGET_BRANCH=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Check out the measured commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # The results commit needs the token; nothing else in this job writes.
@@ -122,11 +158,6 @@ jobs:
       # --out/--results are passed explicitly: the default paths are relative to
       # the repository root, which is this step's working directory.
       - name: Run the comparator cells
-        env:
-          NB_N_PER: ${{ inputs.n_per }}
-          NB_SIMS: ${{ inputs.sims }}
-          NB_TAXA: ${{ inputs.taxa }}
-          NB_TESTS: ${{ inputs.tests }}
         run: |
           set -euo pipefail
           Rscript --no-init-file bench/null_calibration/calibration.R \
@@ -160,13 +191,17 @@ jobs:
       # bench's results directory. Failure to push must not lose the run, so the
       # job reports it and stays green through the annotations above.
       - name: Commit the summary CSVs back to the dispatched branch
-        if: always() && inputs.commit_results
+        if: always()
         continue-on-error: true
         env:
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ env.TARGET_BRANCH }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
+          if [ -z "${BRANCH:-}" ]; then
+            echo "no target branch for this trigger; results are in the annotations and the artifact"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add bench/null_calibration/results
