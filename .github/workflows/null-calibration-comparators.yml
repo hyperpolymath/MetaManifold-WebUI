@@ -169,33 +169,69 @@ jobs:
       # renv.lock, so it is installed here against the pinned Bioconductor
       # release. If it cannot be installed this job fails rather than silently
       # running without one of the requested comparators.
+      # edgeR is an outside reference only and deliberately absent from
+      # renv.lock, so it is installed here against the pinned Bioconductor
+      # release. Explicit repository URLs are used rather than BiocManager's
+      # version negotiation: the release the pin names is the release asked for,
+      # with no upgrade path that could quietly choose another. Its dependencies
+      # (limma, locfit) are already present from renv.lock.
+      #
+      # `sudo env VAR=...` rather than `sudo Rscript`: sudo resets the
+      # environment, and an empty BIOC_VERSION silently asks for no release at
+      # all.
       - name: Install edgeR from the pinned Bioconductor release
+        env:
+          RUN_LOG_TITLE: edgeR install
         run: |
           set -euo pipefail
-          sudo env BIOC_VERSION="$BIOC_VERSION" Rscript --no-init-file -e '
-            options(repos = c(CRAN = "https://cloud.r-project.org"))
-            if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", lib = .Library)
-            BiocManager::install(version = Sys.getenv("BIOC_VERSION"), ask = FALSE, update = FALSE, lib = .Library)
-            BiocManager::install("edgeR", ask = FALSE, update = FALSE, lib = .Library)
-            if (!requireNamespace("edgeR", quietly = TRUE)) stop("edgeR failed to install")
-            cat("edgeR", as.character(packageVersion("edgeR")), "\n")'
+          bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/edger-install.log" -- \
+            sudo env BIOC_VERSION="$BIOC_VERSION" R_LIBS_SITE="$R_LIBS_SITE" \
+              Rscript --no-init-file -e '
+                options(Ncpus = 2, timeout = 600)
+                stopifnot(nzchar(Sys.getenv("BIOC_VERSION")))
+                repo_url <- function(kind) sprintf("https://bioconductor.org/packages/%s/%s",
+                                                   Sys.getenv("BIOC_VERSION"), kind)
+                repos <- c(repo_url("bioc"), repo_url("data/annotation"),
+                           CRAN = "https://cloud.r-project.org")
+                # A bare name pins nothing, so the release is named explicitly in
+                # the repository URL and the result is reported, not assumed.
+                if (!requireNamespace("edgeR", quietly = TRUE)) {
+                  install.packages("edgeR", repos = repos, lib = .Library,
+                                   dependencies = c("Depends", "Imports", "LinkingTo"))
+                }
+                if (!requireNamespace("edgeR", quietly = TRUE)) stop("edgeR failed to install")
+                cat("edgeR", as.character(packageVersion("edgeR")), "\n")'
 
       - name: Record the environment
+        if: always()
         run: |
-          Rscript --no-init-file -e 'cat(R.version.string, "\n"); for (p in c("MASS","glmGamPoi","edgeR")) cat(p, as.character(packageVersion(p)), "\n")'
+          Rscript --no-init-file -e '
+            cat(R.version.string, "\n")
+            for (p in c("MASS", "glmGamPoi", "edgeR", "limma")) {
+              v <- tryCatch(as.character(packageVersion(p)), error = function(e) "absent")
+              cat(p, v, "\n")
+            }'
 
       # --out/--results are passed explicitly: the default paths are relative to
       # the repository root, which is this step's working directory.
       - name: Run the comparator cells
+        env:
+          RUN_LOG_TITLE: comparator cells
         run: |
           set -euo pipefail
-          Rscript --no-init-file bench/null_calibration/calibration.R \
+          bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/calibration.log" -- \
+            Rscript --no-init-file bench/null_calibration/calibration.R \
             --shapes=original --offsets=tss \
             --n-per="$NB_N_PER" --sims="$NB_SIMS" --taxa="$NB_TAXA" \
             --tests="$NB_TESTS" --truth=null
 
       - name: Summarise
-        run: Rscript --no-init-file bench/null_calibration/summarise.R
+        env:
+          RUN_LOG_TITLE: summarise
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/summarise.log" -- \
+            Rscript --no-init-file bench/null_calibration/summarise.R
 
       - name: Publish the summaries as annotations
         if: always()
