@@ -174,7 +174,9 @@ Readings:
 
 The comparator lane completed successfully in [Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843), triggered by tag `null-calibration-run4-2026-10-24` at measured commit `bc435feb4614c29f4339fe578caba0c938b6e4c9`. It ran 1,000 null simulations × 40 taxa at original shape/TSS offset for n=4 and n=12 per group, using the same per-cell seed scheme as the WebR study. Its summary and provenance are preserved in `results/native_comparator_summary_run_40091522843.csv` and `results/native_comparator_provenance_run_40091522843.csv`.
 
-The run used the final two post-PR fixes from that tag lineage: the loud failure-reason reporting commit `17ce140` and `test_de` `sort_by` fix `bc435fe`. They were cherry-picked onto this work branch as `2599317` and `8784a11`; the resulting `calibration.R` md5 matches the measured run (`12a90679f74d2e1a9ab28cec643b5e76`).
+The run used the final two post-PR fixes from that tag lineage: the loud failure-reason reporting commit `17ce140` and `test_de` `sort_by` fix `bc435fe`. They were cherry-picked onto this work branch as `2599317` and `8784a11`. The measured file digests are recorded from the run itself: `calibration.R` md5 `12a90679f74d2e1a9ab28cec643b5e76`; extracted production `_FIT_R` md5 `cc9efdfdd6e4efe2f9a393ba4d178ce0`.
+
+After measurement, the package-result normalization and cell-warning logic were refactored in this PR in response to Sonar findings (shared handling instead of duplicated blocks and nested control flow). The estimator calls, simulation seeds, and formulas are unchanged; the report remains explicitly tied to the measured tag/code digest above.
 
 | n/group | test | package | p-values (failed fits) | α=0.05 (Wilson 95% CI) | verdict |
 |---:|---|---|---:|---|---|
