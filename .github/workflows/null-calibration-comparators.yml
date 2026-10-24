@@ -127,14 +127,43 @@ jobs:
       - name: Set up R
         run: bash scripts/ci/install-r-runtime.sh full
 
+      # The same cache ci.yml fills and reads. Without it this lane recompiles
+      # dada2, vegan, glmGamPoi and their dependencies from source on every run,
+      # which is most of the wall clock and none of the information.
+      - name: Restore the renv cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: /opt/renv-cache
+          key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-
+            renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-
+
       # MASS and glmGamPoi come from the committed lockfile; restoring it is
       # what makes this the repository's environment rather than a fresh one.
       - name: Restore R packages from renv.lock
+        env:
+          RENV_PATHS_CACHE: /opt/renv-cache
         run: |
           set -euo pipefail
-          sudo Rscript --no-init-file -e 'if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv", repos = "https://cloud.r-project.org", lib = .Library)'
-          sudo Rscript --no-init-file -e 'renv::restore(project = ".", library = .Library, prompt = FALSE)'
+          sudo mkdir -p /opt/renv-cache
+          sudo chmod 777 /opt/renv-cache
+          sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv", repos = "https://cloud.r-project.org", lib = .Library)'
+          sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'renv::restore(project = ".", library = .Library, prompt = FALSE)'
           Rscript --no-init-file -e 'for (pkg in c("MASS", "glmGamPoi")) if (!requireNamespace(pkg, quietly = TRUE)) stop(pkg, " is missing after renv::restore")'
+
+      # Saved on failure too: the packages built before a failure are the ones
+      # the next attempt should reuse. Root writes the cache, hence the chmod.
+      - name: Make the renv cache readable
+        if: always()
+        run: sudo chmod -R a+rX /opt/renv-cache || true
+
+      - name: Save the renv cache
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: /opt/renv-cache
+          key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
 
       # edgeR is an outside reference only and deliberately absent from
       # renv.lock, so it is installed here against the pinned Bioconductor
