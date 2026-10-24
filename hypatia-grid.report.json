@@ -1,0 +1,789 @@
+{
+  "schema": 1,
+  "lane": "hypatia",
+  "profile": "66282192ed79ab8f69ed96568be2d12ae372bc13cb132959a5d7a1da023d16e7",
+  "sha": "17369b0c2992d5c74b27c7db40c3dce2a8b6c7b5",
+  "run": "40100494876",
+  "url": "https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40100494876",
+  "pr": "local",
+  "repo": "hyperpolymath/MetaManifold-WebUI",
+  "dirty": false,
+  "generated": "2026-10-24T14:00:33Z",
+  "refs": {
+    "hypatia": "aa34a4cc6ba39d873710ff39763fdb9cde715f9d",
+    "panic": "b689a74d2762a1c19839ae3fbd59b7fe5ef920ea",
+    "pons": "32e55677d8fd1f3010848dee22e822c2f385c2a0"
+  },
+  "reporters": [
+    {
+      "id": "hypatia",
+      "title": "Hypatia scan",
+      "status": "ran",
+      "reason": "",
+      "ref": "aa34a4cc6ba39d873710ff39763fdb9cde715f9d",
+      "findings": [
+        {
+          "id": "workflow_audit/missing_workflow",
+          "severity": "high",
+          "file": ".github/workflows/codeql.yml",
+          "line": 0,
+          "message": "Required workflow `codeql.yml` is absent from .github/workflows/. The estate baseline expects it; without it this repository is unscanned for whatever that workflow covers, and its absence is silent — no job fails, because no job runs."
+        },
+        {
+          "id": "workflow_audit/missing_workflow",
+          "severity": "high",
+          "file": ".github/workflows/mirror.yml",
+          "line": 0,
+          "message": "Required workflow `mirror.yml` is absent from .github/workflows/. The estate baseline expects it; without it this repository is unscanned for whatever that workflow covers, and its absence is silent — no job fails, because no job runs."
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "bench/null_calibration/report_failures.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "test/references/exact_summary_reference.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "test/references/check_high_precision_references.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "test/references/check_ordination_references.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/conformance.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/inventory.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/descendants.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/probe_kyq.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/process.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/tests/test_format_readiness.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/tests/test_null_calibration_failures.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/components/ordinationModel.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/components/ordinationModel.test.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/api/ijsonJcs.test.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/api/ijsonJcs.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/cladistics/cumulativeLayout.test.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/cladistics/cumulativeLayout.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/utils/text.test.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 110,
+          "message": "job in .github/workflows/hypatia-scan.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 192,
+          "message": "job in .github/workflows/hypatia-scan.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan-reusable.yml",
+          "line": 227,
+          "message": "job in .github/workflows/hypatia-scan-reusable.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/ci.yml",
+          "line": 520,
+          "message": "job in .github/workflows/ci.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "workflow_hardening/WH002",
+          "severity": "medium",
+          "file": ".github/workflows/null-calibration-comparators.yml",
+          "line": 0,
+          "message": "workflow .github/workflows/null-calibration-comparators.yml has top-level `permissions:` with `contents: write` AND performs a write (push/commit/release/PR). It is over-broad, but narrowing the workflow level alone WOULD BREAK IT — no job declares its own `permissions:`."
+        },
+        {
+          "id": "code_safety/js_http_url_in_code",
+          "severity": "medium",
+          "file": "frontend/src/figure/export.ts",
+          "line": 9,
+          "message": "HTTP URL in code -- use HTTPS for non-localhost (2 occurrences, CWE-319, line 9, 43)"
+        },
+        {
+          "id": "code_safety/js_http_url_in_code",
+          "severity": "medium",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 334,
+          "message": "HTTP URL in code -- use HTTPS for non-localhost (2 occurrences, CWE-319, line 334, 338)"
+        },
+        {
+          "id": "scorecard/StaticAnalysis",
+          "severity": "medium",
+          "file": ".",
+          "line": 0,
+          "message": "Nominal-only SAST in MetaManifold-WebUI: codeql.yml language matrix contains no language present in the repo and lacks `actions`, so CodeQL records zero results on every commit. Remediation: set the CodeQL matrix to `language: actions`."
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/tests/test_null_calibration_failures.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "bench/null_calibration/report_failures.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/null-calibration-comparators.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/workflow_hardening/WH002 -- Hypatia workflow_hardening: WH002 -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/null-calibration-comparators.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/components/ordinationModel.test.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/components/ordinationModel.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "test/references/check_ordination_references.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/ci.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/tests/test_format_readiness.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/process.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/probe_kyq.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/descendants.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/inventory.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/conformance.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/scorecard.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): MaintainedID -- Maintained -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): CodeReviewID -- Code-Review -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): BranchProtectionID -- Branch-Protection -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): VulnerabilitiesID -- Vulnerabilities -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): FuzzingID -- Fuzzing -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/ci.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): PinnedDependenciesID -- Pinned-Dependencies -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/ci.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): PinnedDependenciesID -- Pinned-Dependencies -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/hypatia-scan-reusable.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 0 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan-reusable.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 1 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/api/ijsonJcs.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 1 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/api/ijsonJcs.test.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 1 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/cladistics/cumulativeLayout.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 1 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/cladistics/cumulativeLayout.test.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 1 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "test/references/check_high_precision_references.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 1 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "test/references/exact_summary_reference.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 1 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "src/server/routes/events.jl",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/structural_drift/SD009 -- Hypatia structural_drift: SD009 -- 5 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "src/server/jobs.jl",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/structural_drift/SD009 -- Hypatia structural_drift: SD009 -- 5 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "src/server/precompile.jl",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/structural_drift/SD009 -- Hypatia structural_drift: SD009 -- 5 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "src/server/server.jl",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/structural_drift/SD009 -- Hypatia structural_drift: SD009 -- 5 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/scorecard/StaticAnalysis -- Hypatia scorecard: StaticAnalysis -- 5 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/code_safety/js_http_url_in_code -- Hypatia code_safety: js_http_url_in_code -- 5 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "frontend/src/figure/export.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/code_safety/js_http_url_in_code -- Hypatia code_safety: js_http_url_in_code -- 5 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/utils/text.test.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 5 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA002",
+          "severity": "medium",
+          "file": "hyperpolymath/MetaManifold-WebUI",
+          "line": 0,
+          "message": "43 total open code-scanning alert(s) -- security hygiene review"
+        },
+        {
+          "id": "structural_drift/SD009",
+          "severity": "medium",
+          "file": "src/server/server.jl",
+          "line": 0,
+          "message": "Source file missing SPDX-License-Identifier header"
+        },
+        {
+          "id": "structural_drift/SD009",
+          "severity": "medium",
+          "file": "src/server/precompile.jl",
+          "line": 0,
+          "message": "Source file missing SPDX-License-Identifier header"
+        },
+        {
+          "id": "structural_drift/SD009",
+          "severity": "medium",
+          "file": "src/server/jobs.jl",
+          "line": 0,
+          "message": "Source file missing SPDX-License-Identifier header"
+        },
+        {
+          "id": "structural_drift/SD009",
+          "severity": "medium",
+          "file": "src/server/routes/events.jl",
+          "line": 0,
+          "message": "Source file missing SPDX-License-Identifier header"
+        }
+      ],
+      "counts": {
+        "critical": 18,
+        "high": 29,
+        "medium": 28,
+        "minor": 0
+      },
+      "state": "purple"
+    },
+    {
+      "id": "panic-attack",
+      "title": "panic-attack assail",
+      "status": "ran",
+      "reason": "",
+      "ref": "b689a74d2762a1c19839ae3fbd59b7fe5ef920ea",
+      "findings": [
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "test/unit/test_permanova.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in test/unit/test_permanova.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "scripts/check-julia-syntax.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in scripts/check-julia-syntax.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/core/provenance.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/core/provenance.jl"
+        },
+        {
+          "id": "UnsafeFFI",
+          "severity": "medium",
+          "file": "src/core/memory_probe.jl",
+          "line": 0,
+          "message": "3 ccall/FFI calls in src/core/memory_probe.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/analysis/ordination.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/ordination.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/analysis/differential.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/differential.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/analysis/analysis.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/analysis.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/pipeline/dada2/context.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/pipeline/dada2/context.jl"
+        }
+      ],
+      "counts": {
+        "critical": 0,
+        "high": 7,
+        "medium": 1,
+        "minor": 0
+      },
+      "state": "red"
+    },
+    {
+      "id": "pons-asinorum",
+      "title": "pons asinorum",
+      "status": "ran",
+      "reason": "",
+      "ref": "32e55677d8fd1f3010848dee22e822c2f385c2a0",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "green"
+    },
+    {
+      "id": "rhodibot",
+      "title": "rhodibot (RSR compliance)",
+      "status": "not_run",
+      "reason": "enrolled, but no report-back was received",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "orange"
+    },
+    {
+      "id": "panicbot",
+      "title": "panicbot (panic recovery, error handling)",
+      "status": "not_run",
+      "reason": "enrolled, but no report-back was received",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "orange"
+    },
+    {
+      "id": "echidnabot",
+      "title": "echidnabot (formal verification: proofs/)",
+      "status": "not_run",
+      "reason": "enrolled, but no report-back was received",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "orange"
+    },
+    {
+      "id": "seambot",
+      "title": "seambot (integration health: API routes)",
+      "status": "not_run",
+      "reason": "enrolled, but no report-back was received",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "orange"
+    },
+    {
+      "id": "finishingbot",
+      "title": "finishingbot (release readiness)",
+      "status": "not_run",
+      "reason": "enrolled, but no report-back was received",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "orange"
+    },
+    {
+      "id": "accessibilitybot",
+      "title": "accessibilitybot (WCAG on the React UI)",
+      "status": "not_run",
+      "reason": "enrolled, but no report-back was received",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "orange"
+    },
+    {
+      "id": "glambot",
+      "title": "glambot (presentation quality)",
+      "status": "not_run",
+      "reason": "enrolled, but no report-back was received",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "orange"
+    },
+    {
+      "id": "cipherbot",
+      "title": "cipherbot",
+      "status": "not_applicable",
+      "reason": "no cryptography is implemented in this repository",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "grey"
+    },
+    {
+      "id": "sustainabot",
+      "title": "sustainabot",
+      "status": "not_applicable",
+      "reason": "fleet adapter slot reserved; no adapter exists yet (gitbot-fleet README)",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "grey"
+    }
+  ],
+  "state": "purple",
+  "counts": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "minor": 0
+  }
+}
