@@ -779,7 +779,7 @@ jobs:
           retention-days: 90
 
       - name: Gate on baseline (blocking when a baseline is committed)
-        if: '!inputs.block-on-high && steps.inherited-language.outputs.findings_count > 0'
+        if: '!inputs.block-on-high && (steps.inherited-language.outputs.findings_count > 0 || hashFiles(''.hypatia-baseline.json'') != '''')'
         run: |
           # Wave-8 gate promotion: when the calling repo commits a
           # .hypatia-baseline.json (schema: .machine_readable/hypatia-baseline.
