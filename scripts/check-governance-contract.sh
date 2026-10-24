@@ -237,6 +237,12 @@ fi
 if gate="$(step_block "$REUSABLE" 'Gate on baseline (blocking when a baseline is committed)')"; then
   contains "$gate" 'hypatia-findings.effective.json' \
     'the baseline gate consumes exception-aware findings'
+  contains "$gate" '!inputs.block-on-high' \
+    'the advisory baseline gate remains disabled for blocking-mode callers'
+  contains "$gate" 'steps.inherited-language.outputs.findings_count > 0' \
+    'the advisory baseline gate runs when effective findings are present'
+  contains "$gate" "hashFiles(''.hypatia-baseline.json'')" \
+    'the advisory baseline gate still validates a committed baseline when findings are zero'
 else
   fail 'the baseline gate step exists'
 fi

@@ -29,20 +29,27 @@ for input in "$raw_findings" "$raw_sarif" "$allowlist"; do
   fi
 done
 
-# Resolve relative components and symlinks even when output directories do not
-# exist yet. Neither output may overwrite either raw audit artifact.
-raw_findings=$(realpath -m -- "$raw_findings")
-raw_sarif=$(realpath -m -- "$raw_sarif")
-effective_findings=$(realpath -m -- "$effective_findings")
-effective_sarif=$(realpath -m -- "$effective_sarif")
+# Resolve relative components and symlinks portably, including output paths
+# whose parent directories do not exist yet. Python's standard library avoids
+# relying on GNU-only `realpath -m`. Neither output may overwrite any input or
+# the other output.
+canonicalize_path() {
+  python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"
+}
+raw_findings=$(canonicalize_path "$raw_findings")
+raw_sarif=$(canonicalize_path "$raw_sarif")
+allowlist=$(canonicalize_path "$allowlist")
+effective_findings=$(canonicalize_path "$effective_findings")
+effective_sarif=$(canonicalize_path "$effective_sarif")
 for output in "$effective_findings" "$effective_sarif"; do
-  if [[ "$output" == "$raw_findings" || "$output" == "$raw_sarif" || "$output" -ef "$raw_findings" || "$output" -ef "$raw_sarif" ]]; then
-    echo "Raw inputs and effective outputs must use distinct paths." >&2
+  if [[ "$output" == "$raw_findings" || "$output" == "$raw_sarif" || "$output" == "$allowlist" \
+      || "$output" -ef "$raw_findings" || "$output" -ef "$raw_sarif" || "$output" -ef "$allowlist" ]]; then
+    echo "Input, allowlist, and output paths must resolve to distinct files." >&2
     exit 1
   fi
 done
 if [[ "$effective_findings" == "$effective_sarif" || "$effective_findings" -ef "$effective_sarif" ]]; then
-  echo "Raw inputs and effective outputs must use distinct paths." >&2
+  echo "Input, allowlist, and output paths must resolve to distinct files." >&2
   exit 1
 fi
 
