@@ -207,9 +207,10 @@ jobs:
             name="$(basename "$csv")"
             # Annotations cap at 4096 bytes each, so the file is split and each
             # chunk is one notice. %/CR are escaped as the checks API expects.
-            split -b 3000 -d "$csv" "$RUNNER_TEMP/annot-"
+            prefix="$RUNNER_TEMP/annot-${name}-"
+            split -b 3000 -d "$csv" "$prefix"
             index=0
-            for chunk in "$RUNNER_TEMP"/annot-*; do
+            for chunk in "$prefix"*; do
               index=$((index + 1))
               body="$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' "$chunk" | awk '{printf "%s%%0A", $0}')"
               echo "::notice title=${name} part ${index}::${body}"
