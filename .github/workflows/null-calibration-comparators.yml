@@ -172,7 +172,7 @@ jobs:
       - name: Install edgeR from the pinned Bioconductor release
         run: |
           set -euo pipefail
-          sudo Rscript --no-init-file -e '
+          sudo env BIOC_VERSION="$BIOC_VERSION" Rscript --no-init-file -e '
             options(repos = c(CRAN = "https://cloud.r-project.org"))
             if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", lib = .Library)
             BiocManager::install(version = Sys.getenv("BIOC_VERSION"), ask = FALSE, update = FALSE, lib = .Library)
