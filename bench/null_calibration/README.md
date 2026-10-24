@@ -107,6 +107,18 @@ the extracted `_FIT_R` block, and `sessionInfo()`. `summarise.R` writes
 and `provenance_summary.csv` — the run record, generated from the per-cell
 provenance files rather than assembled by hand.
 
+### The comparators that need compiled Bioconductor packages
+
+`glmGamPoi` and `edgeR` cannot be installed in every environment (WebR cannot load
+compiled packages at all). The repository's CI already provisions exactly that
+environment — native R from the pinned CRAN repository, then `renv::restore()`
+with `glmGamPoi` — so `.github/workflows/null-calibration-comparators.yml` is a
+**manual-dispatch** lane that runs those cells there and commits the summary CSVs
+back to the branch. It never runs on a push or a pull request: the bench is slow
+and stochastic and must not gate anything. `edgeR` is not in `renv.lock` (it is
+an outside reference, never an app dependency), so the lane installs it against
+the pinned Bioconductor release and every provenance file records its version.
+
 ### No native R? The WebR fallback
 
 `webr_run.mjs` runs the same `calibration.R` / `summarise.R` under WebR (R in

@@ -325,6 +325,21 @@ fit_nb_candidates <- function(counts, offset, n_per, want) {
   out
 }
 
+# Both package tests come back as a data.frame whose p-value column is named by
+# the package: glmGamPoi's test_de returns "pval", edgeR's topTags table returns
+# "PValue". A match that missed either spelling would mark every taxon "failed"
+# and look like a fit problem, so the column is resolved case-insensitively and
+# a missing column is an error in THIS file, not a data outcome.
+p_value_column <- function(tbl, caller) {
+  wanted <- c("pvalue", "p.value", "pval", "p_value")
+  hit <- match(wanted, tolower(names(tbl)))
+  hit <- hit[!is.na(hit)]
+  if (length(hit) == 0) {
+    stop(caller, " returned no p-value column; got: ", paste(names(tbl), collapse = ", "))
+  }
+  names(tbl)[hit[1]]
+}
+
 fit_glmgampoi_ql <- function(counts, offset, n_per) {
   g <- factor(rep(c("A", "B"), each = n_per), levels = c("A", "B"))
   out <- data.frame(status = rep("failed", ncol(counts)), pvalue = NA_real_)
@@ -340,8 +355,8 @@ fit_glmgampoi_ql <- function(counts, offset, n_per) {
     glmGamPoi::test_de(gp, contrast = c(0, 1), sort_by = "none")
   }), error = function(e) e)
   if (inherits(res, "error")) return(out)
-  pcol <- intersect(c("pval", "pvalue", "p_value"), names(res))[1]
-  if (is.na(pcol) || length(res[[pcol]]) != ncol(counts)) return(out)
+  pcol <- p_value_column(res, "glmGamPoi::test_de")
+  if (length(res[[pcol]]) != ncol(counts)) return(out)
   p <- as.numeric(res[[pcol]])
   ok <- !screens & is.finite(p) & p >= 0 & p <= 1
   out$status[ok] <- "ok"
@@ -368,8 +383,8 @@ fit_edger_ql <- function(counts, offset, n_per) {
     edgeR::topTags(qlf, n = Inf, sort.by = "none")$table
   }), error = function(e) e)
   if (inherits(res, "error")) return(out)
-  pcol <- intersect(c("pvalue", "p.value", "pvalue"), names(res))[1]
-  if (is.na(pcol) || length(res[[pcol]]) != ncol(counts)) return(out)
+  pcol <- p_value_column(res, "edgeR::topTags")
+  if (length(res[[pcol]]) != ncol(counts)) return(out)
   p <- as.numeric(res[[pcol]])
   ok <- !screens & is.finite(p) & p >= 0 & p <= 1
   out$status[ok] <- "ok"
