@@ -330,6 +330,15 @@ fit_nb_candidates <- function(counts, offset, n_per, want) {
 # "PValue". A match that missed either spelling would mark every taxon "failed"
 # and look like a fit problem, so the column is resolved case-insensitively and
 # a missing column is an error in THIS file, not a data outcome.
+# A package test that errors must say why. Returning a frame of "failed" rows
+# with no reason is the silent skip this bench forbids: it is indistinguishable
+# from a fit problem when the results are read later.
+loud_failure <- function(out, test, message) {
+  cat("  ", test, "failed for every taxon: ", message, "\n", sep = "")
+  out$note <- message
+  out
+}
+
 p_value_column <- function(tbl, caller) {
   wanted <- c("pvalue", "p.value", "pval", "p_value")
   hit <- match(wanted, tolower(names(tbl)))
@@ -342,7 +351,8 @@ p_value_column <- function(tbl, caller) {
 
 fit_glmgampoi_ql <- function(counts, offset, n_per) {
   g <- factor(rep(c("A", "B"), each = n_per), levels = c("A", "B"))
-  out <- data.frame(status = rep("failed", ncol(counts)), pvalue = NA_real_)
+  out <- data.frame(status = rep("failed", ncol(counts)), pvalue = NA_real_,
+                    note = NA_character_)
   screens <- vapply(seq_len(ncol(counts)),
                     function(j) nzchar(screen(counts[, j], g)), logical(1))
   res <- tryCatch(suppressWarnings({
@@ -354,9 +364,11 @@ fit_glmgampoi_ql <- function(counts, offset, n_per) {
     # alike must never hand it a label.
     glmGamPoi::test_de(gp, contrast = c(0, 1), sort_by = "none")
   }), error = function(e) e)
-  if (inherits(res, "error")) return(out)
+  if (inherits(res, "error")) return(loud_failure(out, "glmgampoi_ql", conditionMessage(res)))
   pcol <- p_value_column(res, "glmGamPoi::test_de")
-  if (length(res[[pcol]]) != ncol(counts)) return(out)
+  if (length(res[[pcol]]) != ncol(counts)) {
+    return(loud_failure(out, "glmgampoi_ql", "test_de returned the wrong number of rows"))
+  }
   p <- as.numeric(res[[pcol]])
   ok <- !screens & is.finite(p) & p >= 0 & p <= 1
   out$status[ok] <- "ok"
@@ -366,7 +378,8 @@ fit_glmgampoi_ql <- function(counts, offset, n_per) {
 
 fit_edger_ql <- function(counts, offset, n_per) {
   g <- factor(rep(c("A", "B"), each = n_per), levels = c("A", "B"))
-  out <- data.frame(status = rep("failed", ncol(counts)), pvalue = NA_real_)
+  out <- data.frame(status = rep("failed", ncol(counts)), pvalue = NA_real_,
+                    note = NA_character_)
   screens <- vapply(seq_len(ncol(counts)),
                     function(j) nzchar(screen(counts[, j], g)), logical(1))
   res <- tryCatch(suppressWarnings({
@@ -382,9 +395,11 @@ fit_edger_ql <- function(counts, offset, n_per) {
     qlf <- edgeR::glmQLFTest(fit, coef = 2)
     edgeR::topTags(qlf, n = Inf, sort.by = "none")$table
   }), error = function(e) e)
-  if (inherits(res, "error")) return(out)
+  if (inherits(res, "error")) return(loud_failure(out, "edger_ql", conditionMessage(res)))
   pcol <- p_value_column(res, "edgeR::topTags")
-  if (length(res[[pcol]]) != ncol(counts)) return(out)
+  if (length(res[[pcol]]) != ncol(counts)) {
+    return(loud_failure(out, "edger_ql", "topTags returned the wrong number of rows"))
+  }
   p <- as.numeric(res[[pcol]])
   ok <- !screens & is.finite(p) & p >= 0 & p <= 1
   out$status[ok] <- "ok"
@@ -487,10 +502,12 @@ for (shape in shapes) for (off_m in offsets) for (n_per in n_pers) {
     if ("glmgampoi_ql" %in% enabled) fits$glmgampoi_ql <- fit_glmgampoi_ql(counts, offset, n_per)
     if ("edger_ql" %in% enabled) fits$edger_ql <- fit_edger_ql(counts, offset, n_per)
     rows <- do.call(rbind, lapply(names(fits), function(t) {
+      f <- fits[[t]]
+      note <- if ("note" %in% names(f)) f$note else rep(NA_character_, nrow(f))
       data.frame(truth = truth, shape = shape, offset = off_m, n_per = n_per,
                  taxa = n_taxa, sim = s, taxon = seq_len(ncol(counts)),
                  true_log2fc = sim$true_lfc, test = t,
-                 status = fits[[t]]$status, pvalue = fits[[t]]$pvalue,
+                 status = f$status, pvalue = f$pvalue, note = note,
                  stringsAsFactors = FALSE)
     }))
     write.table(rows, f, sep = ",", row.names = FALSE,
@@ -500,5 +517,19 @@ for (shape in shapes) for (off_m in offsets) for (n_per in n_pers) {
   }
   cat(sprintf("cell %s done: %d sims skipped (<5 testable taxa), %d offsets refused\n",
               cell, skipped_sims, refused_offsets))
+  # A requested test that produced no usable p-value in the whole cell is a
+  # broken package path, not a data outcome: say so here and in REPORT.md terms.
+  cell_rows <- tryCatch(read.csv(f, stringsAsFactors = FALSE), error = function(e) NULL)
+  if (!is.null(cell_rows) && nrow(cell_rows) > 0) {
+    for (t in unique(cell_rows$test)) {
+      usable <- sum(!is.na(cell_rows$pvalue[cell_rows$test == t]))
+      if (usable == 0) {
+        reasons <- if ("note" %in% names(cell_rows))
+          unique(stats::na.omit(cell_rows$note[cell_rows$test == t])) else character(0)
+        cat(sprintf("WARNING %s: test %s produced no p-value in this cell%s\n",
+                    cell, t, if (length(reasons)) paste0(": ", paste(reasons, collapse = "; ")) else ""))
+      }
+    }
+  }
 }
 cat("calibration run complete\n")
