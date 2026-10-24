@@ -1,15 +1,18 @@
 # Null-calibration bench report (issue #193)
 
-This report records the one run that has actually been executed, superseding the
-reduced 2026-10-22 run in this file's history. Anything not listed here has not
-been run. The committed summary CSVs in `results/`
-(`calibration_summary.csv`, `power_summary.csv`) are the source of truth for
-every number below; the per-cell run records are `results/provenance_summary.csv`
-(generated from the per-cell provenance files, not hand-written). The raw
-p-value files under `results/raw/` are gitignored and reproducible from the
-recorded seeds and arguments.
+This report combines the original 2026-10-23 WebR simulation study and a
+supplemental native-R/Bioconductor comparator run completed on 2026-10-24.
+The reduced 2026-10-22 run remains superseded. The committed
+`calibration_summary.csv`, `power_summary.csv`, and `provenance_summary.csv`
+cover the original WebR cells. The native comparator
+run is preserved separately in
+`results/native_comparator_summary_run_40091522843.csv` and
+`results/native_comparator_provenance_run_40091522843.csv`, captured from the
+successful check-run annotations for [Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843).
+Raw p-value files remain outside Git; the run's `null-calibration-raw` artifact
+is retained through 2026-11-23.
 
-## Run identity
+## Original WebR baseline run identity
 
 - **Date:** 2026-10-23 (UTC, per-cell provenance records).
 - **Executor:** WebR 0.6.0 (R 4.6.0, wasm32) through `webr_run.mjs`, because the
@@ -21,12 +24,12 @@ recorded seeds and arguments.
 - **Inputs pinned by digest:** `bench/null_calibration/calibration.R`
   md5 `2717e709ff718e57e602eeaff2410e71`; extracted `_FIT_R` block md5
   `cc9efdfdd6e4efe2f9a393ba4d178ce0`.
-- **Not available in this sandbox:** `glmGamPoi` and `edgeR` (compiled
-  Bioconductor packages). `wald_trend`, `glmgampoi_ql` and `edger_ql` were
-  therefore not run; their code paths in `calibration.R` are unexecuted here.
-  §"What was not run" gives the commands for a native R/Bioconductor run.
-- **Tests run in every cell:** `wald_ml` (the production `_FIT_R` block,
-  `da_use_gp = FALSE`), `lrt` and `ql_f` (both from one full `glm.nb` fit, plus
+- **Not available in the WebR baseline:** `glmGamPoi` and `edgeR` (compiled
+  Bioconductor packages). The baseline did not run `wald_trend`,
+  `glmgampoi_ql` or `edger_ql`; the supplemental native-R run below measures
+  them for original/TSS/null cells at n=4 and n=12.
+- **Tests run in every baseline cell:** `wald_ml` (the production `_FIT_R`
+  block, `da_use_gp = FALSE`), `lrt` and `ql_f` (both from one full `glm.nb` fit, plus
   one intercept-only fit shared by `lrt`).
 - **Seeds:** `seed0 = 20261020`; per-sim seed =
   `(seed0 + cell_key × 1000003 + sim) mod 2³¹−1`, where `cell_key` is a hash of
@@ -167,40 +170,38 @@ Readings:
   |t| > 2.45. The calibration at that size is bought with power, and no measured
   option is a free lunch at 3–4 samples per group.
 
-## What was not run, and why
+## Native R/Bioconductor comparator run (issue #261)
 
-`glmGamPoi` and `edgeR` are compiled Bioconductor packages and are not
-installable in this sandbox (no native R, and the WebAssembly package repository
-does not carry them). Their bench code paths are therefore unexecuted here:
+The comparator lane completed successfully in [Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843), triggered by tag `null-calibration-run4-2026-10-24` at measured commit `bc435feb4614c29f4339fe578caba0c938b6e4c9`. It was configured for 1,000 null simulations × 40 taxa at original shape/TSS offset for n=4 and n=12 per group, using the same per-cell seed scheme as the WebR study. Its summary and provenance are preserved in `results/native_comparator_summary_run_40091522843.csv` and `results/native_comparator_provenance_run_40091522843.csv`.
 
-```sh
-Rscript -e 'renv::restore()'   # native R with the lockfile
-Rscript bench/null_calibration/calibration.R \
-  --shapes=original --offsets=tss --n-per=4,12 --sims=1000 --taxa=40 \
-  --tests=glmgampoi_ql,edger_ql,wald_trend
-Rscript bench/null_calibration/summarise.R
-```
+The run used the final two post-PR fixes from that tag lineage: the loud failure-reason reporting commit `17ce140` and `test_de` `sort_by` fix `bc435fe`. They were cherry-picked onto this work branch as `2599317` and `8784a11`. The measured file digests are recorded from the run itself: `calibration.R` md5 `12a90679f74d2e1a9ab28cec643b5e76`; extracted production `_FIT_R` md5 `cc9efdfdd6e4efe2f9a393ba4d178ce0`.
 
-They skip *loudly* when absent (a stdout line plus a provenance record), so the
-committed results never silently imply they ran. Issue #193's own measurement
-remains the reference for glmGamPoi's QL F-test (0.046 and 0.048 at 4 and 12
-per group); this bench adds a dispersion-scaled QL F test that can be run
-without Bioconductor. Both land within about a point of nominal, against 0.14
-and 0.075 for the production Wald test at the same sizes.
+After measurement, this PR refactored package-result normalization and cell-warning logic in response to Sonar findings, and hardened CSV serialization plus resume validation (schema and cell-key checks) so package error notes remain valid data. The comparator workflow now reads failure rows with a CSV-aware parser. These post-run changes do not alter estimator calls, simulation seeds, or formulas. At this PR revision the working branch's `calibration.R` md5 is `3ed22ba8b04f695d531a45925abbc13f`, not the measured run's `12a90679f74d2e1a9ab28cec643b5e76`; the results below remain tied to the measured tag/code digest above.
+
+| n/group | test | package | summary rows (`n_attempted`) | p-values (failed fits) | α=0.05 (Wilson 95% CI) | verdict |
+|---:|---|---|---:|---:|---|---|
+| 4 | `glmgampoi_ql` | glmGamPoi 1.22.0 | 39,993 | 39,904 (89) | **0.0525** (0.0503–0.0547) | anti-conservative, narrowly |
+| 4 | `edger_ql` | edgeR 4.8.2 | 39,993 | 39,904 (89) | **0.0687** (0.0663–0.0713) | anti-conservative |
+| 4 | `wald_trend` | glmGamPoi 1.22.0 | 39,993 | 39,904 (89) | **0.0838** (0.0811–0.0865) | anti-conservative |
+| 12 | `glmgampoi_ql` | glmGamPoi 1.22.0 | 40,000 | 40,000 (0) | 0.0499 (0.0478–0.0520) | not flagged |
+| 12 | `edger_ql` | edgeR 4.8.2 | 40,000 | 40,000 (0) | **0.0712** (0.0687–0.0737) | anti-conservative |
+| 12 | `wald_trend` | glmGamPoi 1.22.0 | 40,000 | 40,000 (0) | **0.0764** (0.0739–0.0791) | anti-conservative |
+
+The `n_attempted` summary field is `nrow(d)`: it counts rows present in the per-test output, not the 40,000 planned taxon-simulation positions. The `taxa=40` setting is the raw design size, not an observed post-filter testing denominator. At n=4, 39,904 p-values plus 89 failed fits account for 39,993 rows; seven of the 40,000 positions in the configured 1,000 × 40 design are absent from the summary, and their disposition is unresolved. Rejection rates use the 39,904 reported p-values; do not assign the seven absent positions to either successes or failures. At n=12, all 40,000 rows are reported as p-values with no failed fits.
+
+The verdict rule remains the one declared above: a Wilson 95% lower bound above 0.05 is anti-conservative; an interval containing 0.05 is “not flagged”, not proof of exact calibration. The glmGamPoi QL result is just above nominal at n=4 (its lower bound is 0.0503) and not flagged at n=12. edgeR QL is anti-conservative at both sizes. `wald_trend` is the glmGamPoi dispersion-trend Wald comparator, **not** glmGamPoi's QL test.
+
+Provenance: native R 4.5.0 (2025-04-11), x86_64 Linux, MASS 7.3.65, glmGamPoi 1.22.0, edgeR 4.8.2; `seed0=20261020`; `calibration.R` md5 `12a90679f74d2e1a9ab28cec643b5e76`; extracted production `_FIT_R` md5 `cc9efdfdd6e4efe2f9a393ba4d178ce0`. The run tested all six methods in its two cells; the full 12-row summary is retained in the run-specific CSV. The raw p-value artifact remains on Actions with 30-day retention, through 2026-11-23.
+
+## What remains unmeasured
+
+The successful native run fills issue #261's requested glmGamPoi QL and edgeR QL null-calibration cells (and also records `wald_trend`) for n=4 and n=12 only. Those package comparators have not been measured here at other group sizes, shapes, offsets, or under the power/alternative design. The original 16-cell WebR study still uses 400 simulations for the shape/offset/power cells; that limitation is explicit above. The native null-only result does not establish power, FDR under alternatives, broad robustness, or a production-default recommendation.
 
 ## Checklist mapping (#193)
 
-Done: the 1,000-sim direct replication at six group sizes with Wilson intervals
-at α = 0.01/0.05/0.10 and KS tests; constant, sparse and unequal-library shapes;
-RLE as well as TSS offsets; the LRT and an additional quasi-likelihood F test
-paired on identical datasets; power and BH-FDR at \|log2FC\| = 1; the bench lives
-in `bench/null_calibration/` and never runs in CI.
+Done: the 1,000-sim direct replication at six group sizes with Wilson intervals at α = 0.01/0.05/0.10 and KS tests; constant, sparse and unequal-library shapes; RLE as well as TSS offsets; the LRT and tagwise quasi-likelihood F test paired on identical datasets; power and BH-FDR at |log2FC| = 1; and the native-R glmGamPoi QL, edgeR QL, and `wald_trend` null cells at n=4 and n=12. The bench remains opt-in and never runs in ordinary CI.
 
-Not done here: glmGamPoi QL F, edgeR QL F and the production `glmGamPoi`
-dispersion-trend Wald option, all of which need native R + Bioconductor
-(commands above); the full 1,000-sim count on the shape/offset/power cells
-(400 each — sufficient to resolve a 4-point difference at α = 0.05, and stated
-above rather than implied).
+Not done here: power/alternative calibration or other shapes/offsets for the native Bioconductor comparators; the full 1,000-simulation count on the original shape/offset/power cells (400 each — sufficient to resolve a 4-point difference at α = 0.05, as stated rather than implied); and any independent scientific review or upstream default decision.
 
 ## Consequence for the production caveat
 
