@@ -107,6 +107,21 @@ the extracted `_FIT_R` block, and `sessionInfo()`. `summarise.R` writes
 and `provenance_summary.csv` — the run record, generated from the per-cell
 provenance files rather than assembled by hand.
 
+### The comparators that need compiled Bioconductor packages
+
+`glmGamPoi` and `edgeR` cannot be installed in every environment. WebR can load
+packages compiled for WebAssembly, but cannot load ordinary native R binaries.
+The repository's CI already provisions native R from the pinned CRAN repository,
+then `renv::restore()` with `glmGamPoi` — so
+`.github/workflows/null-calibration-comparators.yml` is a
+**manual-dispatch** lane that runs those cells there and, by default, commits the
+summary CSVs back to the dispatched branch. Pushing a `null-calibration-*` tag
+also triggers it, with results emitted as annotations and an artifact. Ordinary
+branch pushes and pull requests do not trigger it: the bench is slow and
+stochastic and must not gate anything. `edgeR` is not in `renv.lock` (it is
+an outside reference, never an app dependency), so the lane installs it against
+the pinned Bioconductor release and every provenance file records its version.
+
 ### No native R? The WebR fallback
 
 `webr_run.mjs` runs the same `calibration.R` / `summarise.R` under WebR (R in
@@ -114,8 +129,9 @@ WebAssembly) for environments with Node but no R. `glm.nb` is pure R (MASS
 7.3-65's `negbin.R` makes no `.C`/`.Call`/`.Fortran` call), so sourcing that
 one file provides genuine MASS code; `calibration.R` detects this mode,
 strips the block's `MASS::` prefixes as a single mechanical substitution, and
-records the fact in every provenance file. glmGamPoi and edgeR are compiled
-Bioconductor packages and cannot run this way — their tests skip loudly.
+records the fact in every provenance file. This fallback does not provision
+WebAssembly builds of glmGamPoi or edgeR; their tests skip loudly when the
+packages are unavailable.
 Setup and usage are in the header of `webr_run.mjs`. Prefer native Rscript
 whenever it exists.
 
