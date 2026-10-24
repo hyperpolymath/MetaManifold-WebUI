@@ -28,9 +28,9 @@ for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate bas
     jcs-canonicalizer) sed -i '/- name: Apply upstream-inherited TypeScript exception/,/- name: Restore panic-attack build cache/s@"$HOME/.cargo/bin/ijson-jcs"@@' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     raw-ijson) sed -i '/- name: Validate findings and count severities/,/- name: Relativize finding paths/s@"$HOME/.cargo/bin/ijson-jcs" canon < hypatia-findings.json > /dev/null@@' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     k9-pin) sed -i 's/ref: c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d/ref: main/' "$fixture/.github/workflows/k9-conformance-reusable.yml" ;;
-    k9-require) sed -i 's/require-files: true/require-files: false/g' "$fixture/.github/workflows/governance.yml" ;;
-    k9-indeterminate) sed -i 's/fail-on-indeterminate: true/fail-on-indeterminate: false/' "$fixture/.github/workflows/governance.yml" ;;
-    k9-verdict) sed -i 's/${K9_VERDICT:-orange}/${K9_VERDICT:-green}/' "$fixture/.github/workflows/governance.yml" ;;
+    k9-require) sed -i 's/require-files: true/require-files: false/g' "$fixture/.github/workflows/hypatia-scan.yml" ;;
+    k9-indeterminate) sed -i 's/fail-on-indeterminate: true/fail-on-indeterminate: false/' "$fixture/.github/workflows/hypatia-scan.yml" ;;
+    k9-verdict) sed -i 's/${K9_VERDICT:-orange}/${K9_VERDICT:-green}/' "$fixture/.github/workflows/hypatia-scan.yml" ;;
     scanner-advisory) echo '    continue-on-error: true' >> "$fixture/.github/workflows/secret-scanner.yml" ;;
     scanner-secrets) echo '    secrets: inherit' >> "$fixture/.github/workflows/secret-scanner.yml" ;;
     scanner-trigger) sed -i 's/^  pull_request:/  pull_request_target:/' "$fixture/.github/workflows/secret-scanner.yml" ;;

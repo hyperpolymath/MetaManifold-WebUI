@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-CALLER=.github/workflows/governance.yml
+CALLER=.github/workflows/hypatia-scan.yml
 REUSABLE=.github/workflows/hypatia-scan-reusable.yml
 ALLOWLIST=config/hypatia/upstream-typescript-allowlist.txt
 FORMAT_TOOLS=config/format-tools.toml

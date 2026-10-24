@@ -133,11 +133,12 @@ It is historical evidence, not a freshly executed scan of this change.
   Refresh the reviewed path snapshot deliberately when syncing upstream. The
   pinned scanner does not honor `.hypatia-ignore` for this rule, so that file
   would not implement this exception.
-- **Scanner discovery:** Hypatia is called by `governance.yml`, not the
-  heuristic's expected `hypatia-scan.yml`. CodeQL is already supplied by the
-  GitHub App (Actions, JS/TS and Python checks on #227); do not run a second
-  scan just to satisfy filename detection. No mirror target is configured;
-  adding a no-op `mirror.yml` would manufacture coverage.
+- **Scanner discovery (at this audit's snapshot):** Hypatia was called by
+  `governance.yml`, not the heuristic's expected `hypatia-scan.yml`. PR #265
+  now places that same active governance workflow at `hypatia-scan.yml`, rather
+  than adding a duplicate scan. CodeQL is already supplied by the GitHub App
+  (Actions, JS/TS and Python checks on #227); no second scan was added. No
+  mirror target is configured; an empty `mirror.yml` would manufacture coverage.
 - **HTTP identifiers:** W3C SVG/XLink namespace URIs in `figure/export.ts`
   and `TreeView.tsx` are identifiers, not insecure network requests. Replacing
   their `http` scheme breaks namespace identity.
@@ -146,9 +147,12 @@ It is historical evidence, not a freshly executed scan of this change.
   fails the job; the logging regression tests guard this boundary.
 - **Licensing:** four upstream source files lack SPDX identifiers. Existing
   headers are protected by `CONTRIBUTING.md`; no licence text was changed.
-- **Further review:** outbound-egress monitoring on secret-bearing jobs,
-  panic-attack's dynamic R evaluation/FFI/input-boundary heuristics and pons's
-  loop/unreachable heuristics still need scoped review, not blanket dismissal.
+- **Further review (at this audit's snapshot):** outbound-egress monitoring
+  on secret-bearing jobs and the scanner findings still needed scoped review,
+  not blanket dismissal. PR #265's R-evaluation/FFI and pons process-cleanup
+  review is recorded in [`scanner-review-2026-10-24.md`](2026-10-24-scanner-review.md);
+  the remaining heuristic findings and unrelated CI concerns are not declared
+  clean by that review.
 - **Fleet:** seven enrolled bots had no report-back. They remain `not_run`;
   no synthetic reports or success records have been created.
 - **Alert permissions:** the connected GitHub integration returns HTTP 403 for

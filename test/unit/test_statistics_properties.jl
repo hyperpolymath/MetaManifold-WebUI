@@ -41,8 +41,9 @@ function _reference_simpson(column)
     first(computed)
 end
 
-_close(reference, candidate) =
+_close(reference::BigFloat, candidate::BigFloat) =
     abs(candidate - reference) <= _PROP_TOLERANCE * max(big(1), abs(reference))
+_close(::BigFloat, candidate) = false
 
 function _prop_matrix(rng, features, samples)
     matrix = Matrix{BigInt}(undef, features, samples)
@@ -96,8 +97,8 @@ end
         stored = summary_to_storage(summary)
         for (j, entry) in pairs(stored["samples"])
             total_text = entry["total"]
-            @test (total_text isa AbstractString ? parse_exact_count(total_text) :
-                   BigInt(total_text)) == summary.samples[j].total
+            parsed_total = total_text isa AbstractString ? parse_exact_count(total_text) : BigInt(total_text)
+            @test parsed_total == summary.samples[j].total
             for (i, text) in pairs(entry["counts"])
                 # Small exact integers remain JSON numbers; big ones are strings.
                 parsed = text isa AbstractString ? parse_exact_count(text) : BigInt(text)
@@ -133,7 +134,8 @@ end
             end
             shannon = _reference_shannon(column)
             simpson = _reference_simpson(column)
-            @test shannon isa BigFloat
+            # `_close` only accepts BigFloat candidates, so the numerical
+            # comparison also verifies the returned precision type.
             @test _close(shannon, sample.shannon)
             @test _close(simpson, sample.gini_simpson)
             @test sample.shannon >= 0

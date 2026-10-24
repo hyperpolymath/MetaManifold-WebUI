@@ -22,7 +22,7 @@
     :contractiles ".machine_readable/contractiles/"
     :enforcement ".github/workflows/")
   (status
-    :evidence-source ".github/workflows/governance.yml"
+    :evidence-source ".github/workflows/hypatia-scan.yml"
     :evidence-status "Fork governance lane: DEED syntax, K9 L0-L2 contract conformance (must, trust, intend at Yard tier; L3 signatures not verified in CI), and the Hypatia verdict grid with gitbot-fleet report-backs. Upstream owns the application code and its CI; this deed describes the fork.")
   (policies
     (licensing

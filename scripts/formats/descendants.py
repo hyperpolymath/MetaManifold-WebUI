@@ -45,15 +45,17 @@ def _kill_tree(pid):
         current = pending.pop()
         try:
             os.kill(current, signal.SIGSTOP)
-            stopped.append(current)
-            pending.extend(_children(current))
         except ProcessLookupError:
-            pass
+            # The process exited after its parent list was read; it has no live descendants to freeze.
+            continue
+        stopped.append(current)
+        pending.extend(_children(current))
     for current in reversed(stopped):
         try:
             os.kill(current, signal.SIGKILL)
         except ProcessLookupError:
-            pass
+            # A frozen process can still disappear if it was reaped concurrently.
+            continue
 
 
 class Supervise:
@@ -75,7 +77,7 @@ class Supervise:
 
     def _drain(self):
         deadline = time.monotonic() + 0.5
-        while True:
+        while time.monotonic() < deadline:
             children = _children(os.getpid())
             if not children:
                 return
@@ -84,10 +86,27 @@ class Supervise:
                 try:
                     os.waitpid(pid, os.WNOHANG)
                 except ChildProcessError:
-                    pass
-            if time.monotonic() >= deadline:
-                raise SupervisionError("descendants did not exit within cleanup budget")
-            time.sleep(0.005)  # Bounded cleanup; also reap newly adopted orphans.
+                    # Popen.wait or an earlier nonblocking wait already reaped this child.
+                    continue
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                # Bounded cleanup; also reap newly adopted orphans.
+                time.sleep(min(0.005, remaining))
+
+        # A final census lets a child that exited at the deadline be reaped,
+        # and catches anything newly adopted by the subreaper during cleanup.
+        children = _children(os.getpid())
+        if not children:
+            return
+        for pid in children:
+            _kill_tree(pid)
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                # Another wait already reaped it during the final census.
+                continue
+        if _children(os.getpid()):
+            raise SupervisionError("descendants did not exit within cleanup budget")
 
     def __exit__(self, *_):
         try:
