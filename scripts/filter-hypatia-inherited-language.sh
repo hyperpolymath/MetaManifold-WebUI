@@ -34,13 +34,19 @@ done
 # relying on GNU-only `realpath -m`. Neither output may overwrite any input or
 # the other output.
 canonicalize_path() {
-  python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"
+  # A non-newline sentinel prevents command substitution from trimming the path.
+  python3 -c 'import os, sys; sys.stdout.write(os.path.realpath(sys.argv[1]) + ".")' "$1"
 }
 raw_findings=$(canonicalize_path "$raw_findings")
+raw_findings=${raw_findings%.}
 raw_sarif=$(canonicalize_path "$raw_sarif")
+raw_sarif=${raw_sarif%.}
 allowlist=$(canonicalize_path "$allowlist")
+allowlist=${allowlist%.}
 effective_findings=$(canonicalize_path "$effective_findings")
+effective_findings=${effective_findings%.}
 effective_sarif=$(canonicalize_path "$effective_sarif")
+effective_sarif=${effective_sarif%.}
 for output in "$effective_findings" "$effective_sarif"; do
   if [[ "$output" == "$raw_findings" || "$output" == "$raw_sarif" || "$output" == "$allowlist" \
       || "$output" -ef "$raw_findings" || "$output" -ef "$raw_sarif" || "$output" -ef "$allowlist" ]]; then
@@ -120,7 +126,7 @@ if [[ -n "$canonicalizer" ]]; then
   mv "$tmpdir/effective-findings.jcs.json" "$tmpdir/effective-findings.json"
 fi
 
-mkdir -p "$(dirname "$effective_findings")" "$(dirname "$effective_sarif")"
+mkdir -p "${effective_findings%/*}" "${effective_sarif%/*}"
 cp "$tmpdir/effective-findings.json" "$effective_findings"
 cp "$tmpdir/effective.sarif" "$effective_sarif"
 

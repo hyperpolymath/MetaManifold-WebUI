@@ -14,11 +14,13 @@ reset_fixture() {
 }
 reset_fixture
 bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1
-for mutation in allowlist-addition baseline-zero-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger; do
+for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger; do
   reset_fixture
   case "$mutation" in
     allowlist-addition) echo 'frontend/src/fork-only.ts' >> "$fixture/config/hypatia/upstream-typescript-allowlist.txt" ;;
     baseline-zero-gate) sed -i "/- name: Gate on baseline/,/^[[:space:]]*run:/ s@^        if: .*@        if: '!inputs.block-on-high \\&\\& steps.inherited-language.outputs.findings_count > 0'@" "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
+    baseline-operator-gate) sed -i '/- name: Gate on baseline/,/^[[:space:]]*run:/ s/ || / \&\& /' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
+    baseline-grouping-gate) sed -i '/- name: Gate on baseline/,/^[[:space:]]*run:/ { s/&& (steps/\&\& steps/; s/)\x27$/\x27/; }' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     sarif) sed -i "/if: github.event_name != 'pull_request'/d" "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     upstream-exception) sed -i 's@bash scripts/filter-hypatia-inherited-language.sh@bash scripts/no-op-filter.sh@' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     effective-grid) sed -i '/- name: Render the verdict grid/,/- name: Upload the verdict grid/s/hypatia-findings.effective.json/hypatia-findings.relativized.json/g' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
@@ -43,8 +45,8 @@ for mutation in allowlist-addition baseline-zero-gate sarif upstream-exception e
   if [[ "$mutation" == allowlist-addition ]]; then
     grep -Fq 'ERROR: the complete allowlist must match the pinned upstream TypeScript snapshot' "$fixture/log"
   fi
-  if [[ "$mutation" == baseline-zero-gate ]]; then
-    grep -Fq 'ERROR: the advisory baseline gate still validates a committed baseline when findings are zero' "$fixture/log"
+  if [[ "$mutation" == baseline-*-gate ]]; then
+    grep -Fq 'ERROR: the advisory baseline gate requires nonblocking mode and either findings or a committed baseline' "$fixture/log"
   fi
   echo "ok - rejected $mutation"
 done

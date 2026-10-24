@@ -187,6 +187,34 @@ cmp "$tmpdir/effective-findings.json" "$tmpdir/new/findings/effective.json"
 cmp "$tmpdir/effective.sarif" "$tmpdir/new/sarif/effective.sarif"
 echo 'PASS: path collisions are rejected before writes; distinct new output paths remain supported.'
 
+# Command substitution must preserve every trailing newline in resolved paths.
+for suffix in $'\n' $'\n\n'; do
+  inputs=("$tmpdir/raw-findings.json$suffix" "$tmpdir/raw.sarif$suffix" "$tmpdir/allowlist.txt$suffix")
+  cp "$tmpdir/raw-findings.original.json" "${inputs[0]}"
+  cp "$tmpdir/raw.original.sarif" "${inputs[1]}"
+  cp "$tmpdir/allowlist.original.txt" "${inputs[2]}"
+  outputs=("$tmpdir/newline$suffix/effective-findings.json$suffix" "$tmpdir/newline$suffix/effective.sarif$suffix")
+  bash "$FILTER" "${inputs[@]}" "${outputs[@]}" "$canonicalizer_arg"
+  cmp "$tmpdir/effective-findings.json" "${outputs[0]}"
+  cmp "$tmpdir/effective.sarif" "${outputs[1]}"
+  cmp "$tmpdir/raw-findings.original.json" "${inputs[0]}"
+  cmp "$tmpdir/raw.original.sarif" "${inputs[1]}"
+  cmp "$tmpdir/allowlist.original.txt" "${inputs[2]}"
+  [[ ! -e "${outputs[0]%$suffix}" && ! -e "${outputs[1]%$suffix}" ]]
+
+  # Symlinks to newline-terminated input names must still be protected.
+  ln -sf "${inputs[0]}" "$tmpdir/newline-alias"
+  if bash "$FILTER" "${inputs[@]}" "$tmpdir/newline-alias" "${outputs[1]}" \
+      "$canonicalizer_arg" > "$tmpdir/collision.log" 2>&1; then
+    echo 'ERROR: accepted an output aliasing an input with trailing newlines' >&2
+    exit 1
+  fi
+  grep -Fq 'Input, allowlist, and output paths must resolve to distinct files.' "$tmpdir/collision.log"
+  cmp "$tmpdir/raw-findings.original.json" "${inputs[0]}"
+  cmp "$tmpdir/effective.sarif" "${outputs[1]}"
+done
+echo 'PASS: trailing newlines in input and output paths are preserved and aliases remain protected.'
+
 # Simulate macOS/BSD environments where GNU `realpath -m` is unavailable.
 mkdir -p "$tmpdir/no-realpath-bin"
 cat > "$tmpdir/no-realpath-bin/realpath" <<'EOF'
