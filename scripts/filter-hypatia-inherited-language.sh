@@ -29,10 +29,12 @@ for input in "$raw_findings" "$raw_sarif" "$allowlist"; do
   fi
 done
 
+# Print the absolute path for $1 to standard output, followed by a newline.
 # Resolve relative components and symlinks portably, including output paths
-# whose parent directories do not exist yet. Python's standard library avoids
-# relying on GNU-only `realpath -m`. Neither output may overwrite any input or
-# the other output.
+# whose parent directories do not exist yet, without GNU `realpath -m`.
+# Resolution is non-strict: inaccessible components or symlink loops may remain
+# unresolved. Hard-link aliases require the caller's file-identity checks.
+# Python invocation failures propagate as a non-zero exit status.
 canonicalize_path() {
   # A non-newline sentinel prevents command substitution from trimming the path.
   python3 -c 'import os, sys; sys.stdout.write(os.path.realpath(sys.argv[1]) + ".")' "$1"
