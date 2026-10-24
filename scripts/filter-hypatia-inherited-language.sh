@@ -8,6 +8,7 @@
 # ijson-jcs CLI to validate raw inputs and canonicalize the effective JSON.
 set -euo pipefail
 
+# Write the command synopsis to standard error and exit the script with status 2.
 usage() {
   echo "Usage: $0 RAW_FINDINGS.json RAW.sarif ALLOWLIST.txt EFFECTIVE_FINDINGS.json EFFECTIVE.sarif [IJSON_JCS]" >&2
   exit 2
@@ -56,6 +57,8 @@ jq -e 'length > 0 and all(.[]; type == "string" and (startswith("/") | not) and 
 # The input to this step is already repository-relative. Normalize harmless
 # leading ./ and Windows separators, but otherwise require an exact path match.
 jq --argjson allowed "$(cat "$tmpdir/allowlist.json")" '
+  # Yield a path with forward slashes and one leading ./ prefix removed,
+  # including repeated slashes in that prefix. Yield "" for non-string inputs.
   def norm_path:
     if type == "string" then gsub("\\\\"; "/") | sub("^\\./+"; "") else "" end;
   map(
@@ -72,6 +75,8 @@ jq --argjson allowed "$(cat "$tmpdir/allowlist.json")" '
 ' "$raw_findings" > "$tmpdir/effective-findings.json"
 
 jq --argjson allowed "$(cat "$tmpdir/allowlist.json")" '
+  # Yield a path with forward slashes and one leading ./ prefix removed,
+  # including repeated slashes in that prefix. Yield "" for non-string inputs.
   def norm_path:
     if type == "string" then gsub("\\\\"; "/") | sub("^\\./+"; "") else "" end;
   .runs |= map(
