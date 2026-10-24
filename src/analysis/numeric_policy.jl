@@ -424,7 +424,10 @@ function to_display(v::NumericValue; digits::Integer=6)
     kept = v.kind === ROUNDED && !isnothing(v.digits) ? v.digits : Int(digits)
     rendered = _rendered_decimal(Rational{BigInt}(v.value), kept)
     bits = isnothing(v.precision_bits) ? "unknown precision" : "$(v.precision_bits)-bit"
-    "$rendered ($(v.kind), $bits, $(kept)dp)"
+    # The display is always a rounding, whatever the value's kind: an
+    # approximate MPFR value shown at 6dp has still been rounded, and a reader
+    # must not mistake the short string for the stored value.
+    "$rendered ($(v.kind), $bits, rounded to $(kept)dp)"
 end
 
 function encode_json_number(x)

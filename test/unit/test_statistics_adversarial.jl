@@ -49,6 +49,10 @@ const _ADV_BASE = Dict{String,Any}(
 )
 
 _adv_body(overrides::Dict) = merge(_ADV_BASE, overrides)
+# The call sites pass pairs, not keyword arguments: `_adv_body("k" => v)` is
+# one positional Pair, and without this method it is a MethodError rather than
+# a request body.
+_adv_body(pairs::Pair...) = merge(_ADV_BASE, Dict{String,Any}(pairs...))
 _adv_body(key::String, value) = merge(_ADV_BASE, Dict(key => value))
 
 """Assert a refused request: documented status, documented code, canonical body."""
@@ -207,15 +211,37 @@ end
             @test response.status != 500
         end
 
-        # Booleans are not counts, and neither is a JSON float token.
-        for value in (true, false, 1.5, -1)
-            body = _adv_body("counts" => [[value, 2], [3, 4]])
-            @test _adv_post("/api/v1/statistics/summaries", body).status == 422
+        # Booleans are not counts. `Any[Any[true, 2], Any[3, 4]]` keeps the
+        # Boolean in the document: `[[true, 2], [3, 4]]` is an Int array in
+        # Julia, so it would serialise as 1 and test nothing. A JSON float
+        # token and a negative integer are refused for the same reason.
+        for value in (true, false)
+            body = _adv_body("counts" => Any[Any[value, 2], Any[3, 4]])
+            status = _adv_post("/api/v1/statistics/summaries", body).status
+            @test (repr(value), status) == (repr(value), 422)
         end
-        # Counts at 2^53 and above must arrive as whole-number strings.
-        for bad in (9007199254740992, "-1", "1.5", "1e3")
+        for value in (1.5, -1)
+            body = _adv_body("counts" => [[value, 2], [3, 4]])
+            status = _adv_post("/api/v1/statistics/summaries", body).status
+            @test (repr(value), status) == (repr(value), 422)
+        end
+
+        # A JSON number beyond 2^53-1 is not I-JSON-exact, so the canonical
+        # reader refuses the document itself (400) before the statistics layer
+        # sees a count. The same magnitude is accepted when it arrives as a
+        # whole-number string, which is the documented route for large counts.
+        huge_number = _adv_post("/api/v1/statistics/summaries",
+            _adv_body("counts" => [[9007199254740992, 2], [3, 4]])).status
+        @test huge_number == 400
+        huge_string = _adv_post("/api/v1/statistics/summaries",
+            _adv_body("counts" => [["9007199254740993", 2], [3, 4]])).status
+        @test huge_string == 200
+        # Non-integral or negative strings are refused by the statistics layer
+        # (422), not by the JSON reader: they are well-formed JSON.
+        for bad in ("-1", "1.5", "1e3")
             body = _adv_body("counts" => [[bad, 2], [3, 4]])
-            @test _adv_post("/api/v1/statistics/summaries", body).status == 422
+            status = _adv_post("/api/v1/statistics/summaries", body).status
+            @test (repr(bad), status) == (repr(bad), 422)
         end
     end
 end

@@ -97,9 +97,12 @@ end
     @test rejected(doc -> doc["methods"] = Any[])
     @test rejected(doc -> doc["methods"][1]["status"] = "maybe")
     @test rejected(doc -> doc["methods"][1]["evidence"] = Any[])
-    # Flipping an unsupported entry to supported without evidence is refused.
+    # Flipping an unsupported entry to supported is refused: it has no
+    # implementation and no evidence. Clearing the evidence of a *supported*
+    # entry is refused too, which is why the second mutation targets entry 2:
+    # an unsupported entry has no evidence to clear, and removing it is legal.
     @test rejected(doc -> doc["methods"][3]["status"] = "supported")
-    @test rejected(doc -> doc["methods"][3]["evidence"] = Any[])
+    @test rejected(doc -> doc["methods"][2]["evidence"] = Any[])
     @test rejected(doc -> doc["methods"][1]["id"] = doc["methods"][2]["id"])
     @test rejected(doc -> doc["limits"]["max_cells"] = MAX_CELLS + 1)
     @test rejected(doc -> doc["limits"]["max_precision_bits"] = MAX_PRECISION_BITS + 1)

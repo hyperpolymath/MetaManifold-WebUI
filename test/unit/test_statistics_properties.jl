@@ -166,8 +166,13 @@ end
             @test permuted.samples[j].total == summary.samples[j].total
             @test permuted.samples[j].richness == summary.samples[j].richness
             if !isnothing(summary.samples[j].shannon)
-                @test permuted.samples[j].shannon == summary.samples[j].shannon
-                @test permuted.samples[j].gini_simpson == summary.samples[j].gini_simpson
+                # Summation order changes with the permutation, so the last bit
+                # of a 256-bit sum may differ. The metric must agree to within
+                # the declared tolerance, not bit-for-bit: asserting equality
+                # here would test the summation order, not the statistic.
+                @test _close(summary.samples[j].shannon, permuted.samples[j].shannon)
+                @test _close(summary.samples[j].gini_simpson,
+                             permuted.samples[j].gini_simpson)
             end
         end
     end

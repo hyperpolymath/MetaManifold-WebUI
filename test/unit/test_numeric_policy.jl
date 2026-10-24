@@ -113,7 +113,7 @@ end
     @test occursin("approximate", to_display(approx))
     rounded = rounded_value(1.0/3; digits=6)
     @test rounded.kind == ROUNDED
-    @test to_display(rounded) == "0.333333 (rounded, 53-bit, 6dp)"
+    @test to_display(rounded) == "0.333333 (rounded, 53-bit, rounded to 6dp)"
     @test_throws UnsupportedRepresentationError to_storage(approximate_value(NaN))
     @test_throws UnsupportedRepresentationError encode_json_number(Inf)
 

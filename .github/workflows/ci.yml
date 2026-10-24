@@ -416,15 +416,28 @@ jobs:
             # values are what identify the bug - then the end of the log.
             # `set +e` above is deliberate: diagnostic helpers may find no
             # matches, and only the captured test status controls this step.
-            grep -E "Test Failed at |Error During Test at |^  Expression: |^   Evaluated: |^  Test threw exception" \
-              /tmp/validated-statistics-tests.log > /tmp/validated-statistics-failures.log
+            # One annotation cannot hold a failing run, and a tail hides every
+            # failure but the last one. Pair each location with its assertion,
+            # cut long lines (an evaluated HTML page is useless in a digest),
+            # then publish the first few chunks.
+            # Print each failure's location and the lines that explain it: the
+            # expression and evaluated value for an assertion, the exception for
+            # an error. Long lines are cut because an evaluated HTML page would
+            # otherwise fill the whole digest.
+            awk '
+              /Test Failed at / { print; remaining = 2; next }
+              /Error During Test at / { print; remaining = 4; next }
+              /statistics UI request failed/ { print; remaining = 6; next }
+              remaining > 0 { print; remaining-- }
+            ' /tmp/validated-statistics-tests.log |
+              cut -c1-260 > /tmp/validated-statistics-failures.log
             rm -f /tmp/validated-statistics-digest-*
-            split -b 2500 /tmp/validated-statistics-failures.log /tmp/validated-statistics-digest-
+            split -b 3800 /tmp/validated-statistics-failures.log /tmp/validated-statistics-digest-
             index=0
             for chunk in /tmp/validated-statistics-digest-*; do
-              [ -e "$chunk" ] || continue
+              [[ -e "$chunk" ]] || continue
               index=$((index + 1))
-              [ "$index" -le 8 ] || break
+              [[ "$index" -le 8 ]] || break
               echo "::error title=Validated-statistics failure digest $index::$(enc < "$chunk")"
             done
             echo "::error title=Validated-statistics log tail::$(tail -c 3000 /tmp/validated-statistics-tests.log | enc)"
