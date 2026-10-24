@@ -18,6 +18,7 @@ cat > "$tmpdir/allowlist.txt" <<'EOF'
 frontend/src/App.tsx
 frontend/src/api/client.ts
 EOF
+cp "$tmpdir/allowlist.txt" "$tmpdir/allowlist.original.txt"
 
 cat > "$tmpdir/raw-findings.json" <<'EOF'
 [
@@ -126,11 +127,36 @@ for raw in raw-findings.json raw.sarif; do
         echo "ERROR: accepted $output_kind output colliding with $alias" >&2
         exit 1
       fi
-      grep -Fq 'Raw inputs and effective outputs must use distinct paths.' "$tmpdir/collision.log"
+      grep -Fq 'Input, allowlist, and output paths must resolve to distinct files.' "$tmpdir/collision.log"
       cmp "$tmpdir/raw-findings.json" "$tmpdir/raw-findings.original.json"
       cmp "$tmpdir/raw.sarif" "$tmpdir/raw.original.sarif"
       cmp "$tmpdir/companion" "$tmpdir/companion.original"
     done
+  done
+done
+
+# The allowlist is a protected input just like the raw scanner artifacts.
+ln -s "$tmpdir/allowlist.txt" "$tmpdir/symlink-allowlist.txt"
+ln "$tmpdir/allowlist.txt" "$tmpdir/hardlink-allowlist.txt"
+for alias in "$tmpdir/allowlist.txt" "$tmpdir/./allowlist.txt" \
+    "$tmpdir/symlink-allowlist.txt" "$tmpdir/hardlink-allowlist.txt"; do
+  for output_kind in findings sarif; do
+    printf 'untouched companion output\n' > "$tmpdir/companion"
+    cp "$tmpdir/companion" "$tmpdir/companion.original"
+    outputs=("$alias" "$tmpdir/companion")
+    if [[ "$output_kind" == sarif ]]; then
+      outputs=("$tmpdir/companion" "$alias")
+    fi
+    if bash "$FILTER" "$tmpdir/raw-findings.json" "$tmpdir/raw.sarif" \
+        "$tmpdir/allowlist.txt" "${outputs[@]}" "$canonicalizer_arg" > "$tmpdir/collision.log" 2>&1; then
+      echo "ERROR: accepted $output_kind output colliding with allowlist alias $alias" >&2
+      exit 1
+    fi
+    grep -Fq 'Input, allowlist, and output paths must resolve to distinct files.' "$tmpdir/collision.log"
+    cmp "$tmpdir/allowlist.txt" "$tmpdir/allowlist.original.txt"
+    cmp "$tmpdir/raw-findings.json" "$tmpdir/raw-findings.original.json"
+    cmp "$tmpdir/raw.sarif" "$tmpdir/raw.original.sarif"
+    cmp "$tmpdir/companion" "$tmpdir/companion.original"
   done
 done
 
@@ -147,7 +173,7 @@ for collision in raw-alias output-alias; do
     echo "ERROR: accepted $collision collision" >&2
     exit 1
   fi
-  grep -Fq 'Raw inputs and effective outputs must use distinct paths.' "$tmpdir/collision.log"
+  grep -Fq 'Input, allowlist, and output paths must resolve to distinct files.' "$tmpdir/collision.log"
   cmp "$tmpdir/raw-findings.json" "$tmpdir/raw-findings.original.json"
   cmp "$tmpdir/raw.sarif" "$tmpdir/raw.original.sarif"
   cmp "$tmpdir/companion" "$tmpdir/companion.original"
@@ -160,6 +186,50 @@ bash "$FILTER" "$tmpdir/raw-findings.json" "$tmpdir/raw.sarif" \
 cmp "$tmpdir/effective-findings.json" "$tmpdir/new/findings/effective.json"
 cmp "$tmpdir/effective.sarif" "$tmpdir/new/sarif/effective.sarif"
 echo 'PASS: path collisions are rejected before writes; distinct new output paths remain supported.'
+
+# Command substitution must preserve every trailing newline in resolved paths.
+for suffix in $'\n' $'\n\n'; do
+  inputs=("$tmpdir/raw-findings.json$suffix" "$tmpdir/raw.sarif$suffix" "$tmpdir/allowlist.txt$suffix")
+  cp "$tmpdir/raw-findings.original.json" "${inputs[0]}"
+  cp "$tmpdir/raw.original.sarif" "${inputs[1]}"
+  cp "$tmpdir/allowlist.original.txt" "${inputs[2]}"
+  outputs=("$tmpdir/newline$suffix/effective-findings.json$suffix" "$tmpdir/newline$suffix/effective.sarif$suffix")
+  bash "$FILTER" "${inputs[@]}" "${outputs[@]}" "$canonicalizer_arg"
+  cmp "$tmpdir/effective-findings.json" "${outputs[0]}"
+  cmp "$tmpdir/effective.sarif" "${outputs[1]}"
+  cmp "$tmpdir/raw-findings.original.json" "${inputs[0]}"
+  cmp "$tmpdir/raw.original.sarif" "${inputs[1]}"
+  cmp "$tmpdir/allowlist.original.txt" "${inputs[2]}"
+  [[ ! -e "${outputs[0]%$suffix}" && ! -e "${outputs[1]%$suffix}" ]]
+
+  # Symlinks to newline-terminated input names must still be protected.
+  ln -sf "${inputs[0]}" "$tmpdir/newline-alias"
+  if bash "$FILTER" "${inputs[@]}" "$tmpdir/newline-alias" "${outputs[1]}" \
+      "$canonicalizer_arg" > "$tmpdir/collision.log" 2>&1; then
+    echo 'ERROR: accepted an output aliasing an input with trailing newlines' >&2
+    exit 1
+  fi
+  grep -Fq 'Input, allowlist, and output paths must resolve to distinct files.' "$tmpdir/collision.log"
+  cmp "$tmpdir/raw-findings.original.json" "${inputs[0]}"
+  cmp "$tmpdir/effective.sarif" "${outputs[1]}"
+done
+echo 'PASS: trailing newlines in input and output paths are preserved and aliases remain protected.'
+
+# Simulate macOS/BSD environments where GNU `realpath -m` is unavailable.
+mkdir -p "$tmpdir/no-realpath-bin"
+cat > "$tmpdir/no-realpath-bin/realpath" <<'EOF'
+#!/bin/sh
+echo 'ERROR: GNU realpath must not be required' >&2
+exit 127
+EOF
+chmod +x "$tmpdir/no-realpath-bin/realpath"
+PATH="$tmpdir/no-realpath-bin:$PATH" bash "$FILTER" \
+  "$tmpdir/raw-findings.json" "$tmpdir/raw.sarif" "$tmpdir/allowlist.txt" \
+  "$tmpdir/portable/findings/effective.json" "$tmpdir/portable/sarif/effective.sarif" \
+  "$canonicalizer_arg"
+cmp "$tmpdir/effective-findings.json" "$tmpdir/portable/findings/effective.json"
+cmp "$tmpdir/effective.sarif" "$tmpdir/portable/sarif/effective.sarif"
+echo 'PASS: path resolution works without a GNU realpath executable.'
 
 if [[ -n "$canonicalizer_arg" ]]; then
   echo "PASS: inherited TypeScript paths are narrowly filtered; raw, fork-only, and unrelated findings remain; effective JSON is I-JSON/JCS checked."

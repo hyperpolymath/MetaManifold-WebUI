@@ -29,20 +29,35 @@ for input in "$raw_findings" "$raw_sarif" "$allowlist"; do
   fi
 done
 
-# Resolve relative components and symlinks even when output directories do not
-# exist yet. Neither output may overwrite either raw audit artifact.
-raw_findings=$(realpath -m -- "$raw_findings")
-raw_sarif=$(realpath -m -- "$raw_sarif")
-effective_findings=$(realpath -m -- "$effective_findings")
-effective_sarif=$(realpath -m -- "$effective_sarif")
+# Print the absolute path for $1 to standard output, followed by a newline.
+# Resolve relative components and symlinks portably, including output paths
+# whose parent directories do not exist yet, without GNU `realpath -m`.
+# Resolution is non-strict: inaccessible components or symlink loops may remain
+# unresolved. Hard-link aliases require the caller's file-identity checks.
+# Python invocation failures propagate as a non-zero exit status.
+canonicalize_path() {
+  # A non-newline sentinel prevents command substitution from trimming the path.
+  python3 -c 'import os, sys; sys.stdout.write(os.path.realpath(sys.argv[1]) + ".")' "$1"
+}
+raw_findings=$(canonicalize_path "$raw_findings")
+raw_findings=${raw_findings%.}
+raw_sarif=$(canonicalize_path "$raw_sarif")
+raw_sarif=${raw_sarif%.}
+allowlist=$(canonicalize_path "$allowlist")
+allowlist=${allowlist%.}
+effective_findings=$(canonicalize_path "$effective_findings")
+effective_findings=${effective_findings%.}
+effective_sarif=$(canonicalize_path "$effective_sarif")
+effective_sarif=${effective_sarif%.}
 for output in "$effective_findings" "$effective_sarif"; do
-  if [[ "$output" == "$raw_findings" || "$output" == "$raw_sarif" || "$output" -ef "$raw_findings" || "$output" -ef "$raw_sarif" ]]; then
-    echo "Raw inputs and effective outputs must use distinct paths." >&2
+  if [[ "$output" == "$raw_findings" || "$output" == "$raw_sarif" || "$output" == "$allowlist" \
+      || "$output" -ef "$raw_findings" || "$output" -ef "$raw_sarif" || "$output" -ef "$allowlist" ]]; then
+    echo "Input, allowlist, and output paths must resolve to distinct files." >&2
     exit 1
   fi
 done
 if [[ "$effective_findings" == "$effective_sarif" || "$effective_findings" -ef "$effective_sarif" ]]; then
-  echo "Raw inputs and effective outputs must use distinct paths." >&2
+  echo "Input, allowlist, and output paths must resolve to distinct files." >&2
   exit 1
 fi
 
@@ -113,7 +128,7 @@ if [[ -n "$canonicalizer" ]]; then
   mv "$tmpdir/effective-findings.jcs.json" "$tmpdir/effective-findings.json"
 fi
 
-mkdir -p "$(dirname "$effective_findings")" "$(dirname "$effective_sarif")"
+mkdir -p "${effective_findings%/*}" "${effective_sarif%/*}"
 cp "$tmpdir/effective-findings.json" "$effective_findings"
 cp "$tmpdir/effective.sarif" "$effective_sarif"
 

@@ -7,7 +7,7 @@
 [![codecov](https://codecov.io/gh/JoshuaJewell/MetaManifold-WebUI/graph/badge.svg?token=20F1VLF590)](https://codecov.io/gh/JoshuaJewell/MetaManifold-WebUI)
 
 Fork governance (hyperpolymath/MetaManifold-WebUI only; nothing here is part of upstream):
-[![Governance (fork)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/governance.yml/badge.svg)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/governance.yml)
+[![Governance (fork)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/hypatia-scan.yml/badge.svg)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/hypatia-scan.yml)
 [![DEED syntax](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhyperpolymath%2FMetaManifold-WebUI%2Fgovernance-badges%2Fdeed.json)](MetaManifold-WebUI_chora.deed)
 [![K9 contracts](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhyperpolymath%2FMetaManifold-WebUI%2Fgovernance-badges%2Fk9-grid.json)](.machine_readable/contractiles/)
 [![Hypatia grid](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhyperpolymath%2FMetaManifold-WebUI%2Fgovernance-badges%2Fhypatia-grid.json)](https://github.com/hyperpolymath/standards/blob/main/docs/VERDICT-GRID-SPEC.adoc)

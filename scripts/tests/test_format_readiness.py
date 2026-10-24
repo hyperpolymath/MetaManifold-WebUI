@@ -8,13 +8,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts/formats"))
 from conformance import check, load_cases, main as conformance_main
 from inventory import inventory
-from process import ToolError, run
+from process import ToolError, _cleanup, run
 from probe_kyq import main as probe_main
 
 
@@ -49,6 +49,32 @@ class ProcessTests(unittest.TestCase):
     def test_output_budget_covers_both_streams(self):
         with self.assertRaisesRegex(ToolError, "output budget"):
             run_python("import sys; sys.stderr.write('x' * 10000)", limit=100)
+
+    def test_cleanup_kills_direct_child_when_its_group_is_gone(self):
+        child = Mock()
+        child.pid = 12345
+        streams = [io.BytesIO(), io.BytesIO(), io.BytesIO()]
+        child.stdin, child.stdout, child.stderr = streams
+        child.poll.return_value = None
+        child.wait.return_value = -9
+        with patch("process.os.killpg", side_effect=ProcessLookupError):
+            _cleanup(child)
+        child.kill.assert_called_once_with()
+        child.wait.assert_called_once_with(timeout=0.5)
+        self.assertTrue(all(stream.closed for stream in streams))
+
+    def test_cleanup_reports_a_live_child_that_cannot_be_killed(self):
+        child = Mock()
+        child.pid = 12345
+        streams = [io.BytesIO(), io.BytesIO(), io.BytesIO()]
+        child.stdin, child.stdout, child.stderr = streams
+        child.poll.side_effect = [None, None]
+        child.kill.side_effect = ProcessLookupError
+        with patch("process.os.killpg", side_effect=ProcessLookupError):
+            with self.assertRaisesRegex(ToolError, "escaped its process group"):
+                _cleanup(child)
+        child.wait.assert_not_called()
+        self.assertTrue(all(stream.closed for stream in streams))
 
     def test_input_and_deadline_budgets(self):
         for kwargs in ({"timeout": 0}, {"timeout": float("nan")}, {"timeout": float("inf")}, {"limit": 0}, {"data": b"xx", "limit": 1}):

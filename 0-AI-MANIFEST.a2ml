@@ -25,7 +25,7 @@
     (rule "Run tests; report inaccessible services and missing evidence honestly."))
   (evidence
     (application-ci ".github/workflows/ci.yml")
-    (governance ".github/workflows/governance.yml")
+    (governance ".github/workflows/hypatia-scan.yml")
     (history-scan ".github/workflows/secret-scanner.yml")
     (security-practices ".github/workflows/scorecard.yml")
     (fleet-enrolment ".gitbot-fleet/enrolment.json")

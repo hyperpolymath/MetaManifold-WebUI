@@ -17,28 +17,35 @@ const _PERM_R = MetaManifold.Server.r_available()
 _PERM_R || @info "R/vegan unavailable - the PERMANOVA reference tests are SKIPPED"
 
 """
-    _adonis2_reference(mat, meta, perm_expr) -> DataFrame
+    _adonis2_reference(mat, meta; blocks=nothing) -> DataFrame
 
 Run vegan::adonis2 directly on Bray-Curtis distances of `mat`, with
-`group + run` terms tested sequentially and permutations given by the R
-expression `perm_expr` (which may refer to `ref_meta`), seeded as
-`run_permanova` seeds it. Returns the term rows: term, r2, f, p.
+`group + run` terms tested sequentially. `blocks` is either `nothing` for
+unrestricted permutations or one label per sample; it is bound as data rather
+than interpolated into R source. The seed matches `run_permanova`. Returns the
+term rows: term, r2, f, p.
 """
-function _adonis2_reference(mat, meta, perm_expr)
+function _adonis2_reference(mat, meta; blocks=nothing)
     MetaManifold.RRuntime.with_r_lock() do
         RCall.globalEnv[:ref_mat] = mat
         RCall.globalEnv[:ref_meta] = meta
+        RCall.globalEnv[:ref_perm_blocks] = isnothing(blocks) ? String[] : String.(blocks)
         RCall.reval("""
             set.seed(123, kind = "Mersenne-Twister", normal.kind = "Inversion", sample.kind = "Rejection")
             ref_d <- vegdist(ref_mat, method = "bray")
+            ref_permutations <- if (length(ref_perm_blocks) > 0) {
+                permute::how(blocks = factor(ref_perm_blocks), nperm = 999)
+            } else {
+                999
+            }
             ref_res <- adonis2(ref_d ~ group + run, data = ref_meta,
-                               permutations = $perm_expr, by = "terms", parallel = 1)
+                               permutations = ref_permutations, by = "terms", parallel = 1)
             ref_rows <- which(!(rownames(ref_res) %in% c("Residual", "Total")))
             ref_out <- data.frame(term = rownames(ref_res)[ref_rows], r2 = ref_res\$R2[ref_rows],
                                   f = ref_res\$F[ref_rows], p = ref_res[["Pr(>F)"]][ref_rows])
         """)
         out = rcopy(RCall.reval("ref_out"))
-        RCall.reval("rm(ref_mat, ref_meta, ref_d, ref_res, ref_rows, ref_out)")
+        RCall.reval("rm(ref_mat, ref_meta, ref_perm_blocks, ref_d, ref_permutations, ref_res, ref_rows, ref_out)")
         out
     end
 end
@@ -77,7 +84,7 @@ end
 
         @testset "each term is tested on its own, as vegan by = \"terms\"" begin
             res = Analysis.run_permanova(mat, meta; seed=123)
-            ref = _adonis2_reference(mat, meta, "999")
+            ref = _adonis2_reference(mat, meta)
             @test [t.term for t in res.terms] == ["group", "run"] == ref.term
             @test [t.r2 for t in res.terms] ≈ ref.r2
             @test [t.f_statistic for t in res.terms] ≈ ref.f
@@ -92,8 +99,7 @@ end
 
         @testset "within-individual blocks: permutation count, floor and refusal" begin
             res = Analysis.run_permanova(mat, meta; seed=123, blocks=individuals)
-            ref = _adonis2_reference(mat, meta,
-                                     "permute::how(blocks = factor(rep(paste0('i', 1:6), each = 2)), nperm = 999)")
+            ref = _adonis2_reference(mat, meta; blocks=individuals)
             @test res.blocked
             # Six blocks of two admit 2^6 orderings, the observed one excluded.
             @test res.permutations == 63

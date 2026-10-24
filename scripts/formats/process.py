@@ -123,13 +123,25 @@ def _remaining(deadline):
 def _cleanup(child):
     # Fast group cleanup; Supervise also adopts/kills detached descendants.
     try:
-        os.killpg(child.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    try:
-        child.wait(timeout=0.5)
-    except subprocess.TimeoutExpired as error:
-        raise ToolError("tool did not exit within cleanup budget") from error
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            # A tool can leave its session; do not mistake a missing process
+            # group for a stopped direct child.
+            if child.poll() is None:
+                try:
+                    child.kill()
+                except ProcessLookupError as error:
+                    # The child may exit between poll() and kill(); verify that
+                    # race instead of silently discarding an unexpected live PID.
+                    if child.poll() is None:
+                        raise ToolError(
+                            "tool escaped its process group and could not be terminated"
+                        ) from error
+        try:
+            child.wait(timeout=0.5)
+        except subprocess.TimeoutExpired as error:
+            raise ToolError("tool did not exit within cleanup budget") from error
     finally:
         for stream in (child.stdin, child.stdout, child.stderr):
             if not stream.closed:

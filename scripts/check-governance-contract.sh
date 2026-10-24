@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-CALLER=.github/workflows/governance.yml
+CALLER=.github/workflows/hypatia-scan.yml
 REUSABLE=.github/workflows/hypatia-scan-reusable.yml
 ALLOWLIST=config/hypatia/upstream-typescript-allowlist.txt
 FORMAT_TOOLS=config/format-tools.toml
@@ -237,6 +237,11 @@ fi
 if gate="$(step_block "$REUSABLE" 'Gate on baseline (blocking when a baseline is committed)')"; then
   contains "$gate" 'hypatia-findings.effective.json' \
     'the baseline gate consumes exception-aware findings'
+  if grep -Fxq "        if: '!inputs.block-on-high && (steps.inherited-language.outputs.findings_count > 0 || hashFiles(''.hypatia-baseline.json'') != '''')'" <<<"$gate"; then
+    pass 'the advisory baseline gate requires nonblocking mode and either findings or a committed baseline'
+  else
+    fail 'the advisory baseline gate requires nonblocking mode and either findings or a committed baseline'
+  fi
 else
   fail 'the baseline gate step exists'
 fi
