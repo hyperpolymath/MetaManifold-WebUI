@@ -172,22 +172,22 @@ Readings:
 
 ## Native R/Bioconductor comparator run (issue #261)
 
-The comparator lane completed successfully in [Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843), triggered by tag `null-calibration-run4-2026-10-24` at measured commit `bc435feb4614c29f4339fe578caba0c938b6e4c9`. It ran 1,000 null simulations × 40 taxa at original shape/TSS offset for n=4 and n=12 per group, using the same per-cell seed scheme as the WebR study. Its summary and provenance are preserved in `results/native_comparator_summary_run_40091522843.csv` and `results/native_comparator_provenance_run_40091522843.csv`.
+The comparator lane completed successfully in [Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843), triggered by tag `null-calibration-run4-2026-10-24` at measured commit `bc435feb4614c29f4339fe578caba0c938b6e4c9`. It was configured for 1,000 null simulations × 40 taxa at original shape/TSS offset for n=4 and n=12 per group, using the same per-cell seed scheme as the WebR study. Its summary and provenance are preserved in `results/native_comparator_summary_run_40091522843.csv` and `results/native_comparator_provenance_run_40091522843.csv`.
 
 The run used the final two post-PR fixes from that tag lineage: the loud failure-reason reporting commit `17ce140` and `test_de` `sort_by` fix `bc435fe`. They were cherry-picked onto this work branch as `2599317` and `8784a11`. The measured file digests are recorded from the run itself: `calibration.R` md5 `12a90679f74d2e1a9ab28cec643b5e76`; extracted production `_FIT_R` md5 `cc9efdfdd6e4efe2f9a393ba4d178ce0`.
 
-After measurement, the package-result normalization and cell-warning logic were refactored in this PR in response to Sonar findings (shared handling instead of duplicated blocks and nested control flow). The estimator calls, simulation seeds, and formulas are unchanged; the report remains explicitly tied to the measured tag/code digest above.
+After measurement, this PR refactored package-result normalization and cell-warning logic in response to Sonar findings, and hardened CSV serialization plus resume validation (schema and cell-key checks) so package error notes remain valid data. The comparator workflow now reads failure rows with a CSV-aware parser. These post-run changes do not alter estimator calls, simulation seeds, or formulas. At this PR revision the working branch's `calibration.R` md5 is `d689c158fcf2c606ed392af005a69d8b`, not the measured run's `12a90679f74d2e1a9ab28cec643b5e76`; the results below remain tied to the measured tag/code digest above.
 
-| n/group | test | package | p-values (failed fits) | α=0.05 (Wilson 95% CI) | verdict |
-|---:|---|---|---:|---|---|
-| 4 | `glmgampoi_ql` | glmGamPoi 1.22.0 | 39,904 (89) | **0.0525** (0.0503–0.0547) | anti-conservative, narrowly |
-| 4 | `edger_ql` | edgeR 4.8.2 | 39,904 (89) | **0.0687** (0.0663–0.0713) | anti-conservative |
-| 4 | `wald_trend` | glmGamPoi 1.22.0 | 39,904 (89) | **0.0838** (0.0811–0.0865) | anti-conservative |
-| 12 | `glmgampoi_ql` | glmGamPoi 1.22.0 | 40,000 (0) | 0.0499 (0.0478–0.0520) | not flagged |
-| 12 | `edger_ql` | edgeR 4.8.2 | 40,000 (0) | **0.0712** (0.0687–0.0737) | anti-conservative |
-| 12 | `wald_trend` | glmGamPoi 1.22.0 | 40,000 (0) | **0.0764** (0.0739–0.0791) | anti-conservative |
+| n/group | test | package | summary rows (`n_attempted`) | p-values (failed fits) | α=0.05 (Wilson 95% CI) | verdict |
+|---:|---|---|---:|---:|---|---|
+| 4 | `glmgampoi_ql` | glmGamPoi 1.22.0 | 39,993 | 39,904 (89) | **0.0525** (0.0503–0.0547) | anti-conservative, narrowly |
+| 4 | `edger_ql` | edgeR 4.8.2 | 39,993 | 39,904 (89) | **0.0687** (0.0663–0.0713) | anti-conservative |
+| 4 | `wald_trend` | glmGamPoi 1.22.0 | 39,993 | 39,904 (89) | **0.0838** (0.0811–0.0865) | anti-conservative |
+| 12 | `glmgampoi_ql` | glmGamPoi 1.22.0 | 40,000 | 40,000 (0) | 0.0499 (0.0478–0.0520) | not flagged |
+| 12 | `edger_ql` | edgeR 4.8.2 | 40,000 | 40,000 (0) | **0.0712** (0.0687–0.0737) | anti-conservative |
+| 12 | `wald_trend` | glmGamPoi 1.22.0 | 40,000 | 40,000 (0) | **0.0764** (0.0739–0.0791) | anti-conservative |
 
-**n=4 denominator note:** the run summary records 39,904 p-values and 89 failed fits (39,993 rows total), leaving seven of the 40,000 planned taxon-simulation positions unaccounted for by those counts. Rejection rates use the 39,904 reported p-values. Do not treat 39,993 as the number attempted or classify the seven missing positions as successes or failures. At n=12, all 40,000 p-values are reported with no failed fits.
+The `n_attempted` summary field is `nrow(d)`: it counts rows present in the per-test output, not the 40,000 planned taxon-simulation positions. The `taxa=40` setting is the raw design size, not an observed post-filter testing denominator. At n=4, 39,904 p-values plus 89 failed fits account for 39,993 rows; seven of the 40,000 positions in the configured 1,000 × 40 design are absent from the summary, and their disposition is unresolved. Rejection rates use the 39,904 reported p-values; do not assign the seven absent positions to either successes or failures. At n=12, all 40,000 rows are reported as p-values with no failed fits.
 
 The verdict rule remains the one declared above: a Wilson 95% lower bound above 0.05 is anti-conservative; an interval containing 0.05 is “not flagged”, not proof of exact calibration. The glmGamPoi QL result is just above nominal at n=4 (its lower bound is 0.0503) and not flagged at n=12. edgeR QL is anti-conservative at both sizes. `wald_trend` is the glmGamPoi dispersion-trend Wald comparator, **not** glmGamPoi's QL test.
 

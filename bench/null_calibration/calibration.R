@@ -429,6 +429,50 @@ report_cell_failures <- function(results_file, cell) {
   invisible(NULL)
 }
 
+RESULT_COLUMNS <- c("truth", "shape", "offset", "n_per", "taxa", "sim",
+                    "taxon", "true_log2fc", "test", "status", "pvalue", "note")
+
+validate_resume_cell <- function(results_file, provenance_file, cell, cell_key) {
+  if (!file.exists(results_file)) return(integer(0))
+  prev <- tryCatch(read.csv(results_file, stringsAsFactors = FALSE,
+                            check.names = FALSE, fill = FALSE),
+                   error = function(e) e)
+  if (inherits(prev, "error")) {
+    stop("cell ", cell, " has an unreadable CSV (", conditionMessage(prev),
+         "); delete ", results_file, " and ", provenance_file,
+         " before rerunning", call. = FALSE)
+  }
+  if (!identical(names(prev), RESULT_COLUMNS)) {
+    stop("cell ", cell, " has an incompatible CSV schema; expected ",
+         paste(RESULT_COLUMNS, collapse = ", "), " but found ",
+         paste(names(prev), collapse = ", "), "; delete ", results_file,
+         " and ", provenance_file, " before rerunning", call. = FALSE)
+  }
+  if (!file.exists(provenance_file)) {
+    stop("cell ", cell, " has rows but no provenance file; delete ",
+         results_file, " before rerunning", call. = FALSE)
+  }
+  old_key <- tryCatch(
+    grep("^cell key:", readLines(provenance_file, warn = FALSE), value = TRUE),
+    error = function(e) e)
+  if (inherits(old_key, "error")) {
+    stop("cell ", cell, " has unreadable provenance (", conditionMessage(old_key),
+         "); delete ", results_file, " and ", provenance_file,
+         " before rerunning", call. = FALSE)
+  }
+  if (length(old_key) != 1L) {
+    stop("cell ", cell, " provenance must contain exactly one cell key; delete ",
+         results_file, " and ", provenance_file, " before rerunning", call. = FALSE)
+  }
+  old_key_value <- trimws(sub("^cell key:[ ]*", "", old_key[1]))
+  if (!identical(old_key_value, as.character(cell_key))) {
+    stop("cell ", cell, " has a mismatched cell key (found ", old_key_value,
+         ", expected ", cell_key, "); delete ", results_file, " and ",
+         provenance_file, " before rerunning", call. = FALSE)
+  }
+  unique(as.integer(prev$sim[!is.na(prev$sim)]))
+}
+
 ## ------------------------------------------------------------------- main
 
 enabled <- want
@@ -461,7 +505,7 @@ for (shape in shapes) for (off_m in offsets) for (n_per in n_pers) {
                   if (truth == "power") sprintf("_lfc%s", lfc) else "")
   f <- file.path(out_dir, paste0("pvalues_", cell, ".csv"))
   prov <- file.path(out_dir, paste0("provenance_", cell, ".txt"))
-  writeLines(c(
+  provenance_lines <- c(
     paste("cell:", cell), paste("date:", format(Sys.time(), tz = "UTC", usetz = TRUE)),
     paste("args:", paste(argv, collapse = " ")),
     paste("seed0:", seed0), paste("cell key:", stable_key(cell)),
@@ -474,27 +518,14 @@ for (shape in shapes) for (off_m in offsets) for (n_per in n_pers) {
     paste("edgeR:", if (have_edger) as.character(packageVersion("edgeR")) else "absent"),
     paste("tests run:", paste(enabled, collapse = ",")),
     capture.output(sessionInfo())
-  ), prov)
+  )
   cat(sprintf("cell %s: %d sims x %d taxa, tests %s\n",
               cell, n_sims, n_taxa, paste(enabled, collapse = "+")))
   header_done <- file.exists(f)
-  done_sims <- integer(0)
-  if (header_done) {
-    # Resuming is only safe when the existing rows came from the same seed
-    # scheme. The cell key is recorded in the provenance file; a mismatch means
-    # a stale cell from a different convention, not a resumable one.
-    prev <- tryCatch(read.csv(f, stringsAsFactors = FALSE), error = function(e) NULL)
-    if (!is.null(prev) && "sim" %in% names(prev)) done_sims <- unique(as.integer(prev$sim))
-    if (file.exists(prov)) {
-      old_key <- grep("^cell key:", readLines(prov, warn = FALSE), value = TRUE)
-      if (length(old_key) && !identical(trimws(sub("^cell key:[ ]*", "", old_key[1])),
-                                        as.character(stable_key(cell)))) {
-        stop("cell ", cell, " has rows from a different seed scheme (key ",
-             sub("^cell key:[ ]*", "", old_key[1]), ", now ", stable_key(cell),
-             "); delete ", f, " and ", prov, " before rerunning")
-      }
-    }
-  }
+  # Validate the existing schema and provenance before refreshing its record or
+  # appending rows; unknown files cannot safely be resumed.
+  done_sims <- validate_resume_cell(f, prov, cell, stable_key(cell))
+  writeLines(provenance_lines, prov)
   skipped_sims <- 0L
   refused_offsets <- 0L
   if (length(done_sims)) cat(sprintf("  resuming: %d sims already present\n", length(done_sims)))
@@ -536,8 +567,11 @@ for (shape in shapes) for (off_m in offsets) for (n_per in n_pers) {
                  status = f$status, pvalue = f$pvalue, note = note,
                  stringsAsFactors = FALSE)
     }))
+    # Package error messages can contain commas or newlines; quote all text
+    # fields so both read.csv and CSV-aware workflow consumers preserve them.
     write.table(rows, f, sep = ",", row.names = FALSE,
-                col.names = !header_done, append = header_done, quote = FALSE)
+                col.names = !header_done, append = header_done, quote = TRUE,
+                qmethod = "double")
     header_done <- TRUE
     if (s %% 25 == 0) { cat(sprintf("  %s sim %d/%d\n", cell, s, n_sims)); flush.console() }
   }

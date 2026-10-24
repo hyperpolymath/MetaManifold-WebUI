@@ -31,18 +31,18 @@ Two cheaper alternatives, measured on identical datasets:
 
 ## Native Bioconductor comparators
 
-The successful [native-R Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843) measured the same seeded null designs at original shape/TSS, n=4 and n=12, with 1,000 simulations × 40 taxa per cell (R 4.5.0, glmGamPoi 1.22.0, edgeR 4.8.2):
+The successful [native-R Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843) used the same seeded null designs at original shape/TSS, n=4 and n=12, configured for 1,000 simulations × 40 taxa per cell (R 4.5.0, glmGamPoi 1.22.0, edgeR 4.8.2):
 
-| n/group | comparator | α=0.05 (Wilson 95% CI) | verdict |
-|---:|---|---|---|
-| 4 | glmGamPoi QL F (`glmgampoi_ql`) | **0.0525** (0.0503–0.0547) | narrowly anti-conservative |
-| 4 | edgeR QL F (`edger_ql`) | **0.0687** (0.0663–0.0713) | anti-conservative |
-| 4 | glmGamPoi trend Wald (`wald_trend`) | **0.0838** (0.0811–0.0865) | anti-conservative |
-| 12 | glmGamPoi QL F (`glmgampoi_ql`) | 0.0499 (0.0478–0.0520) | not flagged |
-| 12 | edgeR QL F (`edger_ql`) | **0.0712** (0.0687–0.0737) | anti-conservative |
-| 12 | glmGamPoi trend Wald (`wald_trend`) | **0.0764** (0.0739–0.0791) | anti-conservative |
+| n/group | comparator | summary rows (`n_attempted`) | p-values (failed fits) | α=0.05 (Wilson 95% CI) | verdict |
+|---:|---|---:|---:|---|---|
+| 4 | glmGamPoi QL F (`glmgampoi_ql`) | 39,993 | 39,904 (89) | **0.0525** (0.0503–0.0547) | narrowly anti-conservative |
+| 4 | edgeR QL F (`edger_ql`) | 39,993 | 39,904 (89) | **0.0687** (0.0663–0.0713) | anti-conservative |
+| 4 | glmGamPoi trend Wald (`wald_trend`) | 39,993 | 39,904 (89) | **0.0838** (0.0811–0.0865) | anti-conservative |
+| 12 | glmGamPoi QL F (`glmgampoi_ql`) | 40,000 | 40,000 (0) | 0.0499 (0.0478–0.0520) | not flagged |
+| 12 | edgeR QL F (`edger_ql`) | 40,000 | 40,000 (0) | **0.0712** (0.0687–0.0737) | anti-conservative |
+| 12 | glmGamPoi trend Wald (`wald_trend`) | 40,000 | 40,000 (0) | **0.0764** (0.0739–0.0791) | anti-conservative |
 
-“Not flagged” means the Wilson interval includes 0.05; it is not proof of exact calibration. At n=4, the summary reports 39,904 p-values and 89 failed fits (39,993 rows total); seven of the 40,000 planned taxon-simulation positions are not accounted for by those counts. The reported rejection rate uses the 39,904 p-values. Do not treat 39,993 as the number attempted or classify the seven unaccounted positions as successes or failures. At n=12, the summary reports 40,000 p-values and no failed fits. The native comparator lane tested nulls only: it did not measure power, BH-FDR under alternatives, other sample sizes, or other shapes/offsets. The complete 12-row output and per-cell provenance are retained in `results/native_comparator_summary_run_40091522843.csv` and `results/native_comparator_provenance_run_40091522843.csv`.
+“Not flagged” means the Wilson interval includes 0.05; it is not proof of exact calibration. The summary's `n_attempted` field is computed as `nrow(d)`, the rows present in each per-test output; the `taxa=40` setting is the raw design size, not an observed post-filter testing denominator. At n=4, the summary reports 39,904 p-values and 89 failed fits (39,993 output rows total); seven positions from the configured 40,000 taxon-simulation design are absent from the summary, and their disposition is unresolved. Rejection rates use the 39,904 reported p-values; do not assign the seven absent positions to successes or failures or treat the 40,000 design count as an observed testing denominator. At n=12, the summary reports 40,000 p-values and no failed fits. The native comparator lane tested nulls only: it did not measure power, BH-FDR under alternatives, other sample sizes, or other shapes/offsets. The complete 12-row output and per-cell provenance are retained in `results/native_comparator_summary_run_40091522843.csv` and `results/native_comparator_provenance_run_40091522843.csv`.
 
 The inflation is not specific to one data shape: constant dispersion, sparse
 zero-heavy tables, unequal library sizes and RLE offsets all reproduce it
