@@ -233,6 +233,25 @@ jobs:
           bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/summarise.log" -- \
             Rscript --no-init-file bench/null_calibration/summarise.R
 
+      # A test that produced no usable p-value leaves its reason only in the
+      # per-cell CSV, which is an artifact a reader may not be able to open.
+      # The distinct reasons are therefore published as annotations too.
+      - name: Report any test that could not run
+        if: always()
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          for csv in bench/null_calibration/results/raw/pvalues_*.csv; do
+            if grep -q ",failed," "$csv"; then
+              cell="$(basename "$csv" .csv)"
+              while IFS= read -r line; do
+                body="$(printf '%s' "$line" | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+                echo "::warning title=${cell}: a requested test failed::${body}"
+              done < <(awk -F, 'NR > 1 && $10 == "failed" && $12 != "NA" && $12 != "" {
+                                 key = $9 " :: " $12; if (!seen[key]++) print key }' "$csv")
+            fi
+          done
+
       - name: Publish the summaries as annotations
         if: always()
         run: |
