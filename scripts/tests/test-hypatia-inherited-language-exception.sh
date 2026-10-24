@@ -18,6 +18,7 @@ cat > "$tmpdir/allowlist.txt" <<'EOF'
 frontend/src/App.tsx
 frontend/src/api/client.ts
 EOF
+cp "$tmpdir/allowlist.txt" "$tmpdir/allowlist.original.txt"
 
 cat > "$tmpdir/raw-findings.json" <<'EOF'
 [
@@ -105,6 +106,40 @@ jq -e '.runs[0].results | length == 1 and .[0].locations[0].physicalLocation.art
 # The source artifacts are immutable audit evidence.
 cmp "$tmpdir/raw-findings.json" "$tmpdir/raw-findings.original.json"
 cmp "$tmpdir/raw.sarif" "$tmpdir/raw.original.sarif"
+
+# Direct callers may supply different spellings for the same path. Reject
+# dot-segment and symlink aliases before any output can replace source evidence.
+ln -s "$tmpdir/raw.sarif" "$tmpdir/raw-sarif.alias"
+ln -s "$tmpdir/allowlist.txt" "$tmpdir/allowlist.alias"
+assert_alias_rejected() {
+  local label=$1
+  local output_findings=$2
+  local output_sarif=$3
+  if bash "$FILTER" \
+    "$tmpdir/raw-findings.json" \
+    "$tmpdir/raw.sarif" \
+    "$tmpdir/allowlist.txt" \
+    "$output_findings" \
+    "$output_sarif" \
+    "$canonicalizer_arg" >/dev/null 2>&1; then
+    echo "FAIL: accepted colliding paths for $label" >&2
+    exit 1
+  fi
+  cmp "$tmpdir/raw-findings.json" "$tmpdir/raw-findings.original.json"
+  cmp "$tmpdir/raw.sarif" "$tmpdir/raw.original.sarif"
+  cmp "$tmpdir/allowlist.txt" "$tmpdir/allowlist.original.txt"
+  echo "PASS: rejected colliding paths for $label"
+}
+assert_alias_rejected 'dot-segment raw findings alias' \
+  "$tmpdir/./raw-findings.json" "$tmpdir/alias-effective.sarif"
+assert_alias_rejected 'effective findings symlink to raw SARIF' \
+  "$tmpdir/raw-sarif.alias" "$tmpdir/alias-effective.sarif"
+assert_alias_rejected 'effective SARIF symlink to the allowlist' \
+  "$tmpdir/alias-effective.json" "$tmpdir/allowlist.alias"
+assert_alias_rejected 'effective SARIF cross-alias to raw findings' \
+  "$tmpdir/alias-effective.json" "$tmpdir/raw-findings.json"
+assert_alias_rejected 'effective outputs share a dot-segment path alias' \
+  "$tmpdir/shared-output.json" "$tmpdir/./shared-output.json"
 
 if [[ -n "$canonicalizer_arg" ]]; then
   echo "PASS: inherited TypeScript paths are narrowly filtered; raw, fork-only, and unrelated findings remain; effective JSON is I-JSON/JCS checked."

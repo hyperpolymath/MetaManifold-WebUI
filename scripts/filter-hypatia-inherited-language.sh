@@ -28,10 +28,37 @@ for input in "$raw_findings" "$raw_sarif" "$allowlist"; do
   fi
 done
 
-if [[ "$raw_findings" == "$effective_findings" || "$raw_sarif" == "$effective_sarif" || "$effective_findings" == "$effective_sarif" ]]; then
-  echo "Raw inputs and effective outputs must use distinct paths." >&2
-  exit 1
-fi
+# Resolve every source and destination before collision checks. This catches
+# ./ and .. aliases, symlinks, and hard links, so direct callers cannot overwrite
+# raw audit evidence or the allowlist through an alternate path spelling.
+paths=("$raw_findings" "$raw_sarif" "$allowlist" "$effective_findings" "$effective_sarif")
+resolved_paths=()
+for path in "${paths[@]}"; do
+  if ! resolved_path="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$path")"; then
+    echo "Cannot resolve input/output path: $path" >&2
+    exit 1
+  fi
+  resolved_paths+=("$resolved_path")
+done
+
+for ((i = 0; i < ${#resolved_paths[@]}; i += 1)); do
+  for ((j = i + 1; j < ${#resolved_paths[@]}; j += 1)); do
+    left=${resolved_paths[i]}
+    right=${resolved_paths[j]}
+    if [[ "$left" == "$right" ]] || {
+      [[ -e "$left" && -e "$right" ]] && [[ "$left" -ef "$right" ]]
+    }; then
+      echo "Input/output paths must resolve to distinct files: ${paths[i]} and ${paths[j]}" >&2
+      exit 1
+    fi
+  done
+done
+
+raw_findings=${resolved_paths[0]}
+raw_sarif=${resolved_paths[1]}
+allowlist=${resolved_paths[2]}
+effective_findings=${resolved_paths[3]}
+effective_sarif=${resolved_paths[4]}
 
 if [[ -n "$canonicalizer" ]]; then
   if [[ ! -x "$canonicalizer" ]]; then

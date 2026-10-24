@@ -16,6 +16,8 @@ ALLOWLIST=config/hypatia/upstream-typescript-allowlist.txt
 FORMAT_TOOLS=config/format-tools.toml
 STANDARDS_SHA=01c9b0c9f2646ebea0b30a9588462642ac94aee9
 UPSTREAM_SHA=a325589d3d318847c15b21cd34fb7d6e7a6d2f7b
+# Independent digest pin for the complete allowlist snapshot, including its provenance.
+UPSTREAM_ALLOWLIST_SHA256=024704085260e377ccac7d159edd7d0ee6181c8335e60f6243db747cb67e015a
 failures=0
 checks=0
 
@@ -81,6 +83,12 @@ if grep -Fq "# Source: JoshuaJewell/MetaManifold-WebUI @ $UPSTREAM_SHA " "$ALLOW
   pass 'the TypeScript exception records its immutable upstream source snapshot'
 else
   fail "the TypeScript exception must record upstream commit $UPSTREAM_SHA"
+fi
+allowlist_sha256="$(sha256sum "$ALLOWLIST" | awk '{print $1}')"
+if [ "$allowlist_sha256" = "$UPSTREAM_ALLOWLIST_SHA256" ]; then
+  pass 'the complete TypeScript allowlist matches its independently pinned SHA-256'
+else
+  fail "the complete TypeScript allowlist must match SHA-256 $UPSTREAM_ALLOWLIST_SHA256"
 fi
 if grep -Fqx 'frontend/src/App.tsx' "$ALLOWLIST"; then
   pass 'an upstream TypeScript path is included in the exact-path allowlist'
@@ -229,6 +237,12 @@ fi
 if gate="$(step_block "$REUSABLE" 'Gate on baseline (blocking when a baseline is committed)')"; then
   contains "$gate" 'hypatia-findings.effective.json' \
     'the baseline gate consumes exception-aware findings'
+  contains "$gate" '!inputs.block-on-high' \
+    'the advisory baseline gate remains disabled for blocking-mode callers'
+  contains "$gate" 'steps.inherited-language.outputs.findings_count > 0' \
+    'the advisory baseline gate runs when effective findings are present'
+  contains "$gate" "hashFiles(''.hypatia-baseline.json'')" \
+    'the advisory baseline gate still validates a committed baseline when findings are zero'
 else
   fail 'the baseline gate step exists'
 fi

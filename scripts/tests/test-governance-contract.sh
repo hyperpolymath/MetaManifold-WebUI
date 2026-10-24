@@ -9,12 +9,17 @@ mkdir -p "$fixture/scripts" "$fixture/config/hypatia" "$fixture/.github/workflow
 cp "$ROOT/scripts/check-governance-contract.sh" "$fixture/scripts/"
 cp "$ROOT/config/hypatia/upstream-typescript-allowlist.txt" "$fixture/config/hypatia/"
 cp "$ROOT/config/format-tools.toml" "$fixture/config/"
-reset_fixture() { cp "$ROOT"/.github/workflows/*.yml "$fixture/.github/workflows/"; }
+reset_fixture() {
+  cp "$ROOT"/.github/workflows/*.yml "$fixture/.github/workflows/"
+  cp "$ROOT/config/hypatia/upstream-typescript-allowlist.txt" "$fixture/config/hypatia/"
+}
 reset_fixture
 bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1
-for mutation in sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger; do
+for mutation in allowlist-added-path baseline-zero-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger; do
   reset_fixture
   case "$mutation" in
+    allowlist-added-path) printf '\nfrontend/src/fork-only.ts\n' >> "$fixture/config/hypatia/upstream-typescript-allowlist.txt" ;;
+    baseline-zero-gate) sed -i "/- name: Gate on baseline/,/^[[:space:]]*run:/ s@^        if: .*@        if: '!inputs.block-on-high \\&\\& steps.inherited-language.outputs.findings_count > 0'@" "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     sarif) sed -i "/if: github.event_name != 'pull_request'/d" "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     upstream-exception) sed -i 's@bash scripts/filter-hypatia-inherited-language.sh@bash scripts/no-op-filter.sh@' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     effective-grid) sed -i '/- name: Render the verdict grid/,/- name: Upload the verdict grid/s/hypatia-findings.effective.json/hypatia-findings.relativized.json/g' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
