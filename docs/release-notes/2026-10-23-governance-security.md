@@ -123,6 +123,16 @@ It is historical evidence, not a freshly executed scan of this change.
 - **Estate applicability:** the fixed React/TypeScript architecture and the
   independent Python scientific reference oracles conflict with estate
   language-ban heuristics. Do not rewrite them to make a badge green.
+- **Fork-local TypeScript exception:** `cicd_rules/banned_language_file` is
+  excluded from the effective grid, gate and SARIF only for exact `.ts`/`.tsx`
+  paths tracked by JoshuaJewell/MetaManifold-WebUI at upstream commit
+  `a325589d3d318847c15b21cd34fb7d6e7a6d2f7b`. Raw scanner findings remain
+  unchanged for audit; the effective findings JSON is validated as I-JSON and
+  canonicalized with the repository-pinned ijson-jcs tool. Fork-only TypeScript
+  paths and every other rule remain reportable.
+  Refresh the reviewed path snapshot deliberately when syncing upstream. The
+  pinned scanner does not honor `.hypatia-ignore` for this rule, so that file
+  would not implement this exception.
 - **Scanner discovery:** Hypatia is called by `governance.yml`, not the
   heuristic's expected `hypatia-scan.yml`. CodeQL is already supplied by the
   GitHub App (Actions, JS/TS and Python checks on #227); do not run a second

@@ -41,6 +41,7 @@ jobs:
         run: |
           bash scripts/check-governance-contract.sh
           bash scripts/tests/test-governance-contract.sh
+          bash scripts/tests/test-hypatia-inherited-language-exception.sh
           bash scripts/tests/test-ci-logging.sh
           bash scripts/tests/test-k9-log-copy.sh
           bash scripts/tests/test-scanner-boundaries.sh
