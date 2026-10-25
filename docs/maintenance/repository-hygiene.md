@@ -70,6 +70,8 @@ are unaffected: none of them was in a lane.
 | --- | --- |
 | `.github/workflows/pr-freshness.yml` | Runs `scripts/maintenance/check-pr-freshness.sh` on every pull request open, push, reopen and ready-for-review. Fails with a check annotation naming how far behind the branch is, or which merge commit breaks rule 2. |
 | `.github/workflows/branch-hygiene.yml` | Weekly, and on demand: runs the triage and updates **one** rolling issue, closing it when no drifted branch remains. One issue updated in place, because a job that opens an issue every week is the mechanism that produced the pile it is meant to clear. |
+| `.github/workflows/deed-conformance-reusable.yml`, `.github/workflows/scorecard-reusable.yml` | Fork-local copies of the two standards reusables, so the lanes keep running whatever the Actions policy says about other owners. Guarded by the contract: source commit, no cross-owner call, and the Scorecard SARIF guards. |
+| `scripts/check-governance-contract.sh` (owner rule) | Fails if any workflow calls a reusable workflow that is neither fork-local nor owned by `hyperpolymath` — the failure mode that produces **no jobs and no error line** in any summary. |
 | `.github/dependabot.yml` | Both ecosystems set `rebase-strategy: auto`. Dependabot does not rebase by default, so with two open updates the second becomes stale the moment the first merges and **Branch freshness** would fail a one-line dependency bump on a rule the bump did not break. Rebasing keeps that check meaning what it says. |
 | `scripts/tests/test-triage-branches.sh`, `scripts/tests/test-check-pr-freshness.sh` | Both scripts are tested against fixture repositories: merged, drifted-with-nothing-new, drifted-with-a-dropped-file, orphan, unrelated-history and shallow cases. They run with the other shell tests in the `Advisory scan contract` job. |
 
@@ -265,25 +267,55 @@ The repository's Actions policy permits reusable workflows only from
 repositories owned by `hyperpolymath` — so `hyperpolymath/standards` was allowed
 and `metadatastician/standards` is not, whatever name the workflow file uses.
 The `uses:` references therefore cannot be repaired by editing this repository
-alone. Three ways out, in increasing order of effort:
+alone, and the account this session runs as is an App installation with
+repository `admin` but **no `administration` scope**, so it cannot change the
+setting either (`GET /repos/{owner}/{repo}/actions/permissions` → 403). Three
+ways out were open:
 
-1. **Permit the new owner.** Repository → Settings → Actions → General →
-   *Access* for reusable workflows, and allow `metadatastician` (or "any
-   repository"). This is the smallest change and keeps the pins intact.
-2. **Move `standards` back** under `hyperpolymath`. Then the existing workflow
-   files work unchanged, and no pull request is needed.
-3. **Run DEED conformance from a checkout** instead of a remote `uses:`, the way
-   the K9, Hypatia and secret-scanner lanes already do. Correct, but it puts a
-   copy of someone else's workflow steps in this repository, and that copy then
-   drifts.
+1. **Permit the new owner** in Settings → Actions → General. Cleanest, keeps the
+   pins and the call sites intact — and still worth doing, because it is what
+   makes a *future* transfer a non-event rather than an outage.
+2. **Move `standards` back** under `hyperpolymath`. Then no pull request is
+   needed at all.
+3. **Fork-local copies**, which is what the K9, Hypatia and secret-scanner lanes
+   already are — three of the five reusables this repository calls were copies
+   before the transfer, for exactly this class of reason.
 
-What was done: every reference was repointed at `metadatastician/standards`
+**What was done: (3), because it is the only one that restores the lanes
+today without an owner action.** `deed-conformance-reusable.yml` and
+`scorecard-reusable.yml` are now fork-local:
+
+| Lane | Was | Now | Still pinned to |
+| --- | --- | --- | --- |
+| DEED syntax / lint | `metadatastician/standards/…/deed-conformance.yml@75bd5994` | `./.github/workflows/deed-conformance-reusable.yml` | the linter, fetched from `standards` at `75bd5994` (a *checkout*, which cross-owner is allowed) |
+| OpenSSF Scorecard | `metadatastician/standards/…/scorecard-reusable.yml@c6d78606` | `./.github/workflows/scorecard-reusable.yml` | the reconciler helper checkout at `5a0891e9`, `ossf/scorecard-action@fa7117db` |
+
+Neither copy re-implements anything. The DEED copy is the upstream *caller*
+path — the self-test, fixture-corpus and uuid-v8 steps were gated on
+`github.repository == 'hyperpolymath/standards'` and never ran here. The
+Scorecard copy is the `scorecard` job verbatim, comments included, because those
+comments record two freezes of this repository's Security tab; its
+`pull-request` job is not copied because `scorecard.yml` has no PR trigger and
+the contract fails if one is added.
+
+Both copies are now guarded by `scripts/check-governance-contract.sh`, which
+fails if the recorded source commit changes, if a caller reaches for the remote
+reusable again, or if the Scorecard copy loses its SARIF upload, its
+reconciliation `continue-on-error`, or its final fail-the-run step. A new
+general rule covers the next transfer of any repository:
+
+> every reusable workflow must be fork-local or owned by the repository owner
+
+with mutations (`deed-remote`, `scorecard-remote`, `cross-owner-reusable`,
+`deed-source-sha`, `scorecard-source-sha`, `scorecard-no-upload`,
+`scorecard-quiet-reconcile`) proving each check can fail.
+
+Before the copies, every reference was repointed at `metadatastician/standards`
 with the **same pinned SHAs** (verified to resolve in the new location, with
-matching commit subjects), `scripts/check-governance-contract.sh` now fails if
-any workflow names the pre-transfer owner or if the Scorecard reusable stops
-being the pinned file, and the mutation test carries a case for each. The pins
-themselves did not move, so no new code is trusted; only the name used to reach
-the same commits.
+matching commit subjects), and the contract was taught to fail if any workflow
+names the pre-transfer owner in a `uses:` or `repository:` field. The pins never
+moved, so no new code is trusted; only the name used to reach the same commits
+changed, and then only the call sites moved to local copies.
 
 What a future reader should not do: "fix" a failed governance run by dropping
 the `uses:` and inlining a scanner, or by pointing the pin at `@main`. Both turn
