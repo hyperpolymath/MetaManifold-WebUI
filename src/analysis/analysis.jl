@@ -1437,11 +1437,35 @@ function _varies_within_any_block(values::AbstractVector, blocks::AbstractVector
     false
 end
 
+# Metadata column names are untrusted data. Binding formula_rhs through RCall
+# does NOT make it inert: as.formula parses that string and model.frame can
+# evaluate calls inside it. Only plain R identifiers may reach that parser.
+const _R_FORMULA_RESERVED_NAMES = Set([
+    "if", "else", "repeat", "while", "function", "for", "in", "next", "break",
+    "TRUE", "FALSE", "NULL", "Inf", "NaN", "NA", "NA_integer_", "NA_real_",
+    "NA_complex_", "NA_character_", ".", "...",
+])
+
+function _permanova_formula_rhs(covariates::AbstractVector{<:AbstractString})
+    for name in covariates
+        plain = occursin(r"\A(?:[A-Za-z]|\.(?![0-9]))[A-Za-z0-9._]*\z", name)
+        if !plain || name in _R_FORMULA_RESERVED_NAMES || occursin(r"\A\.\.[0-9]+\z", name)
+            throw(ArgumentError(
+                "PERMANOVA covariate names must be plain R identifiers, not expressions or reserved words"))
+        end
+    end
+    join(covariates, " + ")
+end
+
 """
     run_permanova(mat, metadata; seed=123, transform="none", blocks=nothing) -> Union{NamedTuple, Nothing}
 
 PERMANOVA via vegan::adonis2 with up to 999 permutations.
 `metadata` is a DataFrame with one row per sample and covariate columns.
+Covariate names must be plain ASCII R identifiers (starting with a letter or
+with a dot not followed by a digit, then letters, digits, dots or underscores).
+Expressions, reserved words and control characters are rejected before formula
+construction; rename such metadata columns before calling this function.
 Each covariate is tested as its own term (`by = "terms"`), sequentially in
 column order, so each row is conditioned on the terms before it. The top-level
 `term`, `r2`, `f_statistic` and `p_value` are those of the first term.
@@ -1464,7 +1488,7 @@ function run_permanova(mat::Matrix{Float64}, metadata::DataFrame; seed::Integer=
     covariates = [c for c in names(metadata) if lowercase(c) != "sample" &&
                       length(unique(metadata[!, c])) >= 2]
     isempty(covariates) && return nothing
-    formula_rhs = join(covariates, " + ")
+    formula_rhs = _permanova_formula_rhs(covariates)
     mat = transform_counts(mat; method=transform)
     blocked = !isnothing(blocks) && length(blocks) == size(mat, 1) && !allunique(blocks)
     # Within-block permutation never exchanges the labels of a term that is

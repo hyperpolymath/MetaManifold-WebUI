@@ -53,9 +53,13 @@ include("analysis/differential.jl")
 # Opt-in validated descriptive statistics (issue #1). Ordinary workflows above
 # remain unchanged; these modes must be selected explicitly.
 include("analysis/numeric_policy.jl")
+# The approved method catalogue is checked against NumericPolicy limits before
+# the methods it describes are loaded.
+include("analysis/method_catalogue.jl")
 include("analysis/exact_summaries.jl")
 include("analysis/high_precision.jl")
 include("analysis/derived_analyses.jl")
+include("analysis/ordination.jl")
 
 # Web server
 include("server/server.jl")

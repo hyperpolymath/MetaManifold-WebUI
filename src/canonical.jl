@@ -29,9 +29,9 @@
 module Canonical
 
 
-using SHA
+using SHA, JSON3
 
-export jcs_bytes, jcs_sha256
+export jcs_bytes, jcs_sha256, ijson_read
 
 # The I-JSON exact-integer range.
 const SAFE_INT_MAX = 2^53 - 1
@@ -86,8 +86,18 @@ end
 _write!(io, ::AbstractFloat) = throw(ArgumentError(
     "canonical JSON supports only Float16, Float32 and Float64"))
 
+# I-JSON disallows Unicode noncharacters (including the last two code points
+# of every plane), whether they occur in values or property names.
+function _valid_ijson_string(s::AbstractString)
+    isvalid(s) || return false
+    all(s) do c
+        cp = UInt32(c)
+        !(0xfdd0 <= cp <= 0xfdef || (cp & 0xfffe) == 0xfffe)
+    end
+end
+
 function _write!(io, s::AbstractString)
-    isvalid(s) || throw(ArgumentError("canonical JSON refuses invalid Unicode"))
+    _valid_ijson_string(s) || throw(ArgumentError("canonical JSON refuses invalid I-JSON Unicode"))
     print(io, '"')
     for c in s
         _write_char!(io, c)
@@ -135,7 +145,7 @@ function _write!(io, d::AbstractDict)
         key isa Union{AbstractString,Symbol} || throw(ArgumentError(
             "canonical JSON object keys must be strings or symbols"))
         name = String(key)
-        isvalid(name) || throw(ArgumentError("canonical JSON refuses invalid Unicode keys"))
+        _valid_ijson_string(name) || throw(ArgumentError("canonical JSON refuses invalid I-JSON Unicode keys"))
         name in names && throw(ArgumentError("canonical JSON refuses duplicate property names"))
         push!(names, name)
         push!(entries, name => value)
@@ -216,6 +226,135 @@ function _shortest_digits(x::Float64)
         digits = digits[1:end-1]
     end
     digits, n
+end
+
+"""
+    ijson_read(raw) -> JSON3.Object / JSON3.Array / scalar
+
+Parse a JSON document in the strict I-JSON mode of hyperpolymath/ijson-jcs.
+Inspect the original tokens *before* relying on JSON3's parsed object: parsed
+objects can lose duplicate names, and integral-looking floats/oversized integer
+tokens can be normalised. The return value retains JSON3's usual types so
+existing callers need not change their field access.
+"""
+function ijson_read(raw::Union{AbstractString,AbstractVector{UInt8}})
+    text = raw isa AbstractString ? String(raw) : String(copy(raw))
+    isvalid(text) || throw(ArgumentError("I-JSON requires UTF-8"))
+    # JSON3 parses the value; the raw-token walk also checks grammar and
+    # trailing content, which JSON3 may otherwise ignore.
+    parsed = try
+        JSON3.read(text)
+    catch err
+        throw(ArgumentError("invalid JSON: $(sprint(showerror, err))"))
+    end
+    bytes = codeunits(text)
+    n = length(bytes)
+    pos = Ref(1)
+    peek() = pos[] <= n ? bytes[pos[]] : 0x00
+    function whitespace!()
+        while peek() in (0x20, 0x09, 0x0a, 0x0d) && pos[] <= n
+            pos[] += 1
+        end
+    end
+    function string!()
+        start = pos[]
+        pos[] += 1 # opening quote
+        while pos[] <= n
+            c = bytes[pos[]]
+            pos[] += 1
+            c == 0x22 && break
+            if c == 0x5c
+                # JSON3 checked the escape grammar; additionally reject lone
+                # surrogate escapes even if a parser replaces them with U+FFFD.
+                if bytes[pos[]] == 0x75
+                    high = parse(UInt32, String(bytes[pos[]+1:pos[]+4]); base=16)
+                    if 0xd800 <= high <= 0xdbff
+                        pos[] + 10 <= n && bytes[pos[]+5] == 0x5c &&
+                            bytes[pos[]+6] == 0x75 || throw(ArgumentError(
+                                "I-JSON refuses an unpaired high surrogate"))
+                        low = parse(UInt32, String(bytes[pos[]+7:pos[]+10]); base=16)
+                        0xdc00 <= low <= 0xdfff || throw(ArgumentError(
+                            "I-JSON refuses an unpaired high surrogate"))
+                        pos[] += 11
+                        continue
+                    elseif 0xdc00 <= high <= 0xdfff
+                        throw(ArgumentError("I-JSON refuses an unpaired low surrogate"))
+                    end
+                    pos[] += 5
+                else
+                    pos[] += 1
+                end
+            end
+        end
+        value = String(JSON3.read(String(bytes[start:pos[]-1])))
+        _valid_ijson_string(value) || throw(ArgumentError("I-JSON refuses Unicode noncharacters"))
+        value
+    end
+    function value!()
+        whitespace!()
+        if peek() == 0x7b # object
+            pos[] += 1
+            whitespace!()
+            seen = Set{String}()
+            while peek() != 0x7d
+                key = string!()
+                key in seen && throw(ArgumentError("I-JSON refuses duplicate object key $(repr(key))"))
+                push!(seen, key)
+                whitespace!()
+                pos[] += 1 # colon (JSON3 already verified the grammar)
+                value!()
+                whitespace!()
+                peek() == 0x2c || break
+                pos[] += 1
+                whitespace!()
+            end
+            pos[] += 1 # closing brace
+        elseif peek() == 0x5b # array
+            pos[] += 1
+            whitespace!()
+            while peek() != 0x5d
+                value!()
+                whitespace!()
+                peek() == 0x2c || break
+                pos[] += 1
+                whitespace!()
+            end
+            pos[] += 1 # closing bracket
+        elseif peek() == 0x22
+            string!()
+        else
+            start = pos[]
+            while pos[] <= n && !(peek() in (0x2c, 0x5d, 0x7d, 0x20, 0x09, 0x0a, 0x0d))
+                pos[] += 1
+            end
+            token = String(bytes[start:pos[]-1])
+            if occursin(r"^-?(0|[1-9][0-9]*)$", token)
+                # Bound the token before parsing: an HTTP body could contain
+                # millions of digits, but a safe integer has at most 16.
+                length(token) <= 17 &&
+                    -SAFE_INT_MAX <= parse(BigInt, token) <= SAFE_INT_MAX ||
+                    throw(ArgumentError("I-JSON refuses an unsafe integer token $token"))
+            elseif occursin(r"^-?(0|[1-9][0-9]*)\.[0-9]+([eE][+-]?[0-9]+)?$|^-?(0|[1-9][0-9]*)[eE][+-]?[0-9]+$", token)
+                x = tryparse(Float64, token)
+                (!isnothing(x) && isfinite(x)) || throw(ArgumentError(
+                    "I-JSON refuses a non-finite number $token"))
+                # Exponent/fraction input may stringify as an integer in
+                # JCS. Never accept a value whose canonical token would be
+                # rejected as an unsafe integer on the next read.
+                canonical = String(jcs_bytes(x))
+                if occursin(r"^-?(0|[1-9][0-9]*)$", canonical) &&
+                   !(abs(x) <= SAFE_INT_MAX)
+                    throw(ArgumentError("I-JSON refuses a number canonicalizing to an unsafe integer token $canonical"))
+                end
+            elseif !(token in ("true", "false", "null"))
+                throw(ArgumentError("invalid JSON token $token"))
+            end
+        end
+    end
+    value!()
+    whitespace!()
+    pos[] > n || throw(ArgumentError("invalid JSON: trailing content"))
+    parsed
 end
 
 end # module

@@ -14,9 +14,11 @@ using SHA
 import ..Epistemic
 import ..Phylogeny
 
-export PhyloNode, QueryCandidate, QueryPlacement, JplaceDocument,
+export PhyloNode, IndexedPhyloNode, PhylogeneticTree,
+       QueryCandidate, QueryPlacement, JplaceDocument,
        CladeNode, CladeTreeResult,
-       parse_newick, midpoint_root, parse_jplace,
+       parse_newick, parse_phylogenetic_tree, midpoint_root, parse_jplace,
+       asv_tip_name, clade_counts, unifrac, analyse_phylogeny, ensure_rooted,
        faith_pd, faith_pd_table, clade_faith_pd,
        unweighted_unifrac, weighted_unifrac, unifrac_matrix,
        branch_unifrac_contributions,
@@ -28,7 +30,30 @@ const DEFAULT_TAXONOMIC_RANKS = [
     "Class", "Order", "Family", "Genus", "Species",
 ]
 
-const PLACEMENT_WEIGHT_SUM_TOL = 1e-5
+# Placement tools truncate a query's candidate list at a likelihood-weight
+# cutoff, so retained like-weight ratios can legitimately sum to a little
+# under 1 (a single retained placement at 0.98 is complete evidence). A shortfall
+# beyond the tolerance is a missing or discarded placement and stays undecided.
+# A sum over 1 is never legitimate: weights are mutually exclusive placement
+# ratios, so overweight evidence is malformed and is rejected by a tight upper
+# bound while the lower shortfall is tolerated.
+#
+# A single-candidate record is the shape that made the lower tolerance
+# necessary, and it is judged on its own share instead
+# (`PLACEMENT_SINGLE_MIN_LWR`): the tool named one site and left the rest of
+# the mass unplaced.
+#
+# Accepting a placement and trusting all of its mass are different questions,
+# and the two consumers answer the second one differently on purpose.
+# `_graft_jplace_queries` builds a count view of the observed ASV table and
+# conserves reads: an unsplit query keeps its whole count at its one edge.
+# The `/clade-cumulus` diversity block instead weights each tip by the raw
+# like-weight ratio, so the mass the tool never placed stays off the tree and
+# is reported as `unplaced_reads` rather than renormalised onto the edge that
+# happened to be kept.
+const PLACEMENT_WEIGHT_SUM_TOL = 0.05
+const PLACEMENT_WEIGHT_OVER_TOL = 1e-9
+const PLACEMENT_SINGLE_MIN_LWR = 0.5
 
 ## Phylogenetic tree structures & Newick / jplace parsers
 mutable struct PhyloNode
@@ -38,6 +63,444 @@ mutable struct PhyloNode
     support       :: Union{Float64,Nothing}
     edge_number   :: Union{Int,Nothing}
     children      :: Vector{PhyloNode}
+end
+
+## Study-tree (indexed) structures used by the cladistics build API.
+# These mirror the #200 CladeCumulus schema: a PhylogeneticTree carries a
+# `tips` dictionary so cladistics.jl can validate that tree tips exactly
+# match the saved ASV columns.
+mutable struct IndexedPhyloNode
+    name    :: String
+    length  :: Union{Float64,Nothing}
+    parent  :: Int                 # 0 only for the root
+    children :: Vector{Int}        # 1-based node ids; parents precede children
+end
+
+struct PhylogeneticTree
+    nodes :: Vector{IndexedPhyloNode}
+    root  :: Int
+    tips  :: Dict{String,Int}
+end
+
+"""Stable, tool-safe ASV tip name tied to sequence content, not to a row number."""
+function asv_tip_name(sequence::AbstractString)
+    normalised = uppercase(replace(strip(String(sequence)), r"[\s\-.]" => ""))
+    isempty(normalised) && throw(ArgumentError("an ASV sequence is empty"))
+    "ASV_" * bytes2hex(sha256(normalised))[1:20]
+end
+
+## Indexed Newick parser (returns a PhylogeneticTree with a tips index)
+
+mutable struct _IndexedParser
+    bytes :: Vector{UInt8}
+    pos   :: Int
+    nodes :: Vector{IndexedPhyloNode}
+    tips  :: Dict{String,Int}
+end
+
+@inline _ip_done(p::_IndexedParser) = p.pos > length(p.bytes)
+@inline _ip_peek(p::_IndexedParser) = _ip_done(p) ? 0x00 : p.bytes[p.pos]
+@inline _ip_is_space(b::UInt8) = b in (0x09, 0x0a, 0x0d, 0x20)
+@inline _ip_is_delim(b::UInt8) = _ip_is_space(b) || b in (
+    UInt8('('), UInt8(')'), UInt8(','), UInt8(':'), UInt8(';'),
+    UInt8('['), UInt8(']'))
+
+_ip_fail(p::_IndexedParser, message::AbstractString) =
+    throw(ArgumentError("Newick byte $(p.pos): $message"))
+
+function _ip_skip!(p::_IndexedParser)
+    while !_ip_done(p)
+        if _ip_is_space(_ip_peek(p))
+            p.pos += 1
+        elseif _ip_peek(p) == UInt8('[')
+            depth = 0
+            while !_ip_done(p)
+                b = _ip_peek(p)
+                p.pos += 1
+                b == UInt8('[') && (depth += 1)
+                if b == UInt8(']')
+                    depth -= 1
+                    depth == 0 && break
+                end
+            end
+            depth == 0 || _ip_fail(p, "unclosed comment")
+        else
+            break
+        end
+    end
+end
+
+function _ip_take!(p::_IndexedParser, expected::UInt8)
+    _ip_skip!(p)
+    _ip_peek(p) == expected || _ip_fail(p, "expected '$(Char(expected))'")
+    p.pos += 1
+end
+
+function _ip_label!(p::_IndexedParser)::String
+    _ip_skip!(p)
+    _ip_done(p) && return ""
+    quote_char = _ip_peek(p)
+    if quote_char in (UInt8('\''), UInt8('"'))
+        p.pos += 1
+        out = UInt8[]
+        while !_ip_done(p)
+            b = _ip_peek(p)
+            p.pos += 1
+            if b == quote_char
+                if !_ip_done(p) && _ip_peek(p) == quote_char
+                    push!(out, quote_char)
+                    p.pos += 1
+                else
+                    return String(out)
+                end
+            else
+                push!(out, b)
+            end
+        end
+        _ip_fail(p, "unclosed quoted label")
+    end
+    first = p.pos
+    while !_ip_done(p) && !_ip_is_delim(_ip_peek(p))
+        p.pos += 1
+    end
+    String(strip(String(p.bytes[first:p.pos - 1])))
+end
+
+function _ip_length!(p::_IndexedParser)::Float64
+    _ip_skip!(p)
+    first = p.pos
+    while !_ip_done(p) && !_ip_is_delim(_ip_peek(p))
+        p.pos += 1
+    end
+    first < p.pos || _ip_fail(p, "missing branch length after ':'")
+    token = String(p.bytes[first:p.pos - 1])
+    value = try parse(Float64, token) catch
+        _ip_fail(p, "invalid branch length '$token'")
+    end
+    (isfinite(value) && value >= 0) ||
+        _ip_fail(p, "branch lengths must be finite and non-negative")
+    value
+end
+
+function _ip_parse_node!(p::_IndexedParser, parent::Int)::Int
+    _ip_skip!(p)
+    _ip_done(p) && _ip_fail(p, "expected a node")
+    push!(p.nodes, IndexedPhyloNode("", nothing, parent, Int[]))
+    id = length(p.nodes)
+    leaf = _ip_peek(p) != UInt8('(')
+    if !leaf
+        _ip_take!(p, UInt8('('))
+        while true
+            child = _ip_parse_node!(p, id)
+            push!(p.nodes[id].children, child)
+            _ip_skip!(p)
+            if _ip_peek(p) == UInt8(',')
+                p.pos += 1
+                continue
+            end
+            _ip_peek(p) == UInt8(')') || _ip_fail(p, "expected ',' or ')'")
+            p.pos += 1
+            break
+        end
+        isempty(p.nodes[id].children) && _ip_fail(p, "an internal node needs children")
+    end
+
+    label = _ip_label!(p)
+    if leaf
+        isempty(label) && _ip_fail(p, "a tip needs a non-empty label")
+        haskey(p.tips, label) && _ip_fail(p, "duplicate tip '$label'")
+        p.tips[label] = id
+    end
+    p.nodes[id].name = label
+    _ip_skip!(p)
+    if _ip_peek(p) == UInt8(':')
+        p.pos += 1
+        p.nodes[id].length = _ip_length!(p)
+    end
+    id
+end
+
+"""
+    parse_phylogenetic_tree(text) -> PhylogeneticTree
+
+Parse one Newick tree into an indexed `PhylogeneticTree` with a `tips`
+index, including quoted/Unicode tip labels, bracket comments, internal
+support labels and non-binary nodes. Duplicate or empty tip labels and
+negative/non-finite branch lengths are rejected.
+"""
+function parse_phylogenetic_tree(text::AbstractString)::PhylogeneticTree
+    p = _IndexedParser(collect(codeunits(text)), 1, IndexedPhyloNode[], Dict{String,Int}())
+    root = _ip_parse_node!(p, 0)
+    _ip_take!(p, UInt8(';'))
+    _ip_skip!(p)
+    _ip_done(p) || _ip_fail(p, "unexpected content after ';'")
+    isempty(p.tips) && throw(ArgumentError("Newick tree has no tips"))
+    root == 1 || error("internal parser error: root is not the first node")
+    PhylogeneticTree(p.nodes, root, p.tips)
+end
+
+## Roll-ups and metrics for the indexed tree
+
+function _check_counts(tree::PhylogeneticTree, counts, tip_names)
+    ndims(counts) == 2 || throw(DimensionMismatch("counts must be a samples × ASVs matrix"))
+    size(counts, 2) == length(tip_names) || throw(DimensionMismatch(
+        "counts has $(size(counts, 2)) columns but $(length(tip_names)) tip names were supplied"))
+    length(unique(String.(tip_names))) == length(tip_names) ||
+        throw(ArgumentError("tip names must be unique"))
+    all(v -> isfinite(v) && v >= 0, counts) || throw(ArgumentError("counts must be finite and non-negative"))
+    for name in tip_names
+        haskey(tree.tips, String(name)) || throw(ArgumentError(
+            "count feature '$name' is not a tip in the tree; refusing to discard its reads"))
+    end
+    nothing
+end
+
+"""
+    clade_counts(tree, counts, tip_names) -> Matrix{Float64}
+
+Return a nodes × samples matrix. Each tip receives its ASV counts, then a
+single reverse-node-order pass adds every child's counts to its parent. Thus
+every node contains the cumulative abundance of its whole phylogenetic clade.
+"""
+function clade_counts(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+                      tip_names::AbstractVector{<:AbstractString})::Matrix{Float64}
+    _check_counts(tree, counts, tip_names)
+    samples = size(counts, 1)
+    cumulative = zeros(Float64, length(tree.nodes), samples)
+    for (j, name) in enumerate(tip_names), sample in 1:samples
+        cumulative[tree.tips[String(name)], sample] += Float64(counts[sample, j])
+    end
+    for id in length(tree.nodes):-1:1
+        parent = tree.nodes[id].parent
+        parent == 0 && continue
+        for sample in 1:samples
+            cumulative[parent, sample] += cumulative[id, sample]
+        end
+    end
+    cumulative
+end
+
+function _tree_lengths(tree::PhylogeneticTree)::Vector{Float64}
+    lengths = zeros(Float64, length(tree.nodes))
+    for id in eachindex(tree.nodes)
+        id == tree.root && continue
+        edge_len = tree.nodes[id].length
+        isnothing(edge_len) && throw(ArgumentError(
+            "Faith PD and UniFrac need a length on every non-root branch"))
+        lengths[id] = edge_len
+    end
+    lengths
+end
+
+## Rooting
+
+"""
+    ensure_rooted(tree::PhylogeneticTree) -> PhylogeneticTree
+
+Return `tree` with a biologically meaningful root, using the same convention as
+the legacy `PhyloNode` metrics (`_ensure_rooted_tree`): an unrooted tree — more
+than two children at the root — is midpoint-rooted by `midpoint_root`, and an
+already bifurcating tree is returned unchanged.
+
+This matters because IQ-TREE infers an *unrooted* tree for a reversible
+substitution model, so the root of a `reference.treefile` is only whichever
+node happened to be serialized first. UniFrac is unaffected (it sums edge
+partitions, and re-rooting preserves them), but Faith's PD is a path-to-root
+quantity: for a sample with a single active tip the arbitrary root inflates PD
+by the distance from that tip to the serialization point. Rooting here keeps
+`analyse_phylogeny` consistent with `faith_pd(counts, taxa, tree)`.
+"""
+function ensure_rooted(tree::PhylogeneticTree)::PhylogeneticTree
+    length(tree.nodes[tree.root].children) <= 2 && return tree
+    rooted, changed = midpoint_root(_to_phylo(tree))
+    changed || return tree        # fewer than two tips: nothing to root against
+    _from_phylo(rooted)
+end
+
+# The legacy rooting and metric code is audited against scikit-bio, so it is
+# reused rather than reimplemented: convert to `PhyloNode`, root, convert back.
+function _to_phylo(tree::PhylogeneticTree, id::Int = tree.root)::PhyloNode
+    node = tree.nodes[id]
+    is_root = id == tree.root
+    !is_root && isnothing(node.length) && throw(ArgumentError(
+        "Faith PD and UniFrac need a length on every non-root branch"))
+    children = PhyloNode[_to_phylo(tree, child) for child in node.children]
+    PhyloNode("n$id", node.name, is_root ? 0.0 : something(node.length, 0.0),
+              nothing, nothing, children)
+end
+
+function _from_phylo(root::PhyloNode)::PhylogeneticTree
+    nodes = IndexedPhyloNode[]
+    tips = Dict{String,Int}()
+    function add!(node::PhyloNode, parent::Int)::Int
+        push!(nodes, IndexedPhyloNode(node.name,
+            parent == 0 ? nothing : node.branch_length, parent, Int[]))
+        id = length(nodes)
+        for child in node.children
+            push!(nodes[id].children, add!(child, id))
+        end
+        if isempty(node.children) && !isempty(node.name)
+            haskey(tips, node.name) && throw(ArgumentError("duplicate tip '$(node.name)'"))
+            tips[node.name] = id
+        end
+        id
+    end
+    root_id = add!(root, 0)
+    PhylogeneticTree(nodes, root_id, tips)
+end
+
+"""
+    unifrac(tree, cumulative; weighted=false) -> Matrix{Float64}
+
+Pairwise UniFrac between sample columns of a nodes × samples roll-up.
+`weighted=false` gives unweighted UniFrac (Lozupone & Knight 2005).
+`weighted=true` gives **normalised** weighted UniFrac in `[0, 1]`
+(Lozupone et al. 2007). This differs from the default of
+`weighted_unifrac(...; normalized=false)`, which returns the raw distance.
+If the denominator is zero, the distance is `1.0` when exactly one sample
+is non-empty and `0.0` otherwise.
+"""
+function unifrac(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real};
+                 weighted::Bool=false)::Matrix{Float64}
+    sizes = size(cumulative)
+    sizes[1] == length(tree.nodes) || throw(DimensionMismatch(
+        "cumulative matrix has the wrong node count"))
+    all(v -> isfinite(v) && v >= 0, cumulative) || throw(ArgumentError(
+        "cumulative counts must be finite and non-negative"))
+    lengths = _tree_lengths(tree)
+    samples = size(cumulative, 2)
+    totals = vec(cumulative[tree.root, :])
+    out = zeros(Float64, samples, samples)
+    for a in 1:samples, b in a+1:samples
+        numerator = 0.0
+        denominator = 0.0
+        for id in eachindex(tree.nodes)
+            id == tree.root && continue
+            av = Float64(cumulative[id, a])
+            bv = Float64(cumulative[id, b])
+            edge_len = lengths[id]
+            if weighted
+                ar = totals[a] > 0 ? av / totals[a] : 0.0
+                br = totals[b] > 0 ? bv / totals[b] : 0.0
+                numerator += edge_len * abs(ar - br)
+                denominator += edge_len * (ar + br)
+            else
+                ap = av > 0
+                bp = bv > 0
+                ap != bp && (numerator += edge_len)
+                (ap || bp) && (denominator += edge_len)
+            end
+        end
+        one_empty = (totals[a] > 0) != (totals[b] > 0)
+        distance = denominator > 0 ? numerator / denominator : (one_empty ? 1.0 : 0.0)
+        out[a, b] = out[b, a] = distance
+    end
+    out
+end
+
+"""
+    unifrac(tree, counts, tip_names; weighted=false) -> Matrix{Float64}
+
+UniFrac over the natural samples × ASVs count matrix. The counts are rolled up
+through `clade_counts` first, so callers do not have to construct the internal
+nodes × samples matrix; `faith_pd(tree, counts, tip_names)` is the matching
+raw-count entry point. The tree is passed through `ensure_rooted` first, so an
+unrooted IQ-TREE tree and a rerooted serialization of it agree; UniFrac itself
+is root-invariant because it only sums edge partitions.
+"""
+function unifrac(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+                 tip_names::AbstractVector{<:AbstractString};
+                 weighted::Bool=false)::Matrix{Float64}
+    rooted = ensure_rooted(tree)
+    unifrac(rooted, clade_counts(rooted, counts, tip_names); weighted = weighted)
+end
+
+function _faith_pd_indexed(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real})::Vector{Float64}
+    sizes = size(cumulative)
+    sizes[1] == length(tree.nodes) || throw(DimensionMismatch(
+        "cumulative matrix has the wrong node count"))
+    # `> 0` would silently treat NaN and negative entries as absent and report a
+    # plausible but underestimated PD; reject them as `clade_counts` and
+    # `unifrac` do.
+    all(v -> isfinite(v) && v >= 0, cumulative) || throw(ArgumentError(
+        "cumulative counts must be finite and non-negative"))
+    lengths = _tree_lengths(tree)
+    samples = size(cumulative, 2)
+    out = zeros(Float64, samples)
+    for id in eachindex(tree.nodes)
+        id == tree.root && continue
+        for sample in 1:samples
+            cumulative[id, sample] > 0 && (out[sample] += lengths[id])
+        end
+    end
+    out
+end
+
+"""
+    faith_pd(tree, cumulative) -> Vector{Float64}
+    faith_pd(tree, counts, tip_names) -> Vector{Float64}
+
+Faith's Phylogenetic Diversity per sample column. The roll-up overload sums the
+length of every non-root edge whose clade holds reads, so `cumulative` must come
+from `clade_counts` applied to a tree already passed through `ensure_rooted`;
+the raw-count overload does that rooting for you and is the one to prefer.
+"""
+faith_pd(tree::PhylogeneticTree, cumulative::AbstractMatrix{<:Real}) = _faith_pd_indexed(tree, cumulative)
+function faith_pd(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+                  tip_names::AbstractVector{<:AbstractString})::Vector{Float64}
+    rooted = ensure_rooted(tree)
+    faith_pd(rooted, clade_counts(rooted, counts, tip_names))
+end
+
+"""
+    analyse_phylogeny(tree, counts, tip_names, sample_names) -> NamedTuple
+
+Compute the complete JSON-ready CladeCumulus result: cumulative clade counts
+and frequencies, Faith PD, and both UniFrac matrices.
+
+The tree is passed through `ensure_rooted` first, so an unrooted IQ-TREE
+`reference.treefile` and any rerooted serialization of the same inferred tree
+produce the same `faith_pd`, `unweighted_unifrac` and `weighted_unifrac` values.
+The returned `nodes` describe the rooted tree.
+"""
+function analyse_phylogeny(tree::PhylogeneticTree, counts::AbstractMatrix{<:Real},
+                           tip_names::AbstractVector{<:AbstractString},
+                           sample_names::AbstractVector{<:AbstractString})
+    size(counts, 1) == length(sample_names) || throw(DimensionMismatch(
+        "counts has $(size(counts, 1)) rows but $(length(sample_names)) sample names were supplied"))
+    length(unique(String.(sample_names))) == length(sample_names) ||
+        throw(ArgumentError("sample names must be unique"))
+    tree = ensure_rooted(tree)
+    cumulative = clade_counts(tree, counts, tip_names)
+    samples = String.(sample_names)
+    totals = vec(cumulative[tree.root, :])
+    grand_total = sum(totals)
+
+    tip_counts = zeros(Int, length(tree.nodes))
+    for id in length(tree.nodes):-1:1
+        node = tree.nodes[id]
+        tip_counts[id] = isempty(node.children) ? 1 : sum(tip_counts[c] for c in node.children)
+    end
+    tip_ids = Set(values(tree.tips))
+    nodes = map(eachindex(tree.nodes)) do id
+        node = tree.nodes[id]
+        parent = node.parent == 0 ? nothing : "n$(node.parent)"
+        clade_reads = sum(cumulative[id, :])
+        (; id = "n$id", parent_id = parent,
+           label = isempty(node.name) ? (id in tip_ids ? "Tip $id" : "Clade $id") : node.name,
+           branch_length = id == tree.root ? nothing : node.length,
+           is_tip = id in tip_ids,
+           tip_count = tip_counts[id],
+           cumulative_count = clade_reads,
+           cumulative_frequency = grand_total > 0 ? clade_reads / grand_total : 0.0)
+    end
+
+    (; nodes, samples,
+       sample_reads = collect(totals),
+       faith_pd = _faith_pd_indexed(tree, cumulative),
+       unweighted_unifrac = unifrac(tree, cumulative),
+       weighted_unifrac = unifrac(tree, cumulative; weighted=true),
+       total_branch_length = sum(_tree_lengths(tree)))
 end
 
 struct QueryCandidate
@@ -202,8 +665,14 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
         end
     end
 
-    function read_label_and_quoted()::Tuple{String,Bool}
-        skip_ws_and_leading_comments!()
+    function read_label_and_quoted(; capture_nhx::Union{Ref{Union{Float64,Nothing}},Nothing} = nothing,
+                                     capture_edge::Union{Ref{Union{Int,Nothing}},Nothing} = nothing)::Tuple{String,Bool}
+        # A support tag may sit between the label and the branch length, or
+        # directly after ')' with no label at all (`)[&&NHX:B=92]:0.1`). That
+        # leading comment is consumed by this first skip, so the capture refs
+        # have to be threaded through it or the tag is read as an anonymous
+        # comment and the support is lost.
+        skip_ws_and_leading_comments!(capture_nhx = capture_nhx, capture_edge = capture_edge)
         pos[] > n && return ("", false)
         if bytes[pos[]] == UInt8('\'')
             pos[] += 1
@@ -260,7 +729,7 @@ function parse_newick(src::AbstractString; warnings::Vector{String} = String[]):
 
         nhx_sup = Ref{Union{Float64,Nothing}}(nothing)
         edge_num = Ref{Union{Int,Nothing}}(nothing)
-        raw_lbl, was_quoted = read_label_and_quoted()
+        raw_lbl, was_quoted = read_label_and_quoted(capture_nhx = nhx_sup, capture_edge = edge_num)
         skip_ws_and_leading_comments!(capture_nhx = nhx_sup, capture_edge = edge_num)
 
         branch_len = 0.0
@@ -459,13 +928,21 @@ end
 """
     parse_jplace(raw_json::AbstractString) -> JplaceDocument
 
-Strictly parse a `.jplace` document before any display normalization:
+Strictly parse a `.jplace` document before any display normalisation:
 - Validates unique integer `{edge_num}` annotations across the tree
 - Validates explicit unique `"like_weight_ratio"` column in `"fields"`
-- Validates each query's `p` candidates, finite weights in `[0, 1]`, edge
-  references present on non-root edges, and total weight within `1e-5` of `1.0`
+- Validates each query's `p` candidates, finite weights in `[0, 1]`, and edge
+  references present on non-root edges. A single candidate requires a weight
+  of at least `0.5`; multiple candidates must sum to within `1e-5` of `1.0`.
 - Preserves raw query/candidate ordinals and `n` / `nm` multiplicities without
-  re-normalizing weights or collapsing tied maxima.
+  renormalising weights or collapsing tied maxima.
+
+Candidate validation failures produce `:undecided` queries with a reason and
+`max_lwr = nothing`; a lone weight below `0.5` gives the reason
+`single_candidate_below_min_lwr (<weight>)`. Missing required fields, invalid
+query names or multiplicities, duplicate edge numbers, and missing or duplicate
+required field columns throw `ArgumentError`. JSON decoding, Newick parsing,
+and value conversion errors propagate.
 """
 function parse_jplace(raw_json::AbstractString)::JplaceDocument
     doc = JSON3.read(raw_json)
@@ -565,7 +1042,14 @@ function parse_jplace(raw_json::AbstractString)::JplaceDocument
 
         if !isempty(bad_reason)
             push!(queries, QueryPlacement(q_ord, q_names, QueryCandidate[], :undecided, bad_reason, nothing))
-        elseif abs(weight_sum - 1.0) > PLACEMENT_WEIGHT_SUM_TOL
+        elseif length(cands) == 1 && cands[1].like_weight < PLACEMENT_SINGLE_MIN_LWR
+            # One candidate and less than half the mass supports it: the rest of
+            # the mass is unexplained, so the placement is not decisive. The
+            # single-candidate sum is in tolerance by construction, so this
+            # branch reports the share it actually has, not a weight-sum error.
+            push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
+                "single_candidate_below_min_lwr ($(round(cands[1].like_weight; digits=6)))", nothing))
+        elseif length(cands) > 1 && (weight_sum > 1.0 + PLACEMENT_WEIGHT_OVER_TOL || weight_sum < 1.0 - PLACEMENT_WEIGHT_SUM_TOL)
             push!(queries, QueryPlacement(q_ord, q_names, cands, :undecided,
                 "weight_sum_out_of_tolerance ($(round(weight_sum; digits=6)))", nothing))
         else
@@ -729,11 +1213,63 @@ function unweighted_unifrac(
 end
 
 """
-    weighted_unifrac(counts_a, counts_b, taxa, tree; normalized=false) -> Float64
+    _sample_total(abund, declared, name) -> Float64
 
-Lozupone et al. (2007) raw (`normalized=false`) or normalized (`normalized=true`)
+The denominator for one sample's relative abundances. It defaults to the mass
+that actually sits on the tree, which is the ordinary case. A caller that knows
+part of the sample could not be placed on the tree -- `.jplace` like-weight mass
+the tool left on no edge, or table ASVs the tree does not cover -- passes the
+true library size instead, so that share stays off the tree rather than being
+renormalised onto the tips that were placed. Without this, down-weighting a tip
+to express placement uncertainty achieves nothing: dividing by the placed-only
+total scales it straight back up.
+
+`declared = nothing` returns the sum of `abund`. Otherwise, throw `ArgumentError`
+if the declared total is non-finite, negative, or below
+`sum(values(abund)) * (1 - 1e-9) - 1e-9`. A smaller total within that tolerance
+is raised to the on-tree sum. `name` identifies the total in error messages.
+"""
+function _sample_total(
+    abund::Dict{String,Float64},
+    declared::Union{Real,Nothing},
+    name::AbstractString,
+)::Float64
+    on_tree = sum(values(abund); init = 0.0)
+    declared === nothing && return on_tree
+    t = Float64(declared)
+    (isfinite(t) && t >= 0.0) ||
+        throw(ArgumentError("$name must be finite and non-negative, got $declared"))
+    # Below what the tree already carries would put a relative abundance above
+    # one. That is a caller error, not a discrepancy to round away -- but the
+    # equality case must survive floating-point summation, hence the slack.
+    t >= on_tree * (1 - 1e-9) - 1e-9 ||
+        throw(ArgumentError(
+            "$name ($t) is below the $on_tree reads this sample already maps onto the tree"))
+    max(t, on_tree)
+end
+
+"""
+    weighted_unifrac(counts_a, counts_b, taxa, tree; normalized=false,
+                     total_a=nothing, total_b=nothing) -> Float64
+
+Lozupone et al. (2007) raw (`normalized=false`) or normalised (`normalized=true`)
 weighted UniFrac distance: branch-length-weighted L1 distance between the two
 samples' CladeCumulus cumulative relative abundance trees.
+
+`total_a` / `total_b` override the per-sample denominator, which otherwise is
+the mass on the tree. Pass the sample's true library size when part of it could
+not be placed, so the unplaced share is absent from the tree instead of being
+renormalised onto the tips that were.
+
+Raw distances have the tree's branch-length units. Normalised distances divide
+by the abundance-weighted sum of root-to-tip lengths, returning `0.0` when that
+denominator is zero. A sample with zero total contributes zero abundance.
+
+Throw `ArgumentError` for counts that are non-finite, negative, or differ in
+length from `taxa`, or for taxa absent from the tree. Duplicate taxa have their
+counts added. Invalid totals throw `ArgumentError` as described by
+`_sample_total`; errors parsing a Newick tree also propagate. Trees with more
+than two root children are midpoint-rooted before calculating the distance.
 """
 function weighted_unifrac(
     counts_a::AbstractVector{<:Real},
@@ -741,12 +1277,14 @@ function weighted_unifrac(
     taxa::AbstractVector{<:AbstractString},
     tree::Union{PhyloNode,AbstractString};
     normalized::Bool = false,
+    total_a::Union{Real,Nothing} = nothing,
+    total_b::Union{Real,Nothing} = nothing,
 )::Float64
     root = _ensure_rooted_tree(tree)
     ab_a = _validate_counts_and_taxa(counts_a, taxa, root)
     ab_b = _validate_counts_and_taxa(counts_b, taxa, root)
-    tot_a = sum(values(ab_a); init = 0.0)
-    tot_b = sum(values(ab_b); init = 0.0)
+    tot_a = _sample_total(ab_a, total_a, "total_a")
+    tot_b = _sample_total(ab_b, total_b, "total_b")
     (tot_a <= 0.0 && tot_b <= 0.0) && return 0.0
 
     function walk(u::PhyloNode, depth_from_root::Float64, is_root::Bool)::Tuple{Float64,Float64,Float64,Float64}
@@ -783,17 +1321,35 @@ function weighted_unifrac(
     den <= 0.0 ? 0.0 : num / den
 end
 
+"""
+    branch_unifrac_contributions(counts_a, counts_b, taxa, tree;
+                                 total_a=nothing, total_b=nothing)
+
+Return the positive contributions of non-root branches to raw weighted UniFrac,
+sorted by decreasing contribution. Each record contains `clade_id`, `label`,
+`is_tip`, `branch_length`, cumulative relative abundances `freq_a` and `freq_b`,
+and `contribution` (branch length times the absolute abundance difference).
+Their contributions sum to `weighted_unifrac(...; normalized=false)` with the
+same totals; return an empty vector when no branch contributes.
+
+Counts, taxa, tree rooting, and `total_a` / `total_b` follow `weighted_unifrac`,
+including its `ArgumentError` validation and propagated Newick parsing errors.
+"""
 function branch_unifrac_contributions(
     counts_a::AbstractVector{<:Real},
     counts_b::AbstractVector{<:Real},
     taxa::AbstractVector{<:AbstractString},
-    tree::Union{PhyloNode,AbstractString},
+    tree::Union{PhyloNode,AbstractString};
+    total_a::Union{Real,Nothing} = nothing,
+    total_b::Union{Real,Nothing} = nothing,
 )::Vector{OrderedDict{String,Any}}
     root = _ensure_rooted_tree(tree)
     ab_a = _validate_counts_and_taxa(counts_a, taxa, root)
     ab_b = _validate_counts_and_taxa(counts_b, taxa, root)
-    tot_a = sum(values(ab_a); init = 0.0)
-    tot_b = sum(values(ab_b); init = 0.0)
+    # Same denominators as `weighted_unifrac`, so the per-branch table adds up
+    # to the distance it is meant to explain.
+    tot_a = _sample_total(ab_a, total_a, "total_a")
+    tot_b = _sample_total(ab_b, total_b, "total_b")
 
     contribs = OrderedDict{String,Any}[]
     function walk(u::PhyloNode, is_root::Bool)::Tuple{Float64,Float64}
@@ -840,6 +1396,22 @@ function branch_unifrac_contributions(
     contribs
 end
 
+"""
+    unifrac_matrix(sample_matrix, taxa, samples, tree;
+                   metric=:weighted, normalized=false, totals=nothing) -> Matrix{Float64}
+
+Return a symmetric pairwise UniFrac matrix in `samples` order with a zero
+diagonal. Rows of `sample_matrix` correspond to `taxa` and columns to `samples`.
+Use `metric=:weighted` or `:unweighted`; `normalized` affects only the weighted
+metric. Optional `totals` supplies library sizes in `samples` order using
+`weighted_unifrac`'s denominator rules. The unweighted metric ignores their
+values, but their length must still match `samples`.
+
+Throw `ArgumentError` for inconsistent matrix dimensions or totals length.
+Pairwise metric validation errors (including unsupported metrics, invalid
+counts, missing taxa, or invalid weighted totals) and tree parsing errors
+propagate. With fewer than two samples, no pairwise validation is performed.
+"""
 function unifrac_matrix(
     sample_matrix::AbstractMatrix{<:Real},
     taxa::AbstractVector{<:AbstractString},
@@ -847,11 +1419,17 @@ function unifrac_matrix(
     tree::Union{PhyloNode,AbstractString};
     metric::Symbol = :weighted,
     normalized::Bool = false,
+    totals::Union{AbstractVector{<:Real},Nothing} = nothing,
 )::Matrix{Float64}
     size(sample_matrix, 1) == length(taxa) ||
         throw(ArgumentError("sample_matrix rows ($(size(sample_matrix, 1))) != length(taxa) ($(length(taxa)))"))
     size(sample_matrix, 2) == length(samples) ||
         throw(ArgumentError("sample_matrix cols ($(size(sample_matrix, 2))) != length(samples) ($(length(samples)))"))
+    # Per-sample library sizes for the weighted metric, in `samples` order. See
+    # `_sample_total`: they keep mass that could not be placed off the tree
+    # rather than renormalised onto the tips that were.
+    isnothing(totals) || length(totals) == length(samples) ||
+        throw(ArgumentError("totals ($(length(totals))) != length(samples) ($(length(samples)))"))
     root = _ensure_rooted_tree(tree)
     k = length(samples)
     M = zeros(Float64, k, k)
@@ -862,7 +1440,9 @@ function unifrac_matrix(
             d = if metric === :unweighted
                 unweighted_unifrac(ci, cj, taxa, root)
             elseif metric === :weighted
-                weighted_unifrac(ci, cj, taxa, root; normalized = normalized)
+                weighted_unifrac(ci, cj, taxa, root; normalized = normalized,
+                    total_a = isnothing(totals) ? nothing : totals[i],
+                    total_b = isnothing(totals) ? nothing : totals[j])
             else
                 throw(ArgumentError("Unsupported UniFrac metric $(repr(metric))"))
             end
@@ -991,7 +1571,7 @@ function _graft_jplace_queries(
 
     for q in jd.queries
         q.status === :valid && !isempty(q.candidates) || continue
-        total_w = sum((c.weight for c in q.candidates); init = 0.0)
+        total_w = sum((c.like_weight for c in q.candidates); init = 0.0)
         total_w > 0.0 || continue
         multi = length(q.candidates) > 1
         for (qname, mult) in q.names
@@ -1000,7 +1580,7 @@ function _graft_jplace_queries(
             tx = get(asv_deepest_taxon, qname, nothing)
             tconf = get(asv_tax_conf, qname, 1.0)
             for (ci, cand) in enumerate(q.candidates)
-                share = cand.weight / total_w
+                share = cand.like_weight / total_w
                 tip_id = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
                 if multi
                     asv_reads[tip_id] = get(asv_reads, tip_id, 0.0) + base_cnt * share
@@ -1009,9 +1589,9 @@ function _graft_jplace_queries(
                 elseif !haskey(asv_reads, tip_id)
                     asv_reads[tip_id] = base_cnt
                 end
-                query_lwr[tip_id] = cand.weight
+                query_lwr[tip_id] = cand.like_weight
                 push!(get!(by_edge, cand.edge_num, _GraftedQuerySpec[]),
-                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_length), max(0.0, cand.pendant_length), cand.weight))
+                    _GraftedQuerySpec(tip_id, qname, share, max(0.0, cand.distal_len), max(0.0, cand.pendant_len), cand.like_weight))
             end
         end
     end
@@ -1021,8 +1601,8 @@ function _graft_jplace_queries(
 
     function walk(u::PhyloNode)::PhyloNode
         rebuilt_kids = PhyloNode[walk(ch) for ch in u.children]
-        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_num, rebuilt_kids)
-        specs = u.edge_num === nothing ? nothing : get(by_edge, u.edge_num, nothing)
+        cur = PhyloNode(u.id, u.name, u.branch_length, u.support, u.edge_number, rebuilt_kids)
+        specs = u.edge_number === nothing ? nothing : get(by_edge, u.edge_number, nothing)
         (specs === nothing || isempty(specs)) && return cur
 
         # Order grafts from most distal (closest to `cur`, smallest `distal`) to most proximal.
@@ -1040,7 +1620,7 @@ function _graft_jplace_queries(
             sub = PhyloNode(string("jplace_clade#", seq_auto[]), "", 0.0, 1.0, nothing, PhyloNode[sub, qtip])
         end
         rem_len = max(0.0, total_len - prev_distal)
-        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_num, sub.children)
+        PhyloNode(sub.id, sub.name, rem_len, cur.support, cur.edge_number, sub.children)
     end
 
     walk(base_root)
@@ -1601,7 +2181,11 @@ function _build_phylo_or_combined_tree(
                 Epistemic.cloud_size_by_residual(res),
                 is_root ? 0.0 : max(0.0, u.branch_length),
                 u.support === nothing ? sup : u.support,
-                0.0,
+                # Keep the same node-local convention as clade_faith_pd and
+                # _reaggregate_after_move: an active non-root tip carries its
+                # incoming edge. This makes an unchanged tip's PD comparable
+                # before and after an accepted drag-and-drop proposal.
+                cnt > 0.0 && !is_root ? max(0.0, u.branch_length) : 0.0,
                 tx,
                 tx === nothing ? nothing : 1.0,
                 tx === nothing ? nothing : (total_tips_per_taxon[tx] == 1),
@@ -1731,6 +2315,20 @@ function _is_descendant(candidate_desc::AbstractString, ancestor::CladeNode)::Bo
     false
 end
 
+"""
+    _reaggregate_after_move(root, moving, target_id, case_obj, total_reads) -> CladeNode
+
+Return a rebuilt tree with `moving` detached from its old parent and attached
+beneath `target_id`, without mutating the input nodes. The caller must validate
+the move first, as `validate_drag_drop` does. Recompute counts, residuals,
+subtree PD and taxonomic summaries for the proposed topology; epistemic statuses
+come from the supplied `case_obj`. Frequencies use `total_reads` as their
+denominator, or zero when it is non-positive. A clade left childless carries
+only its direct reads and has zero residual and PD when those reads are zero.
+
+Throw `ErrorException` if `moving` is the root. Invalid residuals propagate
+`ArgumentError` from `Epistemic.cloud_size_by_residual`.
+"""
 function _reaggregate_after_move(
     root::CladeNode,
     moving::CladeNode,
@@ -1762,7 +2360,11 @@ function _reaggregate_after_move(
     # and purity are exact everywhere on the proposed tree.
     total_tips_per_taxon = Dict{String,Int}()
     function count_leaf_taxa!(u::CladeNode)
-        if isempty(u.children)
+        # A clade emptied by the graft is childless but is not a tree tip:
+        # counting it would inflate tip counts, purity and monophyly with a
+        # taxon whose reads have all moved elsewhere. Terminal `tip`/`ASV`
+        # nodes are real tips even when they carry no reads in this table.
+        if isempty(u.children) && (u.direct_count > 0.0 || u.rank in ("tip", "ASV"))
             u.dominant_taxon !== nothing &&
                 (total_tips_per_taxon[u.dominant_taxon] = get(total_tips_per_taxon, u.dominant_taxon, 0) + 1)
         else
@@ -1775,22 +2377,41 @@ function _reaggregate_after_move(
 
     function recompute(u::CladeNode, is_root::Bool)::Tuple{CladeNode,Dict{String,Int},Int,Bool}
         if isempty(u.children)
-            freq = total_reads > 0.0 ? u.cumulative_count / total_reads : 0.0
+            # The graft can leave a clade with no children: its only child was
+            # the clade that moved out. Its `cumulative_count` still counts the
+            # subtree that has just left, so trusting it would keep the emptied
+            # clade "active" and give it a nonzero `subtree_pd` and frequency
+            # for reads it no longer holds. A node with no children carries
+            # exactly its own reads, so recompute the count from
+            # `direct_count`, as the internal-node branch below recomputes its
+            # own from the rebuilt children.
+            own_count = u.direct_count
+            # `residual_count` comes from the same departed subtree: placement
+            # and support uncertainty belong to the reads that left with it,
+            # and they are recomputed at its new location. A clade left holding
+            # no reads has no residual uncertainty left to report, so the
+            # residual is derived from the same count as everything else here.
+            own_residual = own_count > 0.0 ? u.residual_count : 0.0
+            freq = total_reads > 0.0 ? own_count / total_reads : 0.0
+            # Same tip eligibility as `count_leaf_taxa!` above: an emptied
+            # internal clade contributes no taxon tip to its parent.
+            counts_as_tip = own_count > 0.0 || u.rank in ("tip", "ASV")
             tmap = Dict{String,Int}()
             mono = u.monophyletic
-            if u.dominant_taxon !== nothing
+            if counts_as_tip && u.dominant_taxon !== nothing
                 tmap[u.dominant_taxon] = 1
                 mono = get(total_tips_per_taxon, u.dominant_taxon, 0) == 1
             end
-            active_here = u.cumulative_count > 0.0
+            active_here = own_count > 0.0
+            sub_pd = active_here && !is_root ? max(0.0, u.branch_length) : 0.0
             st = Epistemic.epistemic_status(case_obj, u.id)
             leaf_node = CladeNode(
-                u.id, u.name, u.rank, u.direct_count, u.cumulative_count, freq,
-                u.residual_count, Epistemic.cloud_size_by_residual(u.residual_count),
-                u.branch_length, u.support, 0.0, u.dominant_taxon, u.taxon_purity, mono,
+                u.id, u.name, u.rank, u.direct_count, own_count, freq,
+                own_residual, Epistemic.cloud_size_by_residual(own_residual),
+                u.branch_length, u.support, sub_pd, u.dominant_taxon, u.taxon_purity, mono,
                 st, Epistemic.epistemic_colour(st), CladeNode[],
             )
-            return (leaf_node, tmap, 1, active_here)
+            return (leaf_node, tmap, counts_as_tip ? 1 : 0, active_here)
         end
 
         rebuilt_kids = CladeNode[]
@@ -1809,12 +2430,14 @@ function _reaggregate_after_move(
             n_sub_tips += nt
             if ch_active
                 any_active = true
-                sub_pd += max(0.0, rk.branch_length) + rk.subtree_pd
+                sub_pd += rk.subtree_pd
             end
             for (k, v) in ct
                 merged_taxa[k] = get(merged_taxa, k, 0) + v
             end
         end
+
+        !is_root && any_active && (sub_pd += max(0.0, u.branch_length))
 
         dom_tx = nothing
         dom_n = 0

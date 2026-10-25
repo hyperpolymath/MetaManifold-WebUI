@@ -1,0 +1,306 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# Manual-dispatch lane for the null-calibration comparators that need compiled
+# Bioconductor packages (bench/null_calibration, issue #193 follow-up #261).
+#
+# The bench itself never runs automatically. The measurement environment it
+# cannot get locally -- native R with glmGamPoi and edgeR -- is exactly the one
+# this repository already provisions for CI (.github/workflows/ci.yml, "Set up
+# R" + renv::restore). This lane reuses those scripts rather than restating
+# them, so the R version and the package pins are the repository's, not a
+# second copy that can drift.
+#
+# Why dispatch-only:
+#   * it is slow and stochastic, so it must never gate a push or a PR;
+#   * it installs edgeR, which is NOT in renv.lock. edgeR is an outside
+#     reference for the bench (calibration.R documents this), never an app
+#     dependency, so it is installed into the system library here and its
+#     version is recorded in the provenance file every cell writes.
+#
+# Triggers. `workflow_dispatch` is the intended one, but GitHub only registers a
+# dispatchable workflow once its file is on the default branch, so it cannot
+# start a run while this lane is still a pull request. A tag push is the
+# pre-registration equivalent and is equally deliberate: nothing else in this
+# repository pushes `null-calibration-*` tags, so a run cannot start by accident
+# and every run has a tag naming the commit it measured.
+#
+# Results are returned two ways, because neither is guaranteed: for a dispatched
+# run the summary CSVs are committed back to the branch that dispatched it
+# (contents: write); for every run they are emitted as annotations, which the
+# checks API serves even where the job log or artifacts are unavailable.
+name: Null-calibration comparators (manual)
+
+on:
+  push:
+    tags:
+      - "null-calibration-*"
+  workflow_dispatch:
+    inputs:
+      n_per:
+        description: "Samples per group, comma separated"
+        required: true
+        default: "4,12"
+        type: string
+      sims:
+        description: "Simulations per cell"
+        required: true
+        default: "1000"
+        type: string
+      taxa:
+        description: "Taxa per dataset"
+        required: true
+        default: "40"
+        type: string
+      tests:
+        description: "Comma-separated tests"
+        required: true
+        default: "wald_ml,lrt,ql_f,glmgampoi_ql,edger_ql,wald_trend"
+        type: string
+      commit_results:
+        description: "Commit the summary CSVs back to the dispatched branch"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  comparators:
+    name: glmGamPoi and edgeR cells
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      R_LIBS_SITE: /usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library
+    steps:
+      # `inputs` is only populated for workflow_dispatch; a tag run falls back to
+      # the same defaults the dispatch form shows, and to annotations-only output.
+      - name: Resolve the run settings
+        env:
+          IN_N_PER: ${{ inputs.n_per }}
+          IN_SIMS: ${{ inputs.sims }}
+          IN_TAXA: ${{ inputs.taxa }}
+          IN_TESTS: ${{ inputs.tests }}
+          IN_COMMIT: ${{ inputs.commit_results }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          {
+            echo "NB_N_PER=${IN_N_PER:-4,12}"
+            echo "NB_SIMS=${IN_SIMS:-1000}"
+            echo "NB_TAXA=${IN_TAXA:-40}"
+            echo "NB_TESTS=${IN_TESTS:-wald_ml,lrt,ql_f,glmgampoi_ql,edger_ql,wald_trend}"
+          } >> "$GITHUB_ENV"
+          # A tag identifies the commit, not a branch to commit back to.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "${IN_COMMIT:-true}" != "false" ]; then
+            echo "TARGET_BRANCH=$REF_NAME" >> "$GITHUB_ENV"
+          else
+            echo "TARGET_BRANCH=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Check out the measured commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The results commit needs the token; nothing else in this job writes.
+          persist-credentials: true
+
+      # The repository's one reviewed place for tool pins (yq by tag and asset
+      # SHA-256, the standards and ijson-jcs checkers by exact commit).
+      - name: Install pinned tools
+        run: bash scripts/ci/fetch-statistics-tools.sh
+
+      # YAML-POLICY Y-1: the pin is read by a parser, never by grep.
+      - name: Read the pinned R version
+        run: |
+          R_APT_VERSION="$(yq -r '.runtimes.r.apt_version' config/defaults/tool_versions.yml)"
+          BIOC_VERSION="$(yq -r '.runtimes.r.bioconductor' config/defaults/tool_versions.yml)"
+          echo "R_APT_VERSION=$R_APT_VERSION" >> "$GITHUB_ENV"
+          echo "BIOC_VERSION=$BIOC_VERSION" >> "$GITHUB_ENV"
+
+      # Same script, same pin, same trust anchor as the CI jobs.
+      - name: Set up R
+        run: bash scripts/ci/install-r-runtime.sh full
+
+      # The same cache ci.yml fills and reads. Without it this lane recompiles
+      # dada2, vegan, glmGamPoi and their dependencies from source on every run,
+      # which is most of the wall clock and none of the information.
+      - name: Restore the renv cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: /opt/renv-cache
+          key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-
+            renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-
+
+      # MASS and glmGamPoi come from the committed lockfile; restoring it is
+      # what makes this the repository's environment rather than a fresh one.
+      - name: Restore R packages from renv.lock
+        env:
+          RENV_PATHS_CACHE: /opt/renv-cache
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /opt/renv-cache
+          sudo chmod 777 /opt/renv-cache
+          sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv", repos = "https://cloud.r-project.org", lib = .Library)'
+          sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'renv::restore(project = ".", library = .Library, prompt = FALSE)'
+          Rscript --no-init-file -e 'for (pkg in c("MASS", "glmGamPoi")) if (!requireNamespace(pkg, quietly = TRUE)) stop(pkg, " is missing after renv::restore")'
+
+      # Saved on failure too: the packages built before a failure are the ones
+      # the next attempt should reuse. Root writes the cache, hence the chmod.
+      - name: Make the renv cache readable
+        if: always()
+        run: sudo chmod -R a+rX /opt/renv-cache || true
+
+      - name: Save the renv cache
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: /opt/renv-cache
+          key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
+
+      # edgeR is an outside reference only and deliberately absent from
+      # renv.lock, so it is installed here against the pinned Bioconductor
+      # release. If it cannot be installed this job fails rather than silently
+      # running without one of the requested comparators.
+      # edgeR is an outside reference only and deliberately absent from
+      # renv.lock, so it is installed here against the pinned Bioconductor
+      # release. Explicit repository URLs are used rather than BiocManager's
+      # version negotiation: the release the pin names is the release asked for,
+      # with no upgrade path that could quietly choose another. Its dependencies
+      # (limma, locfit) are already present from renv.lock.
+      #
+      # `sudo env VAR=...` rather than `sudo Rscript`: sudo resets the
+      # environment, and an empty BIOC_VERSION silently asks for no release at
+      # all.
+      - name: Install edgeR from the pinned Bioconductor release
+        env:
+          RUN_LOG_TITLE: edgeR install
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/edger-install.log" -- \
+            sudo env BIOC_VERSION="$BIOC_VERSION" R_LIBS_SITE="$R_LIBS_SITE" \
+              Rscript --no-init-file -e '
+                options(Ncpus = 2, timeout = 600)
+                stopifnot(nzchar(Sys.getenv("BIOC_VERSION")))
+                repo_url <- function(kind) sprintf("https://bioconductor.org/packages/%s/%s",
+                                                   Sys.getenv("BIOC_VERSION"), kind)
+                repos <- c(repo_url("bioc"), repo_url("data/annotation"),
+                           CRAN = "https://cloud.r-project.org")
+                # A bare name pins nothing, so the release is named explicitly in
+                # the repository URL and the result is reported, not assumed.
+                if (!requireNamespace("edgeR", quietly = TRUE)) {
+                  install.packages("edgeR", repos = repos, lib = .Library,
+                                   dependencies = c("Depends", "Imports", "LinkingTo"))
+                }
+                if (!requireNamespace("edgeR", quietly = TRUE)) stop("edgeR failed to install")
+                cat("edgeR", as.character(packageVersion("edgeR")), "\n")'
+
+      - name: Record the environment
+        if: always()
+        run: |
+          Rscript --no-init-file -e '
+            cat(R.version.string, "\n")
+            for (p in c("MASS", "glmGamPoi", "edgeR", "limma")) {
+              v <- tryCatch(as.character(packageVersion(p)), error = function(e) "absent")
+              cat(p, v, "\n")
+            }'
+
+      # --out/--results are passed explicitly: the default paths are relative to
+      # the repository root, which is this step's working directory.
+      - name: Run the comparator cells
+        env:
+          RUN_LOG_TITLE: comparator cells
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/calibration.log" -- \
+            Rscript --no-init-file bench/null_calibration/calibration.R \
+            --shapes=original --offsets=tss \
+            --n-per="$NB_N_PER" --sims="$NB_SIMS" --taxa="$NB_TAXA" \
+            --tests="$NB_TESTS" --truth=null
+
+      - name: Summarise
+        env:
+          RUN_LOG_TITLE: summarise
+        run: |
+          set -euo pipefail
+          bash scripts/ci/run-with-log.sh "$RUNNER_TEMP/summarise.log" -- \
+            Rscript --no-init-file bench/null_calibration/summarise.R
+
+      # A test that produced no usable p-value leaves its reason only in the
+      # per-cell CSV, which is an artifact a reader may not be able to open.
+      # The distinct reasons are therefore published as annotations too.
+      - name: Report any test that could not run
+        if: always()
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for csv in bench/null_calibration/results/raw/pvalues_*.csv; do
+            cell="$(basename "$csv" .csv)"
+            python3 bench/null_calibration/report_failures.py "$cell" < "$csv"
+          done
+
+      - name: Publish the summaries as annotations
+        if: always()
+        run: |
+          set -uo pipefail
+          for csv in bench/null_calibration/results/calibration_summary.csv \
+                     bench/null_calibration/results/provenance_summary.csv; do
+            [ -f "$csv" ] || continue
+            name="$(basename "$csv")"
+            # Annotations cap at 4096 bytes each, so the file is split and each
+            # chunk is one notice. %/CR are escaped as the checks API expects.
+            prefix="$RUNNER_TEMP/annot-${name}-"
+            split -b 3000 -d "$csv" "$prefix"
+            index=0
+            for chunk in "$prefix"*; do
+              index=$((index + 1))
+              body="$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' "$chunk" | awk '{printf "%s%%0A", $0}')"
+              echo "::notice title=${name} part ${index}::${body}"
+            done
+          done
+
+      # A results commit is evidence, not a code change: it touches only the
+      # bench's results directory. Failure to push must not lose the run, so the
+      # job reports it and stays green through the annotations above.
+      - name: Commit the summary CSVs back to the dispatched branch
+        if: always()
+        continue-on-error: true
+        env:
+          BRANCH: ${{ env.TARGET_BRANCH }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ -z "${BRANCH:-}" ]; then
+            echo "no target branch for this trigger; results are in the annotations and the artifact"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bench/null_calibration/results
+          if git diff --cached --quiet; then
+            echo "no results change to commit"
+            exit 0
+          fi
+          git commit -m "bench(null_calibration): comparator cells from ${RUN_URL}
+
+          Produced by the manual-dispatch lane, not by hand. Cells, seeds, executor
+          and package versions are in results/provenance_summary.csv."
+          git push origin "HEAD:${BRANCH}"
+
+      - name: Retain the raw cells
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: null-calibration-raw
+          path: |
+            bench/null_calibration/results/raw
+            bench/null_calibration/results/*.csv
+          if-no-files-found: warn
+          retention-days: 30

@@ -111,6 +111,9 @@ const _ENUM_VALUES = Dict(
     "analysis.differential.dispersion" => Differential.DISPERSIONS,
     "analysis.differential.dm_overdispersion_method" => Differential.DM_METHODS,
     "analysis.differential.replacement_method" => Differential.REPLACEMENT_METHODS,
+    "analysis.ordination.method"     => string.(Ordination.ORDINATION_METHODS),
+    "analysis.ordination.distance"   => string.(Ordination.ORDINATION_DISTANCES),
+    "analysis.ordination.replacement_method" => Ordination.REPLACEMENT_METHODS,
     "phylogeny.reference.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.placement.align.strategy" => Validation.PHYLOGENY_ALIGN_STRATEGIES,
     "phylogeny.reference.trim.method"    => Validation.PHYLOGENY_TRIM_METHODS,
@@ -127,7 +130,8 @@ const _NULLABLE_NUMBERS = ("phylogeny.placement.place.heuristic",
                            "analysis.differential.bayesian_alpha")
 
 # Text keys whose factory default is ~: an empty value clears the setting.
-const _NULLABLE_STRINGS = ("analysis.differential.mn_reference_taxon",)
+const _NULLABLE_STRINGS = ("analysis.differential.mn_reference_taxon",
+                           "analysis.ordination.formula")
 
 # Enum keys whose submitted value is matched without regard to case and then
 # stored canonically, so " ML " and " glmGAMPOI " reach the pipeline as written.
@@ -135,13 +139,28 @@ const _CASE_FOLDED_ENUMS = Dict(
     "analysis.differential.dispersion" => Differential.DISPERSIONS,
     "analysis.differential.dm_overdispersion_method" => Differential.DM_METHODS,
     "analysis.differential.replacement_method" => Differential.REPLACEMENT_METHODS,
+    "analysis.ordination.method" => string.(Ordination.ORDINATION_METHODS),
+    "analysis.ordination.distance" => string.(Ordination.ORDINATION_DISTANCES),
+    "analysis.ordination.replacement_method" => Ordination.REPLACEMENT_METHODS,
 )
 
 """
     _config_value_error(key, value) -> Union{String,Nothing}
 
-Why a value cannot be saved under this key, or nothing. The type follows the
-factory default; a key whose default is ~ accepts a string, number or boolean.
+Return a reason a value cannot be saved under the dotted config `key`, or
+`nothing` if it passes the checks for that key. Types follow factory defaults
+unless the key has explicit enum, nullable, numeric or naming constraints;
+keys without either a constraint or a typed default pass unchecked.
+
+Differential optimiser settings reject booleans and non-finite values:
+`max_iter` must be a positive whole number representable as `Int`, tolerance
+and runtime in seconds must be positive, and the ridge penalty non-negative.
+`InexactError` and `OverflowError` from the iteration-limit conversion become
+validation messages. This checks individual values without saving them;
+method compatibility is checked separately by `_differential_settings_error`
+and `_ordination_settings_error`. Non-blank ordination formulae undergo syntax
+validation; formula `ArgumentError`s become validation messages. Ordination
+scaling must be 1 or 2 and permutation counts must lie in `99:9999`.
 """
 function _config_value_error(key::String, value)
     v = value isa JSON3.Array ? collect(value) : value
@@ -153,16 +172,57 @@ function _config_value_error(key::String, value)
     end
     if key in _NULLABLE_STRINGS
         (isnothing(v) || v isa AbstractString) || return "$key must be text or empty"
+        if key == "analysis.ordination.formula" && v isa AbstractString && !isempty(strip(v))
+            try
+                Ordination.validate_formula_syntax(v)
+            catch e
+                e isa ArgumentError && return "$key is invalid: $(e.msg)"
+                rethrow()
+            end
+        end
         return nothing
     end
-    if key == "analysis.differential.replacement_delta"
+    if key in ("analysis.differential.replacement_delta", "analysis.ordination.replacement_delta")
         return (v isa Real && !(v isa Bool) && isfinite(v) && 0 < v < 1) ? nothing :
             "$key must be a finite number in (0, 1)"
+    end
+    if key == "analysis.ordination.scaling"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) &&
+                1 <= v <= 2 && Int(v) in Ordination.ORDINATION_SCALINGS) ? nothing :
+            "$key must be 1 (distance) or 2 (correlation)"
+    end
+    if key == "analysis.ordination.permutations"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) &&
+                Ordination.MIN_ORDINATION_PERMUTATIONS <= v <= Ordination.MAX_ORDINATION_PERMUTATIONS) ? nothing :
+            "$key must be a whole number in [$(Ordination.MIN_ORDINATION_PERMUTATIONS), $(Ordination.MAX_ORDINATION_PERMUTATIONS)]"
     end
     if key == "analysis.differential.bayesian_alpha"
         isnothing(v) && return nothing
         return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
             "$key must be empty or a finite number greater than 0"
+    end
+    if key == "analysis.differential.max_iter"
+        valid = v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) && v >= 1
+        if valid
+            # An integral Float64 can still be outside Int's representable
+            # range (and typemax(Int) itself rounds when converted to Float64).
+            valid = try
+                Int(v)
+                true
+            catch e
+                (e isa InexactError || e isa OverflowError) || rethrow()
+                false
+            end
+        end
+        return valid ? nothing : "$key must be a positive whole number representable as Int"
+    end
+    if key in ("analysis.differential.tolerance", "analysis.differential.max_seconds")
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) ? nothing :
+            "$key must be a finite number greater than 0"
+    end
+    if key == "analysis.differential.mn_penalty"
+        return (v isa Real && !(v isa Bool) && isfinite(v) && v >= 0) ? nothing :
+            "$key must be a finite number greater than or equal to 0"
     end
     if key == "analysis.differential.mc_samples"
         return (v isa Real && !(v isa Bool) && isfinite(v) && isinteger(v) &&
@@ -228,6 +288,107 @@ const _DIFFERENTIAL_SETTING_DEFAULTS = Dict{String,Any}(
 
 const _DIFFERENTIAL_SETTING_KEYS = collect(keys(_DIFFERENTIAL_SETTING_DEFAULTS))
 
+const _ORDINATION_SETTING_DEFAULTS = Dict{String,Any}(
+    "analysis.ordination.method" => "none",
+    "analysis.ordination.distance" => "bray",
+)
+
+const _ORDINATION_SETTING_KEYS = collect(keys(_ORDINATION_SETTING_DEFAULTS))
+
+"""
+    _ordination_settings_error(effective) -> Union{String,Nothing}
+
+Return a method/distance validation message or `nothing`. Dotted keys may map
+to raw values or resolved `(; value, source)` entries; absent keys use factory
+defaults. Non-text values are left to individual value checks. Compatibility
+`ArgumentError`s become messages; other errors propagate.
+"""
+function _ordination_settings_error(effective::AbstractDict)
+    value(k) = begin
+        current = get(effective, k, _ORDINATION_SETTING_DEFAULTS[k])
+        current isa NamedTuple ? current.value : current
+    end
+    method = value("analysis.ordination.method")
+    distance = value("analysis.ordination.distance")
+    (method isa AbstractString && distance isa AbstractString) || return nothing
+    try
+        Ordination.validate_method_distance!(method, distance)
+        nothing
+    catch e
+        e isa ArgumentError && return e.msg
+        rethrow()
+    end
+end
+
+"""
+    _ordination_cascade_error(path, document) -> Union{String,Nothing}
+
+Check ordination method/distance compatibility in scopes affected by replacing
+the config at `path` with `document`, without writing it. Combine factory and
+global defaults with each affected study/group/run override. Return the first
+invalid scope and reason, or `nothing`. Errors while loading/checking the
+cascade become validation messages.
+"""
+function _ordination_cascade_error(path::String, document)
+    data = ServerState.data_dir()
+    root = dirname(data)
+    global_path = joinpath(root, "config", "pipeline.yml")
+    prefix = path == global_path ? String[] : splitpath(relpath(dirname(path), data))
+    cache = Dict{String,Any}(path => _flatten(document))
+    flat(file) = get!(cache, file) do
+        _flatten(_load_yml(file))
+    end
+    function check(values, label)
+        effective = Dict{String,Any}(k => get(values, k, v)
+                                     for (k, v) in _ORDINATION_SETTING_DEFAULTS)
+        bad = _ordination_settings_error(effective)
+        isnothing(bad) ? nothing : "$label: $bad"
+    end
+    try
+        base = merge(flat(joinpath(root, "config", "defaults", "pipeline.yml")), flat(global_path))
+        if isempty(prefix)
+            bad = check(base, "global config")
+            isnothing(bad) || return bad
+        end
+        targets = Set{String}()
+        isempty(prefix) || push!(targets, joinpath(prefix...))
+        if length(prefix) >= 2
+            if length(prefix) == 2 && !get(document, "pool_children", false)
+                for run in _group_run_names(prefix[1], prefix[2])
+                    push!(targets, joinpath(prefix..., run))
+                end
+            end
+        else
+            for study in _study_names()
+                isempty(prefix) || first(prefix) == study || continue
+                push!(targets, study)
+                for run in _run_names(study)
+                    push!(targets, joinpath(study, run))
+                end
+                for group in _group_names(study)
+                    push!(targets, joinpath(study, group))
+                    for run in _group_run_names(study, group)
+                        push!(targets, joinpath(study, group, run))
+                    end
+                end
+            end
+        end
+        for label in sort!(collect(targets))
+            parts = splitpath(label)
+            length(parts) >= length(prefix) && parts[1:length(prefix)] == prefix || continue
+            effective = copy(base)
+            for i in eachindex(parts)
+                merge!(effective, flat(joinpath(data, parts[1:i]..., "pipeline.yml")))
+            end
+            bad = check(effective, label)
+            isnothing(bad) || return bad
+        end
+        nothing
+    catch e
+        "Cannot validate the affected config cascade: $(sprint(showerror, e))"
+    end
+end
+
 """
     _differential_settings_error(effective) -> Union{String,Nothing}
 
@@ -245,11 +406,32 @@ function _differential_settings_error(effective::AbstractDict)
         current = get(effective, k, _DIFFERENTIAL_SETTING_DEFAULTS[k])
         current isa NamedTuple ? current.value : current
     end
-    method = value(keys_[1], "nb_glm")
-    dispersion = value(keys_[2], "ml")
-    if method isa AbstractString && dispersion isa AbstractString &&
-       lowercase(strip(method)) != "nb_glm" && lowercase(strip(dispersion)) == "glmgampoi"
-        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; use dispersion: ml with $(strip(method))"
+    method = value("analysis.differential.method")
+    dispersion = value("analysis.differential.dispersion")
+    reference = value("analysis.differential.mn_reference_taxon")
+    penalty = value("analysis.differential.mn_penalty")
+    overdispersion = value("analysis.differential.dm_overdispersion_method")
+    method isa AbstractString || return nothing
+    m = lowercase(strip(method))
+    compositional = m in Differential.COMPOSITIONAL_METHODS
+    if m in Differential.METHODS && m != "nb_glm" && dispersion isa AbstractString &&
+       lowercase(strip(dispersion)) == "glmgampoi"
+        return "analysis.differential.dispersion: glmGamPoi requires method: nb_glm; " *
+               "use dispersion: ml with $m"
+    end
+    if !isnothing(reference) && !(reference isa AbstractString && isempty(strip(reference))) &&
+       !compositional
+        return "analysis.differential.mn_reference_taxon requires method: multinomial or " *
+               "dirichlet_multinomial; method is '$method'"
+    end
+    if penalty isa Real && !(penalty isa Bool) && penalty != 0 && !compositional
+        return "analysis.differential.mn_penalty requires method: multinomial or " *
+               "dirichlet_multinomial; method is '$method'"
+    end
+    if overdispersion isa AbstractString && lowercase(strip(overdispersion)) != "mle" &&
+       m != "dirichlet_multinomial"
+        return "analysis.differential.dm_overdispersion_method requires method: " *
+               "dirichlet_multinomial; method is '$method'"
     end
     nothing
 end
@@ -332,6 +514,15 @@ end
 
 # Validate, prepare the complete document, and publish once under one lock.
 # Readers do not take this lock, so per-key renames would expose partial PATCHes.
+"""
+    _write_config_updates(path, changes; remove=()) -> Union{HTTP.Response,Nothing}
+
+Apply dotted-key updates and removals under the config lock, normalising known
+case-insensitive enums. Validate affected differential and ordination cascades
+before publishing the whole YAML document atomically. Return an HTTP 400 response
+without writing on a cascade failure; return `nothing` after a write or no-op.
+File access, update and write errors propagate.
+"""
 function _write_config_updates(path::String, changes::AbstractDict; remove=())
     lock(_config_file_lock) do
         native = Dict{String,Any}(string(k) => _to_plain(v) for (k, v) in changes)
@@ -353,6 +544,10 @@ function _write_config_updates(path::String, changes::AbstractDict; remove=())
         isempty(native) && !removed && return nothing
         if any(k -> haskey(native, k) || k in remove, _DIFFERENTIAL_SETTING_KEYS)
             bad = _differential_cascade_error(path, cfg)
+            isnothing(bad) || return json_error(400, "invalid_config_value", bad)
+        end
+        if any(k -> haskey(native, k) || k in remove, _ORDINATION_SETTING_KEYS)
+            bad = _ordination_cascade_error(path, cfg)
             isnothing(bad) || return json_error(400, "invalid_config_value", bad)
         end
         _atomic_write_yaml(path, cfg)
@@ -420,7 +615,8 @@ end
 @patch "/api/v1/config" function(req)
     root      = dirname(ServerState.data_dir())
     user_path = joinpath(root, "config", "pipeline.yml")
-    body = JSON3.read(req.body)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     for (k, v) in body
         string(k) in _ALLOWED_CONFIG_KEYS || return json_error(400, "invalid_config_key",
             "Config key '$(string(k))' is not a recognised pipeline option")
@@ -683,7 +879,8 @@ end
 @patch "/api/v1/studies/{study}/config" function(req, study::String)
     study in _study_names() || return json_error(404, "study_not_found",
                                                      "Study '$study' not found")
-    body = JSON3.read(req.body)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     for (k, v) in body
         string(k) in _ALLOWED_CONFIG_KEYS || return json_error(400, "invalid_config_key",
             "Config key '$(string(k))' is not a recognised pipeline option")
@@ -767,7 +964,8 @@ end
                                                      "Study '$study' not found")
     group in _group_names(study) || return json_error(404, "group_not_found",
                                                           "Group '$group' not found")
-    body = JSON3.read(req.body)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     for (k, v) in body
         string(k) in _ALLOWED_CONFIG_KEYS || return json_error(400, "invalid_config_key",
             "Config key '$(string(k))' is not a recognised pipeline option")
@@ -815,7 +1013,8 @@ end
     isnothing(err) || return err
     group = let g = _req_group(req); isnothing(g) ? _run_group(study, run) : g end
     run_path = isnothing(group) ? run : joinpath(group, run)
-    body = JSON3.read(req.body)
+    body = _read_json_object(req)
+    body isa HTTP.Response && return body
     for (k, v) in body
         string(k) in _ALLOWED_CONFIG_KEYS || return json_error(400, "invalid_config_key",
             "Config key '$(string(k))' is not a recognised pipeline option")

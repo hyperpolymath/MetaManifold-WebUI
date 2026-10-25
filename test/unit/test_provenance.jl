@@ -116,6 +116,15 @@ canned(out::String, err::String = "", code::Int = 0) =
         @test !occursin("packageVersion", query)
         @test occursin("Version", query)
 
+        for name in ("dada2", "Biostrings", "glmGamPoi", "R.oo")
+            @test occursin("packageDescription(\"$name\")", PV.r_version_query(name))
+        end
+        for name in ("", "1pkg", "../vegan", "vegan/other", "pkg-name", "pkg_name",
+                     "vegan\"); stop('unsafe'); #", "vegan\\", "vegan\n", "vegan\r",
+                     "vegan\t", "vegan\0")
+            @test_throws ArgumentError PV.r_version_query(name)
+        end
+
         ## And the module as a whole must not smuggle it in elsewhere.
         source = read(joinpath(@__DIR__, "..", "..", "src", "core", "provenance.jl"), String)
         @test !occursin("packageVersion(", source)

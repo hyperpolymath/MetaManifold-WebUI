@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MPL-2.0
+# Source identities, not claims of runtime conformance. See docs/format-migration.md.
+[ijson_jcs]
+repository = "https://github.com/hyperpolymath/ijson-jcs"
+revision = "3a9a4ee326a968a32b2f152b4faec243a2d00765"
+rust_toolchain = "1.85.1"
+
+[kyq]
+repository = "https://github.com/metadatastician/kyq"
+revision = "d448abd1f6534abf703db8a89e3d2247e16ee179"
+just_version = "1.56.0"
+
+[affinescript]
+repository = "https://github.com/hyperpolymath/affinescript"
+revision = "26cdb43e141a5fdce5408e00b8baca7df6862cb8"
+version = "0.1.1"

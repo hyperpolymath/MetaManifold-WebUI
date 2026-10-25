@@ -205,7 +205,7 @@ function _cc_compute(study::String, id::String)
     isnothing(doc) && error("The Cladistics source document is unreadable")
     counts, tips, samples, counts_doc = _cc_read_counts(study, id)
     tree_text = read(_clad_files(study, id)["reference.treefile"], String)
-    tree = CC.parse_newick(tree_text)
+    tree = CC.parse_phylogenetic_tree(tree_text)
     Set(keys(tree.tips)) == Set(tips) ||
         error("The inferred tree tips do not exactly match the saved ASV count columns")
     analysed = CC.analyse_phylogeny(tree, counts, tips, samples)
@@ -224,6 +224,10 @@ function _cc_compute(study::String, id::String)
     result["excluded_samples"] = counts_doc.excluded_samples
     result["weighted_unifrac_definition"] =
         "sum(branch * abs(a-b)) / sum(branch * (a+b)); clade relative abundances"
+    # IQ-TREE infers an unrooted tree for a reversible model, so PD is only
+    # meaningful relative to a stated rooting convention; record it next to the
+    # other metric definitions rather than leaving it implicit.
+    result["rooting"] = "midpoint (unrooted trees; Faith PD is root-dependent, UniFrac is not)"
     result
 end
 

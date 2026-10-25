@@ -51,8 +51,12 @@ end
     tight = numeric_policy(mode=:exact_counts, max_denominator_bits=32)
     @test_throws ResourceLimitError exact_fraction(1, big(2)^40; policy=tight)
     @test_throws ResourceLimitError exact_fraction(big(2)^40, 1; policy=tight)
-    # Each addend fits the 32-bit budget on its own; their sum 1/2^31 + 1/3 needs
-    # 33 bits, so the limit must fire on the running total, not only on inputs.
+    # Check every candidate before summing: the second value has a 33-bit
+    # denominator, although the reduced final sum would fit the 32-bit budget.
+    @test_throws ResourceLimitError exact_rational_sum(
+        [big(1)//big(2)^31, big(1)//big(2)^31 + big(1)//3]; policy=tight)
+    # Independently, two reduced addends can each fit while their running total
+    # cannot. The limit must therefore apply to the accumulated value as well.
     @test_throws ResourceLimitError exact_rational_sum(
         [big(1)//big(2)^31, big(1)//(big(2)^31 - 1)]; policy=tight)
 end
@@ -109,7 +113,7 @@ end
     @test occursin("approximate", to_display(approx))
     rounded = rounded_value(1.0/3; digits=6)
     @test rounded.kind == ROUNDED
-    @test to_display(rounded) == "0.333333 (rounded, 53-bit, 6dp)"
+    @test to_display(rounded) == "0.333333 (rounded, 53-bit, rounded to 6dp)"
     @test_throws UnsupportedRepresentationError to_storage(approximate_value(NaN))
     @test_throws UnsupportedRepresentationError encode_json_number(Inf)
 

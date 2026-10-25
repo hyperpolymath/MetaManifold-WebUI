@@ -99,7 +99,7 @@ describe('multinomial results', () => {
 
   test('the reference taxon is exported with an empty statistic set, never a substitute', () => {
     const lines = differentialCsv(mn).trimEnd().split('\r\n')
-    expect(lines[4].startsWith('Bacteroides,reference,0,0,,,,,,1,')).toBe(true)
+    expect(lines[4].startsWith('Bacteroides,reference,0,0,,,,,,,1,')).toBe(true)
     expect(effectValue(mn, mn.rows[1])).toBe(1.6)
   })
 })
@@ -121,6 +121,11 @@ describe('clr_welch results', () => {
   test('the settings line records replacement provenance and says the estimate is not a fold change', () => {
     expect(configLine(clr)).toBe('method clr_welch, replacement_method bayesian_multiplicative, replacement_delta 0.65, bayesian_alpha estimated, min_prevalence 0; estimate is a CLR difference, not a fold change')
     expect(configLine(result)).toBe('method nb_glm, offset tss, min_prevalence 0')
+    const shrunken: DifferentialResult = {
+      ...result,
+      config: { ...result.config, dispersion: 'glmGamPoi' },
+    }
+    expect(configLine(shrunken)).toBe('method nb_glm, offset tss, dispersion glmGamPoi, min_prevalence 0')
     expect(differentialCsv(clr).split('\r\n')[2]).toBe(`# ${configLine(clr)}`)
     const custom: DifferentialResult = {
       ...clr,
@@ -137,6 +142,16 @@ describe('clr_welch results', () => {
     }
     expect(configLine(alpha)).toContain('bayesian_alpha 2.5')
   })
+})
+
+test('two-part count models keep their own method and offset in CSV metadata', () => {
+  for (const method of ['zinb', 'hurdle_nb'] as const) {
+    const twoPart: DifferentialResult = {
+      ...result,
+      config: { method, offset: 'rle', min_prevalence: 0.2 },
+    }
+    expect(configLine(twoPart)).toBe(`method ${method}, offset rle, min_prevalence 0.2`)
+  }
 })
 
 describe('advanced compositional methods (ancom_bc, aldex2, songbird)', () => {
@@ -163,7 +178,7 @@ describe('advanced compositional methods (ancom_bc, aldex2, songbird)', () => {
     expect(effectValue(ax, ax.rows[0])).toBe(1.85)
     expect(configLine(ax)).toBe('method aldex2, mc_samples 128, seed 123, min_prevalence 0.05; estimate is an ALDEx2 standardized CLR effect size, not a fold change')
     const csvRows = differentialCsv(ax).trimEnd().split('\r\n')
-    expect(csvRows[4]).toBe('Bacteroides,ok,,1.85,,5.545,2.9e-8,5.8e-8,,1,')
+    expect(csvRows[4]).toBe('Bacteroides,ok,,1.85,,5.545,2.9e-8,5.8e-8,,,1,')
   })
 
   test('songbird reports CLR-centred multinomial differential metadata', () => {
@@ -176,5 +191,36 @@ describe('advanced compositional methods (ancom_bc, aldex2, songbird)', () => {
     }
     expect(effectValue(sb, sb.rows[0])).toBe(-0.92)
     expect(configLine(sb)).toBe('method songbird, min_prevalence 0.2; estimate is a CLR-centred multinomial differential, not an absolute fold change')
+  })
+})
+
+describe('calibration caveat', () => {
+  const caveated: DifferentialResult = {
+    ...result,
+    config: { method: 'nb_glm', offset: 'tss', dispersion: 'ml', min_prevalence: 0 },
+    diagnostics: {
+      ...result.diagnostics,
+      calibration_caveat: {
+        severity: 'strong', dispersion: 'ml', min_group_n: 2,
+        message: 'Wald p-values treat the per-taxon theta as known.',
+      },
+    },
+  }
+
+  test('the settings line records the dispersion the result carries', () => {
+    expect(configLine(caveated)).toBe('method nb_glm, offset tss, dispersion ml, min_prevalence 0')
+  })
+
+  test('the caveat travels into the CSV header, after the settings line', () => {
+    const lines = differentialCsv(caveated).trimEnd().split('\r\n')
+    expect(lines[2]).toBe(`# ${configLine(caveated)}`)
+    expect(lines[3]).toBe('# Calibration caveat (strong): Wald p-values treat the per-taxon theta as known.')
+    expect(lines[4]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,zero_process_log_odds,prevalence,note')
+    expect(lines).toHaveLength(7)
+  })
+
+  test('a result without a caveat keeps the three-line header', () => {
+    const lines = differentialCsv(result).trimEnd().split('\r\n')
+    expect(lines[3]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,zero_process_log_odds,prevalence,note')
   })
 })

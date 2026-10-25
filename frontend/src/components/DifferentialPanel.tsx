@@ -21,11 +21,10 @@ function csvBlob(result: DifferentialResult): Blob {
 }
 
 /**
- * Differential abundance between exactly two runs or sub-groups: a model per
- * taxon at the chosen rank (negative-binomial GLM, CLR Welch test after zero
- * replacement, or one multinomial / Dirichlet-multinomial model over the whole
- * composition, as configured), with BH-adjusted p-values, shown as a volcano
- * plot and a table
+ * Differential abundance between exactly two runs or sub-groups: the configured
+ * per-taxon count model, zero-replaced CLR test, advanced compositional model,
+ * or joint multinomial / Dirichlet-multinomial model at the chosen rank, with
+ * BH-adjusted p-values, shown as a volcano plot and a table
  * that can be downloaded or added to the report. The first selected condition
  * is the reference. The Advanced expander reports the settings the last fit
  * used, lets the reference taxon of the multinomial models be changed (only
@@ -169,6 +168,24 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
             parameter and suits few samples per group, but each taxon is fitted on its own.
           </li>
           <li>
+            <strong>zinb / hurdle_nb</strong>: two-part negative-binomial models with a
+            logistic zero or occurrence process. Their p-value jointly tests both group
+            effects; the reported fold change belongs to the count process.
+          </li>
+          <li>
+            <strong>ancom_bc</strong>: bias-corrected log-linear model for sampling-fraction
+            bias, reporting a bias-corrected log2 fold change.
+          </li>
+          <li>
+            <strong>aldex2</strong>: Monte-Carlo CLR instances with a standardized CLR
+            effect size, integrating over Dirichlet posterior draws rather than one SE.
+          </li>
+          <li>
+            <strong>songbird</strong>: compositional multinomial regression reporting
+            CLR-centred differentials, which are relative log-ratios rather than absolute
+            fold changes.
+          </li>
+          <li>
             <strong>multinomial</strong>: one multinomial logistic model over the whole
             composition, so each coefficient is a log ratio against a reference taxon and no
             size factor or pseudocount is needed (Songbird; Morton et al. 2019). Conditioning
@@ -203,6 +220,16 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 `replaced values hold ${(100 * z.median_imputed_fraction).toPrecision(2)}% of the median sample ` +
                 `and at most ${(100 * z.max_imputed_fraction).toPrecision(2)}% of any, and are not measurements.`
             })()}
+            {result.diagnostics.model && (() => {
+              const m = result.diagnostics.model
+              return ` Reference taxon: ${m.reference_taxon}; ${m.n_parameters} coefficients, ` +
+                `penalty ${m.penalty}, ${m.iterations} Newton steps in ${m.runtime_seconds.toPrecision(2)} s.`
+            })()}
+            {result.diagnostics.overdispersion && (() => {
+              const o = result.diagnostics.overdispersion
+              return ` Concentration ${o.concentration.toPrecision(3)} by ${o.method}, ` +
+                `theta = ${o.theta.toPrecision(3)}${o.at_bound ? ' (at a bound: see the row notes)' : ''}.`
+            })()}
             {result.diagnostics.ancom_bc && (() => {
               const b = result.diagnostics.ancom_bc
               const warn = b.warnings.length > 0 ? ` Warning: ${b.warnings.join('; ')}.` : ''
@@ -220,6 +247,15 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
               return ` Reference frame taxon: ${s.reference_taxon ?? 'none'} over ${s.n_identifiable_taxa} identifiable taxa${sep}.`
             })()}
           </p>
+          {result.diagnostics.calibration_caveat && (
+            <p role="note" style={{
+              fontSize: '.82rem', margin: '0 0 8px',
+              color: result.diagnostics.calibration_caveat.severity === 'info'
+                ? 'var(--color-muted-fg)' : 'inherit',
+            }}>
+              <strong>Calibration caveat:</strong> {result.diagnostics.calibration_caveat.message}
+            </p>
+          )}
 
           {result.diagnostics.zero_replacement && result.diagnostics.zero_replacement.zeros_replaced > 0 && (() => {
             const z = result.diagnostics.zero_replacement!
@@ -313,7 +349,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
                   <th style={{ ...head, textAlign: 'left' }}>{result.rank}</th>
                   <th style={head}>{result.effect.label}</th>
-                  {['nb_glm', 'zinb', 'hurdle_nb'].includes(result.config.method) && <th style={head}>Estimate (ln)</th>}
+                  {result.effect.key === 'log2_fold_change' && <th style={head}>Estimate (ln)</th>}
                   {['zinb', 'hurdle_nb'].includes(result.config.method) && <th style={head}>Zero-process log-odds</th>}
                   <th style={head}>SE</th>
                   <th style={head}>p</th>
@@ -326,7 +362,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                   <tr key={r.taxon} style={{ borderBottom: '1px solid var(--color-border)' }}>
                     <td style={{ ...cell, textAlign: 'left' }}>{r.taxon}</td>
                     <td style={cell}>{formatStat(effectValue(result, r))}</td>
-                    {['nb_glm', 'zinb', 'hurdle_nb'].includes(result.config.method) && <td style={cell}>{formatStat(r.estimate)}</td>}
+                    {result.effect.key === 'log2_fold_change' && <td style={cell}>{formatStat(r.estimate)}</td>}
                     {['zinb', 'hurdle_nb'].includes(result.config.method) && <td style={cell}>{formatStat(r.zero_process_log_odds ?? null)}</td>}
                     <td style={cell}>{formatStat(r.standard_error)}</td>
                     <td style={cell}>{formatStat(r.pvalue)}</td>

@@ -403,27 +403,31 @@ export interface DifferentialRow {
   status: DifferentialStatus
   note: string
   /**
-   * nb_glm / ancom_bc: natural-log fold change, contrast over reference.
+   * nb_glm, two-part NB, ancom_bc and joint multinomial models: natural-log
+   * fold change, contrast over reference (or over the reference taxon).
    * clr_welch: mean CLR difference. aldex2: standardized CLR effect size.
    * songbird: CLR-centred multinomial differential.
    */
   estimate: number | null
-  /** nb_glm and ancom_bc; null for CLR/differential methods. */
+  /** Count models, ancom_bc and joint multinomial models; null for CLR effects. */
   log2_fold_change: number | null
   standard_error: number | null
-  /** Wald z / W (nb_glm, ancom_bc, songbird) or Welch's t (clr_welch, aldex2). */
+  /** Wald z / W, Welch's t, or the two-part model's likelihood-ratio statistic. */
   statistic: number | null
   pvalue: number | null
   /** Benjamini-Hochberg adjusted; null outside the tested family. */
   padj: number | null
-  /** nb_glm only. */
+  /** nb_glm and two-part NB count-process dispersion. */
   dispersion_theta: number | null
   /** Group coefficient in the logistic zero/occurrence component (two-part NB only). */
   zero_process_log_odds?: number | null
   prevalence: number
 }
 
-export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+export type DifferentialMethod =
+  | 'nb_glm' | 'clr_welch' | 'zinb' | 'hurdle_nb'
+  | 'ancom_bc' | 'aldex2' | 'songbird'
+  | 'multinomial' | 'dirichlet_multinomial'
 
 /** Which row field holds the effect size, and what to call it. */
 export interface DifferentialEffect {
@@ -439,7 +443,7 @@ export interface DifferentialResult {
   groups: { reference: string; contrast: string }
   n_samples: Record<string, number>
   effect: DifferentialEffect
-  /** Empty for clr_welch; count models report their size factors. */
+  /** Count models report size factors; compositional models return an empty list. */
   size_factors: { sample: string; group: string; factor: number }[]
   config: {
     method: DifferentialMethod
@@ -457,9 +461,31 @@ export interface DifferentialResult {
     mc_samples?: number
     /** aldex2 only. */
     seed?: number
+    /** multinomial and dirichlet_multinomial: the taxon every ratio is against. */
+    mn_reference_taxon?: string | null
+    /** multinomial and dirichlet_multinomial: L2 penalty on the log-odds. */
+    mn_penalty?: number
+    /** dirichlet_multinomial only: how the concentration was estimated. */
+    dm_overdispersion_method?: 'mle' | 'mom'
+    /** multinomial and dirichlet_multinomial: the optimiser settings used. */
+    tolerance?: number
+    max_iter?: number
+    max_seconds?: number
   }
   diagnostics: {
     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
+    /**
+     * nb_glm only: interpretation caveat for the fixed-theta Wald test.
+     * Present for every `ml` result, scaled by the smaller group, and for
+     * `glmGamPoi` results whose smaller group has at most 12 samples. It
+     * changes no statistic.
+     */
+    calibration_caveat?: {
+      severity: 'info' | 'caution' | 'strong'
+      dispersion: 'ml' | 'glmGamPoi'
+      min_group_n: number
+      message: string
+    }
     /** Safety note for two-part models. */
     model_warning?: string
     /** clr_welch only. */
@@ -473,6 +499,15 @@ export interface DifferentialResult {
         family: 'Dirichlet'; prior_mean: string; shape: string; adjustments: string
         concentration: { sample: string; value: number }[]
       }
+    }
+    /** multinomial and dirichlet_multinomial only. */
+    model?: {
+      reference_taxon: string; penalty: number; n_parameters: number; iterations: number
+      converged: boolean; log_likelihood: number; runtime_seconds: number; n_taxa_fitted: number
+    }
+    /** dirichlet_multinomial only: c and theta = 1 / (1 + c) in (0, 1). */
+    overdispersion?: {
+      method: 'mle' | 'mom'; concentration: number; theta: number; at_bound: boolean
     }
     /** ancom_bc only. */
     ancom_bc?: {
@@ -711,6 +746,8 @@ export interface CladisticsResult {
   unweighted_unifrac: number[][]
   weighted_unifrac: number[][]
   total_branch_length: number
+  /** How the inferred (unrooted) tree was rooted before computing PD. */
+  rooting?: string
   normalisation: { method: CountNormalisation; depth: number; seed: number }
   excluded_samples: string[]
   weighted_unifrac_definition: string
@@ -933,6 +970,18 @@ export interface CladeCumulusRequest {
 export interface CladeCumulusDiversity {
   samples: string[]
   mapped_tips: number
+  /**
+   * Reads per sample that no tip on the tree carries: a query whose kept
+   * `.jplace` like-weight ratios do not reach 1 contributes only that share,
+   * and an ASV the tree does not cover contributes nothing.
+   *
+   * These reads are excluded from the tree-tip abundances, but they are still
+   * counted in each sample's library size, which is the denominator the
+   * weighted UniFrac metrics divide by. That is what keeps the shortfall off
+   * the tree instead of renormalising a partially placed sample back up to
+   * abundance 1. Absent for responses produced before this field existed.
+   */
+  unplaced_reads?: Record<string, number>
   faith_pd: Record<string, number>
   unweighted_unifrac: number[][]
   weighted_unifrac: number[][]
@@ -1020,3 +1069,186 @@ export interface CladeMoveValidationResponse {
   proposed_root: CladeNodeData | null
   proposed_plotly?: { data: unknown[]; layout: Record<string, unknown> }
 }
+
+export type OrdinationMethod = 'none' | 'rda' | 'cca' | 'cap' | 'dbrda'
+export type ActiveOrdinationMethod = Exclude<OrdinationMethod, 'none'>
+export type OrdinationDistance =
+  | 'bray'
+  | 'jaccard'
+  | 'euclidean'
+  | 'aitchison'
+  | 'chisq'
+  | 'unweighted_unifrac'
+  | 'weighted_unifrac'
+export type OrdinationScaling = 1 | 2
+
+export interface OrdinationEigenvalue {
+  axis: string
+  eigenvalue: number
+  proportion_total: number
+  proportion_constrained?: number
+}
+
+export interface OrdinationSiteScore {
+  sample: string
+  axis1: number
+  axis2: number
+}
+
+export interface OrdinationBiplotArrow {
+  label: string
+  axis1: number
+  axis2: number
+  length: number
+}
+
+export interface OrdinationCentroid {
+  label: string
+  axis1: number
+  axis2: number
+}
+
+export interface OrdinationFeatureScore {
+  feature: string
+  axis1: number
+  axis2: number
+  length: number
+}
+
+export interface OrdinationTermTest {
+  term: string
+  df: number
+  variance: number | null
+  f_statistic: number | null
+  p_value: number | null
+  untestable_reason: string | null
+}
+
+export interface OrdinationOmnibusTest {
+  df_model: number
+  df_residual: number
+  variance_model: number | null
+  variance_residual: number | null
+  f_statistic: number | null
+  p_value: number | null
+  untestable_reason: string | null
+  permutations: number
+  min_p_value: number
+  text: string
+}
+
+export interface VariancePartitionFraction {
+  label: string
+  df: number
+  r2: number | null
+  adj_r2: number | null
+  testable?: boolean
+}
+
+export interface VariancePartitionResult {
+  status: 'computed' | 'skipped'
+  reason?: string
+  covariates: string[]
+  conditioned_on: string[]
+  individual_fractions: VariancePartitionFraction[]
+  gross_fractions: VariancePartitionFraction[]
+  has_negative_fraction: boolean
+  note: string | null
+}
+
+export interface OrdinationProvenance {
+  method: ActiveOrdinationMethod
+  distance: OrdinationDistance
+  scaling: OrdinationScaling
+  scaling_meaning: 'distance' | 'correlation'
+  formula: string
+  constrained_terms: string[]
+  condition_terms: string[]
+  permutations_requested: number
+  permutations_performed: number
+  seed: number
+  rng_kind: string
+  blocked: boolean
+  beta_normalisation: string
+  n_samples: number
+  n_features: number
+  dropped_zero_features: number
+  zero_replacement: {
+    method: string
+    delta: number
+    zeros_replaced: number
+  } | null
+  phylogeny_source?: string
+  multiple_testing_policy: string
+  software: {
+    r_package: string
+    vegan_version: string
+  }
+}
+
+export interface OrdinationRequest extends ComparisonRequest {
+  method: ActiveOrdinationMethod
+  distance?: OrdinationDistance
+  scaling?: OrdinationScaling
+  permutations?: number
+  formula?: string | null
+  variance_partitioning?: boolean
+  replacement_method?: 'bayesian_multiplicative' | 'multiplicative_replacement'
+  replacement_delta?: number
+  seed?: number
+  test_axes?: boolean
+  show_centroids?: boolean
+  show_features?: boolean
+  cladistics_id?: string | null
+  tree_newick?: string | null
+  persist?: boolean
+  covariates?: Record<string, (string | number)[] | Record<string, string | number>>
+}
+
+export interface OrdinationResult {
+  method: ActiveOrdinationMethod
+  distance: OrdinationDistance
+  scaling: OrdinationScaling
+  formula: string
+  constrained_terms: string[]
+  condition_terms: string[]
+  available_covariates: string[]
+  n_samples: number
+  n_features: number
+  total_inertia: number
+  conditioned_inertia: number
+  constrained_inertia: number
+  unconstrained_inertia: number
+  imaginary_inertia: number
+  conditioned_proportion: number
+  constrained_proportion: number
+  unconstrained_proportion: number
+  r2: number | null
+  adj_r2: number | null
+  axis_names: string[]
+  axis_labels: string[]
+  constrained_eigenvalues: OrdinationEigenvalue[]
+  unconstrained_eigenvalues: OrdinationEigenvalue[]
+  sites: OrdinationSiteScore[]
+  biplot_arrows: OrdinationBiplotArrow[]
+  centroids: OrdinationCentroid[]
+  top_feature_scores: OrdinationFeatureScore[]
+  omnibus_test: OrdinationOmnibusTest
+  term_tests: OrdinationTermTest[]
+  marginal_tests: OrdinationTermTest[]
+  axis_tests: OrdinationTermTest[]
+  variance_partitioning: VariancePartitionResult | null
+  cautions: string[]
+  runtime_estimate: {
+    estimated_seconds: number
+    tier: 'fast' | 'moderate' | 'heavy'
+    warn_five_minutes: boolean
+  }
+  provenance: OrdinationProvenance
+  biplot: { data: Record<string, unknown>[]; layout: Record<string, unknown> }
+  artifact?: {
+    analysis_id: string
+    created: boolean
+  }
+}
+

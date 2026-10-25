@@ -1,0 +1,33 @@
+; SPDX-License-Identifier: CC-BY-SA-4.0
+; Media-Type: application/a2ml
+(manifest
+  (identity
+    (name "MetaManifold-WebUI")
+    (repo "https://github.com/hyperpolymath/MetaManifold-WebUI")
+    (fork-of "https://github.com/JoshuaJewell/MetaManifold-WebUI"))
+  (authority
+    (contribution "CONTRIBUTING.md")
+    (licensing "LICENSE")
+    (security "SECURITY.md")
+    (deed "MetaManifold-WebUI_chora.deed"))
+  (architecture
+    (server "Julia with Oxygen.jl; src/server/")
+    (analysis "Julia and R through RCall; src/analysis/")
+    (storage "DuckDB; src/core/duckdb_store.jl")
+    (frontend "React 18 and TypeScript, managed with bun; frontend/")
+    (proofs "Agda; proofs/"))
+  (invariants
+    (rule "Preserve existing licence headers, LICENSE and CITATION.cff.")
+    (rule "Keep settled toolchains: estate language-ban heuristics do not authorise a rewrite.")
+    (rule "Keep independent Python reference oracles; never replace scientific results with placeholders.")
+    (rule "Use config/defaults/tool_versions.yml, Manifest.toml and renv.lock for pinned tools.")
+    (rule "Do not put secrets or private analysis data in Git or frontend code.")
+    (rule "Run tests; report inaccessible services and missing evidence honestly."))
+  (evidence
+    (application-ci ".github/workflows/ci.yml")
+    (governance ".github/workflows/hypatia-scan.yml")
+    (history-scan ".github/workflows/secret-scanner.yml")
+    (security-practices ".github/workflows/scorecard.yml")
+    (fleet-enrolment ".gitbot-fleet/enrolment.json")
+    (contractiles ".machine_readable/contractiles/")
+    (scope "DEED syntax and K9 semantic conformance are validated separately: Yard-tier K9 contracts (must, trust, intend) are checked across L0-L2; L3 signatures remain outside CI.")))

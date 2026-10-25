@@ -10,7 +10,7 @@
 # Canonical run DuckDB tables are read-only here; staged reassignment proposals
 # write only study-local sidecars under `projects/{study}/trees/.clade_cumulus/`.
 
-using DataFrames, OrderedCollections, SHA, Dates, JSON3
+using DataFrames, OrderedCollections, SHA, Dates, JSON3, DuckDB, DBInterface
 
 const _CC_SIDECAR_MAX_BYTES = 5 * 1024 * 1024
 
@@ -64,16 +64,18 @@ function _probe_optional_phylo_tool(tool_key::String, fallbacks::Vector{String})
     end
 end
 
-function _load_run_table_df(study::String, run::String, table::String; group::Union{String,Nothing}=nothing)
+function _load_run_table_df(study::AbstractString, run::AbstractString, table::AbstractString; group::Union{AbstractString,Nothing}=nothing)
+    # JSON3 hands request fields back as SubStrings; the DuckDB helpers are
+    # String-typed, so normalise once at this boundary.
+    study = String(study); run = String(run); table = String(table)
+    group = isnothing(group) ? nothing : String(group)
     dir = _require_duckdb(study, run; group)
     isnothing(dir) && return (nothing, nothing, json_error(404, "no_results",
         "No results for run '$run' - run the pipeline first"))
     db_path = joinpath(dir, "results.duckdb")
     isfile(db_path) || return (nothing, nothing, json_error(404, "no_results",
         "No results database for run '$run'"))
-    db = DuckDB.DB(db_path)
-    con = DBInterface.connect(db)
-    try
+    with_results_db(dir) do con
         cols = _duckdb_columns(con, table)
         isempty(cols) && return (nothing, nothing, json_error(404, "table_not_found",
             "Table '$table' not found in run '$run'"))
@@ -81,9 +83,6 @@ function _load_run_table_df(study::String, run::String, table::String; group::Un
         order = _stable_order_clause(cols)
         df = DataFrame(DBInterface.execute(con, "SELECT * FROM \"$table\" $order"))
         return (df, (db_path = db_path, sample_cols = scols, columns = cols), nothing)
-    finally
-        DBInterface.close!(con)
-        close(db)
     end
 end
 
@@ -92,9 +91,16 @@ function _resolve_tree_inputs_from_request(
     body,
     source_digests::OrderedDict{String,String},
 )
+    # JSON3 hands request fields back as SubStrings and `strip` keeps them that
+    # way, but `_valid_tree_file` and `_tree_format` are String-typed -- an
+    # unnormalised `treeFile` reached them as a SubString and raised a
+    # MethodError, which the handler had no catch for, so every `study_tree`
+    # request answered 500. Normalise once at this boundary, as
+    # `_load_run_table_df` does above and as `cladistics.jl` does at its own
+    # call into `_valid_tree_file`. (`lowercase` already returns a String.)
     tree_source = lowercase(strip(string(get(body, :treeSource, "auto"))))
-    tree_file = strip(string(get(body, :treeFile, "")))
-    inline_newick = strip(string(get(body, :newick, "")))
+    tree_file = String(strip(string(get(body, :treeFile, ""))))
+    inline_newick = String(strip(string(get(body, :newick, ""))))
 
     if tree_source == "study_tree" || (!isempty(tree_file) && tree_source == "auto")
         _valid_tree_file(tree_file) || return (nothing, nothing, :auto,
@@ -138,11 +144,14 @@ end
     dir = _require_duckdb(study, run; group)
     db_path = isnothing(dir) ? nothing : joinpath(dir, "results.duckdb")
     tables_info = OrderedDict{String,Any}[]
-    if !isnothing(db_path) && isfile(db_path)
-        db = DuckDB.DB(db_path)
-        con = DBInterface.connect(db)
-        try
-            names_df = DataFrame(DBInterface.execute(con, "SHOW TABLES"))
+    if !isnothing(dir) && !isnothing(db_path) && isfile(db_path)
+        tables_info = with_results_db(dir) do con
+            available = OrderedDict{String,Any}[]
+            # Real tables only: SHOW TABLES also lists views, and a view backed
+            # by a session-registered DataFrame cannot be bound (let alone
+            # counted) from this fresh connection.
+            names_df = DataFrame(DBInterface.execute(con,
+                "SELECT table_name AS name FROM duckdb_tables() WHERE NOT internal"))
             tlist = sort(String[string(r.name) for r in eachrow(names_df)])
             for t in tlist
                 cols = _duckdb_columns(con, t)
@@ -151,7 +160,7 @@ end
                 nrows = Int(only(DataFrame(DBInterface.execute(con, "SELECT COUNT(*) AS n FROM \"$t\""))).n)
                 has_seq = any(c -> c in ("Sequence", "sequence", "seq", "DNA"), cols)
                 ranks = [r for r in MetaManifold.CladeCumulus.DEFAULT_TAXONOMIC_RANKS if r in cols]
-                push!(tables_info, OrderedDict{String,Any}(
+                push!(available, OrderedDict{String,Any}(
                     "table"        => t,
                     "row_count"    => nrows,
                     "sample_count" => length(scols),
@@ -159,9 +168,7 @@ end
                     "ranks"        => ranks,
                 ))
             end
-        finally
-            DBInterface.close!(con)
-            close(db)
+            available
         end
     end
 
@@ -190,17 +197,39 @@ end
 end
 
 @post "/api/v1/studies/{study}/runs/{run}/clade-cumulus" function(req::HTTP.Request, study::String, run::String)
+    try
+        return _clade_cumulus_post_impl(req, study, run)
+    catch e
+        @error "clade-cumulus request failed" exception = (e, catch_backtrace())
+        return json_error(500, "clade_cumulus_failed", sprint(showerror, e))
+    end
+end
+
+"""
+    _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
+
+Build a clade explorer JSON response from a run's results table and the requested
+tree source, including a provenance receipt, without modifying canonical tables.
+Diversity is `nothing` unless a phylogeny, sample columns and matching tips are
+available. Placed `.jplace` abundances use raw like-weight ratios; unplaced reads
+include unmapped ASVs and remain in the weighted UniFrac library-size denominators.
+
+Return HTTP error responses for request validation, missing inputs and failures
+building the clade tree (the latter become HTTP 400). Other exceptions, including
+diversity calculation failures, propagate to the route wrapper's HTTP 500 handler.
+"""
+function _clade_cumulus_post_impl(req::HTTP.Request, study::String, run::String)
     group = _req_group(req)
     err = _validate_run_request(study, run)
     !isnothing(err) && return err
 
     body = try
-        isempty(req.body) ? Dict{Symbol,Any}() : JSON3.read(String(req.body))
+        isempty(req.body) ? Dict{Symbol,Any}() : _request_json(req)
     catch
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))
@@ -262,19 +291,29 @@ end
             tid = String(strip(string(r[id_col])))
             !haskey(row_by_id, tid) && (row_by_id[tid] = ri)
         end
-        # Map split `.jplace` tip IDs back to `(base_query_name, share)` weights.
+        # Map split `.jplace` tip IDs back to the share of their query's reads
+        # that belongs on that edge. The share is the candidate's raw
+        # like-weight ratio, never a ratio renormalised over the retained
+        # candidates: a multi-candidate placement already partitions the mass
+        # (its ratios sum to 1 within `PLACEMENT_WEIGHT_SUM_TOL`), while a
+        # single-candidate placement accepted at `PLACEMENT_SINGLE_MIN_LWR`
+        # carries only the mass behind that one site. Dividing by the retained
+        # total would turn a lone 0.6 placement into a weight of 1.0 and push
+        # the 0.4 the tool left unplaced onto the reported edge, inflating that
+        # tip in weighted UniFrac and in Faith's PD. The shortfall is reported
+        # as `unplaced_reads` below instead.
         tip_weights = Dict{String,Float64}()
         if jplace_str !== nothing && !isempty(strip(jplace_str))
             jd_div = MetaManifold.CladeCumulus.parse_jplace(jplace_str)
             for q in jd_div.queries
                 q.status === :valid && !isempty(q.candidates) || continue
-                tw = sum((c.weight for c in q.candidates); init = 0.0)
-                tw > 0.0 || continue
                 multi = length(q.candidates) > 1
                 for (qname, _) in q.names
                     for (ci, cand) in enumerate(q.candidates)
                         tid = multi ? string(qname, "@edge", cand.edge_num, "#", ci) : qname
-                        tip_weights[tid] = cand.weight / tw
+                        # `parse_jplace` has already rejected any ratio outside
+                        # [0, 1], so this needs no further clamping.
+                        tip_weights[tid] = cand.like_weight
                     end
                 end
             end
@@ -297,6 +336,36 @@ end
                     mat[mi, ci] = ismissing(v) ? 0.0 : max(0.0, Float64(v)) * w
                 end
             end
+
+            # Each sample's library size over the whole table, and the part of
+            # it that no tip carries. Reads go missing from `mat` two ways: a
+            # query whose kept like-weight ratios do not reach 1 contributes
+            # only that share, and an ASV the tree does not cover contributes
+            # nothing at all. Both are the same thing to a diversity metric --
+            # mass that is not on the tree.
+            #
+            # `sample_totals` is then handed to the weighted metrics as their
+            # denominator. Without it they divide by the placed-only total, so
+            # a sample whose single mapped query was placed at LWR 0.6 comes
+            # back out at relative abundance 1.0 and the raw like-weight
+            # weighting above is undone at the last step. Faith's PD and
+            # unweighted UniFrac read presence only and are unaffected.
+            sample_totals = Float64[]
+            unplaced_reads = OrderedDict{String,Float64}()
+            for (ci, sc) in enumerate(scols)
+                tot = 0.0
+                for v in df[!, sc]
+                    ismissing(v) && continue
+                    tot += max(0.0, Float64(v))
+                end
+                placed = sum(@view mat[:, ci])
+                # A multi-candidate partition only has to sum to one within
+                # `PLACEMENT_WEIGHT_SUM_TOL`, so the placed mass can sit a hair
+                # above the table total. The denominator must never fall below
+                # what the tree actually carries.
+                push!(sample_totals, max(tot, placed))
+                unplaced_reads[sc] = max(0.0, tot - placed)
+            end
             pd_by_sample = OrderedDict{String,Float64}(
                 sc => MetaManifold.CladeCumulus.faith_pd(@view(mat[:, ci]), taxa_vec, cc_res.phylo_root)
                 for (ci, sc) in enumerate(scols)
@@ -305,14 +374,17 @@ end
                 mat, taxa_vec, scols, cc_res.phylo_root; metric = :unweighted
             )
             w_raw = MetaManifold.CladeCumulus.unifrac_matrix(
-                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = false
+                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = false,
+                totals = sample_totals
             )
             w_norm = MetaManifold.CladeCumulus.unifrac_matrix(
-                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = true
+                mat, taxa_vec, scols, cc_res.phylo_root; metric = :weighted, normalized = true,
+                totals = sample_totals
             )
             top_branches = if length(scols) >= 2
                 first_n = MetaManifold.CladeCumulus.branch_unifrac_contributions(
-                    @view(mat[:, 1]), @view(mat[:, 2]), taxa_vec, cc_res.phylo_root
+                    @view(mat[:, 1]), @view(mat[:, 2]), taxa_vec, cc_res.phylo_root;
+                    total_a = sample_totals[1], total_b = sample_totals[2]
                 )
                 first_n[1:min(length(first_n), 15)]
             else
@@ -321,6 +393,7 @@ end
             diversity_payload = OrderedDict{String,Any}(
                 "samples"                     => scols,
                 "mapped_tips"                 => length(taxa_vec),
+                "unplaced_reads"              => unplaced_reads,
                 "faith_pd"                    => pd_by_sample,
                 "unweighted_unifrac"          => [uw[i, :] for i in 1:size(uw, 1)],
                 "weighted_unifrac"            => [w_raw[i, :] for i in 1:size(w_raw, 1)],
@@ -381,7 +454,7 @@ end
     !isnothing(err) && return err
 
     body = try
-        isempty(req.body) ? Dict{Symbol,Any}() : JSON3.read(String(req.body))
+        isempty(req.body) ? Dict{Symbol,Any}() : _request_json(req)
     catch
         return json_error(400, "invalid_json", "Request body must be valid JSON")
     end
@@ -391,7 +464,7 @@ end
     (isempty(source_id) || isempty(target_id)) &&
         return json_error(400, "missing_clade_ids", "Both sourceId and targetId are required")
 
-    table = strip(string(get(body, :table, "merged")))
+    table = String(strip(string(get(body, :table, "merged"))))
     _valid_name(table) || return json_error(400, "invalid_table", "Invalid table name '$table'")
 
     mode_str = lowercase(strip(string(get(body, :mode, "combined"))))

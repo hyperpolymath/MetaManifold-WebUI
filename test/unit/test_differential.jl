@@ -168,7 +168,9 @@ end
     end
 
     @testset "Configuration" begin
-        @test Differential.METHODS == ("nb_glm", "clr_welch", "zinb", "hurdle_nb")
+        @test Differential.METHODS ==
+              ("nb_glm", "clr_welch", "zinb", "hurdle_nb", "ancom_bc", "aldex2",
+               "songbird", "multinomial", "dirichlet_multinomial")
         @test DifferentialConfig().offset == "tss"
         @test DifferentialConfig().min_prevalence == 0.0
         @test DifferentialConfig("rle", 0.5).offset == "rle"
@@ -218,6 +220,23 @@ end
         @test_throws ArgumentError replace_zeros([0 1; 2 3]; method="pseudocount")
     end
 
+    @testset "Calibration caveat scales with the smaller group" begin
+        # Pure thresholds, no R needed: every "ml" result is caveated, the
+        # glmGamPoi trend only through 12 in the smaller group.
+        caveat = Differential._calibration_caveat
+        @test caveat("ml", 4, 4)["severity"] == "strong"
+        @test caveat("ml", 30, 3)["severity"] == "strong"
+        @test caveat("ml", 5, 5)["severity"] == "caution"
+        @test caveat("ml", 12, 12)["severity"] == "caution"
+        @test caveat("ml", 13, 20)["severity"] == "caution"
+        @test caveat("ml", 13, 20)["min_group_n"] == 13
+        @test caveat("ml", 21, 25)["severity"] == "info"
+        @test caveat("glmGamPoi", 4, 9)["severity"] == "strong"
+        @test caveat("glmGamPoi", 12, 12)["severity"] == "caution"
+        @test isnothing(caveat("glmGamPoi", 13, 13))
+        @test isnothing(caveat("glmGamPoi", 20, 13))
+    end
+
     @testset "Input validation" begin
         taxa = ["a", "b", "c"]
         groups = ["A", "A", "B"]
@@ -256,6 +275,9 @@ end
                                    "TSS size-factor offset; Wald test of the group coefficient; " *
                                    "Benjamini-Hochberg adjustment over the fitted taxa"
             @test res["diagnostics"]["n_tested"] == 3
+            caveat = res["diagnostics"]["calibration_caveat"]
+            @test caveat["severity"] == "caution" && caveat["dispersion"] == "ml"
+            @test caveat["min_group_n"] == 12 && occursin("theta", caveat["message"])
             @test all(r -> r["status"] == "ok", res["rows"])
             @test isapprox(byt["t_up"]["estimate"], log(4); atol=0.5)
             @test isapprox(byt["t_up"]["log2_fold_change"], 2; atol=0.8)
@@ -269,6 +291,13 @@ end
                                              reference="B", contrast="A")
             sb = Dict(r["taxon"] => r for r in swapped["rows"])
             @test sb["t_up"]["estimate"] ≈ -byt["t_up"]["estimate"] rtol=1e-6
+            # The caveat strengthens as the smaller group shrinks; the p-values
+            # themselves are untouched by it (checked against MASS below).
+            keep = [1:4; 13:16]
+            small = differential_abundance(effect[keep, :], effect_samples[keep], effect_taxa,
+                                           effect_groups[keep]; reference="A", contrast="B")
+            @test small["diagnostics"]["calibration_caveat"]["severity"] == "strong"
+            @test small["diagnostics"]["calibration_caveat"]["min_group_n"] == 4
 
             @testset "matches a direct MASS::glm.nb call" begin
                 off = log.(tss_factors(effect, effect_samples))
@@ -306,6 +335,10 @@ end
                                    "with dispersion trend from glmGamPoi::glm_gp, log link) with a " *
                                    "TSS size-factor offset; Wald test of the group coefficient; " *
                                    "Benjamini-Hochberg adjustment over the fitted taxa"
+            caveat = res["diagnostics"]["calibration_caveat"]
+            @test caveat["severity"] == "caution" && caveat["dispersion"] == "glmGamPoi"
+            @test caveat["min_group_n"] == 12 &&
+                  occursin("quasi-likelihood F-test", caveat["message"])
             byt = Dict(r["taxon"] => r for r in res["rows"])
             off = log.(tss_factors(effect, effect_samples))
             g = effect_groups
@@ -525,6 +558,25 @@ end
         for bad_mc in (0, 15, 4097, 64.5, true, "128", nothing)
             @test !isnothing(SV._config_value_error("analysis.differential.mc_samples", bad_mc))
         end
+        for (key, value) in (("analysis.differential.max_iter", 1),
+                             ("analysis.differential.max_iter", 500),
+                             ("analysis.differential.tolerance", 1e-8),
+                             ("analysis.differential.max_seconds", 300.0),
+                             ("analysis.differential.mn_penalty", 0.0))
+            @test isnothing(SV._config_value_error(key, value))
+        end
+        for (key, value) in (("analysis.differential.max_iter", 0),
+                             ("analysis.differential.max_iter", 1.5),
+                             ("analysis.differential.max_iter", NaN),
+                             ("analysis.differential.max_iter", big(2)^80),
+                             ("analysis.differential.tolerance", 0),
+                             ("analysis.differential.tolerance", Inf),
+                             ("analysis.differential.max_seconds", -1),
+                             ("analysis.differential.max_seconds", NaN),
+                             ("analysis.differential.mn_penalty", -0.1),
+                             ("analysis.differential.mn_penalty", Inf))
+            @test !isnothing(SV._config_value_error(key, value))
+        end
         for dispersion in ("ml", "glmGamPoi", " ML ", "  GLMGAMPOI ")
             @test isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
         end
@@ -576,6 +628,10 @@ end
             for (key, value) in (("analysis.differential.replacement_delta", 0),
                                  ("analysis.differential.replacement_delta", 1),
                                  ("analysis.differential.bayesian_alpha", -1),
+                                 ("analysis.differential.max_iter", 1.5),
+                                 ("analysis.differential.tolerance", 0),
+                                 ("analysis.differential.max_seconds", -1),
+                                 ("analysis.differential.mn_penalty", -0.1),
                                  ("analysis.differential.replacement_method", "pseudocount"))
                 response = SV.Oxygen.internalrequest(HTTP.Request("PATCH", url,
                     ["Content-Type" => "application/json"], JSON3.write(Dict(key => value))))
@@ -589,7 +645,8 @@ end
     @testset "Config rejects incompatible effective dispersion pairs" begin
         SV = MetaManifold.Server
         keym, keyd = "analysis.differential.method", "analysis.differential.dispersion"
-        for m in ("clr_welch", "ancom_bc", "aldex2", "songbird")
+        for m in Differential.METHODS
+            m == "nb_glm" && continue
             @test SV._differential_pair_error(Dict(keym=>m), Dict(keyd=>"glmGamPoi")) !== nothing
             @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>m)) !== nothing
             @test SV._differential_pair_error(Dict(keyd=>"glmGamPoi"), Dict(keym=>m, keyd=>"ml")) === nothing
@@ -613,6 +670,25 @@ end
             @test response.status == 400
             @test read(path,String) == before
         end
+    end
+
+    @testset "Config rejects incompatible joint-compositional settings" begin
+        SV = MetaManifold.Server
+        keym = "analysis.differential.method"
+        keyr = "analysis.differential.mn_reference_taxon"
+        keyp = "analysis.differential.mn_penalty"
+        keyo = "analysis.differential.dm_overdispersion_method"
+        for m in filter(m -> !(m in Differential.COMPOSITIONAL_METHODS), Differential.METHODS)
+            @test SV._differential_pair_error(Dict(keym=>m), Dict(keyr=>"Up")) !== nothing
+            @test SV._differential_pair_error(Dict(keym=>m), Dict(keyp=>0.5)) !== nothing
+            @test SV._differential_pair_error(Dict(keym=>m), Dict(keyo=>"mom")) !== nothing
+        end
+        @test SV._differential_pair_error(Dict(keym=>"nb_glm"), Dict(keyr=>"  ")) === nothing
+        @test SV._differential_pair_error(Dict(keym=>"multinomial"),
+                                         Dict(keyr=>"Up", keyp=>0.5)) === nothing
+        @test SV._differential_pair_error(Dict(keym=>"multinomial"), Dict(keyo=>"mom")) !== nothing
+        @test SV._differential_pair_error(Dict(keym=>"dirichlet_multinomial"),
+                                         Dict(keyr=>"Up", keyp=>0.5, keyo=>"mom")) === nothing
     end
 
     @testset "Config PATCH publishes canonical, complete documents" begin
@@ -854,6 +930,7 @@ end
             @test isempty(res["size_factors"])
             @test res["config"]["method"] == "clr_welch" && !haskey(res["config"], "offset")
             @test res["diagnostics"]["zero_replacement"]["zeros_replaced"] == 0
+            @test !haskey(res["diagnostics"], "calibration_caveat")
             @test occursin("Welch", res["method"]) && occursin("cmultRepl", res["method"])
             # Known answer, independent of R: the estimate is mean(B) - mean(A)
             # of each taxon's CLR.
@@ -1200,7 +1277,8 @@ end
         # Both methods are selectable names, and the two are told apart from the
         # per-taxon models by one tuple.
         @test Differential.METHODS ==
-              ("nb_glm", "clr_welch", "multinomial", "dirichlet_multinomial")
+              ("nb_glm", "clr_welch", "zinb", "hurdle_nb", "ancom_bc", "aldex2",
+               "songbird", "multinomial", "dirichlet_multinomial")
         @test Differential.COMPOSITIONAL_METHODS == ("multinomial", "dirichlet_multinomial")
         c = DifferentialConfig(; method="multinomial")
         @test c.method == "multinomial"
@@ -1258,6 +1336,25 @@ end
               Differential.METHODS
         @test MetaManifold.Server._ENUM_VALUES["analysis.differential.dm_overdispersion_method"] ==
               Differential.DM_METHODS
+    end
+
+    @testset "Multinomial: the Wald p-value uses the normal tail" begin
+        # `_erfc` carries the two-sided normal tail for the Wald test. The
+        # reference values are the complementary error function from libm, an
+        # implementation independent of the series/continued fraction here.
+        for (t, expected) in ((0.0, 1.0), (0.25, 0.7236736098317631),
+                              (0.5, 0.47950012218695348), (0.75, 0.28884436634648486),
+                              (1.0, 0.15729920705028513), (1.25, 0.07709987174354177),
+                              (1.5, 0.033894853524689274), (2.0, 0.0046777349810472654),
+                              (2.5, 0.00040695201744495892), (3.0, 2.2090496998585438e-05),
+                              (4.0, 1.541725790028002e-08), (5.0, 1.5374597944280351e-12),
+                              (7.0, 4.1838256077794142e-23), (10.0, 2.0884875837625449e-45))
+            @test CM._erfc(t) ≈ expected rtol = 1e-12
+        end
+        @test CM._erfc(-0.5) ≈ 2.0 - CM._erfc(0.5) atol = 1e-15
+        # The tail keeps falling where a naive 1 - cdf would have collapsed to 0.
+        @test 0.0 < CM._erfc(20.0) < 1e-170
+        @test CM._erfc(0.0) == 1.0
     end
 
     @testset "Multinomial: coefficients, standard errors and likelihood" begin
@@ -1565,12 +1662,16 @@ end
         end
         @test e isa ArgumentError
         @test occursin("is not fitted", sprint(showerror, e))
-        # Every taxon filtered out is an explicit error, not an empty table.
+        # Every taxon filtered out is an explicit error, not an empty table. No
+        # taxon below is present in all eight samples, so min_prevalence = 1.0
+        # leaves no composition to model; every sample still has reads, so the
+        # refusal is the prevalence one and not an empty sample.
+        all_thin = [1 0; 2 3; 0 4; 5 0;
+                    1 2; 0 3; 4 0; 2 1]
         e = try
-            differential_abundance([1 0; 2 3; 0 4; 5 0], ["s1", "s2", "s3", "s4"],
-                                   ["a", "b"], groups8[1:4];
-                                   kw..., config=DifferentialConfig(; method="multinomial",
-                                                                    min_prevalence=1.0))
+            differential_abundance(all_thin, samples8, ["a", "b"], groups8;
+                                   kw..., config=DifferentialConfig("tss", 1.0;
+                                                                    method="multinomial"))
             nothing
         catch err
             err
@@ -1671,6 +1772,18 @@ end
                                         "table" => "merged", "rank" => "Genus"))
             @test r.status == 400
             @test JSON3.read(String(r.body)).error == "invalid_config"
+
+            # Invalid optimiser settings are a client configuration error,
+            # including conversion failures, never an uncaught HTTP 500.
+            for (key, value) in (("max_iter", "1.5"), ("tolerance", "0"),
+                                 ("max_seconds", "-1"), ("mn_penalty", "-0.1"))
+                write(joinpath(root, "data", "studyD", "pipeline.yml"),
+                      "analysis:\n  differential:\n    method: clr_welch\n    $key: $value\n")
+                r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                            "table" => "merged", "rank" => "Genus"))
+                @test r.status == 400
+                @test JSON3.read(String(r.body)).error == "invalid_config"
+            end
         end
     end
 
@@ -1684,7 +1797,7 @@ end
         _da_fixture() do
             root = MetaManifold.Server.ServerState._root[]
             write(joinpath(root, "data", "studyD", "pipeline.yml"),
-                  "analysis:\n  differential:\n    method: multinomial\n")
+                  "analysis:\n  differential:\n    method: multinomial\n    mn_penalty: 0.0\n    max_iter: 50\n    tolerance: 0.00000001\n    max_seconds: 30.0\n")
             r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
                                         "table" => "merged", "rank" => "Genus"))
             body = JSON3.read(String(r.body))
@@ -1704,13 +1817,19 @@ end
             @test byt["Up"].estimate ≈ 1.972120415794 rtol=1e-6
             @test byt["Down"].estimate ≈ -2.185860818556 rtol=1e-6
             @test body.config.mn_reference_taxon == "Flat"
+            @test body.config.mn_penalty == 0.0
+            @test body.config.max_iter == 50
+            @test body.config.tolerance == 1e-8
+            @test body.config.max_seconds == 30.0
             @test body.diagnostics.model.reference_taxon == "Flat"
             @test body.diagnostics.model.n_taxa_fitted == 3
             @test isempty(body.size_factors)
             # BH adjustment is not optional: every fitted row carries a padj, and
             # no row carries one without a p-value.
             @test all(x -> (x.padj !== nothing) == (x.pvalue !== nothing), body.rows)
-            @test all(x -> x.padj !== nothing, body.rows)
+            fitted_rows = [x for x in body.rows if x.status in ("ok", "boundary")]
+            @test !isempty(fitted_rows)
+            @test all(x -> x.padj !== nothing, fitted_rows)
             @test haskey(body, :figure) && length(body.figure.data) >= 1
             # An explicit reference reparameterises the same fit: the log ratio
             # between Up and Down (a difference of two coefficients) must not

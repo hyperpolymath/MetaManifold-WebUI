@@ -30,7 +30,7 @@ jobs:
 
       - name: Checkout the change
         if: github.event_name == 'pull_request'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -42,7 +42,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           relevant=false
-          patterns=('src/core/doi.jl' 'docs/doi-publication.md' 'scripts/link-doi.sh' '.github/workflows/doi.yml')
+          patterns=('src/core/doi.jl' 'src/server/routes/doi.jl' 'test/unit/test_doi.jl' 'CITATION.cff' 'docs/doi-publication.md' 'scripts/link-doi.sh' '.github/workflows/doi.yml')
           changed="$RUNNER_TEMP/doi-changed-files"
           if ! git diff --no-renames --name-only -z "$BASE_SHA...HEAD" > "$changed"; then
             echo "ERROR: git diff $BASE_SHA...HEAD failed" >&2
@@ -66,22 +66,39 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Shell syntax check
         run: bash -n scripts/link-doi.sh
 
-      - name: YAML parse
-        run: python3 -c 'import yaml,sys; yaml.safe_load(open("docs/doi-publication.md"))' 2>/dev/null || true
+      - name: Citation metadata check
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+
+          cff = Path("CITATION.cff").read_text(encoding="utf-8")
+          required_prefixes = ("cff-version:", "title:", "authors:", "license:")
+          missing = [p for p in required_prefixes if not any(line.startswith(p) for line in cff.splitlines())]
+          if missing:
+              sys.exit(f"CITATION.cff missing required top-level keys: {', '.join(missing)}")
+          PY
 
       - name: Receipt schema shape
         run: |
           python3 - <<'PY'
-          import json, sys
-          # A valid receipt carries these keys; this is a shape check only.
-          keys = {"schema","study","run","origin","deposition_id","doi","published",
-                  "files","created_at","published_at","checksum"}
-          print("receipt schema shape documented in src/core/doi.jl")
+          from pathlib import Path
+          import sys
+
+          source = Path("src/core/doi.jl").read_text(encoding="utf-8")
+          keys = ("schema", "study", "run", "origin", "deposition_id", "doi",
+                  "published", "files", "created_at", "published_at", "checksum")
+          missing = [k for k in keys if f'"{k}"' not in source and f":{k}" not in source]
+          if missing:
+              sys.exit(f"src/core/doi.jl missing receipt schema keys: {', '.join(missing)}")
+          print("verified DOI receipt schema keys in src/core/doi.jl")
           PY
 
   # Julia lifecycle and real-HTTP checks require a provisioned machine with the
