@@ -20,7 +20,7 @@ jobs:
   scorecard:
     # The default-branch SARIF upload needs security-events: write; never
     # expose that grant or the publication OIDC token to PR code.
-    uses: hyperpolymath/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d
+    uses: metadatastician/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d
     permissions:
       actions: read
       contents: read

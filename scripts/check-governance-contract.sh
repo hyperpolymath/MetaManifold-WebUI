@@ -118,8 +118,13 @@ reusable="$(cat "$REUSABLE")"
 
 contains "$caller" 'uses: ./.github/workflows/hypatia-scan-reusable.yml' \
   'the governance lane calls the fork-local reusable'
-not_contains "$caller" 'uses: hyperpolymath/standards/.github/workflows/hypatia-scan-reusable.yml@' \
+# The standards repository is metadatastician/standards; it was
+# hyperpolymath/standards until the transfer on 2026-10-25. Both names are
+# checked, because a bypass through either one skips the fork guard.
+not_contains "$caller" 'uses: metadatastician/standards/.github/workflows/hypatia-scan-reusable.yml@' \
   'the governance lane cannot bypass the fork guard by calling standards directly'
+not_contains "$caller" 'uses: hyperpolymath/standards/.github/workflows/hypatia-scan-reusable.yml@' \
+  'the governance lane cannot bypass the fork guard through the pre-transfer name'
 contains "$caller" 'needs: [workflow-contract]' \
   'this contract runs before the Hypatia scan'
 if grep -Eq '^  pull_request:$' <<<"$caller"; then
@@ -261,12 +266,19 @@ not_contains "$reusable" 'steps.scan.outputs.critical > 0' \
   'the raw critical count cannot drive an exception-inconsistent advisory'
 
 if renderer="$(step_block "$REUSABLE" 'Check out the verdict grid renderer at this workflow'"'"'s commit')"; then
-  contains "$renderer" 'repository: hyperpolymath/standards' \
+  contains "$renderer" 'repository: metadatastician/standards' \
     'the renderer comes from the standards repository'
   contains "$renderer" "ref: $STANDARDS_SHA" \
     'the standards renderer uses the immutable source pin'
 else
   fail 'the standards renderer checkout exists'
+fi
+
+stale_owner="$(grep -rn 'hyperpolymath/standards' .github/workflows/ 2>/dev/null || true)"
+if [ -z "$stale_owner" ]; then
+  pass 'no workflow still names the pre-transfer standards owner'
+else
+  fail "workflows still reference hyperpolymath/standards, which no longer resolves for a reusable uses: - $stale_owner"
 fi
 
 upload_count="$(grep -c 'uses: github/codeql-action/upload-sarif@' "$REUSABLE" || true)"
@@ -313,7 +325,7 @@ not_contains "$secret_workflow" 'secrets:' 'the secret scanner receives no calle
 not_contains "$secret_workflow" 'continue-on-error:' 'secret scanner failures cannot be advisory'
 not_contains "$secret_workflow" 'pull_request_target:' 'secret scanning does not use a privileged PR trigger'
 scorecard_workflow="$(cat .github/workflows/scorecard.yml)"
-contains "$scorecard_workflow" 'uses: hyperpolymath/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \
+contains "$scorecard_workflow" 'uses: metadatastician/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \
   'Scorecard uses the audited immutable reusable'
 if grep -Eq '^  pull_request(_target)?:' <<<"$scorecard_workflow"; then
   fail 'Scorecard publication must not run against PR code'

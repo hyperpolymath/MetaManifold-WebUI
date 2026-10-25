@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This workflow is managed by gh actions-lock.
 #
-# Fork-local copy of hyperpolymath/standards/.github/workflows/
+# Fork-local copy of metadatastician/standards/.github/workflows/
 # hypatia-scan-reusable.yml at 01c9b0c9f2646ebea0b30a9588462642ac94aee9.
 # Keep that source pin when updating this file and reapply the three fork deltas:
 #   1. Do not upload SARIF for pull_request events. This lane is advisory on
@@ -11,7 +11,7 @@
 #      Raw findings and the verdict grid still cover the PR, while push and
 #      manual runs continue to reconcile code scanning on the default branch.
 #   2. Pin the standards checkout explicitly. job.workflow_sha now names a
-#      MetaManifold commit, not a commit in hyperpolymath/standards.
+#      MetaManifold commit, not a commit in metadatastician/standards.
 #   3. Filter only upstream-inherited TypeScript paths from the effective
 #      findings, validate the raw/effective JSON with pinned ijson-jcs, and keep
 #      raw scanner outputs plus fork-only paths/rules.
@@ -619,7 +619,7 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: hyperpolymath/standards
+          repository: metadatastician/standards
           persist-credentials: false
           # Includes the filter's completion output and literal-glob matching.
           # Keep the helper immutable and compatible with the strict gate.
@@ -703,7 +703,7 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: hyperpolymath/standards
+          repository: metadatastician/standards
           # This fork-local reusable's job.workflow_sha belongs to
           # MetaManifold, not standards, so the source commit must be literal.
           ref: 01c9b0c9f2646ebea0b30a9588462642ac94aee9
@@ -743,7 +743,7 @@ jobs:
             # No renderer is missing evidence, rendered as such, never a pass.
             jq -n '{schemaVersion: 1, label: "Hypatia grid", message: "indeterminate", color: "orange"}' > verdict-grid/badge.json
             printf '%s\n%s\n' '<!-- verdict-grid:hypatia regenerated on every run -->' \
-              '🟠 indeterminate · the verdict grid renderer could not be checked out from hyperpolymath/standards; see the job log.' \
+              '🟠 indeterminate · the verdict grid renderer could not be checked out from metadatastician/standards; see the job log.' \
               > verdict-grid/report.md
             cat verdict-grid/report.md >> "$GITHUB_STEP_SUMMARY"
             echo "state=orange" >> "$GITHUB_OUTPUT"

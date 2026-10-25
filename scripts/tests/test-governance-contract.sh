@@ -14,7 +14,7 @@ reset_fixture() {
 }
 reset_fixture
 bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1
-for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger; do
+for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger stale-standards-owner scorecard-owner; do
   reset_fixture
   case "$mutation" in
     allowlist-addition) echo 'frontend/src/fork-only.ts' >> "$fixture/config/hypatia/upstream-typescript-allowlist.txt" ;;
@@ -35,6 +35,11 @@ for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate bas
     scanner-secrets) echo '    secrets: inherit' >> "$fixture/.github/workflows/secret-scanner.yml" ;;
     scanner-trigger) sed -i 's/^  pull_request:/  pull_request_target:/' "$fixture/.github/workflows/secret-scanner.yml" ;;
     scorecard-trigger) sed -i '/^on:/a\  pull_request:' "$fixture/.github/workflows/scorecard.yml" ;;
+    # The standards repository was transferred on 2026-10-25 and a reusable
+    # `uses:` no longer follows the old owner, so either of these mutations
+    # leaves a workflow that fails at plan time with no jobs at all.
+    stale-standards-owner) sed -i 's@metadatastician/standards@hyperpolymath/standards@g' "$fixture/.github/workflows/scorecard.yml" ;;
+    scorecard-owner) sed -i 's@metadatastician/standards/.github/workflows/scorecard-reusable.yml@metadatastician/standards/.github/workflows/other.yml@' "$fixture/.github/workflows/scorecard.yml" ;;
     *) echo "ERROR: unknown mutation $mutation" >&2; exit 1 ;;
   esac
   if bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1; then
