@@ -250,6 +250,33 @@ How to detect it in one command, before trusting a red or a green:
 gh api repos/<owner>/<repo> --jq .full_name     # a different name means transferred
 ```
 
+### The actual cause is an Actions policy, not just the rename
+
+Repointing the references is **not sufficient**, and the run says so once you can
+read the annotation. A startup-failure run has no jobs and no logs, but its
+workflow page carries one error:
+
+> The reusable workflow `metadatastician/standards/.github/workflows/deed-conformance.yml@75bd5994…`
+> is not allowed in `hyperpolymath/MetaManifold-WebUI` because all reusable
+> workflows must be from a repository owned by `hyperpolymath` or match the
+> pattern: `arena-ai-coding-agent[bot]`.
+
+The repository's Actions policy permits reusable workflows only from
+repositories owned by `hyperpolymath` — so `hyperpolymath/standards` was allowed
+and `metadatastician/standards` is not, whatever name the workflow file uses.
+The `uses:` references therefore cannot be repaired by editing this repository
+alone. Three ways out, in increasing order of effort:
+
+1. **Permit the new owner.** Repository → Settings → Actions → General →
+   *Access* for reusable workflows, and allow `metadatastician` (or "any
+   repository"). This is the smallest change and keeps the pins intact.
+2. **Move `standards` back** under `hyperpolymath`. Then the existing workflow
+   files work unchanged, and no pull request is needed.
+3. **Run DEED conformance from a checkout** instead of a remote `uses:`, the way
+   the K9, Hypatia and secret-scanner lanes already do. Correct, but it puts a
+   copy of someone else's workflow steps in this repository, and that copy then
+   drifts.
+
 What was done: every reference was repointed at `metadatastician/standards`
 with the **same pinned SHAs** (verified to resolve in the new location, with
 matching commit subjects), `scripts/check-governance-contract.sh` now fails if
