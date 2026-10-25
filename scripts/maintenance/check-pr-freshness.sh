@@ -112,6 +112,18 @@ if [ "${merge_commits:-0}" -gt 0 ]; then
   printf 'check-pr-freshness: %s merge commit(s) in the branch:\n' "$merge_commits" >&2
   git rev-list --merges --format='  %h %s' "$merge_base..$head_tip" | grep -v '^commit ' >&2 || true
   annotate error "$merge_commits merge commit(s) in the branch; rebase so the branch replays linearly (CONTRIBUTING.md rule 2)"
+  # The head being a merge is the signature of two very different situations,
+  # and the message has to help tell them apart: a contributor who merged the
+  # base into their branch (a real rule 2 violation) and CI that checked out
+  # GitHub's synthetic `refs/pull/<n>/merge` commit (no violation at all - the
+  # merge exists only to test the merge result).
+  if [ "$merge_commits" -eq 1 ] \
+    && [ "$(git rev-parse "$head_tip^{commit}")" = "$(git rev-list --merges -1 "$merge_base..$head_tip")" ] \
+    && [ "$(git rev-list --parents -n 1 "$head_tip" | wc -w | tr -d ' ')" -eq 3 ]; then
+    printf 'note: the head commit is itself a merge; if this is GitHub refs/pull/<n>/merge,\n' >&2
+    printf '      check out the pull request head commit instead of the merge commit\n' >&2
+    annotate error "the head commit is itself a merge; if this is refs/pull/<n>/merge, check out github.event.pull_request.head.sha instead"
+  fi
 else
   printf 'ok - no merge commits in the branch\n'
 fi

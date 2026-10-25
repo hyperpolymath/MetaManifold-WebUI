@@ -41,6 +41,11 @@ jobs:
       - name: Check out the pull request's history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The branch tip, not GitHub's `refs/pull/<n>/merge` commit. The
+          # synthetic merge has two parents by construction, so checking it out
+          # makes rule 2 fail on every pull request - including this workflow's
+          # first run, which is how the mistake was found.
+          ref: ${{ github.event.pull_request.head.sha }}
           # Full history: the check needs the real merge base, and a shallow
           # clone would report its graft point as the base and pass everything.
           fetch-depth: 0

@@ -73,6 +73,7 @@ git checkout -q merges
 git merge -q --no-ff -m "Merge branch 'main' into merges" main
 run 1 'a merge commit in the branch fails even at the base tip' --base origin/main --head merges
 check_contains "$out" 'merge commit' 'the failure names the merge commit rule'
+check_contains "$out" 'check out the pull request head commit' 'a merge-commit head also explains the refs/pull/<n>/merge case'
 
 # unrelated history: an orphan branch cannot be merged, so it cannot pass
 git checkout -q --orphan orphan
