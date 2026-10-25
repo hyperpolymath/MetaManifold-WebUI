@@ -11,14 +11,15 @@ sensitive material in the country.
 | --- | --- |
 | [`recon-report.md`](recon-report.md) | What the system is, what protects it today, what does not, and how that scores against GDPR, the HIPAA Security Rule, and the UK TOP SECRET (Tier 3) baseline behaviours. Every finding cites a file and line, and every absence claim has the grep that proves it. |
 | [`colour-teams.md`](colour-teams.md) | The CyBOK-referenced colour-team exercise: white (governance), red (adversary), blue (detection), purple (validation), green (build/crypto), gold (human/insider) — including where the teams disagree and how each conflict resolves. |
-| [`ultraplan.md`](ultraplan.md) | The plan to close the gaps, ordered by rung on a capability ladder, under a hard **zero-friction** rule (eliminate, substitute, or notify — never "ask the user to be careful"). Each workstream names its files, its ledger events, its acceptance tests and its PR decomposition. |
+| [`../proposals/security-and-integrity-programme.md`](../proposals/security-and-integrity-programme.md) | The case for doing any of this at all, written for the people who carry institutional risk rather than the ones who run the pipeline: research office, DPO, research integrity, IT security, and an industry or KEC partner doing due diligence. |
+| [`ultraplan-secure-private.md`](ultraplan-secure-private.md) | The plan to close the gaps, ordered by rung on a capability ladder, under a hard **zero-friction** rule (eliminate, substitute, or notify — never "ask the user to be careful"). Each workstream names its files, its ledger events, its acceptance tests and its PR decomposition. |
 
 ## Read in this order
 
 1. `recon-report.md` §1 (executive summary) and §5 (standards matrices).
 2. `colour-teams.md` §7 (conflicts) and §8 (heat map) — this is the argument for
    the plan's ordering.
-3. `ultraplan.md` §1 (the four rules) and §5 (PR order).
+3. `ultraplan-secure-private.md` §1 (the four rules) and §5 (PR order).
 4. `recon-report.md` §9 to re-run the evidence yourself.
 
 ## The three sentences that matter
@@ -29,7 +30,7 @@ sensitive material in the country.
 2. **TOP SECRET is an accreditation of a system, not a property of an
    application.** The achievable statement today is a *rung* on a ladder, not a
    classification.
-3. The first PR (`ultraplan.md` W1) removes six live attack paths with security
+3. The first PR (`ultraplan-secure-private.md` W1) removes six live attack paths with security
    headers, size caps and refusals, adds no user friction, and does not touch a
    single line of analysis code.
 

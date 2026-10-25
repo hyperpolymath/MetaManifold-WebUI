@@ -10,7 +10,7 @@ claims a control is "met" unless the evidence for it is on disk and cited.
 
 Companion documents:
 
-- [`ultraplan.md`](ultraplan.md) — the plan to close what this report finds.
+- [`ultraplan-secure-private.md`](ultraplan-secure-private.md) — the plan to close what this report finds.
 - [`colour-teams.md`](colour-teams.md) — the CyBOK-referenced colour-team
   exercise (white, red, blue, purple, green, gold).
 
@@ -99,7 +99,7 @@ reference-database download, content-addressed analysis records that refuse
 tampering, SHA-pinned GitHub Actions with least privilege, and a sha256-verified
 installer. §3 lists all twelve with line references.
 
-The plan in `ultraplan.md` therefore **adds** layers. It does not touch the
+The plan in `ultraplan-secure-private.md` therefore **adds** layers. It does not touch the
 scientific code, the numeric contracts, or the parts of the request pipeline
 that this review found sound.
 
@@ -681,7 +681,7 @@ threat model, DPIA skeleton, incident procedure and classification policy.
 | 45 CFR | Spec | Type | Current state | Finding |
 | --- | --- | --- | --- | --- |
 | §164.308(a)(1)(ii)(A) | Risk analysis | Required | This document is the first one | SEC-17 |
-| §164.308(a)(1)(ii)(B) | Risk management | Required | `ultraplan.md` | — |
+| §164.308(a)(1)(ii)(B) | Risk management | Required | `ultraplan-secure-private.md` | — |
 | §164.308(a)(3) | Workforce security / sanction | Required | No workforce model exists | SEC-01 |
 | §164.308(a)(4) | Information access management | Required | No authorisation | SEC-01 |
 | §164.308(a)(5) | Security awareness / login monitoring | Required | No login exists | SEC-01 |
@@ -774,7 +774,7 @@ not a property of an application. A Julia + R + DuckDB + browser stack with
 dozens of third-party packages, built by an unvetted toolchain, running on a
 general-purpose OS, cannot be *asserted* to the TOP SECRET standard by its own
 code. What the code can do is stop being the reason an accreditation fails. The
-realistic ladder is in `ultraplan.md` §3.
+realistic ladder is in `ultraplan-secure-private.md` §3.
 
 ---
 

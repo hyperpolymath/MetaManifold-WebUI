@@ -50,7 +50,7 @@ handling, and the deployment assumptions: findings with file-and-line
 evidence, a mapping against GDPR, the HIPAA Security Rule and the UK
 Government Security Classifications TOP SECRET (Tier 3) baseline behaviours, a
 CyBOK-referenced colour-team exercise, and a phased plan
-(`docs/security/ultraplan.md`) with a zero-friction rule: each exposure is
+(`docs/security/ultraplan-secure-private.md`) with a zero-friction rule: each exposure is
 eliminated, substituted or notified, never pushed back onto the user as an extra
 step.
 

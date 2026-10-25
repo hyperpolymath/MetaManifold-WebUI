@@ -1,13 +1,24 @@
 <!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
 <!-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk> -->
 
-# Ultraplan: from local analysis tool to classification-ready appliance
+# Ultraplan — secure and private: from local analysis tool to classification-ready appliance
 
 Status: plan and evidence map for the branch
 `arena/924008e1-metamanifold-webui`, based on `d6e8671` (`main`).
 Companion to [`recon-report.md`](recon-report.md) (what is wrong and why it
 matters) and [`colour-teams.md`](colour-teams.md) (the adversarial and
 governance read). Finding IDs `SEC-nn` refer to the recon report.
+
+**Why the name.** *Secure* is the confidentiality, integrity and availability
+work: identity, authorisation, the audit ledger, transport, at-rest protection,
+resource limits. *Private* is the data-protection work: minimisation at ingest,
+retention, subject rights, the export scrubber, and a deployment posture that is
+private by default rather than private by configuration. They are one programme
+because they share one choke point — the point at which an artefact is created,
+labelled, recorded and released — but they are separable in review, and the
+rungs in §3 keep them separable in delivery. Where a commitment exists to hold
+data that could identify a person *or* to be used by more than one person, both
+halves apply.
 
 **Nothing in this plan is applied.** No source file was modified by this
 session; the branch adds documentation only. No test was run: the review
@@ -122,7 +133,7 @@ event(s) added to the ledger, and the friction cost.
 **Objective.** An assessor can start work without interviewing anyone.
 
 **Changes.** `docs/security/README.md`, `recon-report.md`, `colour-teams.md`,
-`ultraplan.md`; a pointer section in `SECURITY.md`; optionally a line in
+`ultraplan-secure-private.md`; a pointer section in `SECURITY.md`; optionally a line in
 `0-AI-MANIFEST.a2ml`'s `evidence` block naming the security dossier.
 
 **Acceptance.** `docs/security/` exists, the evidence log in

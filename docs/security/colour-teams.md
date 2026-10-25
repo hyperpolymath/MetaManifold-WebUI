@@ -4,7 +4,7 @@
 # CyBOK-referenced colour-team exercise
 
 Companion to [`recon-report.md`](recon-report.md) and
-[`ultraplan.md`](ultraplan.md). Finding IDs (`SEC-nn`) refer to the recon
+[`ultraplan-secure-private.md`](ultraplan-secure-private.md). Finding IDs (`SEC-nn`) refer to the recon
 report.
 
 ## 0. What this is, and what it is not
@@ -37,7 +37,7 @@ Scoring: **C**ritical / **H**igh / **M**edium / **L**ow / **P**ass.
 
 Rules of engagement for this simulation: no exploitation, no live system, no
 data. Every red-team result is a source-level reasoning step that a future test
-must confirm (see `ultraplan.md` W7).
+must confirm (see `ultraplan-secure-private.md` W7).
 
 ---
 
@@ -223,7 +223,7 @@ insider paths.
 | Y-02 | **Copy-and-send is the real dissemination path.** A publication table exported as XLSX and emailed is the TOP SECRET "verbal/hard-copy" failure in modern dress, and the export carries no marking, no copy number, no handling instruction. Marking is the single highest-leverage *human* control available, and it is free. | C for target | export routes |
 | Y-03 | **No "who am I" affordance.** With no identity, an operator cannot tell whether an action will be attributed later. Attribution pressure is itself a control (AAA). | M | — |
 | Y-04 | **Insider with legitimate access is indistinguishable from an attacker** — same routes, same authority, no anomaly baseline. | H | — |
-| Y-05 | **Friction risk in the obvious fixes.** The instinctive responses (a confirm dialog on delete, a password per session, a classification dropdown on every export) all add recurring friction and would be ignored within a week — click-through blindness is a documented HF failure mode. | — | vetoed in `ultraplan.md` §2 |
+| Y-05 | **Friction risk in the obvious fixes.** The instinctive responses (a confirm dialog on delete, a password per session, a classification dropdown on every export) all add recurring friction and would be ignored within a week — click-through blindness is a documented HF failure mode. | — | vetoed in `ultraplan-secure-private.md` §2 |
 | Y-06 | **The TOP SECRET "chair declares the classification at the start" behaviour has a software analogue that costs nothing**: a persistent classification banner in the UI and on every artefact. It does the chair's job without a prompt. | — | mapping to TS-01/TS-32 |
 
 ### 6.2 Gold's veto list (do not build)
