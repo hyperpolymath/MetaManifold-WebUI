@@ -21,10 +21,15 @@ import type {
   TreeFileInfo, TreeFile, RunRef, ReadFunnelData, ReportItem, ReportKind,
   PlacementDoc, PlacementSummary, PlacementDetail, PlacementQueries, PhyloStep,
   ReferenceTreeDoc, ReferenceTreeSummary, ReferenceTreeDetail, AlignmentQC, TrimSettings,
+  CladisticsCreateRequest, CladisticsSummary, CladisticsDetail,
+  CladeCumulusSourcesResponse, CladeCumulusRequest, CladeCumulusResponse,
+  CladeMoveValidationRequest, CladeMoveValidationResponse,
+  OrdinationRequest, OrdinationResult,
 } from './types'
 
 import type { FigureDoc } from '../figure/types'
 import { saveBlob } from '../utils/download'
+import { ijsonJcsStringify } from './ijsonJcs'
 
 // Base URL for the backend API. Empty string means same-origin.
 // Set "apiBase" in config.json (e.g. "https://bioserver:8080") for split deployments.
@@ -52,7 +57,7 @@ async function rawPost(path: string, body: unknown): Promise<Response> {
   const res = await fetch(apiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: ijsonJcsStringify(body),
   })
   if (!res.ok) {
     const err: ApiError = await res.json().catch(() => ({
@@ -80,9 +85,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const get  = <T>(path: string)                       => request<T>(path)
-const post = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'POST',  body: body !== undefined ? JSON.stringify(body) : undefined })
-const patch = <T>(path: string, body?: unknown)      => request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined })
-const put  = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'PUT',  body: body !== undefined ? JSON.stringify(body) : undefined })
+const post = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'POST',  body: body !== undefined ? ijsonJcsStringify(body) : undefined })
+const patch = <T>(path: string, body?: unknown)      => request<T>(path, { method: 'PATCH', body: body !== undefined ? ijsonJcsStringify(body) : undefined })
+const put  = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'PUT',  body: body !== undefined ? ijsonJcsStringify(body) : undefined })
 const del  = <T>(path: string)                       => request<T>(path, { method: 'DELETE' })
 
 /** PUT a text body; the response is JSON. */
@@ -251,6 +256,12 @@ export const api = {
                      post<unknown>(`/api/v1/studies/${study}/analysis/nmds`, body),
     permanova:     (study: string, body: ComparisonRequest) =>
                      post<PermanovaResult>(`/api/v1/studies/${study}/analysis/permanova`, body),
+    /** Request a study ordination; reject on serialisation, network, HTTP or response-parsing errors. */
+    ordination:    (study: string, body: OrdinationRequest) =>
+                     post<OrdinationResult>(`/api/v1/studies/${study}/analysis/ordination`, body),
+    /** Fetch the ordination capability/citation contract; request and JSON parsing errors propagate. */
+    ordinationContract: () =>
+                     get<Record<string, unknown>>('/api/v1/ordination/contract'),
     capabilities:  () => get<{ r_available: boolean }>('/api/v1/capabilities'),
     venn:          (study: string, body: VennRequest) =>
                      post<VennResult>(`/api/v1/studies/${study}/analysis/venn`, body),
@@ -355,6 +366,17 @@ export const api = {
     },
   },
 
+  cladistics: {
+    list:   (study: string) => get<CladisticsSummary[]>(`/api/v1/studies/${study}/cladistics`),
+    get:    (study: string, id: string) => get<CladisticsDetail>(`/api/v1/studies/${study}/cladistics/${id}`),
+    create: (study: string, body: CladisticsCreateRequest) =>
+      post<{ id: string; job: Job }>(`/api/v1/studies/${study}/cladistics`, body),
+    remove: (study: string, id: string) =>
+      del<{ deleted: string }>(`/api/v1/studies/${study}/cladistics/${id}`),
+    log:    (study: string, id: string, step: 'align' | 'trim' | 'tree') =>
+      getText(`/api/v1/studies/${study}/cladistics/${id}/log/${step}`),
+  },
+
   referenceTrees: {
     list:    () => get<ReferenceTreeSummary[]>('/api/v1/reference-trees'),
     get:     (id: string) => get<ReferenceTreeDetail>(`/api/v1/reference-trees/${id}`),
@@ -407,5 +429,14 @@ export const api = {
       put<{ saved: boolean }>(`/api/v1/studies/${study}/trees/${encodeURIComponent(file)}/view`, view),
     delete:   (study: string, file: string) =>
       del<{ deleted: string }>(`/api/v1/studies/${study}/trees/${encodeURIComponent(file)}`),
+  },
+
+  cladeCumulus: {
+    sources: (study: string, run: string, group?: string | null) =>
+      get<CladeCumulusSourcesResponse>(`/api/v1/studies/${study}/runs/${run}/clade-cumulus/sources${gq(group)}`),
+    compute: (study: string, run: string, body: CladeCumulusRequest, group?: string | null) =>
+      post<CladeCumulusResponse>(`/api/v1/studies/${study}/runs/${run}/clade-cumulus${gq(group)}`, body),
+    validateMove: (study: string, run: string, body: CladeMoveValidationRequest, group?: string | null) =>
+      post<CladeMoveValidationResponse>(`/api/v1/studies/${study}/runs/${run}/clade-cumulus/validate-move${gq(group)}`, body),
   },
 }

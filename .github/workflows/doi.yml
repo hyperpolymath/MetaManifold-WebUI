@@ -1,0 +1,106 @@
+name: DOI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  # Classify whether the change touches DOI publication files, mirroring the
+  # main CI gate design. A push to main is always relevant.
+  gate:
+    name: DOI relevance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      relevant: ${{ steps.push.outputs.relevant || steps.pr.outputs.relevant }}
+    steps:
+      - name: A push to main is relevant
+        if: github.event_name == 'push'
+        id: push
+        run: echo 'relevant=true' >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the change
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Does the change touch DOI files?
+        if: github.event_name == 'pull_request'
+        id: pr
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          relevant=false
+          patterns=('src/core/doi.jl' 'src/server/routes/doi.jl' 'test/unit/test_doi.jl' 'CITATION.cff' 'docs/doi-publication.md' 'scripts/link-doi.sh' '.github/workflows/doi.yml')
+          changed="$RUNNER_TEMP/doi-changed-files"
+          if ! git diff --no-renames --name-only -z "$BASE_SHA...HEAD" > "$changed"; then
+            echo "ERROR: git diff $BASE_SHA...HEAD failed" >&2
+            exit 1
+          fi
+          while IFS= read -r -d '' file; do
+            for pattern in "${patterns[@]}"; do
+              case "$file" in $pattern) relevant=true; break 2 ;; esac
+            done
+          done < "$changed"
+          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
+
+  # No credentials are required: this lane never calls Zenodo and never writes
+  # to GitHub. It validates syntax, schema and shell hygiene only. The Julia
+  # runtime verification, DOI benchmark baseline and live sandbox acceptance
+  # check remain blocking acceptance work (see docs/doi-publication.md).
+  lint:
+    name: DOI lint
+    needs: gate
+    if: needs.gate.outputs.relevant == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Shell syntax check
+        run: bash -n scripts/link-doi.sh
+
+      - name: Citation metadata check
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+
+          cff = Path("CITATION.cff").read_text(encoding="utf-8")
+          required_prefixes = ("cff-version:", "title:", "authors:", "license:")
+          missing = [p for p in required_prefixes if not any(line.startswith(p) for line in cff.splitlines())]
+          if missing:
+              sys.exit(f"CITATION.cff missing required top-level keys: {', '.join(missing)}")
+          PY
+
+      - name: Receipt schema shape
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+
+          source = Path("src/core/doi.jl").read_text(encoding="utf-8")
+          keys = ("schema", "study", "run", "origin", "deposition_id", "doi",
+                  "published", "files", "created_at", "published_at", "checksum")
+          missing = [k for k in keys if f'"{k}"' not in source and f":{k}" not in source]
+          if missing:
+              sys.exit(f"src/core/doi.jl missing receipt schema keys: {', '.join(missing)}")
+          print("verified DOI receipt schema keys in src/core/doi.jl")
+          PY
+
+  # Julia lifecycle and real-HTTP checks require a provisioned machine with the
+  # Julia runtime and are a documented blocking acceptance gate, not part of
+  # this credential-free lane.

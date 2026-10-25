@@ -10,6 +10,7 @@ import { NameDialog } from '../components/NameDialog'
 import { FilterEditor } from '../components/FilterEditor'
 import { CategorySetEditor } from '../components/CategorySetEditor'
 import type { CompositionFilter, CompositionSet } from '../api/types'
+import { byCodeUnit } from '../utils/text'
 
 export function CompositionsView() {
   const toast = useToast()
@@ -20,12 +21,12 @@ export function CompositionsView() {
   const [showNewSet, setShowNewSet] = useState(false)
 
   const filterNames = useMemo(
-    () => (library ? Object.keys(library.filters).sort() : []),
+    () => (library ? Object.keys(library.filters).sort(byCodeUnit) : []),
     [library],
   )
 
   const setNames = useMemo(
-    () => (library ? Object.keys(library.sets).sort() : []),
+    () => (library ? Object.keys(library.sets).sort(byCodeUnit) : []),
     [library],
   )
 

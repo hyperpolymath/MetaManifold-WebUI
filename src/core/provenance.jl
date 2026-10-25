@@ -199,6 +199,11 @@ parse_raxml_version(text::AbstractString) =
 parse_gappa_version(text::AbstractString) =
     _capture(r"^\s*v([0-9][^\s]*)\s*$"m, text, "gappa")
 
+# FastTree 2.1 prints `FastTree version 2.1.11 ...`; FastTree 2.2 prints
+# `FastTree 2.2.0 Double precision, OpenMP (2 threads):` on stderr under `-help`.
+parse_fasttree_version(text::AbstractString) =
+    _capture(r"FastTree\s+(?:version\s+)?([0-9][^\s:]*)"i, text, "fasttree")
+
 ## The probe registry
 # A declarative table of (component, probe command, parser). `key` is the
 # config/tools.yml key and the name this module answers to; `name` is what the tool
@@ -224,8 +229,9 @@ const TOOL_PROBES = OrderedDict{String,ToolProbe}(
     "mafft"      => ToolProbe("mafft",      "mafft",      ["--version"], :stderr, parse_mafft_version),
     "trimal"     => ToolProbe("trimal",     "trimal",     ["--version"], :stdout, parse_trimal_version),
     "iqtree"     => ToolProbe("iqtree",     "iqtree",     ["--version"], :stdout, parse_iqtree_version),
-    "raxml"      => ToolProbe("raxml",      "raxml",      ["-v"],        :stdout, parse_raxml_version),
-    "gappa"      => ToolProbe("gappa",      "gappa",      ["--version"], :stdout, parse_gappa_version),
+    "raxml"      => ToolProbe("raxml",      "raxml",      ["-v"],         :stdout, parse_raxml_version),
+    "gappa"      => ToolProbe("gappa",      "gappa",      ["--version"],  :stdout, parse_gappa_version),
+    "fasttree"   => ToolProbe("fasttree",   "FastTree",   ["-help"],      :stderr, parse_fasttree_version),
 )
 
 ## Command execution
@@ -343,11 +349,18 @@ not even a well-formed R version. Two of five packages were misreported on this
 machine. Nothing here may reach for it, and nothing normalises what DESCRIPTION
 declares.
 """
-r_version_query(pkg::AbstractString) = """
+function r_version_query(pkg::AbstractString)
+    # This name becomes R source, not an RCall-bound value. Accept only the
+    # package-name alphabet before interpolation; quotes, escapes and controls
+    # must never be able to terminate its R string literal.
+    occursin(r"\A[A-Za-z][A-Za-z0-9.]*\z", pkg) || throw(ArgumentError(
+        "R package names must start with a letter and contain only letters, digits or dots"))
+    return """
 local({
   d <- tryCatch(utils::packageDescription("$pkg"), error = function(e) NULL)
   if (is.list(d) && !is.null(d[["Version"]])) as.character(d[["Version"]]) else NA_character_
 })"""
+end
 
 """
     probe_r(; packages=R_PACKAGES, renv_lock, timeout=60) -> RRecord

@@ -5,7 +5,7 @@
 # ECMAScript JSON.stringify and UTF-16 key order. Rust fixture generation
 # provenance has not been reproduced in this audit.
 using MetaManifold
-using MetaManifold.Canonical: jcs_bytes, jcs_sha256
+using MetaManifold.Canonical: jcs_bytes, jcs_sha256, ijson_read
 using JSON3, SHA, Test
 
 @testset "canonical JSON (JCS)" begin
@@ -80,6 +80,11 @@ end
     @test_throws ArgumentError jcs_bytes(invalid)
     @test_throws ArgumentError jcs_bytes(Dict(invalid => 1))
     @test_throws ArgumentError jcs_bytes(BigFloat(1) + eps(BigFloat))
+    # Records in the statistics layer are built as named tuples; a named tuple is
+    # an object with unique keys, so it must hash exactly like the equivalent Dict.
+    @test jcs_bytes((b = 2, a = 1)) == jcs_bytes(Dict("a" => 1, "b" => 2))
+    @test String(jcs_bytes((; a = [1, nothing], b = "s"))) == "{\"a\":[1,null],\"b\":\"s\"}"
+    @test_throws ArgumentError jcs_bytes((a = BigFloat(1) + eps(BigFloat),))
     @test String(jcs_bytes([Float16(1.5), Float32(1.5), Float64(1.5)])) == "[1.5,1.5,1.5]"
     for T in (UInt8, UInt16, UInt32, UInt64, UInt128)
         @test String(jcs_bytes(T(1))) == "1"
@@ -90,4 +95,34 @@ end
 @testset "rounding fixture is explicitly binary64 input" begin
     cases = readlines(joinpath(@__DIR__, "..", "fixtures", "jcs_oracle.jsonl"))
     @test JSON3.read(cases[5]).input[2] isa AbstractFloat
+end
+
+@testset "strict I-JSON input and JCS output (ijson-jcs)" begin
+    for input in ("{\"a\":1,\"a\":2}",
+                  "{\"a\":1,\"\\u0061\":2}",
+                  "{\"nested\":[{\"b\":0,\"b\":1}]}",
+                  "{\"n\":9007199254740992}",
+                  "{\"n\":9.007199254740992e15}",
+                  "{\"n\":-9.007199254740992e15}",
+                  "{\"n\":2.4499999999999998e16}",
+                  "[-9007199254740992]", "[1e400]", "{\"key\":\"\\ud800\"}",
+                  "{\"key\":\"\\udc00\"}",
+                  "{\"\\ufdd0\":0}", "[\"\\uFFFF\"]",
+                  "01", "1.", "-", "[1] x", "{\"a\":1}{\"a\":2}")
+        @test_throws ArgumentError ijson_read(input)
+    end
+    @test_throws ArgumentError ijson_read(UInt8[0xff])
+    @test_throws ArgumentError jcs_bytes(Dict("bad" => "\ufdd0"))
+    @test_throws ArgumentError jcs_bytes(Dict("\U0001ffff" => 1))
+    for input in ("{\"a\":1,\"b\":[true,null]}",
+                  "{\"emoji\":\"\\ud83d\\ude00\"}",
+                  "{\"exact\":\"9007199254740992\"}",
+                  "{\"float\":1e-7}")
+        @test ijson_read(String(jcs_bytes(ijson_read(input)))) isa JSON3.Object
+    end
+    @test ijson_read("{\"n\":1e21}").n == 1e21 # JCS retains exponent notation
+    @test ijson_read("{\"n\":9e15}").n == 9e15 # within exact range
+    @test String(jcs_bytes(ijson_read("{\"b\":2,\"a\":1}"))) == "{\"a\":1,\"b\":2}"
+    @test ijson_read(Vector{UInt8}(codeunits("{\"a\":1}"))) isa JSON3.Object
+    @test ijson_read("[1]  \n") isa JSON3.Array
 end

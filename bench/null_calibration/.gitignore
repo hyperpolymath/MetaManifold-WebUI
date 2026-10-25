@@ -1,0 +1,4 @@
+# Raw per-taxon p-values are large, append-only working state. The seeds in
+# calibration.R regenerate them dataset-for-dataset; committed evidence is
+# the summarised CSVs and REPORT.md under results/.
+results/raw/

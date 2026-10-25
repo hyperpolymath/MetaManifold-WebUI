@@ -16,6 +16,11 @@ const RUN_SERVER      = "--server"      in ARGS
 
 const UNIT_FILES = [
     "test_diversity.jl",
+    "test_numeric_policy.jl",
+    "test_exact_summaries.jl",
+    "test_high_precision.jl",
+    "test_derived_analyses.jl",
+    "test_clade_cumulus.jl",
     "test_merge_taxa.jl",
     "test_config.jl",
     "test_validation.jl",
@@ -23,6 +28,12 @@ const UNIT_FILES = [
     "test_analysis.jl",
     "test_duckdb_store.jl",
     "test_analysis_duckdb.jl",
+    "test_validated_statistics.jl",
+    "test_method_catalogue.jl",
+    "test_statistics_boundaries.jl",
+    "test_statistics_adversarial.jl",
+    "test_statistics_properties.jl",
+    "test_statistics_ui.jl",
     "test_config_hashing.jl",
     "test_project.jl",
     "test_log.jl",
@@ -51,10 +62,14 @@ const UNIT_FILES = [
     "test_sample_reads.jl",
     "test_determinism.jl",
     "test_differential.jl",
+    "test_evidence.jl",
+    "test_evidence_routes.jl",
     "test_permanova.jl",
+    "test_ordination.jl",
     "test_write_gates.jl",
     "test_server_security.jl",
     "test_canonical.jl",
+    "test_doi.jl",
 ]
 
 # The files named on the command line ("test_routes.jl", "routes" or
@@ -84,8 +99,15 @@ using MetaManifold.Categories, MetaManifold.CompositionLibrary
 ## Unit tests (always run)
 @testset "MetaManifold" begin
 
+    # Each file gets its own testset so that a throw at a file's top level -- outside
+    # any of that file's own testsets -- is reported against the file that caused it
+    # and does not abort the loop. Bare `include` here meant one such throw silently
+    # skipped every remaining unit file (and the occupancy probe below) while the
+    # summary still looked like a single stray error.
     for f in _selected_files()
-        include(joinpath(@__DIR__, "unit", f))
+        @testset "$f" begin
+            include(joinpath(@__DIR__, "unit", f))
+        end
     end
 
     ## Occupancy probe and the two-thread disagreement test (MMW-01), with the

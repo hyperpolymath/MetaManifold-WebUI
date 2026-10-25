@@ -521,6 +521,66 @@ export validate_environment, validate_project, ValidationError,
             isnothing(id) || (_is_number(id) && 0 < id <= 1) ||
                 _err(errors, ctx, "swarm.identity must be between 0 and 1 (got: $id)")
         end
+
+        cc = get(cfg, "clade_cumulus", nothing)
+        if cc isa Dict
+            tb = get(cc, "tree_builder", nothing)
+            isnothing(tb) || (tb isa AbstractString && tb in ("fasttree", "iqtree", "nj")) ||
+                _err(errors, ctx, "clade_cumulus.tree_builder must be fasttree, iqtree, or nj (got: $(repr(tb)))")
+            hm = get(cc, "hierarchy_mode", nothing)
+            isnothing(hm) || (hm isa AbstractString && hm in ("phylogenetic", "taxonomic", "combined")) ||
+                _err(errors, ctx, "clade_cumulus.hierarchy_mode must be phylogenetic, taxonomic, or combined (got: $(repr(hm)))")
+            ma = get(cc, "max_asvs", nothing)
+            isnothing(ma) || (ma isa Integer && !(ma isa Bool) && 3 <= ma <= 50_000) ||
+                _err(errors, ctx, "clade_cumulus.max_asvs must be an integer between 3 and 50000 (got: $(repr(ma)))")
+            st = get(cc, "support_threshold", nothing)
+            isnothing(st) || (_is_number(st) && 0 <= st <= 1) ||
+                _err(errors, ctx, "clade_cumulus.support_threshold must be between 0 and 1 (got: $(repr(st)))")
+            lt = get(cc, "lwr_threshold", nothing)
+            isnothing(lt) || (_is_number(lt) && 0 < lt <= 1) ||
+                _err(errors, ctx, "clade_cumulus.lwr_threshold must be in (0, 1] (got: $(repr(lt)))")
+        end
+
+        an = get(cfg, "analysis", nothing)
+        if an isa Dict
+            ord = get(an, "ordination", nothing)
+            if ord isa Dict
+                om = get(ord, "method", "none")
+                valid_methods = ("none", "rda", "cca", "cap", "dbrda")
+                if !(om isa AbstractString && lowercase(strip(om)) in valid_methods)
+                    _err(errors, ctx, "analysis.ordination.method must be one of $(join(valid_methods, ", ")) (got: $(repr(om)))")
+                end
+                od = get(ord, "distance", "bray")
+                valid_dists = ("bray", "jaccard", "euclidean", "aitchison", "chisq", "unweighted_unifrac", "weighted_unifrac")
+                if !(od isa AbstractString && lowercase(strip(od)) in valid_dists)
+                    _err(errors, ctx, "analysis.ordination.distance must be one of $(join(valid_dists, ", ")) (got: $(repr(od)))")
+                elseif om isa AbstractString && lowercase(strip(om)) in valid_methods
+                    m_norm = lowercase(strip(om))
+                    d_norm = lowercase(strip(od))
+                    compat = m_norm == "rda" ? ("aitchison", "euclidean") :
+                             m_norm == "cca" ? ("chisq",) :
+                             m_norm in ("cap", "dbrda") ? ("bray", "jaccard", "euclidean", "aitchison", "unweighted_unifrac", "weighted_unifrac") :
+                             valid_dists
+                    d_norm in compat || _err(errors, ctx,
+                        "analysis.ordination.distance '$d_norm' is incompatible with analysis.ordination.method '$m_norm'")
+                end
+                osc = get(ord, "scaling", 2)
+                (_whole(osc) && osc in (1, 2)) ||
+                    _err(errors, ctx, "analysis.ordination.scaling must be integer 1 or 2 (got: $(repr(osc)))")
+                operm = get(ord, "permutations", 999)
+                (_whole(operm) && 99 <= operm <= 9999) ||
+                    _err(errors, ctx, "analysis.ordination.permutations must be an integer between 99 and 9999 (got: $(repr(operm)))")
+                ovp = get(ord, "variance_partitioning", false)
+                ovp isa Bool ||
+                    _err(errors, ctx, "analysis.ordination.variance_partitioning must be Bool (got: $(repr(ovp)))")
+                orm = get(ord, "replacement_method", "bayesian_multiplicative")
+                (orm isa AbstractString && lowercase(strip(orm)) in ("bayesian_multiplicative", "multiplicative_replacement")) ||
+                    _err(errors, ctx, "analysis.ordination.replacement_method must be bayesian_multiplicative or multiplicative_replacement (got: $(repr(orm)))")
+                ord_delta = get(ord, "replacement_delta", 0.65)
+                (_is_number(ord_delta) && 0 < ord_delta < 1) ||
+                    _err(errors, ctx, "analysis.ordination.replacement_delta must be in (0, 1) (got: $(repr(ord_delta)))")
+            end
+        end
     end
 
     ## Per-project Validation

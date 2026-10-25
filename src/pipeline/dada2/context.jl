@@ -89,22 +89,50 @@
     end
 
     ## R command provenance
-    # Render a Julia value as R source text, so a command string assembled here
-    # parses and evaluates in R exactly as written. This is what lets a single
-    # string be both logged and run: the record cannot drift from what executed,
-    # because there is only one string.
+    # Stage commands are fixed call templates; every configuration-derived value
+    # is inserted through _r_lit before this sole logged-and-executed string.
     _r_lit(x::Bool)           = x ? "TRUE" : "FALSE"
     _r_lit(x::Integer)        = string(x)
     _r_lit(x::Real)           = string(x)
-    _r_lit(x::AbstractString) = '"' * replace(replace(x, "\\" => "\\\\"), "\"" => "\\\"") * '"'
-    _r_lit(x::AbstractVector) = "c(" * join(_r_lit.(x), ", ") * ")"
     _r_lit(::Nothing)         = "NULL"
+    _r_lit(x::AbstractVector) = "c(" * join(_r_lit.(x), ", ") * ")"
 
-    # Emit the resolved R command behind the standard marker, then evaluate that
-    # very string. Call only from within a stage's sink block: the marker `cat`
-    # goes to the sinked connection, so R remains the sole writer to the log and
-    # no second file handle can interleave. `grep '^\[MetaManifold\] cmd: '`
-    # recovers these beside the shell tools' commands.
+    function _r_lit(x::AbstractString)
+        occursin('\0', x) && throw(ArgumentError("R character literals cannot contain NUL"))
+        io = IOBuffer()
+        write(io, '"')
+        for c in x
+            if c == '\\'
+                write(io, "\\\\")
+            elseif c == '"'
+                write(io, "\\\"")
+            elseif c == '\n'
+                write(io, "\\n")
+            elseif c == '\r'
+                write(io, "\\r")
+            elseif c == '\t'
+                write(io, "\\t")
+            elseif c == '\b'
+                write(io, "\\b")
+            elseif c == '\f'
+                write(io, "\\f")
+            else
+                codepoint = UInt32(c)
+                if codepoint < 0x20 || UInt32(0x7f) <= codepoint <= UInt32(0x9f) ||
+                   codepoint in (UInt32(0x2028), UInt32(0x2029))
+                    print(io, "\\u", uppercase(string(codepoint; base=16, pad=4)))
+                else
+                    write(io, c)
+                end
+            end
+        end
+        write(io, '"')
+        String(take!(io))
+    end
+
+    # The R command is logged and executed as one string so the provenance record
+    # cannot drift from what ran. Call only with the stage templates above, whose
+    # data literals have already passed through _r_lit.
     function _r_run_logged(cmd::AbstractString)
         marker = PipelineLog.CMD_MARKER * " cmd: R> " * cmd * "\n"
         R"cat($marker)"

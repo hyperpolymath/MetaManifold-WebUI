@@ -2,6 +2,7 @@
 using MetaManifold
 SV = MetaManifold.Server
 using JSON3
+using MetaManifold.Canonical: jcs_bytes
 
 function _tr_request(method::String, path::String, body=nothing)
     payload = isnothing(body) ? "" : body isa AbstractString ? body : JSON3.write(body)
@@ -50,6 +51,8 @@ _tr_json(res) = JSON3.read(String(res.body))
 
         view = Dict("version" => 1, "ops" => [Dict("op" => "collapse", "clade" => "abc")])
         @test _tr_request("PUT", "$base/t.jplace/view", view).status == 200
+        @test read(joinpath(tmp, "projects", "StudyT", "trees", ".views", "t.jplace.json")) == jcs_bytes(view)
+        @test _tr_request("PUT", "$base/t.jplace/view", "{\"ops\":[],\"ops\":[]}").status == 400
         @test _tr_request("PUT", "$base/t.jplace/view", "[1,2]").status == 400
         @test _tr_request("PUT", "$base/missing.nwk/view", view).status == 404
         got = _tr_json(_tr_request("GET", "$base/t.jplace"))

@@ -4,10 +4,14 @@ module DiversityMetrics
 # Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 
 import Random
+using ..CladeCumulus: faith_pd, faith_pd_table, clade_faith_pd,
+    unweighted_unifrac, weighted_unifrac, unifrac_matrix
 
 export richness, shannon, simpson, rarefy, srs, normalise_counts,
        auto_min_depth, alpha_diversity, NORMALISATION_METHODS,
-       hellinger, transform_counts, TRANSFORM_METHODS
+       hellinger, transform_counts, TRANSFORM_METHODS,
+       faith_pd, faith_pd_table, clade_faith_pd,
+       unweighted_unifrac, weighted_unifrac, unifrac_matrix
 
 ## Supported count depth-normalisation methods
 const NORMALISATION_METHODS = ("none", "rarefy", "srs")

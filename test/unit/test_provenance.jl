@@ -54,8 +54,12 @@ canned(out::String, err::String = "", code::Int = 0) =
         @test PV.parse_iqtree_version(fixture("iqtree1_version_stdout.txt")) == "1.6.12"
         @test PV.parse_raxml_version(fixture("raxml_version_stdout.txt")) == "8.2.12"
         @test PV.parse_gappa_version(fixture("gappa_version_stdout.txt")) == "0.9.0"
+        @test PV.parse_fasttree_version(fixture("fasttree_version_stderr.txt")) == "2.2.0"
+        @test PV.parse_fasttree_version("FastTree version 2.1.11 Double precision (No OpenMP):") == "2.1.11"
         @test PV.TOOL_PROBES["mafft"].stream === :stderr
+        @test PV.TOOL_PROBES["fasttree"].stream === :stderr
         @test PV.probed_by(PV.TOOL_PROBES["raxml"]) == "raxml -v"
+        @test PV.probed_by(PV.TOOL_PROBES["fasttree"]) == "FastTree -help (stderr)"
     end
 
     @testset "a parser reading the wrong stream fails rather than inventing" begin
@@ -111,6 +115,15 @@ canned(out::String, err::String = "", code::Int = 0) =
         @test occursin("packageDescription", query)
         @test !occursin("packageVersion", query)
         @test occursin("Version", query)
+
+        for name in ("dada2", "Biostrings", "glmGamPoi", "R.oo")
+            @test occursin("packageDescription(\"$name\")", PV.r_version_query(name))
+        end
+        for name in ("", "1pkg", "../vegan", "vegan/other", "pkg-name", "pkg_name",
+                     "vegan\"); stop('unsafe'); #", "vegan\\", "vegan\n", "vegan\r",
+                     "vegan\t", "vegan\0")
+            @test_throws ArgumentError PV.r_version_query(name)
+        end
 
         ## And the module as a whole must not smuggle it in elsewhere.
         source = read(joinpath(@__DIR__, "..", "..", "src", "core", "provenance.jl"), String)

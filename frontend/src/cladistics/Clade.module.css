@@ -1,0 +1,239 @@
+/* © 2026 Joshua Benjamin Jewell. All rights reserved. */
+/* Licensed under the GNU Affero General Public License version 3 (AGPLv3). */
+.panel {
+  display: grid;
+  gap: 16px;
+}
+
+.buildGrid {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(110px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.runChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 14px;
+}
+
+.runChip {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: var(--color-muted-fg);
+  background: var(--color-bg);
+  cursor: pointer;
+  font-size: .8rem;
+}
+
+.runChip.on {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  font-size: .8rem;
+  color: var(--color-muted-fg);
+}
+
+.field input,
+.field select,
+.analysisSelect,
+.treeControls input {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-fg);
+  background: var(--color-bg);
+}
+
+.warning {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid #f9a825;
+  background: color-mix(in srgb, #f9a825 9%, transparent);
+  color: var(--color-muted-fg);
+  font-size: .82rem;
+}
+
+.analysisBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.analysisSelect {
+  flex: 1 1 260px;
+}
+
+.steps {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: .78rem;
+  color: var(--color-muted-fg);
+}
+
+.stepDone {
+  color: #2b8a3e;
+}
+
+.stepRunning {
+  color: #1971c2;
+}
+
+.stepFailed {
+  color: var(--color-danger);
+}
+
+.log {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: .75rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  background: var(--color-surface);
+  padding: 10px;
+}
+
+.section {
+  min-width: 0;
+}
+
+.sectionHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.sectionHeading h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.sectionHeading p {
+  margin: 0;
+  max-width: 720px;
+  color: var(--color-muted-fg);
+  font-size: .82rem;
+}
+
+.treeControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.treeControls input {
+  width: 160px;
+  font-size: .8rem;
+}
+
+.treeMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  color: var(--color-muted-fg);
+  font-size: .76rem;
+  margin-bottom: 6px;
+}
+
+.legendDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  background: #087f5b;
+  opacity: .7;
+}
+
+.treeScroll {
+  max-height: 680px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-bg);
+}
+
+.cladeButton {
+  cursor: pointer;
+  outline: none;
+}
+
+.cladeButton:focus circle {
+  stroke: #1971c2;
+  stroke-width: 3px;
+}
+
+.nodeLabel {
+  fill: var(--color-fg);
+  paint-order: stroke;
+  stroke: var(--color-bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.stats {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: var(--color-muted-fg);
+  font-size: .82rem;
+}
+
+.stats strong {
+  color: var(--color-fg);
+}
+
+.hash {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: .72rem;
+  word-break: break-all;
+}
+
+@media (max-width: 900px) {
+  .buildGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metricGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .buildGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

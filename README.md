@@ -6,6 +6,13 @@
 [![CI](https://github.com/JoshuaJewell/MetaManifold-WebUI/actions/workflows/ci.yml/badge.svg)](https://github.com/JoshuaJewell/MetaManifold-WebUI/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/JoshuaJewell/MetaManifold-WebUI/graph/badge.svg?token=20F1VLF590)](https://codecov.io/gh/JoshuaJewell/MetaManifold-WebUI)
 
+Fork governance (hyperpolymath/MetaManifold-WebUI only; nothing here is part of upstream):
+[![Governance (fork)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/hypatia-scan.yml/badge.svg)](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/workflows/hypatia-scan.yml)
+[![DEED syntax](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhyperpolymath%2FMetaManifold-WebUI%2Fgovernance-badges%2Fdeed.json)](MetaManifold-WebUI_chora.deed)
+[![K9 contracts](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhyperpolymath%2FMetaManifold-WebUI%2Fgovernance-badges%2Fk9-grid.json)](.machine_readable/contractiles/)
+[![Hypatia grid](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fhyperpolymath%2FMetaManifold-WebUI%2Fgovernance-badges%2Fhypatia-grid.json)](https://github.com/hyperpolymath/standards/blob/main/docs/VERDICT-GRID-SPEC.adoc)
+The grid grades the worst finding each reporter has (purple critical, red high, yellow medium, blue minor, green clean), with a scanner that did not run in orange and a fleet member not enrolled for this repository in grey; enrolment is in `.gitbot-fleet/enrolment.json`.
+
 MetaManifold wraps standard amplicon sequencing workflows into a single configurable Julia orchestrator: from raw paired-end Next Generation Sequencing reads through denoising, taxonomy assignment and taxonomic filtering, with interactive configuration and analysis in the browser.
 
 <p align="center">
@@ -14,7 +21,7 @@ MetaManifold wraps standard amplicon sequencing workflows into a single configur
 
 ## Overview
 
-MetaManifold consists of a Julia backend (pipeline engine + REST API) and a TypeScript/React frontend. The pipeline runs FastQC, MultiQC, cutadapt, DADA2, swarm, vsearch, and cd-hit-est under the hood, and places ASVs on reference trees with MAFFT, trimAl, IQ-TREE, RAxML and gappa; results are stored in per-run DuckDB databases and served to the frontend as interactive Plotly charts and filterable tables. Pipeline configuration is editable in the web UI at every cascade level (see [Configuration](#configuration)).
+MetaManifold consists of a Julia backend (pipeline engine + REST API) and a TypeScript/React frontend. The pipeline runs FastQC, MultiQC, cutadapt, DADA2, swarm, vsearch, and cd-hit-est under the hood, and places ASVs on reference trees with MAFFT, trimAl, IQ-TREE, RAxML and gappa; results are stored in per-run DuckDB databases and served to the frontend as interactive Plotly charts and filterable tables. Pipeline configuration is editable in the web UI at every cascade level (see [Configuration](#configuration)). For analysis-method status and planned work, see [ROADMAP.md](ROADMAP.md); the full occupancy follow-up is tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
 
 **Pipeline stages**
 
@@ -74,8 +81,12 @@ Once a run completes, analysis is performed on request through the web UI, both 
 - Pipeline stage read-count summaries
 - NMDS ordination (Bray-Curtis, via R/vegan)
 - PERMANOVA, with PERMDISP to check for differences in dispersion (via R/vegan)
+- Constrained ordinations — RDA, CCA, CAP, and dbRDA — with `Condition(...)` partial ordination, seeded `vegan::anova.cca` permutation tests, adjusted-$R^2$ variance partitioning (`vegan::varpart`), and biplot scalings 1 & 2 (see [Constrained ordinations](docs/statistics/constrained-ordinations.md))
+- De novo ASV phylogenies with cumulative clade abundances, Faith's phylogenetic diversity, and weighted/unweighted UniFrac (CladeCumulus)
 
 Counts may be normalised before analysis (none, rarefaction to a fixed or auto-resolved depth, or scaling with ranked subsampling (SRS), which reaches the depth by scaling counts and keeps more of the community structure), and contamination-flagged taxa may be included or excluded. Ordinations can also apply a Hellinger transform before the Bray-Curtis dissimilarity. Composition charts can be drawn as a grid faceted on any two of run, group and sub-group. All analysis charts are returned as Plotly JSON and rendered interactively in the browser.
+
+Opt-in exact-count and high-precision descriptive summaries are available through a separate validated API without changing these ordinary workflows. Their numeric, zero-depth, DuckDB, persistence, and reproducibility contracts are documented in [Validated descriptive statistics](VALIDATED_STATISTICS.md). The staged first-party JSON migration toward the [I-JSON/JCS estate standard](docs/ijson-jcs.md) records its scope and compatibility exclusions separately.
 
 ## Prerequisites
 
@@ -232,6 +243,35 @@ from the library page.
   <img src=".github/screenshots/tree-viewer.png" width="800" alt="The tree viewer showing a placement tree with collapsed clades, bootstrap support and placement symbols">
 </p>
 
+### CladeCumulus: ASV phylogenies and phylogenetic diversity
+
+A study's **Cladistics** tab builds a de novo tree directly from ASV sequences,
+rather than treating taxonomic ranks as a phylogeny. Choose whole runs and a
+shared results table with a `Sequence` column, then set an ASV cap (500 by
+default, 2,000 maximum) and a minimum total-read threshold. The highest-abundance
+ASVs are selected deterministically, with sequence ties broken lexicographically.
+The build uses the existing **MAFFT → trimAl → IQ-TREE** workflow and its
+`phylogeny.reference` settings, including local/remote execution and bootstrap
+configuration.
+
+The completed **CladeCumulus** view provides:
+
+- cumulative read counts and frequencies on every phylogenetic clade, with a
+  collapsible tree and a link to the full Newick viewer;
+- Faith's phylogenetic diversity and retained reads per sample;
+- unweighted UniFrac and normalized weighted UniFrac heatmaps, with CSV export;
+- optional rarefaction or SRS before all three analyses, using the same count
+  normalisation as the existing diversity views.
+
+Each build is saved separately with its selected count matrix, ASV FASTA,
+Newick tree, source settings, count/tree SHA-256 hashes and the usual tool
+attestation. Tips use stable sequence-content hashes so their names are safe for
+external tools and reproducible across runs. Metrics share one O(nodes × samples)
+roll-up; pairwise UniFrac is O(samples² × nodes). Tree inference itself can be
+much more expensive, so keep the ASV cap appropriate for the dataset. Run
+`julia --project=. bench/cladistics.jl` for a no-I/O roll-up/UniFrac timing. A tree
+inferred from short amplicons is approximate, particularly along deep branches.
+
 ### Composition
 
 The composition view classifies each ASV/OTU into a biological category and renders per-sample or pooled stacked bar charts. Category sets live in `config/composition.yml` (the bundled `default` set covers protozoa, helminths, fungi, host, plants, and invertebrates); each category references a named taxonomic filter from the `filters:` library in that same file. Both are editable from the Compositions page under SYSTEM in the sidebar. A category summary precedes the chart, and a quality filter can cap the number of unresolved taxonomic placeholders admitted.
@@ -254,20 +294,200 @@ not exclude samples from this analysis.
 - `nb_glm` (default): a negative-binomial GLM per taxon using `MASS::glm.nb`,
   with a library-size offset. The effect is log2 fold change; positive values
   indicate greater abundance in the second condition. `offset` selects `tss`
-  (default) or `rle` scaling.
-- `clr_welch`: Welch's t-test on centred log-ratios after multiplicative zero
-  replacement with `zCompositions::cmultRepl`. The effect is a CLR difference,
-  not a fold change. `replacement_delta` controls the replacement fraction
-  (default 0.65); `offset` is not used.
+  (default) or `rle`; `dispersion` selects maximum-likelihood theta or a
+  cross-taxon `glmGamPoi` trend. Both options Wald-test the group coefficient
+  with the dispersion treated as known, so every `ml` result — and a
+  `glmGamPoi` result whose smaller group has at most 12 samples — carries a
+  calibration caveat in its diagnostics, shown with the result and written
+  into its CSV export. The caveat changes no p-value; the null-simulation
+  evidence and full replication protocol live in `bench/null_calibration`.
+  The glmGamPoi path uses fixed-theta NB Wald fits, not a quasi-likelihood test.
+- `zinb`: a zero-inflated negative-binomial model with separate logistic
+  zero and count components, a count-component library-size offset, a joint
+  2-df likelihood-ratio test, and BH correction.
+- `hurdle_nb`: a logistic occurrence model plus zero-truncated NB counts for
+  positive observations. It uses the same joint test and offset convention.
+- `clr_welch`: Welch's t-test on centred log-ratios after zero replacement with
+  `zCompositions::cmultRepl`. The effect is a CLR difference, not a fold change.
+  `replacement_method` selects Bayesian-multiplicative (GBM, default) or
+  multiplicative (CZM) replacement; `replacement_delta` sets the replacement
+  fraction and optional `bayesian_alpha` overrides GBM's concentration. The
+  offset is not used. See [zero-handling notes](docs/statistics/zero-handling.md).
+- `ancom_bc`: ANCOM-BC sampling-fraction bias-corrected log-linear model
+  (Lin & Peddada 2020, *Nat. Commun.* 11:3514). Estimates within-group sample
+  offsets and between-group sampling-fraction bias via an E-M Gaussian mixture
+  on `log(counts + 1)`, propagating bias-estimation variance into two-sided Wald
+  tests. The effect is a bias-corrected log2 fold change; useful when asymmetric
+  shifts or load changes would bias standard CLR centering (needs at least 3
+  tested taxa). The implementation reports its mixture and bias diagnostics.
+  Its assumption that fewer than half of tested taxa are differential must be
+  checked rather than treated as a guarantee.
+- `aldex2`: Dirichlet(`count + 0.5`) Monte-Carlo CLR model (Fernandes et al.
+  2013, 2014). Draws `mc_samples` (default 128, seeded by the study's `seed`)
+  instances per sample and reports standardized CLR effect sizes with
+  consistent-sign posterior predictive Welch p-values; suited to sparse or
+  variable-depth cohorts where deterministic zero imputation is undesirable.
+  The reported estimate is a standardized CLR effect size, not an absolute fold change.
+- `songbird`: compositional baseline-category multinomial regression with
+  reference-frame invariant CLR-centred differentials summing to zero across
+  fitted taxa (Morton et al. 2019, *Nat. Commun.* 10:2719; Zhang et al. 2017).
+  Conditions on read totals without extra-multinomial overdispersion; taxa
+  separated in one group are marked `failed` rather than diverging.
+- `multinomial`: one multinomial logistic model for the whole composition
+  (Songbird's model in pure Julia), which needs no size factor and no zero
+  replacement. The effect is a log2 fold change in relative abundance against
+  `mn_reference_taxon`; `mn_penalty` adds an L2 ridge penalty, and a taxon with
+  no reads in one group is refused rather than reported.
+- `dirichlet_multinomial`: the same joint model plus a Dirichlet prior on the
+  composition (La Rosa et al. 2012), which absorbs between-sample
+  overdispersion; `dm_overdispersion_method` picks `mle` (profiled) or `mom`.
+  Both multinomial models bound their Newton fit with `max_iter`, `tolerance`
+  and `max_seconds`, and a fit that does not converge is refused. Dirichlet-
+  multinomial diagnostics report the concentration, theta, and boundary status.
 
-For either method, `min_prevalence` (default 0) filters taxa by the fraction of
+ZINB and hurdle models can overfit sparse data; do not select ZINB solely
+because counts are sparse. Compare against NB diagnostics. The methods report
+a count-process effect and the zero-process coefficient; this is not proof of
+biological structural absence. The public
+`MetaManifold.Differential.fit_occupancy` lower-level estimator accepts
+repeated-visit detection histories (sites × visits × taxa), refuses single-visit
+histories and is not selectable in the standard analysis configuration or UI.
+It currently has no detection covariates. Do not use it as a substitute for
+the full workflow tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
+See [occupancy model notes](docs/occupancy-models.md).
+
+The multinomial models are the count-based, compositionally coherent
+alternative to `nb_glm` (which fits each taxon independently and so ignores the
+constraint the composition imposes) and to `clr_welch` (which is Gaussian on
+log-ratios and ignores the count likelihood). They are fitted in Julia without R
+and without a pseudocount; the dense observed information limits a fit to 1000
+taxa, above which raise `min_prevalence` or analyse a coarser rank.
+
+Across the differential methods, `min_prevalence` (default 0) filters taxa by the fraction of
 samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
 that produced a p-value. Failed or filtered taxa have no substitute p-value;
 inspect their status and note in the results table. Invalid input or an
 unavailable required R package produces an explicit error.
 
 Implementation and reference tests: `src/analysis/differential.jl`,
-`src/server/routes/analysis.jl`, and `test/unit/test_differential.jl`.
+`src/server/routes/analysis.jl`, `bench/compositional_differential/benchmark.jl`,
+and `test/unit/test_differential.jl`.
+
+#### Why a count model rather than a t-test
+
+Sequencing measures a sample of the library, not an absolute quantity: a
+sample of twice the depth has twice every count, and one taxon can only increase
+at another's expense. Comparisons of raw or rarefied abundances therefore carry
+the compositionality problem (Gloor et al. 2017). The multinomial models fit the
+whole composition at once and condition on each sample's total, so each
+coefficient is the log ratio of two taxa. That ratio is unchanged when every
+count in a sample is multiplied by a constant, which is why no size factor and no
+pseudocount is needed. The intercept is the log-odds of the taxon against the
+reference at the reference group; the group coefficient is the change in that
+log-odds, i.e. a log fold change in relative abundance. Because a log ratio is
+the sum of log ratios through any third taxon, every reported effect is coherent
+under compositionality and can be re-expressed against any other taxon.
+
+#### Choosing the reference taxon
+
+Every reported effect is anchored on the reference taxon, so the choice matters
+for interpretability and for stability, but not for the fit: the likelihood and
+the log ratio between two non-reference taxa are the same whichever taxon is the
+reference. An empty `mn_reference_taxon` takes the most abundant taxon that
+passes the prevalence filter. An explicit one must be a taxon at the analysed
+rank with reads in at least half the samples, and reads in both groups; a taxon
+seen in fewer samples makes every ratio it anchors unstable, and a taxon absent
+from one group has no finite log fold change, so both are refused with the
+reason. Taxa with no reads in one group are removed from the composition and
+listed as `failed` with their note, rather than fitted: in a joint model a single
+diverging coefficient would otherwise pull the whole fit with it.
+
+#### Overdispersion
+
+The multinomial treats every read as independent, so its variance is the sampling
+variance and nothing else. Real samples vary more than that: the same community,
+sequenced twice, differs by more than resampling reads from one library. The
+Dirichlet-multinomial adds that between-sample variation as a concentration `c`,
+with `theta = 1/(1+c)` the model's intra-sample correlation; the count variance
+becomes `N p (1 - p) (1 + (N - 1) theta)`. When the data are overdispersed the
+multinomial's standard errors are too small, and the Dirichlet-multinomial
+corrects them; when they are not, `c` runs to its upper bound, the fit collapses
+to the multinomial exactly, and the affected rows are marked `boundary` with a
+note saying so. The two models are otherwise the same model on the same scale,
+so their coefficients are directly comparable.
+
+#### Which model to use
+
+| Data and question | Method |
+| --- | --- |
+| Counts, two groups, few samples, expected overdispersion | `nb_glm` (per-taxon negative binomial; the default) |
+| Counts, many taxa and samples, a joint composition and a single reference | `multinomial` (Songbird's model) |
+| As above, with visible between-sample overdispersion | `dirichlet_multinomial` |
+| Composition already transformed, or a quick robust rank-based check | `clr_welch` |
+| Excess zeros beyond negative-binomial overdispersion, with evidence for them | `zinb` or `hurdle_nb` (two-part; see the caution above) |
+| Asymmetric shifts or a community-wide load change | `ancom_bc` (bias-corrected) |
+| Sparse or variable-depth cohorts, Monte-Carlo CLR | `aldex2` |
+| Many taxa, a joint multinomial fit, but through R and with CLR-centred effects | `songbird` |
+
+`nb_glm` fits a negative-binomial GLM per taxon with a library-size offset: it
+tolerates overdispersion through its own dispersion parameter and is the safer
+choice with very few samples per group, but each taxon is fitted independently
+and the offsets are estimated, not modelled. The multinomial models borrow
+strength across taxa by fitting one model, and their effect has a direct
+compositional reading, at the cost of a joint fit that a single separated taxon
+can compromise (hence the separation check and the optional ridge penalty), and
+of a dense information matrix that caps a fit at 1000 taxa. Songbird's L1
+sparsity path is not implemented: a lasso estimate has no valid Wald standard
+error, so this implements the L2-penalised model and Wald inference instead.
+
+The multinomial models are fitted in Julia and need no R package.
+`max_iter`, `tolerance` and `max_seconds` bound one fit; a fit that runs out of
+time fails with an explicit error instead of holding the request open. Runtime
+and memory at 100, 1000 and 10000 taxa are measured by
+`bench/compositional_scaling/scaling.jl`, which writes `results/scaling.csv`.
+
+Implementation and reference tests: `src/analysis/compositional.jl` (the two
+models), `src/analysis/differential.jl`, `src/server/routes/analysis.jl`, and
+`test/unit/test_differential.jl`. The reference values in the tests come from an
+independent implementation and are quoted to 12 digits; the special functions
+are cross-checked against mpmath at 40 digits.
+
+### Evidence Mode (API)
+
+Evidence Mode turns a run's outputs into a citable epistemic record. A claim is
+a sentence a reader could disagree with, a **scope** naming the part of the data
+it is about (its *fibre*: the rows whose value at a rank, or whose category in a
+set, is one of the named labels), and a **warrant** saying why it follows.
+Claims are stored in `projects/{study}/[<group>/]<run>/evidence/claims.yml` and
+can be downloaded as that exact YAML.
+
+The record is served entirely by the Julia backend; the browser surface is
+delivered by the Vue/Marid client, so this repository ships no Evidence UI.
+
+| Endpoint | What it answers |
+| --- | --- |
+| `GET .../runs/{run}/evidence` | The record plus the context a claim may cite (tables, ranks, categories, provenance) |
+| `POST .../evidence/claims` | Create, replace or retire a claim; ids are safe names of at most 64 characters |
+| `DELETE .../evidence/claims/{id}` | Retire one claim |
+| `GET .../evidence/claims.yml` | The record exactly as it sits on disk |
+| `POST .../evidence/fiber` | A fibre's share per sample, its largest members, and an **echo**: the same scope through another projection (the other classifier at the same rank, the parent rank) |
+| `POST .../evidence/residuals` | Where a fibre departs from a declared null — `proportional` (the fibre spread across samples as the library is) or a stated `claim_share` |
+
+Validation is enforced server-side, so every client sees the same rules. Scope
+is one projection (`rank` or `category`) of 1 to 50 values of at most 200
+characters; claim text is at most 2000 characters; a claim carries at most 5
+warrants and 20 caveats; a blank status is stored as `draft`. A claim cannot be
+marked `supported` without at least one measurement, citation or inference
+warrant — a definition alone supports nothing. Echo verdicts are `concordant`,
+`minor divergence`, `partial agreement` or `discordant`; containment is
+`contained`, `inconsistent` or `disjoint`. Residuals report Pearson residuals, a
+log2 ratio and a χ² statistic without a p-value, counting `|r| > 2`.
+
+Implementation: `src/core/evidence.jl` (schema, residuals, verdicts),
+`src/server/routes/evidence.jl` (the SQL), `test/unit/test_evidence.jl` and
+`test/unit/test_evidence_routes.jl`. Longer notes on the definitions, the schema
+and the limits are kept in `docs/evidence-mode.md` (documentation under `docs/`
+is kept local by policy — see `.gitignore`).
 
 ### Figures and report
 
@@ -604,6 +824,23 @@ analysis:
   beta:                          # Bray-Curtis for NMDS and PERMANOVA
     normalisation: hellinger     # hellinger | none | rarefy | srs
     depth: 0                     # rarefy/srs reads per sample; 0 = smallest non-empty sample
+  differential:
+    method: nb_glm               # nb_glm | clr_welch | multinomial | dirichlet_multinomial
+                                 # ancom_bc | aldex2 | songbird | zinb | hurdle_nb
+    offset: tss                  # count models: tss | rle
+    dispersion: ml               # nb_glm: ml | glmGamPoi
+    min_prevalence: 0.0          # fraction of samples a taxon must be seen in
+    replacement_method: bayesian_multiplicative
+                                 # clr_welch: bayesian_multiplicative | multiplicative_replacement
+    replacement_delta: 0.65      # clr_welch: strictly between 0 and 1
+    bayesian_alpha: ~            # Bayesian replacement: null (GBM estimate) or a number > 0
+    mn_reference_taxon: ~        # multinomial models: null selects the most abundant fitted taxon
+    mn_penalty: 0.0              # multinomial models: non-negative L2 penalty
+    dm_overdispersion_method: mle # dirichlet_multinomial: mle | mom
+    max_iter: 500                # multinomial models: Newton iteration cap
+    tolerance: 0.00000001        # multinomial models: convergence tolerance
+    max_seconds: 300.0           # multinomial models: wall-clock budget
+    mc_samples: 128              # aldex2: Dirichlet Monte-Carlo instances in [16, 4096]
   nmds:
     max_stress: 0.2              # warn if NMDS stress exceeds this value
 ```
@@ -746,6 +983,8 @@ projects/{project_name}/{run}/
 |   |-- taxonomy.tsv             # Top-hit taxonomy assignments (ASV or OTU)
 |   `-- logs/
 `-- merged/
+    |-- evidence/
+    |   `-- claims.yml           # Evidence record: claims, fibres, warrants
     |-- merged.csv               # Merged taxonomy + counts (all taxa)
     |-- protist_filter.csv       # Filtered subset (one per merge_taxa.filters entry)
     `-- results.duckdb           # DuckDB database for API queries
@@ -791,9 +1030,10 @@ The server exposes a REST API under `/api/v1/`. Key endpoint groups:
 | Results        | `GET/POST/DELETE .../results/tables/...`                                                                      | List, query, filter, save, export (`.xlsx`), and delete tables; OTU member drill-down    |
 | QC             | `GET .../results/qc`, `GET .../results/dada2`                                                                 | MultiQC report metadata and DADA2 figures, logs, stats                                   |
 | Analysis       | `POST .../runs/{run}/analysis/{alpha,chart}`, `GET .../runs/{run}/analysis/{pipeline-stats,ranks}`            | Per-run charts and rank discovery                                                        |
-| Cross-run      | `POST /studies/{study}/analysis/{alpha,chart,chart-facet,nmds,permanova,venn,publication-tables}`             | Comparison, faceted charts, NMDS, PERMANOVA, taxon overlap and publication tables across runs |
+| Cross-run      | `POST /studies/{study}/analysis/{alpha,chart,chart-facet,nmds,permanova,ordination,venn,publication-tables}`  | Comparison, faceted charts, NMDS, PERMANOVA, constrained ordinations (RDA/CCA/CAP/dbRDA), taxon overlap and publication tables across runs |
 | Composition    | `POST .../runs/{run}/composition/summary`, `POST .../composition/{source}/query`, `POST .../composition/{source}/distinct/{column}` | Organism-composition summaries and tables for a run                             |
 | Composition library | `GET /composition`, `POST/DELETE /composition/{filters,sets}/{name}`, `GET /category-sets`, `POST/DELETE /category-sets/{name}` | Edit the filters and category sets in `config/composition.yml`               |
+| Evidence | `GET .../runs/{run}/evidence`, `GET .../evidence/claims.yml`, `POST .../evidence/claims`, `DELETE .../evidence/claims/{id}`, `POST .../evidence/{fiber,residuals}` | Claims, fibres, echoes and residuals for a run; the record is exportable as YAML |
 | Reference trees | `GET/POST /reference-trees`, `GET/PUT/DELETE /reference-trees/{id}`, `GET/PUT .../fasta`, `POST .../run`, `GET .../log/{step}`, `GET .../qc/{align,trim}`, `GET .../alignment/{raw,trimmed}`, `GET .../treefile`, `POST .../trim-preview` | Build and inspect the shared reference trees |
 | Placements     | `GET/POST /studies/{study}/placements`, `GET/PUT/DELETE .../placements/{id}`, `POST .../placements/preview`, `GET/PUT .../fasta/queries`, `POST .../run`, `GET .../log/{step}`, `GET .../qc/{align,trim}`, `GET .../alignment/{raw,trimmed}`, `POST .../trim-preview` | Place a study's sequences on a reference tree |
 | Trees          | `GET/POST /studies/{study}/trees`, `GET/DELETE /studies/{study}/trees/{file}`, `PUT /studies/{study}/trees/{file}/view` | Upload, read and delete Newick and jplace files; save each tree's view state          |
