@@ -274,11 +274,15 @@ else
   fail 'the standards renderer checkout exists'
 fi
 
-stale_owner="$(grep -rn 'hyperpolymath/standards' .github/workflows/ 2>/dev/null || true)"
+# Only real reference lines count. A comment may (and the fork-local DEED lane
+# does) explain the transfer by naming the old owner; a `uses:` or a checkout
+# `repository:` naming it is a broken reference.
+stale_owner="$(grep -rnE '^[[:space:]]*(uses:[[:space:]]+[^#]*|repository:)[[:space:]]*hyperpolymath/standards' \
+  .github/workflows/ 2>/dev/null || true)"
 if [ -z "$stale_owner" ]; then
-  pass 'no workflow still names the pre-transfer standards owner'
+  pass 'no workflow still references the pre-transfer standards owner'
 else
-  fail "workflows still reference hyperpolymath/standards, which no longer resolves for a reusable uses: - $stale_owner"
+  fail "workflows still reference hyperpolymath/standards in a uses:/repository: field - $stale_owner"
 fi
 
 upload_count="$(grep -c 'uses: github/codeql-action/upload-sarif@' "$REUSABLE" || true)"
@@ -325,13 +329,58 @@ not_contains "$secret_workflow" 'secrets:' 'the secret scanner receives no calle
 not_contains "$secret_workflow" 'continue-on-error:' 'secret scanner failures cannot be advisory'
 not_contains "$secret_workflow" 'pull_request_target:' 'secret scanning does not use a privileged PR trigger'
 scorecard_workflow="$(cat .github/workflows/scorecard.yml)"
-contains "$scorecard_workflow" 'uses: metadatastician/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \
-  'Scorecard uses the audited immutable reusable'
+contains "$scorecard_workflow" 'uses: ./.github/workflows/scorecard-reusable.yml' \
+  'Scorecard calls the guarded fork-local reusable'
 if grep -Eq '^  pull_request(_target)?:' <<<"$scorecard_workflow"; then
   fail 'Scorecard publication must not run against PR code'
 else
   pass 'Scorecard OIDC publication is not enabled for PRs'
 fi
+
+# The two lanes that used to call a reusable owned by `standards` directly.
+#
+# The repository's Actions policy allows a reusable workflow only from a
+# repository owned by `hyperpolymath`. A call to another owner from a different
+# owner fails AT PLAN TIME - zero jobs, no name, no line in any check summary -
+# so it is silent. `standards` moved to `metadatastician` on 2026-10-25 and both
+# lanes went dark that way. The rule below is the durable part: no workflow here
+# may call a reusable workflow from a different owner, whatever the repository
+# is called or whoever owns it next.
+cross_owner="$(grep -rnE '^[[:space:]]*uses:[[:space:]]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\.github/workflows/' \
+  .github/workflows/ 2>/dev/null \
+  | grep -vE 'uses:[[:space:]]+\./\.github/workflows/' \
+  | grep -vE 'uses:[[:space:]]+hyperpolymath/' || true)"
+if [ -z "$cross_owner" ]; then
+  pass 'every reusable workflow is fork-local or owned by the repository owner'
+else
+  fail "a reusable workflow owned by another account fails at plan time with no jobs - $cross_owner"
+fi
+
+deed_reusable="$(cat .github/workflows/deed-conformance-reusable.yml)"
+contains "$deed_reusable" 'deed-conformance.yml at 75bd5994470661a099df562d6d5ad2fe744dbd66' \
+  'the fork-local DEED lane records its immutable standards source'
+contains "$deed_reusable" 'ref: 75bd5994470661a099df562d6d5ad2fe744dbd66' \
+  'the DEED linter is still fetched from standards at that commit'
+contains "$caller" 'uses: ./.github/workflows/deed-conformance-reusable.yml' \
+  'DEED validation uses the guarded fork-local reusable'
+contains "$caller" 'require-files: true' \
+  'a zero-file DEED corpus cannot silently pass'
+not_contains "$caller" 'uses: metadatastician/standards/.github/workflows/deed-conformance.yml@' \
+  'the governance lane cannot call the DEED reusable across owners'
+
+scorecard_reusable="$(cat .github/workflows/scorecard-reusable.yml)"
+contains "$scorecard_reusable" 'scorecard-reusable.yml at c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \
+  'the fork-local Scorecard lane records its immutable standards source'
+# The two guards whose absence froze code scanning for two months upstream, and
+# again silently when a reconciler failure could skip the upload.
+contains "$scorecard_reusable" 'name: Select SARIF to upload' \
+  'the SARIF upload is fed by an explicit selection step'
+contains "$scorecard_reusable" 'uses: github/codeql-action/upload-sarif@' \
+  'the fork-local Scorecard lane still uploads SARIF to code scanning'
+contains "$scorecard_reusable" 'Fail if reconciliation did not succeed' \
+  'a failed reconciliation still fails the run instead of passing quietly'
+contains "$scorecard_reusable" 'continue-on-error: true' \
+  'the reconciler cannot skip the upload'
 
 if [ "$failures" -gt 0 ]; then
   printf 'governance contract: %d failure(s)\n' "$failures" >&2

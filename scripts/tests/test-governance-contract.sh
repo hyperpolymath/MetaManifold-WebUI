@@ -14,7 +14,7 @@ reset_fixture() {
 }
 reset_fixture
 bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1
-for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger stale-standards-owner scorecard-owner; do
+for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger stale-standards-owner scorecard-owner deed-remote scorecard-remote deed-source-sha scorecard-source-sha scorecard-no-upload scorecard-quiet-reconcile cross-owner-reusable; do
   reset_fixture
   case "$mutation" in
     allowlist-addition) echo 'frontend/src/fork-only.ts' >> "$fixture/config/hypatia/upstream-typescript-allowlist.txt" ;;
@@ -38,8 +38,23 @@ for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate bas
     # The standards repository was transferred on 2026-10-25 and a reusable
     # `uses:` no longer follows the old owner, so either of these mutations
     # leaves a workflow that fails at plan time with no jobs at all.
-    stale-standards-owner) sed -i 's@metadatastician/standards@hyperpolymath/standards@g' "$fixture/.github/workflows/scorecard.yml" ;;
-    scorecard-owner) sed -i 's@metadatastician/standards/.github/workflows/scorecard-reusable.yml@metadatastician/standards/.github/workflows/other.yml@' "$fixture/.github/workflows/scorecard.yml" ;;
+    # The reconciler checkout is the one cross-owner reference that must stay a
+    # checkout of the current owner; naming the pre-transfer owner there is a
+    # reference, not a comment.
+    stale-standards-owner) sed -i 's@repository: metadatastician/standards@repository: hyperpolymath/standards@' "$fixture/.github/workflows/scorecard-reusable.yml" ;;
+    scorecard-owner) sed -i 's@uses: ./.github/workflows/scorecard-reusable.yml@uses: ./.github/workflows/scorecard-other.yml@' "$fixture/.github/workflows/scorecard.yml" ;;
+    # The two lanes that went dark on 2026-10-25. A call across owners is
+    # refused by the Actions policy at plan time with zero jobs, so nothing
+    # reports it; the contract has to.
+    deed-remote) sed -i 's|uses: ./.github/workflows/deed-conformance-reusable.yml|uses: metadatastician/standards/.github/workflows/deed-conformance.yml@75bd5994470661a099df562d6d5ad2fe744dbd66|' "$fixture/.github/workflows/hypatia-scan.yml" ;;
+    scorecard-remote) sed -i 's|uses: ./.github/workflows/scorecard-reusable.yml|uses: metadatastician/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d|' "$fixture/.github/workflows/scorecard.yml" ;;
+    cross-owner-reusable) sed -i 's|uses: ./.github/workflows/k9-conformance-reusable.yml|uses: someone/else/.github/workflows/k9.yml@main|' "$fixture/.github/workflows/hypatia-scan.yml" ;;
+    # A copy is only a copy while it still comes from the audited commit and
+    # keeps the guards whose absence froze code scanning upstream.
+    deed-source-sha) sed -i 's@75bd5994470661a099df562d6d5ad2fe744dbd66@main@' "$fixture/.github/workflows/deed-conformance-reusable.yml" ;;
+    scorecard-source-sha) sed -i 's@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d@main@' "$fixture/.github/workflows/scorecard-reusable.yml" ;;
+    scorecard-no-upload) sed -i '/uses: github\/codeql-action\/upload-sarif@/d' "$fixture/.github/workflows/scorecard-reusable.yml" ;;
+    scorecard-quiet-reconcile) sed -i '/^      - name: Fail if reconciliation did not succeed/,/^  [a-z]/d' "$fixture/.github/workflows/scorecard-reusable.yml" ;;
     *) echo "ERROR: unknown mutation $mutation" >&2; exit 1 ;;
   esac
   if bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1; then

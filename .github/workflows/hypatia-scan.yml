@@ -52,7 +52,13 @@ jobs:
 
   deed:
     name: DEED syntax
-    uses: metadatastician/standards/.github/workflows/deed-conformance.yml@75bd5994470661a099df562d6d5ad2fe744dbd66
+    # Fork-local copy of the standards lane at 75bd5994. A reusable workflow
+    # from another owner is refused by this repository's Actions policy at plan
+    # time (zero jobs, no error line in any check summary), so the copy is what
+    # keeps the lane visible after standards moved to metadatastician on
+    # 2026-10-25. The linter itself is still fetched from standards at that
+    # commit by the called workflow.
+    uses: ./.github/workflows/deed-conformance-reusable.yml
     permissions:
       contents: read
     with:

@@ -20,7 +20,12 @@ jobs:
   scorecard:
     # The default-branch SARIF upload needs security-events: write; never
     # expose that grant or the publication OIDC token to PR code.
-    uses: metadatastician/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d
+    #
+    # Fork-local copy of the standards reusable at c6d78606: a reusable workflow
+    # owned by another account is refused by this repository's Actions policy at
+    # plan time, which left this lane dark after standards moved to
+    # metadatastician on 2026-10-25.
+    uses: ./.github/workflows/scorecard-reusable.yml
     permissions:
       actions: read
       contents: read

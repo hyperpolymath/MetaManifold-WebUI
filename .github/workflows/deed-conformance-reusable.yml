@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# Fork-local copy of metadatastician/standards/.github/workflows/
+# deed-conformance.yml at 75bd5994470661a099df562d6d5ad2fe744dbd66.
+#
+# Why a copy. The repository's Actions policy allows a reusable workflow only
+# from a repository owned by `hyperpolymath`; a call to another owner fails at
+# plan time with zero jobs, so the lane is silently absent from every check
+# summary. `standards` was transferred to `metadatastician` on 2026-10-25 and the
+# call stopped working. Deleting the lane would be worse than copying it: DEED
+# conformance is one row of the verdict grid and one of the three independent
+# governance lanes.
+#
+# This is the CALLER path of the upstream workflow, which is the only path this
+# repository ever ran: check out the caller, check out the linter from standards
+# at the pinned commit, run it over every committed *.deed file. The upstream
+# file's self-test, fixture-corpus and uuid-v8 steps are gated on
+# `github.repository == 'hyperpolymath/standards'` and were never executed here,
+# so they are not copied.
+#
+# The pins are the point: the linter still comes from standards at the same
+# commit, verified by `scripts/check-governance-contract.sh`, which fails if this
+# header's source commit changes or if a caller reaches for the remote reusable
+# again.
+name: DEED conformance (fork-local)
+
+on:
+  workflow_call:
+    inputs:
+      require-files:
+        description: "Fail when the caller has no committed .deed file (a zero-file run is otherwise a pass)."
+        type: boolean
+        required: false
+        default: false
+
+permissions: {}
+
+jobs:
+  lint:
+    name: DEED syntax / lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A checkout of another owner's public repository IS allowed by the
+      # policy - only reusable workflows are restricted - so the linter itself
+      # is still the pinned upstream one, not a copy of it.
+      - name: Check out the DEED linter at the pinned commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: metadatastician/standards
+          ref: 75bd5994470661a099df562d6d5ad2fe744dbd66
+          path: .deed-canon
+          persist-credentials: false
+          sparse-checkout: |
+            1-formats/deed/tools
+          sparse-checkout-cone-mode: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
+
+      - name: Lint every committed deed
+        env:
+          REQUIRE_FILES: ${{ inputs.require-files || false }}
+          LINTER: .deed-canon/1-formats/deed/tools/deed_lint.js
+        run: |
+          set -euo pipefail
+          test -s "$LINTER" || { echo "::error::the pinned DEED linter is missing at $LINTER"; exit 1; }
+          find . -name '*.deed' -not -path './.deed-canon/*' -print | sort > "$RUNNER_TEMP/deeds"
+          if [ ! -s "$RUNNER_TEMP/deeds" ]; then
+            if [ "$REQUIRE_FILES" = "true" ]; then
+              echo "::error::require-files is set and no committed .deed file was found"
+              exit 1
+            fi
+            echo "no committed .deed files - nothing to lint"
+            exit 0
+          fi
+          echo "linting $(wc -l < "$RUNNER_TEMP/deeds") file(s)"
+          # A lint failure must be readable from the checks API, not only from a
+          # log a reviewer cannot open from every client.
+          if ! xargs bun "$LINTER" < "$RUNNER_TEMP/deeds"; then
+            echo "::error::DEED lint failed; see the step log for the file and the reason"
+            exit 1
+          fi
