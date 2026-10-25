@@ -131,7 +131,7 @@ jobs:
       # dada2, vegan, glmGamPoi and their dependencies from source on every run,
       # which is most of the wall clock and none of the information.
       - name: Restore the renv cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: /opt/renv-cache
           key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
