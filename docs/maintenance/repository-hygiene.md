@@ -37,12 +37,40 @@ merge base, which makes every branch look `fresh`. Both scripts refuse to run in
 a shallow clone (`git fetch --unshallow`, or `fetch-depth: 0` in CI) rather than
 print a number they cannot stand behind.
 
+## Declared lanes are not spare branches
+
+A branch name can be a *routing decision* rather than a topic. Three such lanes
+exist here, and a class computed from the commit graph knows nothing about them:
+
+| Lane | Declared in | What it is |
+| --- | --- | --- |
+| `upstream/*` | `MetaManifold-WebUI_chora.deed`, routing `:upstream-candidates` | Work destined for the upstream remote (`JoshuaJewell/MetaManifold-WebUI`), squash-merged there. `notes/commit-signing.md` records #192 landing that way as `upstream/glmgampoi-r`. |
+| `archive/*` | `CONTRIBUTING.md`, retention | A deliberate snapshot that is not proposed for merging. |
+| `governance-badges` | `CONTRIBUTING.md`, retention | The orphan branch the `Publish badges` job force-pushes; `README.md` reads it through `img.shields.io/endpoint`. |
+
+The triage prints a lane column and a count, but a laned branch is **not**
+counted by `--fail-on` unless `--include-lanes` is passed. This is not
+pedantry: it is a mistake this document had to absorb.
+
+**Correction, 2026-10-25.** The first pass of this cleanup classed
+`upstream/placement-evidence` as `salvage` and closed #270 with it, reasoning
+only from the commit graph. The deed says that name is a lane: the branch was a
+candidate for the upstream remote, not a spare working branch. The content is
+not lost — it is at `refs/pull/270/head`, and the same two files
+(`frontend/src/components/ComputingNote.tsx`, `frontend/src/tree/placementLwr.test.ts`)
+are recorded in the table below — but closing it removed a candidate from a
+declared lane, which is a decision that belonged to the owner. Whether to
+re-cut that candidate from the current tip is recorded under
+[Decisions for the owner](#decisions-for-the-owner). The other twelve closes
+are unaffected: none of them was in a lane.
+
 ## Enforced, not just written down
 
 | Where | What it does |
 | --- | --- |
 | `.github/workflows/pr-freshness.yml` | Runs `scripts/maintenance/check-pr-freshness.sh` on every pull request open, push, reopen and ready-for-review. Fails with a check annotation naming how far behind the branch is, or which merge commit breaks rule 2. |
 | `.github/workflows/branch-hygiene.yml` | Weekly, and on demand: runs the triage and updates **one** rolling issue, closing it when no drifted branch remains. One issue updated in place, because a job that opens an issue every week is the mechanism that produced the pile it is meant to clear. |
+| `.github/dependabot.yml` | Both ecosystems set `rebase-strategy: auto`. Dependabot does not rebase by default, so with two open updates the second becomes stale the moment the first merges and **Branch freshness** would fail a one-line dependency bump on a rule the bump did not break. Rebasing keeps that check meaning what it says. |
 | `scripts/tests/test-triage-branches.sh`, `scripts/tests/test-check-pr-freshness.sh` | Both scripts are tested against fixture repositories: merged, drifted-with-nothing-new, drifted-with-a-dropped-file, orphan, unrelated-history and shallow cases. They run with the other shell tests in the `Advisory scan contract` job. |
 
 The pull-request check is advisory by configuration, not by intent: GitHub only
@@ -165,6 +193,30 @@ before it:
 6. **Only then touch the ruleset.** Making **Branch freshness** required is
    safe once the workflow is on `main`, and it cannot be done before then.
 
+## Looks wrong, is not
+
+Recorded because a re-review of this repository reaches both conclusions and
+acts on them; the first one was reached, wrongly, during the 2026-10-25 pass.
+
+- **`JoshuaJewell/MetaManifold-WebUI` in `README.md`, `CITATION.cff`,
+  `.github/workflows/ci.yml` (Codecov `slug`), `CONTRIBUTING.md`,
+  `frontend/src/about.ts` and `SECURITY.md` is not a stale owner.** This
+  repository is a fork of it, and says so in three machine-readable places:
+  `0-AI-MANIFEST.a2ml` (`(fork-of …)`), `MetaManifold-WebUI_chora.deed`
+  (`:fork-of`, `:upstream`) and `.machine_readable/contractiles/must/must.k9.ncl`
+  (`upstream_repository`). Those references point at the upstream project's
+  Actions, Codecov project and citation on purpose. "Fixing" them to
+  `hyperpolymath` would silently repoint the coverage upload at a Codecov
+  project that may not have the token, and with `fail_ci_if_error: false` the
+  failure would be invisible.
+- **The `hyperpolymath/standards` pins differ by design**, in part. See decision
+  6 below for which ones are contract-bound.
+- **`governance-badges` looks like an abandoned branch** and is an output.
+- **`docs/` ignoring everything except a whitelist** is deliberate
+  (`.gitignore`: `docs/*` with `!docs/release-notes/`, `!docs/statistics/`, …).
+  A new directory under `docs/` needs a whitelist line or it will not be
+  committed; `!docs/maintenance/` was added for this document.
+
 ## Decisions for the owner
 
 These are not cleanup, they are choices with trade-offs; the reasoning is
@@ -179,14 +231,28 @@ recorded here so the choice does not have to be rediscovered.
    coverage. Either answer is defensible; the current one is not wrong, only
    slow.
 3. **`governance-badges` never gets a pull request.** It is an orphan branch of
-   generated JSON, force-pushed by the `Publish badges` job. Excluding it from
-   branch listings (a `--exclude`-style pattern in whatever lists branches) or
-   publishing the JSON as a release asset would remove it from every human's
-   branch list without touching the pipeline. Not done here because it changes
-   where the badges are read from, and the `img.shields.io/endpoint` URLs in
-   `README.md` point at that branch.
+   generated JSON, force-pushed by the `Publish badges` job. The triage now
+   classes it `badge-data` and excludes it from `--fail-on`, so it no longer
+   invites a deletion. Publishing the JSON as a release asset instead would
+   remove it from every human's branch list, but it changes where the badges are
+   read from: the `img.shields.io/endpoint` URLs in `README.md` point at that
+   branch. Left as it is.
 4. **`docs/milestones/02-deferred-issues.md` is referenced by issue #4 and does
    not exist on `main`.** The pre-sync archive carried it; the sync dropped it.
    Either restore it or edit the issue's reference. Not done here because the
    content overlaps `docs/statistics/method-catalogue-v1.md` and the owner may
    prefer the issue to point at that instead.
+5. **The `upstream/*` candidate that was closed (see the correction above).**
+   `prepare/lwr-63-lean`, `upstream/placement-evidence` and `wip/pr62-theta`
+   carried the same residue — `ComputingNote.tsx` and `placementLwr.test.ts`.
+   If an upstream candidate is still wanted, the honest move is to re-cut one
+   small branch from the current tip containing only those two files, tested
+   against the current `frontend/src/tree/model.ts`, rather than to restore a
+   six-day-old tree 119 commits behind. That is owner work, not cleanup.
+6. **Reconciling the `hyperpolymath/standards` pins.** Seven workflows reference
+   that repository at four different commits, two of them inside
+   `hypatia-scan-reusable.yml` itself. Some pins are deliberate and pinned by
+   `scripts/check-governance-contract.sh` (`c6d78606…` for K9, the secret
+   scanner and Scorecard; `01c9b0c9…` for the verdict-grid renderer), so a
+   reconciliation has to move the contract's constants and the allowlist digest
+   together, and is a review of its own rather than a tidy.

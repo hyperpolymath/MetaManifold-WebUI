@@ -6,6 +6,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # A dependency pull request is a one-line diff that becomes stale the
+    # moment anything else merges, and the Branch freshness check then fails it
+    # on a rule the dependency did not break. Dependabot's default is not to
+    # rebase, so with more than one open update at a time every one but the
+    # first would show red for the wrong reason. Rebasing makes the freshness
+    # check mean what it says: red here is a conflict that needs a person.
+    rebase-strategy: auto
   # Dependabot's npm ecosystem supports bun.lock. Julia and R pins remain
   # maintainer-reviewed in tool_versions.yml, Manifest.toml and renv.lock.
   - package-ecosystem: npm
@@ -13,6 +20,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    rebase-strategy: auto
     groups:
       development-tooling:
         dependency-type: development
