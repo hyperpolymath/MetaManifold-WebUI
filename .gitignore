@@ -248,12 +248,13 @@ vignettes/*.pdf
 .Renviron
 
 ## Documentation kept local except published release, cladistics, format, maintenance,
-## statistics, and schema notes
+## statistics, schema notes, and the published security dossier
 docs/*
 !docs/release-notes/
 !docs/cladistics/
 !docs/format-migration.md
 !docs/maintenance/
+!docs/security/
 !docs/statistics/
 !docs/schemas/
 

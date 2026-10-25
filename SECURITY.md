@@ -42,3 +42,18 @@ A green workflow is not a claim that all security findings are resolved.
 Missing tools, inaccessible GitHub alert APIs, absent fleet report-backs and
 unverified K9 L3 signatures must remain visible as missing or inapplicable
 evidence.
+
+## Security dossier
+
+`docs/security/` holds a full static review of the request surface, the data
+handling, and the deployment assumptions: findings with file-and-line
+evidence, a mapping against GDPR, the HIPAA Security Rule and the UK
+Government Security Classifications TOP SECRET (Tier 3) baseline behaviours, a
+CyBOK-referenced colour-team exercise, and a phased plan
+(`docs/security/ultraplan.md`) with a zero-friction rule: each exposure is
+eliminated, substituted or notified, never pushed back onto the user as an extra
+step.
+
+Start at [`docs/security/README.md`](docs/security/README.md). The dossier is a
+gap analysis and a plan. It is explicitly not an accreditation, and it does not
+claim that any control it describes has been implemented.
