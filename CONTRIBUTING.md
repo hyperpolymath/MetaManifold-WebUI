@@ -68,6 +68,10 @@ What happens to a branch once it is no longer needed:
   is deleted and the content is not lost: `git fetch origin pull/<n>/head`.
 - **`archive/`** — a deliberate snapshot that is not proposed for merging. It
   carries no pull request; opening one asks `main` to become older.
+- **`upstream/*`** — the upstream-candidate lane declared by the repository deed
+  (`:upstream-candidates`). These are proposed to the upstream remote and
+  squash-merged there, not here; the triage script reports them but does not
+  count them as drift.
 - **`governance-badges`** — not a working branch. The `Publish badges` job
   force-pushes shields.io endpoint JSON to it on every push to `main`, and
   `README.md` reads it through `img.shields.io/endpoint`. Never delete it.

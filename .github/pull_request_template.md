@@ -15,5 +15,7 @@
 
 - [ ] I followed [CONTRIBUTING.md](../CONTRIBUTING.md).
 - [ ] This branch starts at current upstream main and contains no merges from fork main.
+      The **Branch freshness** check reports this within a minute of a push; run it
+      yourself with `bash scripts/maintenance/check-pr-freshness.sh --base origin/main`.
 - [ ] CI has run and passes.
 - [ ] Existing licensing, citation and acknowledgement text is unchanged.

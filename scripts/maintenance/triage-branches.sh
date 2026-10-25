@@ -16,10 +16,7 @@
 # Classes, and what each one means for cleanup:
 #
 #   base        the base branch itself.
-#   unrelated   no common ancestor with the base. Expected for the orphan
-#               data branch `governance-badges`, which the "Publish badges"
-#               job force-pushes on every push to `main`; it holds shields.io
-#               endpoint JSON and is never merged. Do not delete it.
+#   unrelated   no common ancestor with the base.
 #   contained   every commit is already in the base (`ahead == 0`). The branch
 #               has nothing to merge and its pull request can be closed.
 #   fresh       merge base is the base tip, so it satisfies CONTRIBUTING rule 1.
@@ -30,6 +27,23 @@
 #               base. The content was superseded by later commits; merging it
 #               would revert them.
 #
+# Lanes. A branch name can also be a *declared routing decision*, and those are
+# not spare branches whatever their commit graph says. The lanes are read from
+# the repository deed (`MetaManifold-WebUI_chora.deed` names the upstream
+# candidates) plus the two declared in CONTRIBUTING.md's retention section:
+#
+#   upstream/*        upstream-candidate work, squash-merged on the upstream
+#                     remote (deed routing `:upstream-candidates`).
+#   archive/*         a deliberate snapshot, not proposed for merging.
+#   governance-badges orphan branch of shields.io endpoint JSON, force-pushed by
+#                     the Publish badges job and read by README.md.
+#
+# A laned branch is still classed and still printed, because its shape is worth
+# knowing, but it is NOT counted by --fail-on unless --include-lanes is given.
+# This distinction is not academic: a triage that classes by graph shape alone
+# reports an upstream candidate as `salvage` and invites its deletion, which
+# discards the routing decision rather than a commit.
+#
 # A shallow clone cannot answer any of this: `--is-shallow-repository` is
 # checked and the script refuses to print numbers it cannot stand behind.
 #
@@ -38,6 +52,7 @@
 #   scripts/maintenance/triage-branches.sh --format markdown  # for an issue body
 #   scripts/maintenance/triage-branches.sh --format json
 #   scripts/maintenance/triage-branches.sh --fail-on stale
+#   scripts/maintenance/triage-branches.sh --fail-on salvage --include-lanes
 #
 # Exit status: 0 on success, 2 if triage cannot be computed (shallow clone,
 # missing refs), 3 if --fail-on matched at least one branch.
@@ -47,9 +62,10 @@ base=main
 remote=origin
 format=table
 fail_on=
+include_lanes=false
 
 usage() {
-  sed -n '5,45p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '5,58p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -58,6 +74,7 @@ while [ $# -gt 0 ]; do
     --remote) remote="${2:?--remote needs a value}"; shift 2 ;;
     --format) format="${2:?--format needs a value}"; shift 2 ;;
     --fail-on) fail_on="${2:?--fail-on needs a value}"; shift 2 ;;
+    --include-lanes) include_lanes=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'triage-branches: unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -95,6 +112,43 @@ fi
 # against, and a triage run against last week's cache is worse than none.
 base_tip="$(git rev-parse "$base_ref^{commit}")"
 
+# --- lanes -----------------------------------------------------------------
+# The deed is the authority for the upstream-candidate lane; the other two are
+# stated in CONTRIBUTING.md. Fall back to the deed's value if the file is not
+# checked out (a caller may run this against a bare clone).
+lane_globs=()
+lane_names=()
+add_lane() { lane_globs+=("$1"); lane_names+=("$2"); }
+
+deed=MetaManifold-WebUI_chora.deed
+if [ -f "$deed" ]; then
+  while IFS= read -r declared; do
+    if [ -n "$declared" ]; then
+      add_lane "$declared" upstream
+    fi
+  # Anchored to the key, tolerant of what follows the value: the real deed puts
+  # the closing parens on later lines, a hand-written one may not.
+  done < <(sed -n 's/^[[:space:]]*:upstream-candidates[[:space:]]*"\([^"]*\)".*$/\1/p' "$deed")
+fi
+if [ "${#lane_globs[@]}" -eq 0 ]; then
+  add_lane 'upstream/*' upstream
+fi
+add_lane 'archive/*' archive
+add_lane 'governance-badges' badge-data
+
+lane_of() { # branch -> lane name, or empty
+  local branch="$1" i=0
+  while [ "$i" -lt "${#lane_globs[@]}" ]; do
+    # Intentional unquoted expansion: the lane is a glob pattern.
+    # shellcheck disable=SC2254
+    case "$branch" in
+      ${lane_globs[$i]}) printf '%s' "${lane_names[$i]}"; return 0 ;;
+    esac
+    i=$((i + 1))
+  done
+  return 0
+}
+
 rows=()
 count_base=0
 count_unrelated=0
@@ -102,6 +156,7 @@ count_contained=0
 count_fresh=0
 count_salvage=0
 count_stale=0
+count_laned=0
 matched_fail_on=0
 
 while IFS= read -r ref; do
@@ -110,6 +165,7 @@ while IFS= read -r ref; do
   [ "$branch" = "HEAD" ] && continue
   git rev-parse --verify --quiet "$ref^{commit}" >/dev/null || continue
 
+  lane="$(lane_of "$branch")"
   class=
   ahead=0
   behind=0
@@ -142,17 +198,23 @@ while IFS= read -r ref; do
       count_stale=$((count_stale + 1))
     fi
   fi
+  [ -n "$lane" ] && count_laned=$((count_laned + 1))
 
-  case "$fail_on" in
-    '' ) ;;
-    any) matched_fail_on=$((matched_fail_on + 1)) ;;
-    stale) [ "$class" = stale ] && matched_fail_on=$((matched_fail_on + 1)) ;;
-    salvage) [ "$class" = salvage ] && matched_fail_on=$((matched_fail_on + 1)) ;;
-  esac
+  # A laned branch is reported but does not raise --fail-on: its shape is not
+  # evidence that anyone should delete it.
+  if [ -z "$fail_on" ] || { [ -n "$lane" ] && [ "$include_lanes" != true ]; }; then
+    :
+  else
+    case "$fail_on" in
+      any) matched_fail_on=$((matched_fail_on + 1)) ;;
+      stale) [ "$class" = stale ] && matched_fail_on=$((matched_fail_on + 1)) ;;
+      salvage) [ "$class" = salvage ] && matched_fail_on=$((matched_fail_on + 1)) ;;
+    esac
+  fi
 
   tip_date="$(git log -1 --format=%cs "$ref")"
   tip_subject="$(git log -1 --format=%s "$ref" | cut -c1-60)"
-  rows+=("$branch|$class|$ahead|$behind|$unique|$merges|$tip_date|$tip_subject")
+  rows+=("$branch|$lane|$class|$ahead|$behind|$unique|$merges|$tip_date|$tip_subject")
 done < <(git for-each-ref --format='%(refname)' "refs/remotes/$remote" | LC_ALL=C sort)
 
 json_escape() {
@@ -168,43 +230,49 @@ case "$format" in
       "$(json_escape "$base")" "$base_tip" "$(json_escape "$remote")"
     first=1
     for row in "${rows[@]}"; do
-      IFS='|' read -r branch class ahead behind unique merges tip_date tip_subject <<<"$row"
+      IFS='|' read -r branch lane class ahead behind unique merges tip_date tip_subject <<<"$row"
       [ "$first" -eq 1 ] || printf ','
       first=0
-      printf '{"branch":"%s","class":"%s","ahead":%s,"behind":%s,"unique_files":%s,"merge_commits":%s,"tip_date":"%s","tip_subject":"%s"}' \
-        "$(json_escape "$branch")" "$class" "$ahead" "$behind" "$unique" "$merges" \
+      if [ -n "$lane" ]; then
+        lane_json="\"$(json_escape "$lane")\""
+      else
+        lane_json=null
+      fi
+      printf '{"branch":"%s","lane":%s,"class":"%s","ahead":%s,"behind":%s,"unique_files":%s,"merge_commits":%s,"tip_date":"%s","tip_subject":"%s"}' \
+        "$(json_escape "$branch")" "$lane_json" "$class" "$ahead" "$behind" "$unique" "$merges" \
         "$tip_date" "$(json_escape "$tip_subject")"
     done
     printf ']}\n'
     ;;
   markdown)
-    printf '| Branch | Class | Ahead | Behind | Files only here | Merge commits | Tip |\n'
-    printf '| --- | --- | ---: | ---: | ---: | ---: | --- |\n'
+    printf '| Branch | Lane | Class | Ahead | Behind | Files only here | Merge commits | Tip |\n'
+    printf '| --- | --- | --- | ---: | ---: | ---: | ---: | --- |\n'
     for row in "${rows[@]}"; do
-      IFS='|' read -r branch class ahead behind unique merges tip_date tip_subject <<<"$row"
-      printf '| `%s` | %s | %s | %s | %s | %s | %s %s |\n' \
-        "$branch" "$class" "$ahead" "$behind" "$unique" "$merges" "$tip_date" "$tip_subject"
+      IFS='|' read -r branch lane class ahead behind unique merges tip_date tip_subject <<<"$row"
+      printf '| `%s` | %s | %s | %s | %s | %s | %s | %s %s |\n' \
+        "$branch" "${lane:--}" "$class" "$ahead" "$behind" "$unique" "$merges" "$tip_date" "$tip_subject"
     done
     printf '\n'
     printf '%s\n' \
       "- base: $count_base" \
-      "- unrelated (never merged, expected for the badge data branch): $count_unrelated" \
+      "- unrelated (no common ancestor): $count_unrelated" \
       "- contained (nothing to merge): $count_contained" \
       "- fresh (satisfies CONTRIBUTING rule 1): $count_fresh" \
       "- salvage (holds files the base lacks): $count_salvage" \
-      "- stale (superseded by later commits): $count_stale"
+      "- stale (superseded by later commits): $count_stale" \
+      "- in a declared lane, so not counted as drift: $count_laned"
     ;;
   table)
-    printf '%-46s %-10s %6s %7s %6s %6s  %s\n' \
-      BRANCH CLASS AHEAD BEHIND ONLY-HERE MERGES TIP
+    printf '%-44s %-11s %-10s %6s %7s %6s %6s  %s\n' \
+      BRANCH LANE CLASS AHEAD BEHIND ONLY-HERE MERGES TIP
     for row in "${rows[@]}"; do
-      IFS='|' read -r branch class ahead behind unique merges tip_date tip_subject <<<"$row"
-      printf '%-46s %-10s %6s %7s %6s %6s  %s %s\n' \
-        "$branch" "$class" "$ahead" "$behind" "$unique" "$merges" "$tip_date" "$tip_subject"
+      IFS='|' read -r branch lane class ahead behind unique merges tip_date tip_subject <<<"$row"
+      printf '%-44s %-11s %-10s %6s %7s %6s %6s  %s %s\n' \
+        "$branch" "${lane:--}" "$class" "$ahead" "$behind" "$unique" "$merges" "$tip_date" "$tip_subject"
     done
-    printf '\n%d branch(es): %d contained, %d stale, %d salvage, %d fresh, %d unrelated\n' \
+    printf '\n%d branch(es): %d contained, %d stale, %d salvage, %d fresh, %d unrelated, %d in a declared lane\n' \
       "$((count_base + count_contained + count_stale + count_salvage + count_fresh + count_unrelated))" \
-      "$count_contained" "$count_stale" "$count_salvage" "$count_fresh" "$count_unrelated"
+      "$count_contained" "$count_stale" "$count_salvage" "$count_fresh" "$count_unrelated" "$count_laned"
     ;;
 esac
 
