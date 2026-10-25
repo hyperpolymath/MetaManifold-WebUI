@@ -163,6 +163,39 @@ end
             @test _ss_served("/api/v1/studies").status == 200
         end
 
+        @testset "Invalid Unicode in client errors keeps its HTTP status" begin
+            r = SV.json_error(404, "study_not_found", "Study '\ufdd0' not found")
+            @test r.status == 404
+            @test JSON3.read(String(copy(r.body))).message == "Invalid request"
+            r = SV.json_error(400, "bad_request", "Invalid group", detail="\U0001ffff")
+            @test r.status == 400
+            @test JSON3.read(String(copy(r.body))).error == "bad_request"
+        end
+
+        @testset "Malformed JSON bodies are client errors" begin
+            host = "Host" => "127.0.0.1:8080"
+            json = "Content-Type" => "application/json"
+            # Object-body routes parse through `Server._read_json_object`, so
+            # a truncated body returns 400 with an invalid_json error directly.
+            for (method, path) in (
+                ("POST", "/api/v1/studies"),
+                ("POST", "/api/v1/studies/StudyS/runs"),
+                ("PATCH", "/api/v1/config"),
+                ("POST", "/api/v1/studies/StudyS/analysis/alpha"),
+            )
+                r = _ss_request(method, path, [host, json], "{\"name\": ")
+                @test r.status == 400
+                @test JSON3.read(String(copy(r.body))).error == "invalid_json"
+            end
+            # A well-formed body still parses, and a byte-backed body survives:
+            # `String(::Vector{UInt8})` can consume the vector, so the helper
+            # copies it before handing it to JSON3.
+            bytes = Vector{UInt8}(codeunits("{\"name\":\"FromBytes\"}"))
+            req = SV.HTTP.Request("POST", "/api/v1/studies", [json], bytes)
+            @test SV._request_json(req).name == "FromBytes"
+            @test String(copy(req.body)) == "{\"name\":\"FromBytes\"}"
+        end
+
         @testset "Report uploads are served inert" begin
             host = "Host" => "127.0.0.1:8080"
             base = "/api/v1/studies/StudyS/report"
@@ -185,6 +218,44 @@ end
             @test f.status == 200
             @test SV.HTTP.header(f, "X-Content-Type-Options") == "nosniff"
             @test SV.HTTP.header(f, "Content-Security-Policy") == ""
+        end
+
+        @testset "Malformed or non-object JSON bodies answer 400 rather than 500" begin
+            headers = ["Host" => "127.0.0.1:8080", "Content-Type" => "application/json"]
+            object_routes = (
+                ("POST",  "/api/v1/studies"),
+                ("POST",  "/api/v1/studies/StudyS/rename"),
+                ("POST",  "/api/v1/studies/StudyS/groups"),
+                ("POST",  "/api/v1/studies/StudyS/runs"),
+                ("POST",  "/api/v1/studies/StudyS/runs/run1/rename"),
+                ("PATCH", "/api/v1/config"),
+                ("PATCH", "/api/v1/studies/StudyS/config"),
+                ("PATCH", "/api/v1/studies/StudyS/runs/run1/config"),
+                ("POST",  "/api/v1/category-sets/custom"),
+                ("POST",  "/api/v1/studies/StudyS/runs/run1/composition/summary"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/alpha"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/chart"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/chart-facet"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/venn"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/differential"),
+                ("POST",  "/api/v1/studies/StudyS/analysis/publication-tables"),
+                ("POST",  "/api/v1/filter-presets/testpreset"),
+            )
+            for (method, path) in object_routes, payload in ("{not-json", "[1,2]", "123")
+                r = _ss_request(method, path, headers, payload)
+                @test r.status == 400
+                @test JSON3.read(String(copy(r.body))).error == "invalid_json"
+            end
+
+            for path in ("/api/v1/composition/filters/f1", "/api/v1/composition/sets/s1")
+                bad_syntax = _ss_request("POST", path, headers, "{not-json")
+                @test bad_syntax.status == 400
+                @test JSON3.read(String(copy(bad_syntax.body))).error == "invalid_json"
+
+                bad_shape = _ss_request("POST", path, headers, "[1,2]")
+                @test bad_shape.status == 400
+                @test JSON3.read(String(copy(bad_shape.body))).error == "invalid_library"
+            end
         end
     finally
         saved_origins === nothing ||

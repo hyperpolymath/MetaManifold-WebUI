@@ -247,10 +247,13 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-## Documentation kept local except published release notes and cladistics notes
+## Documentation kept local except published release, cladistics, format, statistics, and schema notes
 docs/*
 !docs/release-notes/
 !docs/cladistics/
+!docs/format-migration.md
+!docs/statistics/
+!docs/schemas/
 
 # translation temp files
 
@@ -320,6 +323,8 @@ archive/
 ### Exceptions
 !.github
 !.github/**
+!.editorconfig
+!.gitleaks.toml
 !.Rprofile
 
 # Brainstorming visual-companion scratch (mock-ups, server state)
@@ -340,6 +345,8 @@ proofs/agda/_build/
 # Occupancy proof dependencies and reproduction logs
 /_build/
 
-# Fork governance: the gitbot-fleet enrolment manifest and report-backs are tracked.
+# Fork governance: the gitbot-fleet enrolment manifest, report-backs, and K9 contractiles are tracked.
 !.gitbot-fleet/
 !.gitbot-fleet/**
+!.machine_readable/
+!.machine_readable/**

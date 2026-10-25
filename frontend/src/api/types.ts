@@ -746,6 +746,8 @@ export interface CladisticsResult {
   unweighted_unifrac: number[][]
   weighted_unifrac: number[][]
   total_branch_length: number
+  /** How the inferred (unrooted) tree was rooted before computing PD. */
+  rooting?: string
   normalisation: { method: CountNormalisation; depth: number; seed: number }
   excluded_samples: string[]
   weighted_unifrac_definition: string
@@ -968,6 +970,18 @@ export interface CladeCumulusRequest {
 export interface CladeCumulusDiversity {
   samples: string[]
   mapped_tips: number
+  /**
+   * Reads per sample that no tip on the tree carries: a query whose kept
+   * `.jplace` like-weight ratios do not reach 1 contributes only that share,
+   * and an ASV the tree does not cover contributes nothing.
+   *
+   * These reads are excluded from the tree-tip abundances, but they are still
+   * counted in each sample's library size, which is the denominator the
+   * weighted UniFrac metrics divide by. That is what keeps the shortfall off
+   * the tree instead of renormalising a partially placed sample back up to
+   * abundance 1. Absent for responses produced before this field existed.
+   */
+  unplaced_reads?: Record<string, number>
   faith_pd: Record<string, number>
   unweighted_unifrac: number[][]
   weighted_unifrac: number[][]
@@ -1055,3 +1069,186 @@ export interface CladeMoveValidationResponse {
   proposed_root: CladeNodeData | null
   proposed_plotly?: { data: unknown[]; layout: Record<string, unknown> }
 }
+
+export type OrdinationMethod = 'none' | 'rda' | 'cca' | 'cap' | 'dbrda'
+export type ActiveOrdinationMethod = Exclude<OrdinationMethod, 'none'>
+export type OrdinationDistance =
+  | 'bray'
+  | 'jaccard'
+  | 'euclidean'
+  | 'aitchison'
+  | 'chisq'
+  | 'unweighted_unifrac'
+  | 'weighted_unifrac'
+export type OrdinationScaling = 1 | 2
+
+export interface OrdinationEigenvalue {
+  axis: string
+  eigenvalue: number
+  proportion_total: number
+  proportion_constrained?: number
+}
+
+export interface OrdinationSiteScore {
+  sample: string
+  axis1: number
+  axis2: number
+}
+
+export interface OrdinationBiplotArrow {
+  label: string
+  axis1: number
+  axis2: number
+  length: number
+}
+
+export interface OrdinationCentroid {
+  label: string
+  axis1: number
+  axis2: number
+}
+
+export interface OrdinationFeatureScore {
+  feature: string
+  axis1: number
+  axis2: number
+  length: number
+}
+
+export interface OrdinationTermTest {
+  term: string
+  df: number
+  variance: number | null
+  f_statistic: number | null
+  p_value: number | null
+  untestable_reason: string | null
+}
+
+export interface OrdinationOmnibusTest {
+  df_model: number
+  df_residual: number
+  variance_model: number | null
+  variance_residual: number | null
+  f_statistic: number | null
+  p_value: number | null
+  untestable_reason: string | null
+  permutations: number
+  min_p_value: number
+  text: string
+}
+
+export interface VariancePartitionFraction {
+  label: string
+  df: number
+  r2: number | null
+  adj_r2: number | null
+  testable?: boolean
+}
+
+export interface VariancePartitionResult {
+  status: 'computed' | 'skipped'
+  reason?: string
+  covariates: string[]
+  conditioned_on: string[]
+  individual_fractions: VariancePartitionFraction[]
+  gross_fractions: VariancePartitionFraction[]
+  has_negative_fraction: boolean
+  note: string | null
+}
+
+export interface OrdinationProvenance {
+  method: ActiveOrdinationMethod
+  distance: OrdinationDistance
+  scaling: OrdinationScaling
+  scaling_meaning: 'distance' | 'correlation'
+  formula: string
+  constrained_terms: string[]
+  condition_terms: string[]
+  permutations_requested: number
+  permutations_performed: number
+  seed: number
+  rng_kind: string
+  blocked: boolean
+  beta_normalisation: string
+  n_samples: number
+  n_features: number
+  dropped_zero_features: number
+  zero_replacement: {
+    method: string
+    delta: number
+    zeros_replaced: number
+  } | null
+  phylogeny_source?: string
+  multiple_testing_policy: string
+  software: {
+    r_package: string
+    vegan_version: string
+  }
+}
+
+export interface OrdinationRequest extends ComparisonRequest {
+  method: ActiveOrdinationMethod
+  distance?: OrdinationDistance
+  scaling?: OrdinationScaling
+  permutations?: number
+  formula?: string | null
+  variance_partitioning?: boolean
+  replacement_method?: 'bayesian_multiplicative' | 'multiplicative_replacement'
+  replacement_delta?: number
+  seed?: number
+  test_axes?: boolean
+  show_centroids?: boolean
+  show_features?: boolean
+  cladistics_id?: string | null
+  tree_newick?: string | null
+  persist?: boolean
+  covariates?: Record<string, (string | number)[] | Record<string, string | number>>
+}
+
+export interface OrdinationResult {
+  method: ActiveOrdinationMethod
+  distance: OrdinationDistance
+  scaling: OrdinationScaling
+  formula: string
+  constrained_terms: string[]
+  condition_terms: string[]
+  available_covariates: string[]
+  n_samples: number
+  n_features: number
+  total_inertia: number
+  conditioned_inertia: number
+  constrained_inertia: number
+  unconstrained_inertia: number
+  imaginary_inertia: number
+  conditioned_proportion: number
+  constrained_proportion: number
+  unconstrained_proportion: number
+  r2: number | null
+  adj_r2: number | null
+  axis_names: string[]
+  axis_labels: string[]
+  constrained_eigenvalues: OrdinationEigenvalue[]
+  unconstrained_eigenvalues: OrdinationEigenvalue[]
+  sites: OrdinationSiteScore[]
+  biplot_arrows: OrdinationBiplotArrow[]
+  centroids: OrdinationCentroid[]
+  top_feature_scores: OrdinationFeatureScore[]
+  omnibus_test: OrdinationOmnibusTest
+  term_tests: OrdinationTermTest[]
+  marginal_tests: OrdinationTermTest[]
+  axis_tests: OrdinationTermTest[]
+  variance_partitioning: VariancePartitionResult | null
+  cautions: string[]
+  runtime_estimate: {
+    estimated_seconds: number
+    tier: 'fast' | 'moderate' | 'heavy'
+    warn_five_minutes: boolean
+  }
+  provenance: OrdinationProvenance
+  biplot: { data: Record<string, unknown>[]; layout: Record<string, unknown> }
+  artifact?: {
+    analysis_id: string
+    created: boolean
+  }
+}
+

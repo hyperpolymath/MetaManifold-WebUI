@@ -8,7 +8,8 @@ using ..Canonical: jcs_sha256
 using ..NumericPolicy: NumericPolicySpec, numeric_policy, assert_mode, require_count,
     checked_count_sum, exact_relative_abundance, exact_value, to_storage, to_display,
     policy_fingerprint, policy_to_storage, UnsupportedRepresentationError,
-    ResourceLimitError, MAX_CELLS, MAX_COUNT_BITS
+    ResourceLimitError, MAX_CELLS, MAX_COUNT_BITS, check_cancelled!,
+    check_cancelled_periodically!
 
 export ExactSummary, SampleSummary, GroupSummary, exact_summary,
        has_defined_proportions, summary_to_storage, summary_to_display,
@@ -86,12 +87,17 @@ end
 """Shared, lossless count-matrix validation used by both opt-in summary modes.
 Returns columns of BigInt counts and whether floating-point input was accepted."""
 function validated_count_columns(counts::AbstractMatrix{<:Real}, labels::Vector{String},
-                                 features::Vector{String}; allow_approximate::Bool)
+                                 features::Vector{String}; allow_approximate::Bool,
+                                 cancellation=nothing)
     approximate = false
+    cell_index = 0
     columns = Vector{Vector{BigInt}}(undef, length(labels))
     for j in eachindex(labels)
+        check_cancelled!(cancellation)
         columns[j] = Vector{BigInt}(undef, length(features))
         for i in eachindex(features)
+            cell_index += 1
+            check_cancelled_periodically!(cancellation, cell_index)
             value = counts[i, j]
             approximate |= value isa AbstractFloat
             columns[j][i] = _exact_count(value, features[i], labels[j]; allow_approximate)
@@ -101,7 +107,9 @@ function validated_count_columns(counts::AbstractMatrix{<:Real}, labels::Vector{
 end
 
 function _summarise(label::String, counts::Vector{BigInt}, policy::NumericPolicySpec,
-                    approximate::Bool, warnings::Vector{String})
+                    approximate::Bool, warnings::Vector{String};
+                    cancellation=nothing)
+    check_cancelled!(cancellation)
     total = checked_count_sum(counts; on_overflow=:widen)
     proportions = Vector{Union{Rational{BigInt},Nothing}}(undef, length(counts))
     if iszero(total)
@@ -109,26 +117,35 @@ function _summarise(label::String, counts::Vector{BigInt}, policy::NumericPolicy
         push!(warnings, "'$label' has zero reads: relative abundances are undefined, not zero")
     else
         for (i, count) in enumerate(counts)
+            check_cancelled_periodically!(cancellation, i)
             proportions[i] = exact_relative_abundance(count, total; policy)
         end
     end
     total, proportions, warnings
 end
 
-function _sample_summary(label, features, counts, policy, approximate)
+function _sample_summary(label, features, counts, policy, approximate;
+                         cancellation=nothing)
     warnings = String[]
     approximate && push!(warnings,
         "'$label' came from floating-point input: source values remain approximations")
-    total, proportions, warnings = _summarise(label, counts, policy, approximate, warnings)
+    total, proportions, warnings = _summarise(
+        label, counts, policy, approximate, warnings; cancellation)
     SampleSummary(label, features, counts, total, proportions, approximate, warnings)
 end
 
-function _group_summary(label, members, features, row_counts, policy, approximate)
+function _group_summary(label, members, features, row_counts, policy, approximate;
+                        cancellation=nothing)
     warnings = String[]
     approximate && push!(warnings,
         "'$label' aggregates floating-point input: source values remain approximations")
-    counts = BigInt[checked_count_sum(row; on_overflow=:widen) for row in row_counts]
-    total, proportions, warnings = _summarise(label, counts, policy, approximate, warnings)
+    counts = Vector{BigInt}(undef, length(row_counts))
+    for (i, row) in enumerate(row_counts)
+        check_cancelled_periodically!(cancellation, i)
+        counts[i] = checked_count_sum(row; on_overflow=:widen)
+    end
+    total, proportions, warnings = _summarise(
+        label, counts, policy, approximate, warnings; cancellation)
     GroupSummary(label, members, features, counts, total, proportions, approximate, warnings)
 end
 
@@ -165,11 +182,11 @@ function exact_summary(counts::AbstractMatrix{<:Real};
                            ["feature $i" for i in 1:size(counts, 1)],
                        groups::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                        policy::NumericPolicySpec=numeric_policy(:exact_counts),
-                       allow_approximate::Bool=true)
+                       allow_approximate::Bool=true, cancellation=nothing)
     assert_mode(policy, :exact_counts)
     labels, features = validate_coordinates(counts, sample_labels, feature_labels)
     columns, approximate = validated_count_columns(
-        counts, labels, features; allow_approximate)
+        counts, labels, features; allow_approximate, cancellation)
 
     group_labels = nothing
     if !isnothing(groups)
@@ -180,16 +197,21 @@ function exact_summary(counts::AbstractMatrix{<:Real};
             throw(ArgumentError("group labels must not be blank"))
     end
 
-    samples = [_sample_summary(labels[j], features, columns[j], policy, approximate)
-               for j in eachindex(labels)]
+    samples = Vector{SampleSummary}(undef, length(labels))
+    for j in eachindex(labels)
+        check_cancelled!(cancellation)
+        samples[j] = _sample_summary(labels[j], features, columns[j], policy, approximate;
+                                     cancellation)
+    end
     group_summaries = GroupSummary[]
     if !isnothing(group_labels)
         for label in unique(group_labels)
+            check_cancelled!(cancellation)
             selected = [j for j in eachindex(labels) if group_labels[j] == label]
             members = labels[selected]
             row_counts = [BigInt[columns[j][i] for j in selected] for i in eachindex(features)]
             push!(group_summaries, _group_summary(
-                label, members, features, row_counts, policy, approximate))
+                label, members, features, row_counts, policy, approximate; cancellation))
         end
     end
     fingerprint = _fingerprint(columns, labels, features, group_labels)

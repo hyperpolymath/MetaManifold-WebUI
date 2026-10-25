@@ -18,6 +18,13 @@
 #                  intercept-only, each fit estimating its own theta;
 #                  2 * (logLik(full) - logLik(null)) against chisq(1).
 #                  Bench-only candidate fix; production does not use it.
+#   ql_f         - quasi-likelihood F test on the SAME full glm.nb fit that
+#                  lrt makes: phi = Pearson X^2 / residual df, and
+#                  F = (beta / se)^2 / phi against F(1, residual df). This is
+#                  edgeR's QL idea without empirical-Bayes shrinkage, so it
+#                  propagates the per-taxon dispersion estimate instead of
+#                  treating theta as known. Bench-only candidate; production
+#                  does not use it, and it is NOT glmGamPoi's test_de.
 #   glmgampoi_ql - glmGamPoi's own quasi-likelihood F-test (glm_gp + test_de),
 #                  as on the upstream PR 62 branch. Needs glmGamPoi.
 #   edger_ql     - edgeR's quasi-likelihood F-test as an outside reference
@@ -60,12 +67,12 @@ args <- parse_args(argv)
 mode <- if (!is.null(args$mode)) args$mode else "quick"
 defaults <- switch(mode,
   quick = list(`n-per` = "4", sims = "10", taxa = "20", shapes = "original",
-               offsets = "tss", tests = "wald_ml,lrt", truth = "null",
+               offsets = "tss", tests = "wald_ml,lrt,ql_f", truth = "null",
                log2fc = "1", seed = "20261020"),
   full  = list(`n-per` = "3,4,6,8,12,20", sims = "1000", taxa = "40",
                shapes = "original,constant,sparse,unequal_lib",
                offsets = "tss,rle",
-               tests = "wald_ml,wald_trend,lrt,glmgampoi_ql,edger_ql",
+               tests = "wald_ml,lrt,ql_f,wald_trend,glmgampoi_ql,edger_ql",
                truth = "null", log2fc = "1", seed = "20261020"),
   stop("unknown --mode '", mode, "' (want quick or full, plus overrides)")
 )
@@ -109,6 +116,17 @@ mass_mode <- if (have_mass_ns) {
 }
 glm_nb <- if (have_mass_ns) MASS::glm.nb else get("glm.nb", envir = globalenv())
 
+# Digests of the two inputs that decide the numbers, so a committed result can
+# be tied to the exact bench and the exact production block that produced it.
+file_md5 <- function(path) unname(tools::md5sum(path))
+script_path <- sub("^--file=", "", grep("^--file=", commandArgs(), value = TRUE)[1])
+if (is.na(script_path) || !file.exists(script_path)) {
+  # sourced (WebR) rather than --file=: the driver runs from /work.
+  candidate <- file.path(getwd(), "calibration.R")
+  script_path <- if (file.exists(candidate)) candidate else NA_character_
+}
+script_md5 <- if (is.na(script_path)) NA_character_ else file_md5(script_path)
+
 have_gp <- requireNamespace("glmGamPoi", quietly = TRUE)
 have_edger <- requireNamespace("edgeR", quietly = TRUE)
 
@@ -129,6 +147,10 @@ extract_fit_r <- function(path) {
 }
 
 fit_code <- extract_fit_r(args[["differential-jl"]])
+fit_tmp <- tempfile()
+writeLines(fit_code, fit_tmp)
+fit_md5 <- file_md5(fit_tmp)
+unlink(fit_tmp)
 if (!have_mass_ns) fit_code <- gsub("MASS::", "", fit_code, fixed = TRUE)
 
 # Every da_* global fit_nb sets or the block creates on the current branch
@@ -227,12 +249,24 @@ screen <- function(yv, g) {
   ""
 }
 
-fit_lrt <- function(counts, offset, n_per) {
+# Both model-preserving candidates are computed from ONE full glm.nb fit and,
+# for lrt only, one intercept-only fit, so the two tests see identical fits and
+# neither gets an easier dataset. ql_f uses the full fit's Pearson dispersion:
+#   phi = sum(Pearson residuals^2) / residual df
+#   F   = (beta / se)^2 / phi   against F(1, residual df)
+# which is a quasi-likelihood F test with a tagwise (not empirical-Bayes)
+# dispersion estimate. It is deliberately not described as edgeR's or
+# glmGamPoi's QL test: both shrink phi across taxa, which this does not.
+fit_nb_candidates <- function(counts, offset, n_per, want) {
   g <- factor(rep(c("A", "B"), each = n_per), levels = c("A", "B"))
-  out <- data.frame(status = "failed", pvalue = NA_real_)
-  out <- out[rep(1, ncol(counts)), , drop = FALSE]
-  rownames(out) <- NULL
-  one <- function(formula, yv) {
+  blank <- function() {
+    out <- data.frame(status = "failed", pvalue = NA_real_)
+    out <- out[rep(1, ncol(counts)), , drop = FALSE]
+    rownames(out) <- NULL
+    out
+  }
+  out <- setNames(lapply(want, function(t) blank()), want)
+  one <- function(formula) {
     warns <- character(0)
     fit <- tryCatch(
       withCallingHandlers(glm_nb(formula, control = glm.control(maxit = 100)),
@@ -252,37 +286,80 @@ fit_lrt <- function(counts, offset, n_per) {
     # glm.nb looks its variables up in the formula's environment; yv, g and
     # off all live in this frame (one()'s enclosing environment), which is
     # where these formulas are created.
-    full <- one(yv ~ g + offset(off), yv)
+    full <- one(yv ~ g + offset(off))
     if (bad_fit(full)) next
-    null <- one(yv ~ 1 + offset(off), yv)
-    if (bad_fit(null)) next
-    lr <- 2 * (as.numeric(logLik(full$fit)) - as.numeric(logLik(null$fit)))
-    if (!is.finite(lr) || lr < 0) next
-    p <- pchisq(lr, df = 1, lower.tail = FALSE)
-    if (!is.finite(p)) next
-    out$status[j] <- "ok"
-    out$pvalue[j] <- p
+    if ("lrt" %in% want) {
+      null <- one(yv ~ 1 + offset(off))
+      if (!bad_fit(null)) {
+        lr <- 2 * (as.numeric(logLik(full$fit)) - as.numeric(logLik(null$fit)))
+        if (is.finite(lr) && lr >= 0) {
+          p <- pchisq(lr, df = 1, lower.tail = FALSE)
+          if (is.finite(p)) {
+            out$lrt$status[j] <- "ok"
+            out$lrt$pvalue[j] <- p
+          }
+        }
+      }
+    }
+    if ("ql_f" %in% want) {
+      co <- summary(full$fit, dispersion = 1)[["coefficients"]]
+      idx <- match("gB", rownames(co))
+      if (is.na(idx)) idx <- grep("^g", rownames(co))[1]
+      dfr <- df.residual(full$fit)
+      phi <- if (is.na(dfr) || dfr < 1) NA_real_ else
+        sum(residuals(full$fit, type = "pearson")^2) / dfr
+      if (!is.na(idx) && is.finite(phi) && phi > 0) {
+        est <- co[idx, 1]
+        se <- co[idx, 2]
+        if (is.finite(est) && is.finite(se) && se > 0) {
+          fstat <- (est / se)^2 / phi
+          p <- pf(fstat, df1 = 1, df2 = dfr, lower.tail = FALSE)
+          if (is.finite(p)) {
+            out$ql_f$status[j] <- "ok"
+            out$ql_f$pvalue[j] <- p
+          }
+        }
+      }
+    }
   }
   out
 }
 
-fit_glmgampoi_ql <- function(counts, offset, n_per) {
-  g <- factor(rep(c("A", "B"), each = n_per), levels = c("A", "B"))
-  out <- data.frame(status = rep("failed", ncol(counts)), pvalue = NA_real_)
-  screens <- vapply(seq_len(ncol(counts)),
-                    function(j) nzchar(screen(counts[, j], g)), logical(1))
-  res <- tryCatch(suppressWarnings({
-    gp <- glmGamPoi::glm_gp(t(counts), design = model.matrix(~ g),
-                            size_factors = exp(offset),
-                            overdispersion_shrinkage = TRUE)
-    # Numeric contrast weights on the design columns ((Intercept), gB):
-    # test_de parses a TEXT contrast as R code, so bench and production
-    # alike must never hand it a label.
-    glmGamPoi::test_de(gp, contrast = c(0, 1), sort_by = "none")
-  }), error = function(e) e)
-  if (inherits(res, "error")) return(out)
-  pcol <- intersect(c("pval", "pvalue", "p_value"), names(res))[1]
-  if (is.na(pcol) || length(res[[pcol]]) != ncol(counts)) return(out)
+# Stable test identifiers are constants because they are used by the
+# availability, failure-reporting, and result-assembly paths.
+TEST_GLMGAMPOI_QL <- "glmgampoi_ql"
+TEST_EDGER_QL <- "edger_ql"
+
+# Both package tests return a data.frame whose p-value column is named by the
+# package: glmGamPoi's test_de returns "pval", edgeR's topTags table returns
+# "PValue". Resolve it case-insensitively; a missing column is an error in this
+# file, not a data outcome.
+loud_failure <- function(out, test, message) {
+  cat("  ", test, "failed for every taxon: ", message, "\n", sep = "")
+  out$note <- message
+  out
+}
+
+p_value_column <- function(tbl, caller) {
+  wanted <- c("pvalue", "p.value", "pval", "p_value")
+  hit <- match(wanted, tolower(names(tbl)))
+  hit <- hit[!is.na(hit)]
+  if (length(hit) == 0) {
+    stop(caller, " returned no p-value column; got: ", paste(names(tbl), collapse = ", "))
+  }
+  names(tbl)[hit[1]]
+}
+
+package_fit_result <- function(res, test, caller, screens, n_taxa, row_error) {
+  out <- data.frame(status = rep("failed", n_taxa), pvalue = NA_real_,
+                    note = NA_character_)
+  if (inherits(res, "error")) {
+    return(loud_failure(out, test, conditionMessage(res)))
+  }
+  pcol <- p_value_column(res, caller)
+  if (length(res[[pcol]]) != n_taxa) {
+    return(loud_failure(out, test, row_error))
+  }
   p <- as.numeric(res[[pcol]])
   ok <- !screens & is.finite(p) & p >= 0 & p <= 1
   out$status[ok] <- "ok"
@@ -290,9 +367,30 @@ fit_glmgampoi_ql <- function(counts, offset, n_per) {
   out
 }
 
+fit_glmgampoi_ql <- function(counts, offset, n_per) {
+  g <- factor(rep(c("A", "B"), each = n_per), levels = c("A", "B"))
+  screens <- vapply(seq_len(ncol(counts)),
+                    function(j) nzchar(screen(counts[, j], g)), logical(1))
+  res <- tryCatch(suppressWarnings({
+    gp <- glmGamPoi::glm_gp(t(counts), design = model.matrix(~ g),
+                            size_factors = exp(offset),
+                            overdispersion_shrinkage = TRUE)
+    # Numeric contrast weights on the design columns ((Intercept), gB):
+    # test_de parses a TEXT contrast as R code, so bench and production alike
+    # must never hand it a label.
+    #
+    # No sort_by argument. test_de's sort_by names a COLUMN to sort by, or
+    # NULL for input order; the string "none" is neither, so passing it makes
+    # test_de error on every call. Rows then keep input order, which is what
+    # the taxon-by-taxon comparison below assumes.
+    glmGamPoi::test_de(gp, contrast = c(0, 1))
+  }), error = function(e) e)
+  package_fit_result(res, TEST_GLMGAMPOI_QL, "glmGamPoi::test_de", screens,
+                    ncol(counts), "test_de returned the wrong number of rows")
+}
+
 fit_edger_ql <- function(counts, offset, n_per) {
   g <- factor(rep(c("A", "B"), each = n_per), levels = c("A", "B"))
-  out <- data.frame(status = rep("failed", ncol(counts)), pvalue = NA_real_)
   screens <- vapply(seq_len(ncol(counts)),
                     function(j) nzchar(screen(counts[, j], g)), logical(1))
   res <- tryCatch(suppressWarnings({
@@ -308,58 +406,156 @@ fit_edger_ql <- function(counts, offset, n_per) {
     qlf <- edgeR::glmQLFTest(fit, coef = 2)
     edgeR::topTags(qlf, n = Inf, sort.by = "none")$table
   }), error = function(e) e)
-  if (inherits(res, "error")) return(out)
-  pcol <- intersect(c("pvalue", "p.value", "pvalue"), names(res))[1]
-  if (is.na(pcol) || length(res[[pcol]]) != ncol(counts)) return(out)
-  p <- as.numeric(res[[pcol]])
-  ok <- !screens & is.finite(p) & p >= 0 & p <= 1
-  out$status[ok] <- "ok"
-  out$pvalue[ok] <- p[ok]
-  out
+  package_fit_result(res, TEST_EDGER_QL, "edgeR::topTags", screens,
+                    ncol(counts), "topTags returned the wrong number of rows")
+}
+
+RESULT_COLUMNS <- c("truth", "shape", "offset", "n_per", "taxa", "sim",
+                    "taxon", "true_log2fc", "test", "status", "pvalue", "note")
+
+report_cell_failures <- function(results_file, cell) {
+  if (!file.exists(results_file)) return(invisible(NULL))
+  cell_rows <- tryCatch(read.csv(results_file, stringsAsFactors = FALSE,
+                                 check.names = FALSE, fill = FALSE),
+                        error = function(e) e)
+  if (inherits(cell_rows, "error")) {
+    stop("cell ", cell, " has an unreadable result CSV (",
+         conditionMessage(cell_rows), ")", call. = FALSE)
+  }
+  if (!identical(names(cell_rows), RESULT_COLUMNS)) {
+    stop("cell ", cell, " has an incompatible result CSV schema", call. = FALSE)
+  }
+  if (nrow(cell_rows) == 0) return(invisible(NULL))
+  for (test_name in unique(cell_rows$test)) {
+    test_rows <- cell_rows[cell_rows$test == test_name, , drop = FALSE]
+    if (!all(is.na(test_rows$pvalue))) next
+    reasons <- if ("note" %in% names(test_rows)) {
+      unique(stats::na.omit(test_rows$note))
+    } else {
+      character(0)
+    }
+    reason <- if (length(reasons)) paste0(": ", paste(reasons, collapse = "; ")) else ""
+    cat(sprintf("WARNING %s: test %s produced no p-value in this cell%s\n",
+                cell, test_name, reason))
+  }
+  invisible(NULL)
+}
+
+validate_resume_cell <- function(results_file, provenance_file, cell, cell_key) {
+  if (!file.exists(results_file)) return(integer(0))
+  delete_prefix <- "; delete "
+  rerun_suffix <- " before rerunning"
+  prev <- tryCatch(read.csv(results_file, stringsAsFactors = FALSE,
+                            check.names = FALSE, fill = FALSE),
+                   error = function(e) e)
+  if (inherits(prev, "error")) {
+    stop("cell ", cell, " has an unreadable CSV (", conditionMessage(prev), ")",
+         delete_prefix, results_file, " and ", provenance_file, rerun_suffix,
+         call. = FALSE)
+  }
+  if (!identical(names(prev), RESULT_COLUMNS)) {
+    stop("cell ", cell, " has an incompatible CSV schema; expected ",
+         paste(RESULT_COLUMNS, collapse = ", "), " but found ",
+         paste(names(prev), collapse = ", "), delete_prefix, results_file,
+         " and ", provenance_file, rerun_suffix, call. = FALSE)
+  }
+  if (!file.exists(provenance_file)) {
+    stop("cell ", cell, " has rows but no provenance file", delete_prefix,
+         results_file, rerun_suffix, call. = FALSE)
+  }
+  old_key <- tryCatch(
+    grep("^cell key:", readLines(provenance_file, warn = FALSE), value = TRUE),
+    error = function(e) e)
+  if (inherits(old_key, "error")) {
+    stop("cell ", cell, " has unreadable provenance (", conditionMessage(old_key), ")",
+         delete_prefix, results_file, " and ", provenance_file, rerun_suffix,
+         call. = FALSE)
+  }
+  if (length(old_key) != 1L) {
+    stop("cell ", cell, " provenance must contain exactly one cell key",
+         delete_prefix, results_file, " and ", provenance_file, rerun_suffix,
+         call. = FALSE)
+  }
+  old_key_value <- trimws(sub("^cell key:[ ]*", "", old_key[1]))
+  if (!identical(old_key_value, as.character(cell_key))) {
+    stop("cell ", cell, " has a mismatched cell key (found ", old_key_value,
+         ", expected ", cell_key, ")", delete_prefix, results_file, " and ",
+         provenance_file, rerun_suffix, call. = FALSE)
+  }
+  unique(as.integer(prev$sim[!is.na(prev$sim)]))
+}
+
+write_cell_rows <- function(rows, results_file, header_done) {
+  if (!identical(names(rows), RESULT_COLUMNS)) {
+    stop("cell result rows do not match the expected CSV schema", call. = FALSE)
+  }
+  # Package error messages can contain commas, quotes, or newlines. Use RFC-style
+  # double-quote escaping so R and the workflow's CSV reader preserve each field.
+  write.table(rows, results_file, sep = ",", row.names = FALSE,
+              col.names = !header_done, append = header_done, quote = TRUE,
+              qmethod = "double")
 }
 
 ## ------------------------------------------------------------------- main
 
 enabled <- want
 for (t in want) {
-  if (t %in% c("wald_trend", "glmgampoi_ql") && !have_gp) {
+  if (t %in% c("wald_trend", TEST_GLMGAMPOI_QL) && !have_gp) {
     cat("SKIPPED test", t, ": glmGamPoi is not available in this R library\n")
     enabled <- setdiff(enabled, t)
   }
-  if (t == "edger_ql" && !have_edger) {
+  if (t == TEST_EDGER_QL && !have_edger) {
     cat("SKIPPED test edger_ql: edgeR is not available in this R library\n")
     enabled <- setdiff(enabled, t)
   }
 }
 if (length(enabled) == 0) stop("no requested test can run in this R library")
 
-cell_index <- 0L
+# A cell's datasets must not depend on which cells were requested in this
+# invocation, or in what order. The per-sim seed is therefore hashed from the
+# cell's identity string (previously it used the cell's index, so splitting a
+# grid across processes silently changed every dataset).
+stable_key <- function(x) {
+  h <- 0
+  for (ch in utf8ToInt(x)) h <- (h * 131 + ch) %% 1000003
+  h
+}
+
 for (shape in shapes) for (off_m in offsets) for (n_per in n_pers) {
-  cell_index <- cell_index + 1L
   # The taxa count is part of the cell identity: reruns append to a cell's
   # CSV, so two settings must never share a file by accident.
   cell <- sprintf("%s_%s_%s_n%d_t%d%s", truth, shape, off_m, n_per, n_taxa,
                   if (truth == "power") sprintf("_lfc%s", lfc) else "")
   f <- file.path(out_dir, paste0("pvalues_", cell, ".csv"))
   prov <- file.path(out_dir, paste0("provenance_", cell, ".txt"))
-  writeLines(c(
+  provenance_lines <- c(
     paste("cell:", cell), paste("date:", format(Sys.time(), tz = "UTC", usetz = TRUE)),
     paste("args:", paste(argv, collapse = " ")),
+    paste("seed0:", seed0), paste("cell key:", stable_key(cell)),
+    paste("executor:", if (nzchar(Sys.getenv("NB_EXECUTOR")))
+             Sys.getenv("NB_EXECUTOR") else R.version.string),
+    paste("calibration.R md5:", script_md5),
+    paste("_FIT_R md5:", fit_md5),
     paste("MASS:", mass_mode),
     paste("glmGamPoi:", if (have_gp) as.character(packageVersion("glmGamPoi")) else "absent"),
     paste("edgeR:", if (have_edger) as.character(packageVersion("edgeR")) else "absent"),
     paste("tests run:", paste(enabled, collapse = ",")),
     capture.output(sessionInfo())
-  ), prov)
+  )
   cat(sprintf("cell %s: %d sims x %d taxa, tests %s\n",
               cell, n_sims, n_taxa, paste(enabled, collapse = "+")))
   header_done <- file.exists(f)
+  # Validate the existing schema and provenance before refreshing its record or
+  # appending rows; unknown files cannot safely be resumed.
+  done_sims <- validate_resume_cell(f, prov, cell, stable_key(cell))
+  writeLines(provenance_lines, prov)
   skipped_sims <- 0L
   refused_offsets <- 0L
-  for (s in seq_len(n_sims)) {
+  if (length(done_sims)) cat(sprintf("  resuming: %d sims already present\n", length(done_sims)))
+  for (s in setdiff(seq_len(n_sims), done_sims)) {
     # One seed per (cell, sim): cells can run in any order, in parallel
     # processes, and reproduce dataset-for-dataset.
-    set.seed(seed0 + cell_index * 1000003L + s)
+    set.seed(as.integer((seed0 + stable_key(cell) * 1000003 + s) %% 2147483647))
     sim <- simulate(shape, n_per, n_taxa, truth, lfc)
     counts <- sim$counts
     if (ncol(counts) < 5) { skipped_sims <- skipped_sims + 1L; next }
@@ -374,22 +570,34 @@ for (shape in shapes) for (off_m in offsets) for (n_per in n_pers) {
       r <- run_block(counts, offset, TRUE, n_per)
       fits$wald_trend <- data.frame(status = r$status, pvalue = r$pvalue)
     }
-    if ("lrt" %in% enabled) fits$lrt <- fit_lrt(counts, offset, n_per)
-    if ("glmgampoi_ql" %in% enabled) fits$glmgampoi_ql <- fit_glmgampoi_ql(counts, offset, n_per)
-    if ("edger_ql" %in% enabled) fits$edger_ql <- fit_edger_ql(counts, offset, n_per)
+    nb_want <- intersect(c("lrt", "ql_f"), enabled)
+    if (length(nb_want) > 0) {
+      nb <- fit_nb_candidates(counts, offset, n_per, nb_want)
+      for (t in names(nb)) fits[[t]] <- nb[[t]]
+    }
+    if (TEST_GLMGAMPOI_QL %in% enabled) {
+      fits[[TEST_GLMGAMPOI_QL]] <- fit_glmgampoi_ql(counts, offset, n_per)
+    }
+    if (TEST_EDGER_QL %in% enabled) {
+      fits[[TEST_EDGER_QL]] <- fit_edger_ql(counts, offset, n_per)
+    }
     rows <- do.call(rbind, lapply(names(fits), function(t) {
+      f <- fits[[t]]
+      note <- if ("note" %in% names(f)) f$note else rep(NA_character_, nrow(f))
       data.frame(truth = truth, shape = shape, offset = off_m, n_per = n_per,
                  taxa = n_taxa, sim = s, taxon = seq_len(ncol(counts)),
                  true_log2fc = sim$true_lfc, test = t,
-                 status = fits[[t]]$status, pvalue = fits[[t]]$pvalue,
+                 status = f$status, pvalue = f$pvalue, note = note,
                  stringsAsFactors = FALSE)
     }))
-    write.table(rows, f, sep = ",", row.names = FALSE,
-                col.names = !header_done, append = header_done, quote = FALSE)
+    write_cell_rows(rows, f, header_done)
     header_done <- TRUE
     if (s %% 25 == 0) { cat(sprintf("  %s sim %d/%d\n", cell, s, n_sims)); flush.console() }
   }
   cat(sprintf("cell %s done: %d sims skipped (<5 testable taxa), %d offsets refused\n",
               cell, skipped_sims, refused_offsets))
+  # A requested test with no usable p-value is a broken package path, not a
+  # data outcome. Report the reason without adding control-flow nesting here.
+  report_cell_failures(f, cell)
 }
 cat("calibration run complete\n")

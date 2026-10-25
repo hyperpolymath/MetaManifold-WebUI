@@ -1,25 +1,25 @@
 using Test
 using JSON3
 using MetaManifold
-SV = MetaManifold.Server
+const VALIDATED_SV = MetaManifold.Server
 
 function _vs_request(method::String, path::String, body; raw::Bool=false)
     payload = raw ? body : JSON3.write(body)
-    req = SV.HTTP.Request(method, path, ["Content-Type" => "application/json"], payload)
-    SV.Oxygen.internalrequest(req)
+    req = VALIDATED_SV.HTTP.Request(method, path, ["Content-Type" => "application/json"], payload)
+    VALIDATED_SV.Oxygen.internalrequest(req)
 end
 _vs_post(path, body; raw=false) = _vs_request("POST", path, body; raw)
 _vs_get(path) = _vs_request("GET", path, "")
 
 function _vs_with_root(f::Function)
     root = mktempdir()
-    old = SV.ServerState._root[]
+    old = VALIDATED_SV.ServerState._root[]
     try
-        SV.ServerState.set_root!(root)
+        VALIDATED_SV.ServerState.set_root!(root)
         mkpath(joinpath(root, "projects"))
         f(root)
     finally
-        SV.ServerState._root[] = old
+        VALIDATED_SV.ServerState._root[] = old
         rm(root; recursive=true, force=true)
     end
 end
@@ -92,7 +92,7 @@ end
 
 @testset "Numeric JSON representations fail closed" begin
     _vs_with_root() do _
-        for bad in (1.5, -1, 9007199254740993)
+        for bad in (1.5, -1)
             payload = merge(_VS_EXACT_BODY, Dict("persist" => false,
                 "counts" => [[bad, 1], [1, 0], [1, 0]]))
             response = _vs_post("/api/v1/statistics/summaries", payload)
@@ -105,10 +105,31 @@ end
         for token in ("1.0", "1e0")
             raw = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[$token]]}"""
             @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 422
+            # String(::Vector{UInt8}) can consume the request buffer. Parsing and
+            # lexical validation must use the same string for byte-backed bodies.
+            @test _vs_post("/api/v1/statistics/summaries",
+                Vector{UInt8}(codeunits(raw)); raw=true).status == 422
+            integer_raw = replace(raw, token => "1")
+            @test _vs_post("/api/v1/statistics/summaries",
+                Vector{UInt8}(codeunits(integer_raw)); raw=true).status == 200
+        end
+
+        # Fractional input stays invalid as well, even when it is nearly 1.
+        fractional = """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1.0000000001]]}"""
+        @test _vs_post("/api/v1/statistics/summaries", fractional; raw=true).status == 422
+        # Strict I-JSON is checked on the raw body, before JSON3 can collapse
+        # duplicate keys or normalise an oversized integer token. Unlike a
+        # negative count, an oversized JSON number is invalid at parse time.
+        for raw in ("""{"numeric_policy":{"mode":"exact_counts","mode":"high_precision"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[1]]}""",
+                    """{"numeric_policy":{"mode":"exact_counts"},"sample_labels":["A"],"feature_labels":["f"],"counts":[[9007199254740992]]}""")
+            @test _vs_post("/api/v1/statistics/summaries", raw; raw=true).status == 400
         end
         negative_string = merge(_VS_EXACT_BODY, Dict("persist" => false,
             "counts" => [["-1", 1], [1, 0], [1, 0]]))
         @test _vs_post("/api/v1/statistics/summaries", negative_string).status == 422
+        float_policy = merge(_VS_EXACT_BODY, Dict("persist" => false,
+            "numeric_policy" => Dict("mode" => "exact_counts", "round_digits" => 8.0)))
+        @test _vs_post("/api/v1/statistics/summaries", float_policy).status == 422
         ordinary = merge(_VS_EXACT_BODY, Dict("numeric_policy" => Dict("mode" => "ordinary")))
         @test _vs_post("/api/v1/statistics/summaries", ordinary).status == 400
         ragged = merge(_VS_EXACT_BODY, Dict("counts" => [[1], [1, 2], [1, 0]]))
@@ -210,6 +231,16 @@ end
         @test loaded.config.numeric_policy.mode == "exact_counts"
         @test !haskey(loaded.result, :analysis_id) # response-only field is not in the stored result
 
+        # Run filters retain decimal support, and prefix selection preserves
+        # the correspondence between sample labels and streamed columns.
+        filtered = _vs_post(path, merge(request, Dict("prefix" => "s2",
+            "colFilters" => Dict("Pident" => Dict("min" => 99.0)))))
+        @test filtered.status == 200
+        filtered_result = JSON3.read(String(filtered.body))
+        @test length(filtered_result.samples) == 1
+        @test filtered_result.samples[1].label == "s2"
+        @test collect(filtered_result.samples[1].counts) == [string(big(2)^126)]
+
         @test _vs_post(path, merge(request, Dict("table" => "merged_float"))).status == 422
         @test _vs_post(path, merge(request, Dict("table" => "merged_negative"))).status == 400
         @test _vs_post(path, merge(request, Dict("table" => "merged_null"))).status == 422
@@ -232,4 +263,24 @@ end
         @test length(unique([String(b.analysis_id) for b in bodies])) == 1
         @test count(b -> b.derived_analysis.created, bodies) == 1
     end
+end
+
+@testset "Statistics request body preserves byte buffers and counts UTF-8 bytes" begin
+    raw_bytes = Vector{UInt8}(codeunits("{\"counts\":[[1,2]]}"))
+    parsed_bytes = VALIDATED_SV._statistics_body((; body = raw_bytes); reject_noninteger_tokens = true)
+    @test collect(parsed_bytes.counts[1]) == [1, 2]
+    # Julia 1.12 `String(::Vector{UInt8})` truncates in place; `_statistics_body` must copy first.
+    @test length(raw_bytes) == ncodeunits("{\"counts\":[[1,2]]}")
+
+    sub_body = SubString("  {\"label\":\"ok\"}  ", 3, 16)
+    parsed_sub = VALIDATED_SV._statistics_body((; body = sub_body))
+    @test String(parsed_sub.label) == "ok"
+
+    # Multi-byte UTF-8 input whose codepoint count is under the limit while its
+    # UTF-8 byte count exceeds `_STATISTICS_REQUEST_LIMIT` must fail on bytes.
+    limit = VALIDATED_SV._STATISTICS_REQUEST_LIMIT
+    multibyte_payload = SubString("{\"v\":\"" * repeat("é", div(limit, 2) + 8) * "\"}", 1)
+    @test length(multibyte_payload) < limit
+    @test ncodeunits(multibyte_payload) > limit
+    @test_throws MetaManifold.NumericPolicy.ResourceLimitError VALIDATED_SV._statistics_body((; body = multibyte_payload))
 end

@@ -29,6 +29,12 @@ const _D = MetaManifold.DADA2
         # A path with a quote or backslash stays a valid single R string literal.
         @test _D._r_lit("a\"b")  == "\"a\\\"b\""
         @test _D._r_lit("a\\b")  == "\"a\\\\b\""
+        @test _D._r_lit("a\nb") == "\"a\\nb\""
+        @test _D._r_lit("a\rb") == "\"a\\rb\""
+        @test _D._r_lit("a\tb") == "\"a\\tb\""
+        @test _D._r_lit("a\u0001b") == "\"a\\u0001b\""
+        @test _D._r_lit("a\u2028b") == "\"a\\u2028b\""
+        @test_throws ArgumentError _D._r_lit("a\0b")
     end
 
     @testset "a rendered filterAndTrim command parses and matches the call" begin

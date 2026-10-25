@@ -56,6 +56,10 @@ const { WebR } = await import(webrEntry);
 // process's stdout/stderr line by line.
 const webR = new WebR({ interactive: false });
 await webR.init();
+// Record the executor in every provenance file the R code writes. Native
+// Rscript runs of calibration.R record R.version.string instead.
+const executor = `webR ${webR.version || "0.6.0"}`;
+await webR.evalRVoid(`Sys.setenv(NB_EXECUTOR = ${JSON.stringify(executor)})`);
 
 const put = async (vfsPath, hostPath) => {
   const dir = vfsPath.slice(0, vfsPath.lastIndexOf('/'));

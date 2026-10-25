@@ -1,51 +1,115 @@
 # Draft upstream report: null calibration of the `glm.nb` Wald test
 
-*Status: draft prepared downstream for review before anything is filed
-upstream. All numbers are from `REPORT.md` in this directory, which defines
-exactly what ran, where, and what did not run.*
+*Status: draft prepared downstream for maintainer review; it has not been filed
+upstream. It includes the completed native comparator run #40091522843.
+`REPORT.md` and the run-specific summary/provenance CSVs define exactly what ran,
+where, and what remains unmeasured. This replaces the earlier draft based on
+the reduced 2026-10-22 run and does not recommend an automatic default change.*
 
 ## Summary
 
 In null simulations that drive the production negative-binomial fitting code
-(`MASS::glm.nb` per taxon, fixed-scale Wald test, per-taxon ML theta treated
-as known), true nulls are rejected more often than nominal at every measured
-group size. At α = 0.05 the rejection rate was 0.138 with 4 samples per group
-and 0.076 with 12 (original/TSS shape, 200 sims × 40 taxa), and still 0.065
-at 20 per group. A likelihood-ratio test on the same fits/datasets was closer
-to nominal (0.103 / 0.065 / 0.058) but still anti-conservative in every cell
-(Wilson 95% lower bound > 0.05 in all 32 summarised test-cells). Under a
-power design (25% of taxa at |log2FC| = 1), Benjamini–Hochberg at 0.05
-delivered FDR 0.38 (Wald, 4/group) and 0.13 (12/group).
+(`MASS::glm.nb` per taxon, fixed-scale Wald test, per-taxon ML theta treated as
+known), true nulls are rejected more often than nominal at every measured group
+size, including 20 samples per group. At α = 0.05 the rejection rate is 0.172
+at 3/group, 0.140 at 4, 0.104 at 6, 0.090 at 8, 0.075 at 12 and 0.064 at 20
+(1,000 sims × 40 taxa per cell; every Wilson 95% lower bound is above 0.05).
 
 The mechanism is the standard one: the Wald test plugs in the per-taxon ML
-theta and ignores its sampling uncertainty. The bench that produces these
-numbers extracts the production fitting block directly from
-`src/analysis/differential.jl`, so the `wald_ml` column is the shipped code
-path, not a reimplementation.
+theta and ignores its sampling uncertainty.
 
-## What was and was not measured
+Two cheaper alternatives, measured on identical datasets:
 
-Measured (reduced WebR run, genuine MASS 7.3-65 `glm.nb`; see `REPORT.md` for
-provenance limits): Wald vs LRT, paired on identical datasets; group sizes
-3–20; constant/sparse/unequal-library shapes; RLE offsets; one power design.
+- a likelihood-ratio test on the same two `glm.nb` fits removes about a third of
+  the excess at 4/group (0.140 → 0.101) but is still anti-conservative in every
+  cell;
+- a quasi-likelihood F test (`φ` = Pearson X² / residual df, `F = (β/se)²/φ`
+  against `F(1, df)`; a tagwise scale, **not** glmGamPoi's or edgeR's
+  empirical-Bayes version) is much closer: 0.044 at 3/group (conservative),
+  0.055 at 4, 0.058–0.060 through 8, 0.056 at 20. It remains ~1 point above
+  nominal, not at nominal.
 
-Not yet measured: the glmGamPoi quasi-likelihood F-test as an in-bench
-comparator on this branch (the calibrated path reported in the downstream
-issue), the dispersion-trend Wald option, edgeR, and the full 1,000-sim grid.
-The bench (`bench/null_calibration/`, native `Rscript` route) is ready to run
-those where R + Bioconductor are available.
+## Native Bioconductor comparators
+
+The successful [native-R Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843) used the same seeded null designs at original shape/TSS, n=4 and n=12, configured for 1,000 simulations × 40 taxa per cell (R 4.5.0, glmGamPoi 1.22.0, edgeR 4.8.2):
+
+| n/group | comparator | summary rows (`n_attempted`) | p-values (failed fits) | α=0.05 (Wilson 95% CI) | verdict |
+|---:|---|---:|---:|---|---|
+| 4 | glmGamPoi QL F (`glmgampoi_ql`) | 39,993 | 39,904 (89) | **0.0525** (0.0503–0.0547) | narrowly anti-conservative |
+| 4 | edgeR QL F (`edger_ql`) | 39,993 | 39,904 (89) | **0.0687** (0.0663–0.0713) | anti-conservative |
+| 4 | glmGamPoi trend Wald (`wald_trend`) | 39,993 | 39,904 (89) | **0.0838** (0.0811–0.0865) | anti-conservative |
+| 12 | glmGamPoi QL F (`glmgampoi_ql`) | 40,000 | 40,000 (0) | 0.0499 (0.0478–0.0520) | not flagged |
+| 12 | edgeR QL F (`edger_ql`) | 40,000 | 40,000 (0) | **0.0712** (0.0687–0.0737) | anti-conservative |
+| 12 | glmGamPoi trend Wald (`wald_trend`) | 40,000 | 40,000 (0) | **0.0764** (0.0739–0.0791) | anti-conservative |
+
+“Not flagged” means the Wilson interval includes 0.05; it is not proof of exact calibration. The summary's `n_attempted` field is computed as `nrow(d)`, the rows present in each per-test output; the `taxa=40` setting is the raw design size, not an observed post-filter testing denominator. At n=4, the summary reports 39,904 p-values and 89 failed fits (39,993 output rows total); seven positions from the configured 40,000 taxon-simulation design are absent from the summary, and their disposition is unresolved. Rejection rates use the 39,904 reported p-values; do not assign the seven absent positions to successes or failures or treat the 40,000 design count as an observed testing denominator. At n=12, the summary reports 40,000 p-values and no failed fits. The native comparator lane tested nulls only: it did not measure power, BH-FDR under alternatives, other sample sizes, or other shapes/offsets. The complete 12-row output and per-cell provenance are retained in `results/native_comparator_summary_run_40091522843.csv` and `results/native_comparator_provenance_run_40091522843.csv`.
+
+The inflation is not specific to one data shape: constant dispersion, sparse
+zero-heavy tables, unequal library sizes and RLE offsets all reproduce it
+(4/group Wald 0.112–0.142; 12/group 0.070–0.081). RLE is not a remedy; at
+12/group it was the worst configuration measured.
+
+## What this means for Benjamini–Hochberg
+
+Under a power design (25% of taxa at |log2FC| = 1, 400 sims), BH at 0.05:
+
+| n/group | test | BH power | BH FDR |
+|---:|---|---:|---:|
+| 4 | Wald (production) | 0.275 | **0.362** |
+| 4 | LRT | 0.115 | 0.192 |
+| 4 | QL F (`ql_f`) | 0.022 | 0.037 |
+| 12 | Wald (production) | 0.536 | **0.118** |
+| 12 | LRT | 0.468 | 0.078 |
+| 12 | QL F (`ql_f`) | 0.433 | 0.063 |
+
+The default's apparent power advantage at small n is an artefact of an
+uncontrolled FDR. Among the three methods included in this power design, the
+tagwise QL F test is closest to nominal FDR, but at 4/group it is nearly
+powerless after BH because its F reference has only six residual degrees of
+freedom (`F(1,6)` ≈ 5.99, |t| > 2.45). The native Bioconductor comparator run
+was null-only and did not measure their power or FDR under alternatives.
 
 ## Options for the upstream maintainer's consideration
 
-1. **Result-notes caveat for small samples** (adopted downstream): record a
+1. **Result-notes caveat for small samples** (adopted downstream). Record a
    calibration caveat with `ml`-dispersion results, scaled by group size.
-   Changes no statistics or defaults.
-2. **LRT instead of Wald for the `glm.nb` path:** measurably closer to
-   nominal in this bench, but still anti-conservative, slower, and fails
-   more often at tiny n. The bench quantifies the trade-off; it is not a
-   calibration fix.
-3. **Prefer a quasi-likelihood path below a group-size threshold:** the
-   downstream measurements that motivated this bench found the QL F-test at
-   nominal rates where Wald was inflated. Any such default change is
-   upstream's call; this draft only supplies the replication bench and
-   numbers to decide with.
+   Changes no statistic or default. The downstream text is justified unchanged
+   by this run: Wald is above nominal at every measured size through 20.
+2. **Likelihood-ratio test for the `glm_nb` path.** Measurably closer to nominal
+   but still anti-conservative everywhere, slower, and it fails more often at
+   tiny n. It is a mitigation, not a calibration fix; the numbers above quantify
+   the trade-off.
+3. **Consider glmGamPoi's QL F test below a group-size threshold.** The native
+   null run places it closest to nominal among the two Bioconductor QL tests:
+   0.0525 at 4/group (Wilson 95% CI 0.0503–0.0547, narrowly anti-conservative)
+   and 0.0499 at 12/group (0.0478–0.0520, not flagged). edgeR QL is higher at
+   0.0687 and 0.0712. The separate `wald_trend` row is a glmGamPoi
+   dispersion-trend Wald test, not its QL test; the production fixed-θ Wald
+   path must not be described as glmGamPoi QL. These comparator cells are
+   null-only: they do not measure power/BH behaviour, other sample sizes, or
+   other shapes/offsets. The tagwise `ql_f` power results therefore cannot be
+   transferred to glmGamPoi QL. The measured row makes option 3 discussable,
+   not an automatic default recommendation.
+
+The downstream recommendation remains **1 now, 2 and 3 as an upstream
+maintainer decision**. The native run fills the requested QL calibration cells,
+but it does not establish a default threshold or quantify the power trade-off
+for glmGamPoi QL. No production default change is proposed by this draft.
+
+## Reproducing
+
+```sh
+Rscript -e 'renv::restore()'
+# the 16 cells actually run are listed in REPORT.md §"Cells run"
+Rscript bench/null_calibration/calibration.R --shapes=original --offsets=tss \
+  --n-per=3,4,6,8,12,20 --sims=1000 --taxa=40 --tests=wald_ml,lrt,ql_f
+Rscript bench/null_calibration/summarise.R
+```
+
+The committed `results/` CSVs carry the baseline rates and intervals. The
+native comparator output and provenance are recorded separately in
+`results/native_comparator_summary_run_40091522843.csv` and
+`results/native_comparator_provenance_run_40091522843.csv`; the source is [Actions
+run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843),
+tag `null-calibration-run4-2026-10-24`. The raw Actions artifact is retained
+through 2026-11-23.

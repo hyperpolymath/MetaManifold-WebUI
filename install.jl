@@ -1073,7 +1073,7 @@ end
 
 ## Preflight checks
 """Return true if the current process is running as root."""
-has_root() = try; ccall(:geteuid, Cuint, ()) == 0; catch; false; end
+has_root() = try; Base.Libc.geteuid() == 0; catch; false; end
 
 """Return true if sudo is available and can run non-interactively."""
 function has_passwordless_sudo()::Bool

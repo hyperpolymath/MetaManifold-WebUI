@@ -14,21 +14,21 @@ const _TREE_MAX_BYTES  = 50 * 1024 * 1024
 const _VIEW_MAX_BYTES  = 5 * 1024 * 1024
 const _tree_view_lock  = ReentrantLock()
 
-_trees_dir(study::String) = joinpath(ServerState.projects_dir(), study, "trees")
-_tree_view_path(study::String, file::String) = joinpath(_trees_dir(study), ".views", file * ".json")
+_trees_dir(study::AbstractString) = joinpath(ServerState.projects_dir(), study, "trees")
+_tree_view_path(study::AbstractString, file::AbstractString) = joinpath(_trees_dir(study), ".views", file * ".json")
 
-_tree_format(file::String) = endswith(lowercase(file), ".jplace") ? "jplace" : "newick"
+_tree_format(file::AbstractString) = endswith(lowercase(file), ".jplace") ? "jplace" : "newick"
 
-function _valid_tree_file(file::String)::Bool
+function _valid_tree_file(file::AbstractString)::Bool
     _valid_name(file) && any(ext -> endswith(lowercase(file), ext), _TREE_EXTENSIONS)
 end
 
-function _study_exists(study::String)::Bool
+function _study_exists(study::AbstractString)::Bool
     _valid_name(study) &&
         (isdir(joinpath(ServerState.projects_dir(), study)) || study in _study_names())
 end
 
-function _tree_request_error(study::String, file::Union{String,Nothing}=nothing)
+function _tree_request_error(study::AbstractString, file::Union{AbstractString,Nothing}=nothing)
     _study_exists(study) || return json_error(404, "study_not_found", "Study '$study' not found")
     isnothing(file) && return nothing
     _valid_tree_file(file) || return json_error(400, "invalid_name",
@@ -36,7 +36,7 @@ function _tree_request_error(study::String, file::Union{String,Nothing}=nothing)
     nothing
 end
 
-function _tree_listing(study::String)
+function _tree_listing(study::AbstractString)
     dir = _trees_dir(study)
     isdir(dir) || return NamedTuple[]
     files = sort(filter(f -> _valid_tree_file(f) && isfile(joinpath(dir, f)), readdir(dir)))
@@ -81,7 +81,7 @@ end
 @get "/api/v1/studies/{study}/trees" function(req, study::String)
     err = _tree_request_error(study)
     isnothing(err) || return err
-    json(_tree_listing(study))
+    jcs_json(_tree_listing(study))
 end
 
 @get "/api/v1/studies/{study}/trees/{file}" function(req, study::String, file::String)
@@ -91,8 +91,8 @@ end
     isfile(path) || return json_error(404, "not_found", "Tree '$file' not found")
     content = read(path, String)
     vpath = _tree_view_path(study, file)
-    view = isfile(vpath) ? try JSON3.read(read(vpath, String)) catch; nothing end : nothing
-    json((; file,
+    view = isfile(vpath) ? try ijson_read(read(vpath)) catch; nothing end : nothing
+    jcs_json((; file,
             format   = _tree_format(file),
             sha256   = bytes2hex(sha256(content)),
             modified = string(unix2datetime(stat(path).mtime)),
@@ -103,7 +103,7 @@ end
 @post "/api/v1/studies/{study}/trees" function(req, study::String)
     err = _tree_request_error(study)
     isnothing(err) || return err
-    body = try JSON3.read(String(req.body)) catch
+    body = try ijson_read(req.body) catch
         return json_error(400, "invalid_body", "Expected a JSON body")
     end
     file    = string(get(body, :file, ""))
@@ -119,7 +119,7 @@ end
         return json_error(409, "exists", "Tree '$file' already exists")
     end
     _write_atomic(path, String(content))
-    json((; file, format = _tree_format(file)))
+    jcs_json((; file, format = _tree_format(file)))
 end
 
 @put "/api/v1/studies/{study}/trees/{file}/view" function(req, study::String, file::String)
@@ -129,12 +129,12 @@ end
         return json_error(404, "not_found", "Tree '$file' not found")
     text = String(req.body)
     sizeof(text) <= _VIEW_MAX_BYTES || return json_error(413, "too_large", "View state is limited to 5 MB")
-    doc = try JSON3.read(text) catch
+    doc = try ijson_read(text) catch
         return json_error(400, "invalid_body", "Expected a JSON object")
     end
     doc isa JSON3.Object || return json_error(400, "invalid_body", "Expected a JSON object")
-    _write_atomic(_tree_view_path(study, file), text)
-    json((; saved = true))
+    _write_atomic(_tree_view_path(study, file), String(jcs_bytes(doc)))
+    jcs_json((; saved = true))
 end
 
 @delete "/api/v1/studies/{study}/trees/{file}" function(req, study::String, file::String)
@@ -145,5 +145,5 @@ end
     rm(path)
     vpath = _tree_view_path(study, file)
     isfile(vpath) && rm(vpath)
-    json((; deleted = file))
+    jcs_json((; deleted = file))
 end

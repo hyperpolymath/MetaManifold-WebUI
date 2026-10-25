@@ -21,7 +21,7 @@ function main()
     samples = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 48
     tips >= 2 && samples >= 2 || error("Use at least two tips and two samples")
     labels = ["ASV_$i" for i in 1:tips]
-    tree = CC.parse_newick(balanced_newick(labels) * ";")
+    tree = CC.parse_phylogenetic_tree(balanced_newick(labels) * ";")
     counts = Float64.(rand(MersenneTwister(123), 0:20, samples, tips))
     sample_names = ["sample_$i" for i in 1:samples]
 

@@ -24,10 +24,12 @@ import type {
   CladisticsCreateRequest, CladisticsSummary, CladisticsDetail,
   CladeCumulusSourcesResponse, CladeCumulusRequest, CladeCumulusResponse,
   CladeMoveValidationRequest, CladeMoveValidationResponse,
+  OrdinationRequest, OrdinationResult,
 } from './types'
 
 import type { FigureDoc } from '../figure/types'
 import { saveBlob } from '../utils/download'
+import { ijsonJcsStringify } from './ijsonJcs'
 
 // Base URL for the backend API. Empty string means same-origin.
 // Set "apiBase" in config.json (e.g. "https://bioserver:8080") for split deployments.
@@ -55,7 +57,7 @@ async function rawPost(path: string, body: unknown): Promise<Response> {
   const res = await fetch(apiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: ijsonJcsStringify(body),
   })
   if (!res.ok) {
     const err: ApiError = await res.json().catch(() => ({
@@ -83,9 +85,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const get  = <T>(path: string)                       => request<T>(path)
-const post = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'POST',  body: body !== undefined ? JSON.stringify(body) : undefined })
-const patch = <T>(path: string, body?: unknown)      => request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined })
-const put  = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'PUT',  body: body !== undefined ? JSON.stringify(body) : undefined })
+const post = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'POST',  body: body !== undefined ? ijsonJcsStringify(body) : undefined })
+const patch = <T>(path: string, body?: unknown)      => request<T>(path, { method: 'PATCH', body: body !== undefined ? ijsonJcsStringify(body) : undefined })
+const put  = <T>(path: string, body?: unknown)       => request<T>(path, { method: 'PUT',  body: body !== undefined ? ijsonJcsStringify(body) : undefined })
 const del  = <T>(path: string)                       => request<T>(path, { method: 'DELETE' })
 
 /** PUT a text body; the response is JSON. */
@@ -254,6 +256,12 @@ export const api = {
                      post<unknown>(`/api/v1/studies/${study}/analysis/nmds`, body),
     permanova:     (study: string, body: ComparisonRequest) =>
                      post<PermanovaResult>(`/api/v1/studies/${study}/analysis/permanova`, body),
+    /** Request a study ordination; reject on serialisation, network, HTTP or response-parsing errors. */
+    ordination:    (study: string, body: OrdinationRequest) =>
+                     post<OrdinationResult>(`/api/v1/studies/${study}/analysis/ordination`, body),
+    /** Fetch the ordination capability/citation contract; request and JSON parsing errors propagate. */
+    ordinationContract: () =>
+                     get<Record<string, unknown>>('/api/v1/ordination/contract'),
     capabilities:  () => get<{ r_available: boolean }>('/api/v1/capabilities'),
     venn:          (study: string, body: VennRequest) =>
                      post<VennResult>(`/api/v1/studies/${study}/analysis/venn`, body),

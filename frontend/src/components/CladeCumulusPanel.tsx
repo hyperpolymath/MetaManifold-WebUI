@@ -33,6 +33,11 @@ export interface CladeCumulusPanelProps {
   runs: CladeCumulusRunOption[]
 }
 
+/**
+ * Explore a study run's clade hierarchy, diversity and unplaced reads. Loads
+ * available sources and computes results on request; move checks can preview
+ * counterfactual trees or save sidecar proposals without changing canonical tables.
+ */
 export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
   const toast = useToast()
   const reqCounter = useRef(0)
@@ -248,6 +253,17 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
     if (unifracKind === 'weighted') return div.weighted_unifrac
     return div.normalized_weighted_unifrac
   }, [result, unifracKind])
+
+  // Only samples that actually lost mass are worth naming; a run with a
+  // complete placement file (or one produced before the field existed) reports
+  // nothing here.
+  const unplacedSamples = useMemo<[string, number][]>(() => {
+    const div = result?.diversity
+    if (!div?.unplaced_reads) return []
+    return div.samples
+      .map(s => [s, div.unplaced_reads?.[s] ?? 0] as [string, number])
+      .filter(([, n]) => n > 0)
+  }, [result])
 
   const exportMatrixCsv = () => {
     if (!result?.diversity || !activeMatrix) return
@@ -699,6 +715,28 @@ export function CladeCumulusPanel({ study, runs }: CladeCumulusPanelProps) {
                   </div>
                 ))}
               </div>
+
+              {/*
+                Reads no tip carries: like-weight mass a placement left on no
+                edge, plus ASVs the tree does not cover. They are absent from
+                the tree-tip abundances but they are *not* dropped from the
+                sample: each one still counts in its sample's library size,
+                which is the denominator the weighted UniFrac metrics divide
+                by. That is what keeps them off the tree instead of letting a
+                partially placed sample renormalise back up to abundance 1, so
+                the shortfall is stated here as well.
+              */}
+              {unplacedSamples.length > 0 && (
+                <p style={{ fontSize: '.75rem', margin: '0 0 12px', color: 'var(--color-fg-muted, #57606a)' }}>
+                  Unplaced reads (carried by no tip — like-weight mass left on no edge, plus
+                  ASVs the tree does not cover — excluded from the tree-tip abundances but
+                  counted in each sample’s library size, so they lower its relative
+                  abundances rather than being renormalised onto the placed tips):{' '}
+                  {unplacedSamples
+                    .map(([s, n]) => `${s} ${n.toFixed(2)}`)
+                    .join(', ')}
+                </p>
+              )}
 
               {/* Pairwise UniFrac table */}
               {activeMatrix && (

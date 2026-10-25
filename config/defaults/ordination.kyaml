@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# Canonical constrained-ordination capability and compatibility contract (KYAML).
+# Loaded by MetaManifold.Ordination to keep method/distance compatibility,
+# scaling semantics, permutation bounds, and primary literature citations in one
+# machine-readable source of truth.
+---
+{
+  schema_version: 1,
+  defaults: {
+    method: "none",
+    distance: "bray",
+    scaling: 2,
+    permutations: 999,
+    variance_partitioning: false,
+    replacement_method: "bayesian_multiplicative",
+    replacement_delta: 0.65,
+  },
+  permutation_bounds: {
+    min: 99,
+    max: 9999,
+    default: 999,
+  },
+  scalings: {
+    "1": {
+      id: 1,
+      name: "distance",
+      summary: "Preserves Euclidean/principal-coordinate distances among samples; project samples onto covariate arrows at right angles.",
+    },
+    "2": {
+      id: 2,
+      name: "correlation",
+      summary: "Preserves approximate angles/correlations among features and constraining covariates; distances among sample points are not approximate dissimilarities.",
+    },
+  },
+  methods: {
+    none: {
+      vegan_function: null,
+      geometry: "unconstrained_only",
+      compatible_distances: [
+        "bray",
+        "jaccard",
+        "euclidean",
+        "aitchison",
+        "chisq",
+        "unweighted_unifrac",
+        "weighted_unifrac",
+      ],
+      default_distance: "bray",
+      summary: "Constrained ordination disabled; use unconstrained NMDS and PERMANOVA.",
+    },
+    rda: {
+      vegan_function: "rda",
+      geometry: "linear_euclidean",
+      compatible_distances: [
+        "aitchison",
+        "euclidean",
+      ],
+      default_distance: "aitchison",
+      summary: "Linear Redundancy Analysis on zero-replaced CLR (Aitchison) or Euclidean/Hellinger space.",
+    },
+    cca: {
+      vegan_function: "cca",
+      geometry: "unimodal_chisq",
+      compatible_distances: [
+        "chisq",
+      ],
+      default_distance: "chisq",
+      summary: "Unimodal Canonical Correspondence Analysis weighted by chi-square distance on non-negative abundances.",
+    },
+    cap: {
+      vegan_function: "capscale",
+      geometry: "metric_pcoa",
+      compatible_distances: [
+        "bray",
+        "jaccard",
+        "euclidean",
+        "aitchison",
+        "unweighted_unifrac",
+        "weighted_unifrac",
+      ],
+      default_distance: "bray",
+      summary: "Constrained Analysis of Principal Coordinates (vegan::capscale) on an ecological or phylogenetic dissimilarity matrix.",
+    },
+    dbrda: {
+      vegan_function: "dbrda",
+      geometry: "gower_distance_rda",
+      compatible_distances: [
+        "bray",
+        "jaccard",
+        "euclidean",
+        "aitchison",
+        "unweighted_unifrac",
+        "weighted_unifrac",
+      ],
+      default_distance: "bray",
+      summary: "Distance-based Redundancy Analysis (Legendre & Anderson 1999; McArdle & Anderson 2001) directly decomposing Gower-centred dissimilarities.",
+    },
+  },
+  citations: [
+    {
+      id: "legendre_anderson_1999",
+      authors: "Legendre, P. & Anderson, M. J.",
+      year: 1999,
+      title: "Distance-based redundancy analysis: testing multispecies responses in multifactorial ecological experiments",
+      journal: "Ecological Monographs 69(1), 1-24",
+      doi: "10.1890/0012-9615(1999)069[0001:DBRATM]2.0.CO;2",
+    },
+    {
+      id: "mcardle_anderson_2001",
+      authors: "McArdle, B. H. & Anderson, M. J.",
+      year: 2001,
+      title: "Fitting multivariate models to community data: a comment on distance-based redundancy analysis",
+      journal: "Ecology 82(1), 290-297",
+      doi: "10.1890/0012-9658(2001)082[0290:FMMTCD]2.0.CO;2",
+    },
+    {
+      id: "anderson_willis_2003",
+      authors: "Anderson, M. J. & Willis, T. J.",
+      year: 2003,
+      title: "Canonical analysis of principal coordinates: a useful method of constrained ordination for ecology",
+      journal: "Ecology 84(2), 511-525",
+      doi: "10.1890/0012-9658(2003)084[0511:CAOPCA]2.0.CO;2",
+    },
+    {
+      id: "peres_neto_2006",
+      authors: "Peres-Neto, P. R., Legendre, P., Dray, S. & Borcard, D.",
+      year: 2006,
+      title: "Variation partitioning of species data matrices: estimation and comparison of fractions",
+      journal: "Ecology 87(10), 2614-2625",
+      doi: "10.1890/0012-9658(2006)87[2614:VPOSDM]2.0.CO;2",
+    },
+    {
+      id: "gloor_2017",
+      authors: "Gloor, G. B., Macklaim, J. M., Pawlowsky-Glahn, V. & Egozcue, J. J.",
+      year: 2017,
+      title: "Microbiome datasets are compositional: and this is not optional",
+      journal: "Frontiers in Microbiology 8, 2224",
+      doi: "10.3389/fmicb.2017.02224",
+    },
+    {
+      id: "oksanen_vegan",
+      authors: "Oksanen, J. et al.",
+      year: 2025,
+      title: "vegan: Community Ecology Package",
+      journal: "CRAN R package",
+      doi: "10.32614/CRAN.package.vegan",
+    },
+  ],
+}

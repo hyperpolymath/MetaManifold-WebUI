@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# Fork governance lane. Two reusable lanes from hyperpolymath/standards, each
-# pinned to a commit: DEED syntax for the repo deed, and the Hypatia verdict
-# grid (Hypatia, panic-attack, pons asinorum and the gitbot-fleet report-backs
-# under .gitbot-fleet/). This workflow is the fork's; nothing in it is
-# proposed upstream, and upstream's ci.yml is untouched.
+# Fork governance lane. DEED and K9 conformance come from hyperpolymath/standards; the
+# Hypatia verdict grid uses a fork-local copy of the standards reusable so its
+# advisory PR scan cannot become a blocking code-scanning-results check. Both
+# sources are pinned to commits. The grid covers Hypatia, panic-attack, pons
+# asinorum and the gitbot-fleet report-backs under .gitbot-fleet/. This workflow
+# is the fork's; nothing in it is proposed upstream, and upstream's ci.yml is
+# untouched.
 #
 # The reusable renders the grid; the two jobs below post it on the pull
 # request and publish the badges, because a called workflow may not request
@@ -26,6 +28,24 @@ permissions:
   contents: read
 
 jobs:
+  workflow-contract:
+    name: Advisory scan contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the advisory SARIF boundary
+        run: |
+          bash scripts/check-governance-contract.sh
+          bash scripts/tests/test-governance-contract.sh
+          bash scripts/tests/test-hypatia-inherited-language-exception.sh
+          bash scripts/tests/test-ci-logging.sh
+          bash scripts/tests/test-k9-log-copy.sh
+          bash scripts/tests/test-scanner-boundaries.sh
+
   deed:
     name: DEED syntax
     uses: hyperpolymath/standards/.github/workflows/deed-conformance.yml@75bd5994470661a099df562d6d5ad2fe744dbd66
@@ -34,9 +54,25 @@ jobs:
     with:
       require-files: true
 
+  k9:
+    name: K9 conformance
+    uses: ./.github/workflows/k9-conformance-reusable.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      # Require the committed .machine_readable/contractiles/ K9 corpus across
+      # L0–L2; an accidentally emptied corpus or orange state fails closed.
+      require-files: true
+      fail-on-indeterminate: true
+
   hypatia:
     name: Hypatia verdict grid
-    uses: hyperpolymath/standards/.github/workflows/hypatia-scan-reusable.yml@01c9b0c9f2646ebea0b30a9588462642ac94aee9
+    needs: [workflow-contract]
+    # Fork-local so advisory PR scans do not upload error-level SARIF and
+    # create a second blocking check. The source pin and deltas are documented
+    # in the called file and checked by scripts/check-governance-contract.sh.
+    uses: ./.github/workflows/hypatia-scan-reusable.yml
     permissions:
       actions: read
       contents: read
@@ -46,7 +82,7 @@ jobs:
 
   verdict:
     name: Post the verdict grid
-    needs: [deed, hypatia]
+    needs: [deed, k9, hypatia]
     if: ${{ always() && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -62,11 +98,20 @@ jobs:
           name: verdict-grid
           path: verdict-grid
 
+      - name: Download the K9 conformance grid
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: k9-grid
+          path: k9-grid
+
       - name: Update the compact PR verdict
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           DEED_RESULT: ${{ needs.deed.result }}
+          K9_RESULT: ${{ needs.k9.result }}
+          K9_VERDICT: ${{ needs.k9.outputs.verdict }}
           HYPATIA_RESULT: ${{ needs.hypatia.result }}
           HYPATIA_VERDICT: ${{ needs.hypatia.outputs.verdict }}
         run: |
@@ -79,6 +124,12 @@ jobs:
             failure) deed='🔴 failing' ;;
             *)       deed="🟠 indeterminate ($DEED_RESULT)" ;;
           esac
+          # A rendered grid is not proof that its job completed successfully.
+          case "$K9_RESULT" in
+            success) k9="${K9_VERDICT:-orange}" ;;
+            failure) k9=red ;;
+            *)       k9=orange ;;
+          esac
           {
             echo '<!-- fork-governance-verdict: regenerated on every run -->'
             echo '# Fork governance'
@@ -86,12 +137,19 @@ jobs:
             echo "| Lane | Status | Run |"
             echo "|---|---|---|"
             echo "| DEED syntax (repo deed) | $deed | [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) |"
+            echo "| K9 conformance (L0–L2; L3 not verified) | $k9 (job: $K9_RESULT) | same run |"
             echo "| Hypatia verdict grid | ${HYPATIA_VERDICT:-orange} (job: $HYPATIA_RESULT) | same run |"
             echo
             if [ -s verdict-grid/report.md ]; then
               cat verdict-grid/report.md
             else
               echo '🟠 indeterminate · no verdict-grid artifact was produced by the Hypatia lane; see the run.'
+            fi
+            echo
+            if [ -s k9-grid/report.md ]; then
+              cat k9-grid/report.md
+            else
+              echo '🟠 indeterminate · no K9 grid artifact was produced; see the run.'
             fi
           } > "$RUNNER_TEMP/body.md"
           # One comment per PR, updated in place; newest run wins.
@@ -107,7 +165,7 @@ jobs:
 
   badges:
     name: Publish badges
-    needs: [deed, hypatia]
+    needs: [deed, k9, hypatia]
     if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -115,6 +173,13 @@ jobs:
       contents: write
       actions: read
     steps:
+      - name: Download the K9 conformance grid
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: k9-grid
+          path: k9-grid
+
       - name: Download the verdict grid
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -126,6 +191,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEED_RESULT: ${{ needs.deed.result }}
+          K9_RESULT: ${{ needs.k9.result }}
         run: |
           set -euo pipefail
           # shields.io endpoint JSON, one file per lane, on an orphan branch
@@ -138,6 +204,14 @@ jobs:
             *)       msg=indeterminate; colour=orange ;;
           esac
           jq -n --arg m "$msg" --arg c "$colour" '{schemaVersion: 1, label: "DEED syntax", message: $m, color: $c}' > out/deed.json
+          if [ "$K9_RESULT" = "success" ] && [ -s k9-grid/badge.json ]; then
+            cp k9-grid/badge.json out/k9-grid.json
+          elif [ "$K9_RESULT" = "failure" ]; then
+            jq -n '{schemaVersion: 1, label: "K9 contracts", message: "failing", color: "red"}' > out/k9-grid.json
+          else
+            jq -n '{schemaVersion: 1, label: "K9 contracts", message: "indeterminate", color: "orange"}' > out/k9-grid.json
+          fi
+          [ -s k9-grid/report.json ] && cp k9-grid/report.json out/k9-grid.report.json
           if [ -s verdict-grid/badge.json ]; then
             cp verdict-grid/badge.json out/hypatia-grid.json
           else

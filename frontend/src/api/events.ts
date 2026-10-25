@@ -13,12 +13,25 @@ export type SSEHandler = {
 export function openEventStream(handlers: SSEHandler & { onConnectedChange?: (connected: boolean) => void }): () => void {
   const es = new EventSource(apiUrl('/api/v1/events'))
 
+  // A malformed frame must not throw inside the listener: EventSource would
+  // keep the stream open but the exception surfaces as an uncaught error and
+  // the update is lost silently either way. Drop the bad frame instead.
+  const parseFrame = (data: string): unknown => {
+    try {
+      return JSON.parse(data)
+    } catch {
+      return undefined
+    }
+  }
+
   es.addEventListener('job_update', (e: MessageEvent) => {
-    handlers.onJobUpdate?.(JSON.parse(e.data) as Job)
+    const job = parseFrame(e.data)
+    if (job !== undefined) handlers.onJobUpdate?.(job as Job)
   })
 
   es.addEventListener('stage_update', (e: MessageEvent) => {
-    handlers.onStageUpdate?.(JSON.parse(e.data))
+    const ev = parseFrame(e.data)
+    if (ev !== undefined) handlers.onStageUpdate?.(ev as Parameters<NonNullable<SSEHandler['onStageUpdate']>>[0])
   })
 
   es.onopen = () => handlers.onConnectedChange?.(true)

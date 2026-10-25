@@ -14,11 +14,12 @@ module Server
     using Oxygen, HTTP, JSON3, YAML, Logging
     using PrecompileTools: @setup_workload, @compile_workload
 
+    using ..Canonical: ijson_read, jcs_bytes
     using ..PipelineTypes, ..PipelineLog, ..Config
     using ..Databases, ..DuckDBStore, ..Validation
     using ..Tools, ..TaxonomyTableTools, ..ProjectSetup
     using ..DADA2, ..OTUPipeline
-    using ..DiversityMetrics, ..Analysis, ..Differential
+    using ..DiversityMetrics, ..Analysis, ..Differential, ..Ordination
 
     ## EPIPE log filter
     # HTTP.jl logs every broken-pipe error from SSE streams as @error
@@ -63,11 +64,45 @@ module Server
     using .JobQueue
 
     ## Shared helpers (available to all included route files)
+    function jcs_json(payload; status::Int=200)
+        HTTP.Response(status, ["Content-Type" => "application/json"], body=jcs_bytes(payload))
+    end
+
     function json_error(status::Int, code::String, message::String; detail=nothing)
         body = isnothing(detail) ? (; error=code, message) : (; error=code, message, detail)
-        HTTP.Response(status,
-            ["Content-Type" => "application/json"],
-            body = JSON3.write(body))
+        bytes = try
+            jcs_bytes(body)
+        catch e
+            e isa ArgumentError || rethrow()
+            # Error messages can interpolate untrusted path/query segments.
+            # If they contain invalid I-JSON Unicode, still return the intended
+            # HTTP status rather than turning a client error into a server error.
+            jcs_bytes((; error=code, message="Invalid request"))
+        end
+        HTTP.Response(status, ["Content-Type" => "application/json"], body=bytes)
+    end
+
+    # Parse a JSON object request body without mutating `req.body::Vector{UInt8}`
+    # (Julia 1.12 `String(::Vector{UInt8})` truncates its argument in place).
+    # Malformed JSON or a non-object JSON payload returns a 400 HTTP.Response
+    # instead of throwing an unhandled parse/method exception out of the route.
+    function _read_json_object(req::HTTP.Request;
+                               allow_empty::Bool=false,
+                               non_object_error::String="invalid_json")
+        body_bytes = req.body isa AbstractString ? ncodeunits(req.body) : length(req.body)
+        if body_bytes == 0 && allow_empty
+            return (;)
+        end
+        raw = req.body isa AbstractString ? String(req.body) : String(copy(req.body))
+        parsed = try
+            JSON3.read(raw)
+        catch e
+            return json_error(400, "invalid_json",
+                "Request body is not valid JSON: $(sprint(showerror, e))")
+        end
+        parsed isa JSON3.Object || return json_error(400, non_object_error,
+            "Request body must be a JSON object")
+        parsed
     end
 
     ## Route registration
@@ -105,6 +140,8 @@ module Server
     # Opt-in exact/high-precision statistics; loaded after the shared analysis
     # and read-only DuckDB helpers it intentionally constrains.
     include(joinpath(@__DIR__, "routes", "validated_statistics.jl"))
+    # Julia-rendered validated-statistics page; no new application TypeScript.
+    include(joinpath(@__DIR__, "routes", "statistics_ui.jl"))
     include(joinpath(@__DIR__, "routes", "read_funnel.jl"))
     include(joinpath(@__DIR__, "routes", "composition.jl"))
     # Evidence Mode builds on the composition library (category projections)
@@ -118,13 +155,35 @@ module Server
     include(joinpath(@__DIR__, "routes", "phylogeny.jl"))
     include(joinpath(@__DIR__, "routes", "cladistics.jl"))
     include(joinpath(@__DIR__, "routes", "clade_cumulus.jl"))
-    include(joinpath(@__DIR__, "routes", "cladistics.jl"))
+    include(joinpath(@__DIR__, "routes", "ordination.jl"))
 
     ## Bad request middleware
     # Helpers deep in a route (e.g. `_req_group`) throw this to reject a request.
     struct BadRequest <: Exception
         message::String
     end
+
+    # Parse a request body as JSON, and turn malformed input into a 400 instead
+    # of a 500 carrying a JSON3 stack trace. A client that sends a truncated
+    # body behind a Save button has made a request error, not found a server
+    # bug. `String(::Vector{UInt8})` can consume the buffer, so copy it: routes
+    # that parse and then hash or log `req.body` still see the original bytes.
+    function _request_json(req::HTTP.Request)
+        try
+            JSON3.read(String(copy(req.body)))
+        catch e
+            e isa InterruptException && rethrow()
+            throw(BadRequest("Request body is not valid JSON"))
+        end
+    end
+
+    # Oxygen's serializer catches whatever a handler throws and answers 500
+    # before the middleware chain sees it, so `_bad_request_middleware` cannot
+    # rescue a `BadRequest` raised inside a route. Its error mapper is the hook
+    # that does run inside the serializer: the same dispatch that answers
+    # Oxygen's own `ValidationError` with a 400. Extending it keeps our JSON
+    # error shape instead of Oxygen's plain `{"message": ...}`.
+    Oxygen.Core.Util.handle_error(err::BadRequest) = json_error(400, "bad_request", err.message)
 
     # Oxygen URL-decodes path parameters, so an encoded '/' would reach a handler
     # as a real separator. No study, run, table, column or file name needs one.
@@ -361,6 +420,9 @@ module Server
 
             # Pass API requests through to Oxygen
             startswith(uri, "/api/") && return next(req)
+            # The Julia-rendered validated-statistics page is a real route, not
+            # an SPA path. Pass it through before the frontend catch-all.
+            (uri == "/statistics" || startswith(uri, "/statistics/")) && return next(req)
 
             # SPA catch-all: serve frontend build or index.html
             rel    = lstrip(HTTP.URIs.unescapeuri(uri), '/')
