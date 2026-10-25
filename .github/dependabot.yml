@@ -6,6 +6,14 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Pinned deliberately, with the reason in a comment beside the pin. On
+      # 2026-10-25 Dependabot changed this pin's SHA while leaving a comment
+      # that said v4.38.0 / "4.38.1 blocked estate-wide" - a change nobody could
+      # review without resolving the SHA by hand. Action pins that carry an
+      # estate-wide decision are updated by hand.
+      - dependency-name: github/codeql-action
+        update-types: [version-update:semver-major, version-update:semver-minor, version-update:semver-patch]
     # A dependency pull request is a one-line diff that becomes stale the
     # moment anything else merges, and the Branch freshness check then fails it
     # on a rule the dependency did not break. Dependabot's default is not to
