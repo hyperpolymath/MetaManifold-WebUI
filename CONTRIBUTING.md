@@ -48,6 +48,35 @@ Each requirement is checked before the code is read.
 7. **Once review has started, add commits,** and rebase only when asked to.
    Squashing happens on merge.
 
+## Branches and retention
+
+The two branch rules above are checked, not merely stated:
+`scripts/maintenance/check-pr-freshness.sh` runs on every pull request through
+`.github/workflows/pr-freshness.yml` and reports how far behind the branch is,
+or which merge commit breaks rule 2. Run it yourself before pushing:
+
+```
+git fetch origin
+bash scripts/maintenance/check-pr-freshness.sh --base origin/main --head HEAD
+```
+
+What happens to a branch once it is no longer needed:
+
+- **Merged into `main`** — delete it. The commits are in `main`; a kept branch
+  is a second answer to the same question.
+- **Closed unmerged** — the pull request keeps the head reachable, so the branch
+  is deleted and the content is not lost: `git fetch origin pull/<n>/head`.
+- **`archive/`** — a deliberate snapshot that is not proposed for merging. It
+  carries no pull request; opening one asks `main` to become older.
+- **`governance-badges`** — not a working branch. The `Publish badges` job
+  force-pushes shields.io endpoint JSON to it on every push to `main`, and
+  `README.md` reads it through `img.shields.io/endpoint`. Never delete it.
+
+Drifted and superseded branches are measured weekly by
+`.github/workflows/branch-hygiene.yml`, which updates one rolling issue; the
+classes it reports, what each one means and how to recover closed content are in
+[docs/maintenance/repository-hygiene.md](docs/maintenance/repository-hygiene.md).
+
 ## Licence and copyright
 
 Source code is licensed under the AGPL-3.0 (`LICENSE`). `README.md` is licensed

@@ -45,6 +45,10 @@ jobs:
           bash scripts/tests/test-ci-logging.sh
           bash scripts/tests/test-k9-log-copy.sh
           bash scripts/tests/test-scanner-boundaries.sh
+          # Branch triage and the pull-request freshness rule: the scripts the
+          # hygiene workflows run, tested where every other shell test runs.
+          bash scripts/tests/test-triage-branches.sh
+          bash scripts/tests/test-check-pr-freshness.sh
 
   deed:
     name: DEED syntax

@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# CONTRIBUTING.md states two rules a pull request is checked against before
+# its diff is read: the branch starts at the tip of `main`, and it carries no
+# merge commits from `main`. Nothing enforced them, so drifted branches
+# accumulated — ten of them by 2026-10-25, cut from snapshots up to 119 commits
+# old, each conflicting, each holding a pull request, each starting a full CI
+# run that could never go green.
+#
+# This check turns those two sentences into a result that arrives in a minute,
+# on the pull request, from a script that also runs at the desk:
+#
+#   scripts/maintenance/check-pr-freshness.sh
+#
+# It is intentionally not a fixer. Rebasing is the author's decision, because
+# only the author knows which commits on a drifted branch still apply.
+name: PR freshness
+
+on:
+  pull_request:
+    # `opened` for the first push, `synchronize` for each new push, and
+    # `reopened` because a reopened branch may have drifted while it was
+    # closed. `edited` is absent: editing a description cannot change history.
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One result per pull request; a superseded run tells nobody anything.
+  group: pr-freshness-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  freshness:
+    name: Branch freshness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the pull request's history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the check needs the real merge base, and a shallow
+          # clone would report its graft point as the base and pass everything.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the branch starts at the base tip and replays linearly
+        env:
+          # The pull request's base SHA is immutable; a branch name is not.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/maintenance/check-pr-freshness.sh --base "$BASE_SHA" --head HEAD
