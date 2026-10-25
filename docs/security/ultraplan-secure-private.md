@@ -6,8 +6,11 @@
 Status: plan and evidence map for the branch
 `arena/924008e1-metamanifold-webui`, based on `d6e8671` (`main`).
 Companion to [`recon-report.md`](recon-report.md) (what is wrong and why it
-matters) and [`colour-teams.md`](colour-teams.md) (the adversarial and
-governance read). Finding IDs `SEC-nn` refer to the recon report.
+matters), [`colour-teams.md`](colour-teams.md) (the adversarial and governance
+read) and [`../proposals/security-and-integrity-ultraplan.md`](../proposals/security-and-integrity-ultraplan.md)
+(the remedy schedule: the same programme expressed as harms, gates, signatures
+and evidence for the people who carry institutional risk). Finding IDs `SEC-nn`
+refer to the recon report.
 
 **Why the name.** *Secure* is the confidentiality, integrity and availability
 work: identity, authorisation, the audit ledger, transport, at-rest protection,

@@ -7,7 +7,10 @@ Status: proposal for decision. Written against `d6e8671` on `main`.
 The evidence behind every claim below is in
 [the recon report](../security/recon-report.md); the delivery plan is
 [the secure-and-private ultraplan](../security/ultraplan-secure-private.md);
-the adversarial read is [the colour-team assessment](../security/colour-teams.md).
+the adversarial read is [the colour-team assessment](../security/colour-teams.md);
+and the remedy schedule — which harm each control removes, who signs for it, and
+what may be claimed at each gate — is
+[the remedy ultraplan](security-and-integrity-ultraplan.md).
 
 ---
 
@@ -311,6 +314,7 @@ does.
 | [recon report](../security/recon-report.md) | Seventeen findings with file-and-line evidence, the twelve existing controls, GDPR article-by-article, HIPAA specification-by-specification, and all 33 TOP SECRET behaviours classified as application-level, inherited from the environment, or with no software expression; plus a twenty-command evidence log and an explicit statement of what the review could not run |
 | [ultraplan — secure and private](../security/ultraplan-secure-private.md) | The eight workstreams and eighteen pull requests, each with its files, ledger events, acceptance tests, standards clauses closed and friction cost; the four-rung ladder; and the list of controls deliberately *not* built |
 | [colour-team assessment](../security/colour-teams.md) | White, red, blue, purple, green and gold teams over CyBOK knowledge areas; twelve red scenarios with preconditions; a detection matrix showing eight of ten red scenarios would be invisible today; and the conflicts between teams with how each resolves |
+| [remedy ultraplan](security-and-integrity-ultraplan.md) | The remedy schedule: twenty remedies keyed to the findings, nine packages, three signable gates with what may and may not be said at each, a twelve-question partner answer pack, the KEC and commercial annex, and the decisions needed to start |
 | [security dossier index](../security/README.md) | The reading order and the three sentences that matter |
 
 ---
