@@ -119,7 +119,9 @@ expense is what made the situation stable rather than self-correcting:
   `Occupancy typed peak`, `Occupancy disagreement test`, plus `Governance (fork)`,
   `DOI`, `Format readiness evidence` and `Secret Scanner`. `Code relevance`
   skips the expensive jobs only for a diff that touches nothing the suite
-  exercises; all thirteen branches touched `src/`.
+  exercises, and none of the thirteen was such a diff: #274 touched
+  `bench/null_calibration` and the workflow, #278 touched the workflows and
+  `scripts/`, the rest touched `src/`.
 - Six of those jobs are required contexts in the `Branch-Floor` ruleset. A
   branch that cannot pass them reports `BLOCKED` indefinitely, so a reviewer
   sees thirteen blocked pull requests and no signal about which of them is
