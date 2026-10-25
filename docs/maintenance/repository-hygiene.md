@@ -217,6 +217,78 @@ acts on them; the first one was reached, wrongly, during the 2026-10-25 pass.
   A new directory under `docs/` needs a whitelist line or it will not be
   committed; `!docs/maintenance/` was added for this document.
 
+## External pins can move under you
+
+**Incident, 2026-10-25.** `hyperpolymath/standards` — the source of this
+repository's DEED, K9, Hypatia, Scorecard and secret-scanner reusables — was
+transferred to `metadatastician/standards` at 10:13 UTC. From the next run
+onwards, every workflow that called one of its reusable workflows **failed at
+plan time with zero jobs**, and GitHub displayed the run under the workflow's
+file path instead of its `name:`, because the workflow never loaded far enough
+to have one:
+
+| Time | Workflow | Result |
+| --- | --- | --- |
+| 09:26 | `Governance (fork)` (`hypatia-scan.yml`) | success |
+| 09:26 | `OpenSSF Scorecard` (`scorecard.yml`) | success |
+| 10:13 | — standards repository transferred — | |
+| 10:52 | `hypatia-scan.yml` on a pull request | failure, 0 jobs, 0 s |
+| 11:27 | `hypatia-scan.yml`, `scorecard.yml` on the push | failure, 0 jobs, 0 s |
+| 11:27 | `Secret Scanner` (local reusable only) | success |
+
+The distinction is the whole lesson: **`actions/checkout` with
+`repository: hyperpolymath/standards` kept working**, because git and the REST
+API follow a transfer's redirect, while a `uses: <owner>/<repo>/.github/
+workflows/<file>@<sha>` reference **does not**. So the scanners that *check the
+repository out* were fine and the ones that *call a reusable workflow* were
+dark. Both read as "governance is green" in a summary that does not look at
+`conclusion` per workflow.
+
+How to detect it in one command, before trusting a red or a green:
+
+```
+gh api repos/<owner>/<repo> --jq .full_name     # a different name means transferred
+```
+
+### The actual cause is an Actions policy, not just the rename
+
+Repointing the references is **not sufficient**, and the run says so once you can
+read the annotation. A startup-failure run has no jobs and no logs, but its
+workflow page carries one error:
+
+> The reusable workflow `metadatastician/standards/.github/workflows/deed-conformance.yml@75bd5994…`
+> is not allowed in `hyperpolymath/MetaManifold-WebUI` because all reusable
+> workflows must be from a repository owned by `hyperpolymath` or match the
+> pattern: `arena-ai-coding-agent[bot]`.
+
+The repository's Actions policy permits reusable workflows only from
+repositories owned by `hyperpolymath` — so `hyperpolymath/standards` was allowed
+and `metadatastician/standards` is not, whatever name the workflow file uses.
+The `uses:` references therefore cannot be repaired by editing this repository
+alone. Three ways out, in increasing order of effort:
+
+1. **Permit the new owner.** Repository → Settings → Actions → General →
+   *Access* for reusable workflows, and allow `metadatastician` (or "any
+   repository"). This is the smallest change and keeps the pins intact.
+2. **Move `standards` back** under `hyperpolymath`. Then the existing workflow
+   files work unchanged, and no pull request is needed.
+3. **Run DEED conformance from a checkout** instead of a remote `uses:`, the way
+   the K9, Hypatia and secret-scanner lanes already do. Correct, but it puts a
+   copy of someone else's workflow steps in this repository, and that copy then
+   drifts.
+
+What was done: every reference was repointed at `metadatastician/standards`
+with the **same pinned SHAs** (verified to resolve in the new location, with
+matching commit subjects), `scripts/check-governance-contract.sh` now fails if
+any workflow names the pre-transfer owner or if the Scorecard reusable stops
+being the pinned file, and the mutation test carries a case for each. The pins
+themselves did not move, so no new code is trusted; only the name used to reach
+the same commits.
+
+What a future reader should not do: "fix" a failed governance run by dropping
+the `uses:` and inlining a scanner, or by pointing the pin at `@main`. Both turn
+a loud failure into a quiet one.
+
 ## Decisions for the owner
 
 These are not cleanup, they are choices with trade-offs; the reasoning is

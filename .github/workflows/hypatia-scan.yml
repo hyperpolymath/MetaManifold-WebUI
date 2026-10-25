@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# Fork governance lane. DEED and K9 conformance come from hyperpolymath/standards; the
+# Fork governance lane. DEED and K9 conformance come from metadatastician/standards; the
 # Hypatia verdict grid uses a fork-local copy of the standards reusable so its
 # advisory PR scan cannot become a blocking code-scanning-results check. Both
 # sources are pinned to commits. The grid covers Hypatia, panic-attack, pons
@@ -52,7 +52,7 @@ jobs:
 
   deed:
     name: DEED syntax
-    uses: hyperpolymath/standards/.github/workflows/deed-conformance.yml@75bd5994470661a099df562d6d5ad2fe744dbd66
+    uses: metadatastician/standards/.github/workflows/deed-conformance.yml@75bd5994470661a099df562d6d5ad2fe744dbd66
     permissions:
       contents: read
     with:
