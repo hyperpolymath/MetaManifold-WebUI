@@ -747,6 +747,15 @@ jobs:
       # Fork delta 4: fleet report-backs. Produced per run by the `fleet` job of
       # hypatia-scan.yml and reaching this job only as an artifact; never
       # committed. continue-on-error: no artifact leaves the enrolled rows orange.
+      # Nothing committed may pose as evidence: only files the artifact supplies
+      # are read. The committed README.md is not *.json and is left alone.
+      - name: Clear any checked-out fleet report-backs
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p .gitbot-fleet/report-backs
+          find .gitbot-fleet/report-backs -maxdepth 1 -name '*.json' -type f -print -delete
+
       - name: Download the fleet report-backs
         if: ${{ always() && inputs.report-backs-artifact != '' }}
         continue-on-error: true

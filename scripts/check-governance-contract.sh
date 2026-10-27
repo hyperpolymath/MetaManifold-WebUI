@@ -140,6 +140,19 @@ if grep -Eq '^    uses: hyperpolymath/gitbot-fleet/\.github/workflows/fleet-repo
 else
   fail 'the fleet report-backs must come from hyperpolymath/gitbot-fleet pinned to a 40-hex commit'
 fi
+if fleet_clear="$(step_block "$REUSABLE" 'Clear any checked-out fleet report-backs')"; then
+  contains "$fleet_clear" "find .gitbot-fleet/report-backs -maxdepth 1 -name '*.json' -type f -print -delete" \
+    'a committed envelope can never pose as report-back evidence'
+  clear_line=$(grep -nF -- '- name: Clear any checked-out fleet report-backs' "$REUSABLE" | cut -d: -f1 | head -n1)
+  dl_line0=$(grep -nF -- '- name: Download the fleet report-backs' "$REUSABLE" | cut -d: -f1 | head -n1)
+  if [ -n "$clear_line" ] && [ -n "$dl_line0" ] && [ "$clear_line" -lt "$dl_line0" ]; then
+    pass 'the checked-out report-backs are cleared before the artifact is downloaded'
+  else
+    fail 'the report-backs clear step must precede the download'
+  fi
+else
+  fail 'the fleet report-backs clear step exists'
+fi
 if fleet_dl="$(step_block "$REUSABLE" 'Download the fleet report-backs')"; then
   contains "$fleet_dl" 'path: .gitbot-fleet/report-backs' \
     'the report-backs land where the renderer reads them'
