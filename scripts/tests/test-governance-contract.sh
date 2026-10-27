@@ -14,7 +14,7 @@ reset_fixture() {
 }
 reset_fixture
 bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1
-for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger stale-standards-owner scorecard-owner deed-remote scorecard-remote deed-source-sha scorecard-source-sha scorecard-no-upload scorecard-quiet-reconcile cross-owner-reusable; do
+for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger stale-standards-owner scorecard-owner deed-remote scorecard-remote deed-source-sha scorecard-source-sha scorecard-no-upload scorecard-quiet-reconcile cross-owner-reusable fleet-unpinned fleet-before-contract fleet-dropped-download fleet-download-after-render fleet-download-fatal; do
   reset_fixture
   case "$mutation" in
     allowlist-addition) echo 'frontend/src/fork-only.ts' >> "$fixture/config/hypatia/upstream-typescript-allowlist.txt" ;;
@@ -49,6 +49,13 @@ for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate bas
     deed-remote) sed -i 's|uses: ./.github/workflows/deed-conformance-reusable.yml|uses: metadatastician/standards/.github/workflows/deed-conformance.yml@75bd5994470661a099df562d6d5ad2fe744dbd66|' "$fixture/.github/workflows/hypatia-scan.yml" ;;
     scorecard-remote) sed -i 's|uses: ./.github/workflows/scorecard-reusable.yml|uses: metadatastician/standards/.github/workflows/scorecard-reusable.yml@c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d|' "$fixture/.github/workflows/scorecard.yml" ;;
     cross-owner-reusable) sed -i 's|uses: ./.github/workflows/k9-conformance-reusable.yml|uses: someone/else/.github/workflows/k9.yml@main|' "$fixture/.github/workflows/hypatia-scan.yml" ;;
+    # Fork delta 4: the fleet report-backs must come from an immutable gitbot-fleet
+    # commit, be downloaded before the grid renders, and never kill the lane.
+    fleet-unpinned) sed -i -E 's|(fleet-report-back-reusable\.yml)@[0-9a-f]{40}|\1@main|' "$fixture/.github/workflows/hypatia-scan.yml" ;;
+    fleet-before-contract) sed -i 's|needs: \[workflow-contract, fleet\]|needs: [fleet]|' "$fixture/.github/workflows/hypatia-scan.yml" ;;
+    fleet-dropped-download) sed -i '/^      - name: Download the fleet report-backs$/,/^          path: .gitbot-fleet\/report-backs$/d' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
+    fleet-download-after-render) awk '/^      - name: Download the fleet report-backs$/{hold=1} hold && /^      - name: Render the verdict grid$/{hold=0; print; printf "%s", buf; buf=""; next} hold{buf=buf $0 "\n"; next} {print}' "$fixture/.github/workflows/hypatia-scan-reusable.yml" > "$fixture/reordered.yml" && mv "$fixture/reordered.yml" "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
+    fleet-download-fatal) sed -i '/^      - name: Download the fleet report-backs$/,/^          path: .gitbot-fleet\/report-backs$/{/continue-on-error: true/d}' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     # A copy is only a copy while it still comes from the audited commit and
     # keeps the guards whose absence froze code scanning upstream.
     deed-source-sha) sed -i 's@75bd5994470661a099df562d6d5ad2fe744dbd66@main@' "$fixture/.github/workflows/deed-conformance-reusable.yml" ;;

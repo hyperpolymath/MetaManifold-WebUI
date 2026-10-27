@@ -126,7 +126,37 @@ not_contains "$caller" 'uses: metadatastician/standards/.github/workflows/hypati
 not_contains "$caller" 'uses: hyperpolymath/standards/.github/workflows/hypatia-scan-reusable.yml@' \
   'the governance lane cannot bypass the fork guard through the pre-transfer name'
 contains "$caller" 'needs: [workflow-contract]' \
-  'this contract runs before the Hypatia scan'
+  'this contract runs before the fleet job'
+contains "$caller" 'needs: [workflow-contract, fleet]' \
+  'the Hypatia scan runs after both the contract and the fleet report-backs'
+contains "$caller" "if: \${{ always() && needs.workflow-contract.result == 'success' }}" \
+  'a dead fleet job still lets the Hypatia lane render, a failed contract does not'
+# Fork delta 4: the fleet report-backs. The producer is pinned to a gitbot-fleet
+# commit (same owner, so the Actions policy allows the reusable); the consumer
+# step must sit before the grid renders, or the rows stay orange with the
+# artifact sitting unread in the run.
+if grep -Eq '^    uses: hyperpolymath/gitbot-fleet/\.github/workflows/fleet-report-back-reusable\.yml@[0-9a-f]{40}$' <<<"$caller"; then
+  pass 'the fleet report-backs come from gitbot-fleet at an immutable commit'
+else
+  fail 'the fleet report-backs must come from hyperpolymath/gitbot-fleet pinned to a 40-hex commit'
+fi
+if fleet_dl="$(step_block "$REUSABLE" 'Download the fleet report-backs')"; then
+  contains "$fleet_dl" 'path: .gitbot-fleet/report-backs' \
+    'the report-backs land where the renderer reads them'
+  contains "$fleet_dl" 'continue-on-error: true' \
+    'a missing report-backs artifact leaves rows orange instead of killing the lane'
+  contains "$fleet_dl" 'name: ${{ inputs.report-backs-artifact }}' \
+    'the artifact name is the caller-visible input, not a literal'
+  dl_line=$(grep -nF -- '- name: Download the fleet report-backs' "$REUSABLE" | cut -d: -f1 | head -n1)
+  render_line=$(grep -nF -- '- name: Render the verdict grid' "$REUSABLE" | cut -d: -f1 | head -n1)
+  if [ -n "$dl_line" ] && [ -n "$render_line" ] && [ "$dl_line" -lt "$render_line" ]; then
+    pass 'the report-backs are downloaded before the verdict grid renders'
+  else
+    fail 'the report-backs download must precede the verdict grid render step'
+  fi
+else
+  fail 'the fleet report-backs download step exists'
+fi
 if grep -Eq '^  pull_request:$' <<<"$caller"; then
   pass 'governance still runs for pull requests'
 else
