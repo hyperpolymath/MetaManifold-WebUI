@@ -76,9 +76,24 @@ jobs:
       require-files: true
       fail-on-indeterminate: true
 
+  # Fleet report-backs, produced before the Hypatia lane renders so each enrolled
+  # gitbot-fleet member's row (.gitbot-fleet/enrolment.json) carries evidence
+  # instead of "enrolled, but no report-back was received". Same owner
+  # (hyperpolymath), so the reusable is allowed by this repository's Actions
+  # policy; scripts/check-governance-contract.sh guards the pin and the wiring.
+  fleet:
+    name: Fleet report-backs
+    needs: [workflow-contract]
+    uses: hyperpolymath/gitbot-fleet/.github/workflows/fleet-report-back-reusable.yml@e85b71bf139a61f956c7e0717a2912cd6e347cc5
+    permissions:
+      contents: read
+
   hypatia:
     name: Hypatia verdict grid
-    needs: [workflow-contract]
+    # After the fleet job whatever its result (a dead fleet job renders as orange
+    # fleet rows, never as a missing lane), but never after a failed contract.
+    needs: [workflow-contract, fleet]
+    if: ${{ !cancelled() && needs.workflow-contract.result == 'success' }}
     # Fork-local so advisory PR scans do not upload error-level SARIF and
     # create a second blocking check. The source pin and deltas are documented
     # in the called file and checked by scripts/check-governance-contract.sh.

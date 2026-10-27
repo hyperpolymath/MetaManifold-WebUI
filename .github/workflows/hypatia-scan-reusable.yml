@@ -4,7 +4,7 @@
 #
 # Fork-local copy of metadatastician/standards/.github/workflows/
 # hypatia-scan-reusable.yml at 01c9b0c9f2646ebea0b30a9588462642ac94aee9.
-# Keep that source pin when updating this file and reapply the three fork deltas:
+# Keep that source pin when updating this file and reapply the four fork deltas:
 #   1. Do not upload SARIF for pull_request events. This lane is advisory on
 #      PRs; uploading error-level results creates a separate, blocking
 #      "Code scanning results / Hypatia" check even when the scan job passes.
@@ -15,6 +15,12 @@
 #   3. Filter only upstream-inherited TypeScript paths from the effective
 #      findings, validate the raw/effective JSON with pinned ijson-jcs, and keep
 #      raw scanner outputs plus fork-only paths/rules.
+#   4. Download the gitbot-fleet report-backs (artifact `fleet-report-backs`,
+#      produced by the `fleet` job of hypatia-scan.yml) into
+#      .gitbot-fleet/report-backs/ before the verdict grid renders, so each
+#      enrolled member's row carries evidence instead of "enrolled, but no
+#      report-back was received". Upstream standards added the same step and
+#      input after 01c9b0c9; this copy carries them ahead of its source pin.
 # scripts/check-governance-contract.sh guards these deltas.
 #
 # Hypatia Neurosymbolic CI/CD Security Scan — Reusable Workflow
@@ -28,6 +34,16 @@ on:
         type: boolean
         required: false
         default: false
+      report-backs-artifact:
+        description: >-
+          Name of an artifact, uploaded earlier in the same run, holding the
+          gitbot-fleet report-back envelopes (one <member>.json each). Downloaded
+          into .gitbot-fleet/report-backs/ before the verdict grid renders; a
+          missing artifact is tolerated and leaves the enrolled rows orange. Set
+          to an empty string to skip the download.
+        type: string
+        required: false
+        default: "fleet-report-backs"
       hypatia-ref:
         description: >-
           Hypatia commit to build the scanner from. Defaults to a vetted SHA so a
@@ -727,6 +743,26 @@ jobs:
             | jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- verdict-grid:")))]
                      | last | .body // ""' \
             > "$RUNNER_TEMP/grid-previous.md" || : > "$RUNNER_TEMP/grid-previous.md"
+
+      # Fork delta 4: fleet report-backs. Produced per run by the `fleet` job of
+      # hypatia-scan.yml and reaching this job only as an artifact; never
+      # committed. continue-on-error: no artifact leaves the enrolled rows orange.
+      # Nothing committed may pose as evidence: only files the artifact supplies
+      # are read. The committed README.md is not *.json and is left alone.
+      - name: Clear any checked-out fleet report-backs
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p .gitbot-fleet/report-backs
+          find .gitbot-fleet/report-backs -maxdepth 1 -name '*.json' -type f -print -delete
+
+      - name: Download the fleet report-backs
+        if: ${{ always() && inputs.report-backs-artifact != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.report-backs-artifact }}
+          path: .gitbot-fleet/report-backs
 
       - name: Render the verdict grid
         id: grid
