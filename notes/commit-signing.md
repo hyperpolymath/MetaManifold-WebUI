@@ -98,31 +98,14 @@ GitHub's Verified badge is what upstream checks.
 
 ## Branches known to need re-signing
 
-- `refs/pull/192/head` (`10e099b`): #192's three unsigned commits on PR 62's
-  reviewed head `efe1df1`. They are to replace the squash commit `e28e832` on
-  `upstream/glmgampoi-r` (owner's call, 2026-10-20); the tree is identical.
-  GitHub keeps a merged PR's head ref after its branch is deleted, so:
+None at present.
 
-  ```sh
-  git fetch origin pull/192/head:pr62-next upstream/glmgampoi-r
-  git switch pr62-next
-  git merge-base --is-ancestor efe1df1 HEAD &&
-    git rebase --exec 'git commit --amend --no-edit -S' efe1df1
-  git log --format='%h %G? %s' efe1df1..HEAD           # see the table above
-  git diff --stat origin/upstream/glmgampoi-r HEAD     # expect no output
-  git push --force-with-lease=upstream/glmgampoi-r:e28e832fd52466f5192406025fe6b16d9fd99ae1 \
-      origin pr62-next:upstream/glmgampoi-r
-  ```
+## Record
 
-  The lease names `e28e832`, so the push is refused if anything else has
-  landed there since.
-
-## Superseded branches
-
-Kept for the record. Do not re-sign or push them.
-
-- `wip/pr62-theta` is superseded: #192 carried its theta commit on PR 62's
-  reviewed head `efe1df1`, and was squash-merged as `e28e832`. Its other two
-  commits are PR 62's, rebased onto upstream `78ffc2f` after review had
-  started, so it should not be pushed to `upstream/glmgampoi-r`. Kept, not
-  deleted.
+- Upstream PR 62 (glmGamPoi). The squash commit `e28e832` was replaced by
+  #192's three commits, fetched from `refs/pull/192/head` and re-signed. At
+  Joshua's request the five-commit stack was then rebased onto upstream
+  `ce2c645`. He merged it by fast-forward on 2026-10-22 (head `08eaa8c`) and
+  deleted `upstream/glmgampoi-r`.
+- `wip/pr62-theta` was superseded by #192 and has since been deleted from this
+  fork. Its theta commit landed upstream as `6b96d36`.
