@@ -1,0 +1,4176 @@
+{
+  "schema": 1,
+  "lane": "hypatia",
+  "profile": "66282192ed79ab8f69ed96568be2d12ae372bc13cb132959a5d7a1da023d16e7",
+  "sha": "fb10d66410ac018b41553d2b1c9de143744de2fb",
+  "run": "40520761450",
+  "url": "https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40520761450",
+  "pr": "local",
+  "repo": "hyperpolymath/MetaManifold-WebUI",
+  "dirty": false,
+  "generated": "2026-10-27T14:29:30Z",
+  "refs": {
+    "hypatia": "aa34a4cc6ba39d873710ff39763fdb9cde715f9d",
+    "panic": "b689a74d2762a1c19839ae3fbd59b7fe5ef920ea",
+    "pons": "32e55677d8fd1f3010848dee22e822c2f385c2a0"
+  },
+  "reporters": [
+    {
+      "id": "hypatia",
+      "title": "Hypatia scan",
+      "status": "ran",
+      "reason": "",
+      "ref": "aa34a4cc6ba39d873710ff39763fdb9cde715f9d",
+      "findings": [
+        {
+          "id": "workflow_audit/missing_workflow",
+          "severity": "high",
+          "file": ".github/workflows/codeql.yml",
+          "line": 0,
+          "message": "Required workflow `codeql.yml` is absent from .github/workflows/. The estate baseline expects it; without it this repository is unscanned for whatever that workflow covers, and its absence is silent — no job fails, because no job runs."
+        },
+        {
+          "id": "workflow_audit/missing_workflow",
+          "severity": "high",
+          "file": ".github/workflows/mirror.yml",
+          "line": 0,
+          "message": "Required workflow `mirror.yml` is absent from .github/workflows/. The estate baseline expects it; without it this repository is unscanned for whatever that workflow covers, and its absence is silent — no job fails, because no job runs."
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "test/references/check_ordination_references.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "test/references/check_high_precision_references.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "test/references/exact_summary_reference.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "bench/null_calibration/report_failures.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/process.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/conformance.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/probe_kyq.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/descendants.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/formats/inventory.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/tests/test_format_readiness.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "scripts/tests/test_null_calibration_failures.py",
+          "line": 0,
+          "message": "Python file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/cladistics/cumulativeLayout.test.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/cladistics/cumulativeLayout.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/components/ordinationModel.test.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/components/ordinationModel.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/api/ijsonJcs.test.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/api/ijsonJcs.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "cicd_rules/banned_language_file",
+          "severity": "critical",
+          "file": "frontend/src/utils/text.test.ts",
+          "line": 0,
+          "message": "TypeScript file detected -- banned language"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/ci.yml",
+          "line": 520,
+          "message": "job in .github/workflows/ci.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan-reusable.yml",
+          "line": 243,
+          "message": "job in .github/workflows/hypatia-scan-reusable.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 135,
+          "message": "job in .github/workflows/hypatia-scan.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 217,
+          "message": "job in .github/workflows/hypatia-scan.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "research_extensions/RE001",
+          "severity": "medium",
+          "file": ".github/workflows/branch-hygiene.yml",
+          "line": 40,
+          "message": "job in .github/workflows/branch-hygiene.yml references `secrets.*` but does not install `step-security/harden-runner` — review outbound-egress monitoring"
+        },
+        {
+          "id": "workflow_hardening/WH002",
+          "severity": "medium",
+          "file": ".github/workflows/null-calibration-comparators.yml",
+          "line": 0,
+          "message": "workflow .github/workflows/null-calibration-comparators.yml has top-level `permissions:` with `contents: write` AND performs a write (push/commit/release/PR). It is over-broad, but narrowing the workflow level alone WOULD BREAK IT — no job declares its own `permissions:`."
+        },
+        {
+          "id": "code_safety/js_http_url_in_code",
+          "severity": "medium",
+          "file": "frontend/src/figure/export.ts",
+          "line": 9,
+          "message": "HTTP URL in code -- use HTTPS for non-localhost (2 occurrences, CWE-319, line 9, 43)"
+        },
+        {
+          "id": "code_safety/js_http_url_in_code",
+          "severity": "medium",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 334,
+          "message": "HTTP URL in code -- use HTTPS for non-localhost (2 occurrences, CWE-319, line 334, 338)"
+        },
+        {
+          "id": "scorecard/StaticAnalysis",
+          "severity": "medium",
+          "file": ".",
+          "line": 0,
+          "message": "Nominal-only SAST in MetaManifold-WebUI: codeql.yml language matrix contains no language present in the repo and lacks `actions`, so CodeQL records zero results on every commit. Remediation: set the CodeQL matrix to `language: actions`."
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/branch-hygiene.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 2 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/tests/test_null_calibration_failures.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "bench/null_calibration/report_failures.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/null-calibration-comparators.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/workflow_hardening/WH002 -- Hypatia workflow_hardening: WH002 -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/null-calibration-comparators.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/hypatia-scan.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/components/ordinationModel.test.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/components/ordinationModel.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "test/references/check_ordination_references.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/ci.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/tests/test_format_readiness.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/process.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/probe_kyq.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/descendants.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/inventory.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "scripts/formats/conformance.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/scorecard.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): MaintainedID -- Maintained -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): CodeReviewID -- Code-Review -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): BranchProtectionID -- Branch-Protection -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): VulnerabilitiesID -- Vulnerabilities -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "no file associated with this alert",
+          "line": 0,
+          "message": "Code scanning (Scorecard): FuzzingID -- Fuzzing -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/ci.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): PinnedDependenciesID -- Pinned-Dependencies -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/ci.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): PinnedDependenciesID -- Pinned-Dependencies -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": ".github/workflows/hypatia-scan-reusable.yml",
+          "line": 0,
+          "message": "Code scanning (Scorecard): TokenPermissionsID -- Token-Permissions -- 3 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".github/workflows/hypatia-scan-reusable.yml",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/research_extensions/RE001 -- Hypatia research_extensions: RE001 -- 4 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/api/ijsonJcs.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 4 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/api/ijsonJcs.test.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 4 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/cladistics/cumulativeLayout.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 4 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/cladistics/cumulativeLayout.test.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 4 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "test/references/check_high_precision_references.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 4 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "test/references/exact_summary_reference.py",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 4 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "src/server/routes/events.jl",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/structural_drift/SD009 -- Hypatia structural_drift: SD009 -- 8 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "src/server/jobs.jl",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/structural_drift/SD009 -- Hypatia structural_drift: SD009 -- 8 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "src/server/precompile.jl",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/structural_drift/SD009 -- Hypatia structural_drift: SD009 -- 8 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "src/server/server.jl",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/structural_drift/SD009 -- Hypatia structural_drift: SD009 -- 8 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": ".",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/scorecard/StaticAnalysis -- Hypatia scorecard: StaticAnalysis -- 8 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/code_safety/js_http_url_in_code -- Hypatia code_safety: js_http_url_in_code -- 8 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "medium",
+          "file": "frontend/src/figure/export.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/code_safety/js_http_url_in_code -- Hypatia code_safety: js_http_url_in_code -- 8 day(s) old"
+        },
+        {
+          "id": "code_scanning_alerts/CSA001",
+          "severity": "high",
+          "file": "frontend/src/utils/text.test.ts",
+          "line": 0,
+          "message": "Code scanning (Hypatia): hypatia/cicd_rules/banned_language_file -- Hypatia cicd_rules: banned_language_file -- 8 day(s) old [STALE]"
+        },
+        {
+          "id": "code_scanning_alerts/CSA002",
+          "severity": "medium",
+          "file": "hyperpolymath/MetaManifold-WebUI",
+          "line": 0,
+          "message": "44 total open code-scanning alert(s) -- security hygiene review"
+        },
+        {
+          "id": "code_scanning_alerts/CSA003",
+          "severity": "high",
+          "file": "frontend/src/utils/text.test.ts",
+          "line": 0,
+          "message": "Code-scanning alert hypatia/cicd_rules/banned_language_file (high) at frontend/src/utils/text.test.ts is 8 days old (threshold: 7 days) -- overdue for remediation"
+        },
+        {
+          "id": "structural_drift/SD009",
+          "severity": "medium",
+          "file": "src/core/config.jl",
+          "line": 0,
+          "message": "Source file missing SPDX-License-Identifier header"
+        },
+        {
+          "id": "structural_drift/SD009",
+          "severity": "medium",
+          "file": "src/core/project.jl",
+          "line": 0,
+          "message": "Source file missing SPDX-License-Identifier header"
+        },
+        {
+          "id": "structural_drift/SD009",
+          "severity": "medium",
+          "file": "src/core/provenance.jl",
+          "line": 0,
+          "message": "Source file missing SPDX-License-Identifier header"
+        },
+        {
+          "id": "structural_drift/SD009",
+          "severity": "medium",
+          "file": "src/core/composition_library.jl",
+          "line": 0,
+          "message": "Source file missing SPDX-License-Identifier header"
+        }
+      ],
+      "counts": {
+        "critical": 18,
+        "high": 30,
+        "medium": 30,
+        "minor": 0
+      },
+      "state": "purple"
+    },
+    {
+      "id": "panic-attack",
+      "title": "panic-attack assail",
+      "status": "ran",
+      "reason": "",
+      "ref": "b689a74d2762a1c19839ae3fbd59b7fe5ef920ea",
+      "findings": [
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "test/unit/test_permanova.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in test/unit/test_permanova.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/core/provenance.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/core/provenance.jl"
+        },
+        {
+          "id": "UnsafeFFI",
+          "severity": "medium",
+          "file": "src/core/memory_probe.jl",
+          "line": 0,
+          "message": "3 ccall/FFI calls in src/core/memory_probe.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/analysis/analysis.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/analysis.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/analysis/ordination.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/ordination.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/analysis/differential.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/differential.jl"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "src/pipeline/dada2/context.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/pipeline/dada2/context.jl"
+        },
+        {
+          "id": "CommandInjection",
+          "severity": "medium",
+          "file": "scripts/check-governance-contract.sh",
+          "line": 0,
+          "message": "21 potentially unquoted variable expansions in scripts/check-governance-contract.sh"
+        },
+        {
+          "id": "DynamicCodeExecution",
+          "severity": "high",
+          "file": "scripts/check-julia-syntax.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in scripts/check-julia-syntax.jl"
+        }
+      ],
+      "counts": {
+        "critical": 0,
+        "high": 7,
+        "medium": 2,
+        "minor": 0
+      },
+      "state": "red"
+    },
+    {
+      "id": "pons-asinorum",
+      "title": "pons asinorum",
+      "status": "ran",
+      "reason": "",
+      "ref": "32e55677d8fd1f3010848dee22e822c2f385c2a0",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "green"
+    },
+    {
+      "id": "accessibilitybot",
+      "title": "accessibilitybot (WCAG on the React UI)",
+      "status": "ran",
+      "reason": "",
+      "ref": "e85b71bf139a61f956c7e0717a2912cd6e347cc5",
+      "findings": [
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/index.html",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/cladeCumulusModel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-2.4.1-no-skip-nav",
+          "severity": "info",
+          "file": "frontend/src/components/Breadcrumb.tsx",
+          "line": 0,
+          "message": "Page has navigation but no skip navigation link. Keyboard users benefit from 'skip to main content' links."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/Toast.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/Skeleton.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.4.6-contrast-aaa",
+          "severity": "medium",
+          "file": "frontend/src/components/JobBadge.module.css",
+          "line": 12,
+          "message": "Color contrast ratio 5.49:1 is below WCAG AAA requirement (7:1) for selector \".running\""
+        },
+        {
+          "id": "WCAG-1.4.6-contrast-aaa",
+          "severity": "medium",
+          "file": "frontend/src/components/JobBadge.module.css",
+          "line": 13,
+          "message": "Color contrast ratio 4.57:1 is below WCAG AAA requirement (7:1) for selector \".complete\""
+        },
+        {
+          "id": "WCAG-1.4.6-contrast-aaa",
+          "severity": "medium",
+          "file": "frontend/src/components/JobBadge.module.css",
+          "line": 14,
+          "message": "Color contrast ratio 5.30:1 is below WCAG AAA requirement (7:1) for selector \".failed\""
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/components/JobBadge.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/components/JobBadge.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/PlotlyChart.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PlotlyChart.tsx",
+          "line": 106,
+          "message": "<input type=\"number\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PlotlyChart.tsx",
+          "line": 106,
+          "message": "<input type=\"number\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/components/PipelineStages.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/components/PipelineStages.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 534,
+          "message": "First heading is <h3> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"Clade / Tip\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"Cum. reads\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"Freq.\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"Residual (cloud)\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"Support\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"Subtree PD\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"Epistemic status\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"Sample\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 584,
+          "message": "<th> element \"{s}\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 362,
+          "message": "<input type=\"number\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 362,
+          "message": "<input type=\"number\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 362,
+          "message": "<input type=\"number\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 302,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 302,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 302,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 302,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 302,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 302,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 302,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CladeCumulusPanel.tsx",
+          "line": 302,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 245,
+          "message": "<input type=\"number\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 245,
+          "message": "<input type=\"checkbox\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 245,
+          "message": "<input type=\"checkbox\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 245,
+          "message": "<input type=\"checkbox\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 210,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 210,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 210,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TaxaCompositionChart.tsx",
+          "line": 210,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Term\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"df\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Variance / Inertia\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Pseudo-F\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Permutation p\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Fraction\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"df\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Unadjusted R²\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Adjusted R²\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Testability\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 492,
+          "message": "<input type=\"number\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 492,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 492,
+          "message": "<input type=\"checkbox\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 492,
+          "message": "<input type=\"checkbox\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 492,
+          "message": "<input type=\"checkbox\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 446,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 446,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 446,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/ConstrainedOrdinationPanel.tsx",
+          "line": 446,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/JobBadge.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/PrimerListEditor.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/components/PrimerListEditor.tsx",
+          "line": 41,
+          "message": "First heading is <h3> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PrimerListEditor.tsx",
+          "line": 55,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PrimerListEditor.tsx",
+          "line": 55,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 275,
+          "message": "First heading is <h4> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 247,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DatabaseEditor.tsx",
+          "line": 247,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-2.3.3-no-reduced-motion",
+          "severity": "medium",
+          "file": "frontend/src/components/DataTable.module.css",
+          "line": 0,
+          "message": "CSS contains animations/transitions but does not respect prefers-reduced-motion. Users with vestibular disorders may experience discomfort."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/components/DataTable.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/components/DataTable.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/ConfigAccordion.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/EditorCard.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/TextFilter.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/SampleReadsControl.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/SampleReadsControl.tsx",
+          "line": 35,
+          "message": "<input type=\"number\"> relies only on placeholder for labeling. Placeholders disappear when typing and are not reliable labels."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/NumericFilter.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-2.1.1-onclick-no-keyboard",
+          "severity": "high",
+          "file": "frontend/src/components/dataTable/NumericFilter.tsx",
+          "line": 10,
+          "message": "<span> has onclick handler but no keyboard event handler. Click-only interactions are not keyboard accessible."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/NumericFilter.tsx",
+          "line": 56,
+          "message": "<input type=\"number\"> relies only on placeholder for labeling. Placeholders disappear when typing and are not reliable labels."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/NumericFilter.tsx",
+          "line": 56,
+          "message": "<input type=\"number\"> relies only on placeholder for labeling. Placeholders disappear when typing and are not reliable labels."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/RowPopup.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/dataTable/RowPopup.tsx",
+          "line": 39,
+          "message": "<th> element \"{c}\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/dataTable/RowPopup.tsx",
+          "line": 39,
+          "message": "<th> element \"\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-2.1.1-onclick-no-keyboard",
+          "severity": "high",
+          "file": "frontend/src/components/dataTable/RowPopup.tsx",
+          "line": 1,
+          "message": "<td> has onclick handler but no keyboard event handler. Click-only interactions are not keyboard accessible."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/ColumnDropdown.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-2.1.1-onclick-no-keyboard",
+          "severity": "high",
+          "file": "frontend/src/components/dataTable/ColumnDropdown.tsx",
+          "line": 47,
+          "message": "<div> has onclick handler but no keyboard event handler. Click-only interactions are not keyboard accessible."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/AnalysisChart.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/DataTable.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DataTable.tsx",
+          "line": 46,
+          "message": "<th> element \"\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DataTable.tsx",
+          "line": 46,
+          "message": "<th> element \"handleSort(c)}\n              ...\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DataTable.tsx",
+          "line": 46,
+          "message": "<th> element \"\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-2.1.1-onclick-no-keyboard",
+          "severity": "high",
+          "file": "frontend/src/components/DataTable.tsx",
+          "line": 1,
+          "message": "<td> has onclick handler but no keyboard event handler. Click-only interactions are not keyboard accessible."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/ErrorBoundary.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/components/ErrorBoundary.tsx",
+          "line": 16,
+          "message": "First heading is <h2> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/NameDialog.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/components/NameDialog.tsx",
+          "line": 68,
+          "message": "First heading is <h3> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-2.1.1-onclick-no-keyboard",
+          "severity": "high",
+          "file": "frontend/src/components/NameDialog.tsx",
+          "line": 1,
+          "message": "<div> has onclick handler but no keyboard event handler. Click-only interactions are not keyboard accessible."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/NameDialog.tsx",
+          "line": 70,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/components/AnalysisWorkspace.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/components/AnalysisWorkspace.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/components/PublicationTables.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/components/PublicationTables.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/PipelineStages.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PipelineStages.tsx",
+          "line": 617,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/DiversityPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/CardActions.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/components/CardActions.tsx",
+          "line": 20,
+          "message": "First heading is <h3> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-table-no-thead",
+          "severity": "medium",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 53,
+          "message": "Table is missing <thead> element. Tables should have a header section."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 53,
+          "message": "<th> element \"{h.label}\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 53,
+          "message": "<th> element \"{c.label}\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 232,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 232,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 232,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 232,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PublicationTablesPanel.tsx",
+          "line": 232,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/AnalysisControls.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/FilterEditor.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/FilterEditor.tsx",
+          "line": 91,
+          "message": "<textarea> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/ReportPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/alphaMetrics.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/CategorySetEditor.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CategorySetEditor.tsx",
+          "line": 75,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CategorySetEditor.tsx",
+          "line": 75,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CategorySetEditor.tsx",
+          "line": 75,
+          "message": "<input type=\"color\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CategorySetEditor.tsx",
+          "line": 75,
+          "message": "<input type=\"color\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CategorySetEditor.tsx",
+          "line": 75,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CategorySetEditor.tsx",
+          "line": 158,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 295,
+          "message": "<th> element \"Colour\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 295,
+          "message": "<th> element \"{byCategory ? 'Category' : ran...\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 295,
+          "message": "<th> element \"Rows\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 295,
+          "message": "<th> element \"Reads\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 295,
+          "message": "<th> element \"%\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 310,
+          "message": "<input type=\"color\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 239,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 239,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 239,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 239,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/CompositionPanel.tsx",
+          "line": 239,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/TreesPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/TreesPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"File\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/TreesPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Format\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/TreesPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Size\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/TreesPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"Modified\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/TreesPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"View\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/TreesPanel.tsx",
+          "line": 67,
+          "message": "<th> element \"\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/TreesPanel.tsx",
+          "line": 59,
+          "message": "<input type=\"file\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/CladeCumulusPanel.test.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/VennPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/AnalysisWorkspace.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/components/AnalysisWorkspace.tsx",
+          "line": 171,
+          "message": "First heading is <h3> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/AnalysisWorkspace.tsx",
+          "line": 135,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/AddToReport.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/PlacementPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-div-soup",
+          "severity": "medium",
+          "file": "frontend/src/components/PlacementPanel.tsx",
+          "line": 0,
+          "message": "Page has 23 <div> elements and no semantic elements. This is 'div soup' and hurts accessibility."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "medium",
+          "file": "frontend/src/components/PlacementPanel.tsx",
+          "line": 325,
+          "message": "<input type=\"text\"> relies only on placeholder for labeling. Placeholders disappear when typing and are not reliable labels."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PlacementPanel.tsx",
+          "line": 332,
+          "message": "<input type=\"number\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PlacementPanel.tsx",
+          "line": 129,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PlacementPanel.tsx",
+          "line": 129,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/PairEditor.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/components/PairEditor.tsx",
+          "line": 22,
+          "message": "First heading is <h3> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PairEditor.tsx",
+          "line": 32,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PairEditor.tsx",
+          "line": 39,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/PairEditor.tsx",
+          "line": 39,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 347,
+          "message": "<th> element \"{result.rank}\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 347,
+          "message": "<th> element \"{result.effect.label}\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 347,
+          "message": "<th> element \"Estimate (ln)\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 347,
+          "message": "<th> element \"Zero-process log-odds\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 347,
+          "message": "<th> element \"SE\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 347,
+          "message": "<th> element \"p\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 347,
+          "message": "<th> element \"padj (BH)\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 347,
+          "message": "<th> element \"Status\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/components/DifferentialPanel.tsx",
+          "line": 144,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.4.6-contrast-aaa",
+          "severity": "medium",
+          "file": "frontend/src/styles/app.css",
+          "line": 297,
+          "message": "Color contrast ratio 5.10:1 is below WCAG AAA requirement (7:1) for selector \".error-msg\""
+        },
+        {
+          "id": "WCAG-1.4.4-px-font-size",
+          "severity": "medium",
+          "file": "frontend/src/styles/app.css",
+          "line": 32,
+          "message": "Font size uses absolute unit (15px). Use relative units (rem/em) so users can resize text."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/styles/app.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/styles/app.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/main.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/phylogeny/qc.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/phylogeny/qc.tsx",
+          "line": 167,
+          "message": "<th> element \"setSort('name')}>Sequence\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/phylogeny/qc.tsx",
+          "line": 167,
+          "message": "<th> element \"setSort('residues')}>Residues\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/phylogeny/qc.tsx",
+          "line": 167,
+          "message": "<th> element \"setSort('kept')}>Kept\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/phylogeny/qc.tsx",
+          "line": 167,
+          "message": "<th> element \"Span\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.4.4-px-font-size",
+          "severity": "medium",
+          "file": "frontend/src/phylogeny/Phylo.module.css",
+          "line": 118,
+          "message": "Font size uses absolute unit (10px). Use relative units (rem/em) so users can resize text."
+        },
+        {
+          "id": "WCAG-1.4.4-px-font-size",
+          "severity": "medium",
+          "file": "frontend/src/phylogeny/Phylo.module.css",
+          "line": 163,
+          "message": "Font size uses absolute unit (9px). Use relative units (rem/em) so users can resize text."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/phylogeny/Phylo.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/phylogeny/Phylo.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/phylogeny/TrimEditor.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/phylogeny/common.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-table-no-thead",
+          "severity": "medium",
+          "file": "frontend/src/phylogeny/common.tsx",
+          "line": 193,
+          "message": "Table is missing <thead> element. Tables should have a header section."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/phylogeny/common.tsx",
+          "line": 148,
+          "message": "<input type=\"file\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/App.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/tree/controls.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/tree/controls.tsx",
+          "line": 29,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/tree/controls.tsx",
+          "line": 29,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/tree/controls.tsx",
+          "line": 29,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/tree/Legend.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/tree/Tree.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/tree/Tree.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/tree/TreeShapes.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/tree/Inspector.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "medium",
+          "file": "frontend/src/tree/Inspector.tsx",
+          "line": 39,
+          "message": "<input type=\"text\"> relies only on placeholder for labeling. Placeholders disappear when typing and are not reliable labels."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/tree/ImportPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/tree/ImportPanel.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/cladistics/CladeCumulusPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/cladistics/CladeCumulusPanel.tsx",
+          "line": 319,
+          "message": "<th> element \"Sample\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/cladistics/CladeCumulusPanel.tsx",
+          "line": 319,
+          "message": "<th> element \"Retained reads\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/cladistics/CladeCumulusPanel.tsx",
+          "line": 319,
+          "message": "<th> element \"Faith PD\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/cladistics/CladeCumulusPanel.tsx",
+          "line": 203,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/cladistics/CladeCumulusPanel.tsx",
+          "line": 206,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/cladistics/CladeCumulusPanel.tsx",
+          "line": 206,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/cladistics/CumulativeTree.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-first-heading",
+          "severity": "medium",
+          "file": "frontend/src/cladistics/CumulativeTree.tsx",
+          "line": 41,
+          "message": "First heading is <h3> instead of <h1>. The first heading should be h1."
+        },
+        {
+          "id": "WCAG-2.4.7-outline-none",
+          "severity": "high",
+          "file": "frontend/src/cladistics/Clade.module.css",
+          "line": 183,
+          "message": "Focus indicator removed with 'outline: none' without a visible replacement. Keyboard users cannot see which element is focused."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/cladistics/Clade.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/cladistics/Clade.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-2.4.1-no-skip-nav",
+          "severity": "info",
+          "file": "frontend/src/layout/Layout.tsx",
+          "line": 0,
+          "message": "Page has navigation but no skip navigation link. Keyboard users benefit from 'skip to main content' links."
+        },
+        {
+          "id": "WCAG-2.1.1-onclick-no-keyboard",
+          "severity": "high",
+          "file": "frontend/src/layout/Layout.tsx",
+          "line": 139,
+          "message": "<div> has onclick handler but no keyboard event handler. Click-only interactions are not keyboard accessible."
+        },
+        {
+          "id": "WCAG-1.4.4-px-font-size",
+          "severity": "medium",
+          "file": "frontend/src/figure/Figure.module.css",
+          "line": 143,
+          "message": "Font size uses absolute unit (13px). Use relative units (rem/em) so users can resize text."
+        },
+        {
+          "id": "a11y-css-no-color-scheme",
+          "severity": "info",
+          "file": "frontend/src/figure/Figure.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-color-scheme media query. Supporting dark mode improves usability for low-vision users and reduces eye strain."
+        },
+        {
+          "id": "a11y-css-no-contrast-pref",
+          "severity": "info",
+          "file": "frontend/src/figure/Figure.module.css",
+          "line": 0,
+          "message": "CSS does not include prefers-contrast media query. High-contrast mode helps low-vision users."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/PaneEditor.tsx",
+          "line": 77,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/figure/FigureBuilder.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-div-soup",
+          "severity": "medium",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 0,
+          "message": "Page has 29 <div> elements and no semantic elements. This is 'div soup' and hurts accessibility."
+        },
+        {
+          "id": "WCAG-4.1.2-div-as-button",
+          "severity": "medium",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 420,
+          "message": "<div> with role=\"button\" should be a native <button> element for proper keyboard interaction and screen reader support."
+        },
+        {
+          "id": "WCAG-2.1.1-onclick-no-keyboard",
+          "severity": "high",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 1,
+          "message": "<div> has onclick handler but no keyboard event handler. Click-only interactions are not keyboard accessible."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 120,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 120,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 120,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 120,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 120,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/figure/FigureEditor.tsx",
+          "line": 120,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/PrimersView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/CompositionsView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/DatabasesView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/DatabasesView.tsx",
+          "line": 144,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/JobsView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/ReferenceTreesView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/ReferenceTreesView.tsx",
+          "line": 123,
+          "message": "<textarea> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 678,
+          "message": "<th> element \"Query\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 678,
+          "message": "<th> element \"LWR\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 678,
+          "message": "<th> element \"Location\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 449,
+          "message": "<input type=\"text\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 442,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 442,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 442,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 442,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 442,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 442,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 442,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-3.3.2-element-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/TreeView.tsx",
+          "line": 442,
+          "message": "<select> has no associated label. Form elements need a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/StudiesView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-heading-skip",
+          "severity": "medium",
+          "file": "frontend/src/views/StudiesView.tsx",
+          "line": 75,
+          "message": "Heading level skipped from <h1> to <h3>. Do not skip heading levels."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/NotFoundView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/SlugResolver.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/AboutView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/DefaultConfigView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/RunView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/GroupView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/StudyView.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/run/ReadFunnel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/views/run/ReadFunnel.tsx",
+          "line": 54,
+          "message": "<th> element \"Sample\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/views/run/ReadFunnel.tsx",
+          "line": 54,
+          "message": "<th> element \"{s.label}\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-th-no-scope",
+          "severity": "info",
+          "file": "frontend/src/views/run/ReadFunnel.tsx",
+          "line": 54,
+          "message": "<th> element \"Kept\" is missing scope attribute."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/run/TablesPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-3.3.2-input-no-label",
+          "severity": "high",
+          "file": "frontend/src/views/run/TablesPanel.tsx",
+          "line": 299,
+          "message": "<input type=\"file\"> has no associated label. Every form input needs a <label>, aria-label, or aria-labelledby."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/run/RunAlpha.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/run/DADA2Panel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        },
+        {
+          "id": "WCAG-1.3.1-no-semantic",
+          "severity": "medium",
+          "file": "frontend/src/views/run/QCPanel.tsx",
+          "line": 0,
+          "message": "Page does not use semantic HTML elements (header, nav, main, footer). Semantic elements improve screen reader navigation."
+        }
+      ],
+      "counts": {
+        "critical": 0,
+        "high": 113,
+        "medium": 102,
+        "minor": 80
+      },
+      "state": "red"
+    },
+    {
+      "id": "echidnabot",
+      "title": "echidnabot (formal verification: proofs/)",
+      "status": "not_run",
+      "reason": "no ECHIDNA engine endpoint is configured for this repository (ECHIDNA_URL unset); echidnabot verifies proofs by dispatching to an engine and has no local mode",
+      "ref": "e85b71bf139a61f956c7e0717a2912cd6e347cc5",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "orange"
+    },
+    {
+      "id": "finishingbot",
+      "title": "finishingbot (release readiness)",
+      "status": "ran",
+      "reason": "",
+      "ref": "e85b71bf139a61f956c7e0717a2912cd6e347cc5",
+      "findings": [
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "config/ci/tools.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "config/ci/databases.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "config/defaults/tool_versions.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "config/defaults/composition.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "config/defaults/tools.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "config/defaults/databases.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "config/defaults/pipeline.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "config/defaults/primers.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/vite.config.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/components/annotationShared.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/components/dataTable/copy.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/components/analysisSource.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/api/types.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/api/errorMessage.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/api/client.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/api/ijsonJcs.test.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/api/events.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/vite-env.d.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/tree/layout.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/tree/model.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/tree/ui.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/tree/viewDoc.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/tree/model.test.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/cladistics/cumulativeLayout.test.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/cladistics/cumulativeLayout.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/about.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/hooks/useJobEvents.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/hooks/useNavRefresh.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/hooks/useTabParam.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/hooks/useSSE.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/hooks/useAnalysis.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/hooks/useApi.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/hooks/useApi.test.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/hooks/useUnsavedGuard.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/utils/text.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/utils/timeago.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/utils/text.test.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/utils/download.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/figure/types.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/figure/legend.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/figure/figure.test.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/figure/export.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/figure/charts.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/figure/encode.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "frontend/src/views/run/parseFilterYaml.ts",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "bench/layer1_mock_recovery/datasets.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "test/references/exact_summary_reference.py",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "test/references/check_high_precision_references.py",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "codecov.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "LIC-002",
+          "severity": "medium",
+          "file": "data/MiSeq_SOP/pipeline.yml",
+          "line": 0,
+          "message": "Source file missing SPDX license identifier"
+        },
+        {
+          "id": "PH-001",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 1056,
+          "message": "Found 'TODO' in: Name unit test files to run only those: `julia --project=. test/runtests.jl routes trees`. `dev/dev.sh` runs the development server, rebuilds and tests one job at a time, stopping and restarting the server around builds and tests (`dev/dev.sh` alone lists its commands). Deferred work is listed in `dev/TODO.md`."
+        },
+        {
+          "id": "PH-005",
+          "severity": "medium",
+          "file": "frontend/src/utils/text.ts",
+          "line": 9,
+          "message": "Found 'BUG' in: * It exists because a comparison-less `sort()` is reported as a BUG by"
+        },
+        {
+          "id": "PH-005",
+          "severity": "medium",
+          "file": "scripts/lint-sonar-reliability.sh",
+          "line": 11,
+          "message": "Found 'BUG' in: #     reliability rating <= A        (worst BUG on new code)"
+        },
+        {
+          "id": "PH-100",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Found 3 placeholders, exceeds maximum allowed (0)"
+        },
+        {
+          "id": "CLM-003",
+          "severity": "info",
+          "file": "README.md",
+          "line": 0,
+          "message": "README missing 'Usage examples' section"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: config/tools.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: config/composition.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: docs/evidence-mode.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: remote.stages"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: config/databases.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: pipeline.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: config/composition.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: config/composition.yml"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: dev/TODO.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "bench/null_calibration/README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: differential.jl"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "bench/null_calibration/README.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: REPORT.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "bench/null_calibration/UPSTREAM_DRAFT.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: results/native_comparator_summary_run_40091522843.csv"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "bench/null_calibration/UPSTREAM_DRAFT.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: results/native_comparator_summary_run_40091522843.csv"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "bench/null_calibration/REPORT.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: results/native_comparator_summary_run_40091522843.csv"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "bench/null_calibration/REPORT.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: results/native_comparator_summary_run_40091522843.csv"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/release-notes/2026-10-23-governance-security.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: figure/export.ts"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/statistics/numeric-contracts.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: test_statistics_boundaries.jl"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/statistics/numeric-contracts.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: test_statistics_boundaries.jl"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/statistics/validation-evidence.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: test_exact_summaries.jl"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/statistics/issue-1-ultraplan.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: docs/statistics/mutation-evidence.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/proposals/security-and-integrity-ultraplan.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: test_server_security.jl"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/recon-report.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: ultraplan-secure-private.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/recon-report.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: ultraplan-secure-private.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: recon-report.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: recon-report.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: events.jl"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: recon-report.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: colour-teams.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: colour-teams.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: recon-report.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/colour-teams.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: ultraplan-secure-private.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/colour-teams.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: recon-report.md"
+        },
+        {
+          "id": "CLM-006",
+          "severity": "medium",
+          "file": "docs/security/colour-teams.md",
+          "line": 0,
+          "message": "Documentation references non-existent file: ultraplan-secure-private.md"
+        },
+        {
+          "id": "REL-008",
+          "severity": "high",
+          "file": "scripts/tests/test-secret-scanner.sh",
+          "line": 0,
+          "message": "Potential AWS Access Key found in source file"
+        },
+        {
+          "id": "REL-008",
+          "severity": "high",
+          "file": "scripts/tests/test-scanner-boundaries.sh",
+          "line": 0,
+          "message": "Potential Password found in source file"
+        },
+        {
+          "id": "REL-010",
+          "severity": "info",
+          "file": "",
+          "line": 0,
+          "message": "No GitHub release workflow found"
+        },
+        {
+          "id": "SCM-001-STATE.scm",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Required SCM file STATE.scm not found (Project state and progress tracking)."
+        },
+        {
+          "id": "SCM-001-META.scm",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Required SCM file META.scm not found (Meta-level information and architectural decisions)."
+        },
+        {
+          "id": "SCM-001-ECOSYSTEM.scm",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Required SCM file ECOSYSTEM.scm not found (Project's place in the ecosystem)."
+        },
+        {
+          "id": "SCM-001-PLAYBOOK.scm",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Required SCM file PLAYBOOK.scm not found (Operational playbooks and procedures)."
+        },
+        {
+          "id": "SCM-001-AGENTIC.scm",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Required SCM file AGENTIC.scm not found (Agentic AI integration documentation)."
+        },
+        {
+          "id": "SCM-001-NEUROSYM.scm",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Required SCM file NEUROSYM.scm not found (Neurosymbolic AI documentation)."
+        },
+        {
+          "id": "TEST-001",
+          "severity": "medium",
+          "file": "",
+          "line": 0,
+          "message": "Could not determine if this is a Rust or Deno project."
+        },
+        {
+          "id": "TOOL-001",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": ".tool-versions file not found for asdf/mise version management."
+        },
+        {
+          "id": "V1-DOC-README.adoc",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Required file README.adoc not found (Main project documentation)."
+        },
+        {
+          "id": "V1-DOC-ROADMAP.adoc",
+          "severity": "high",
+          "file": "",
+          "line": 0,
+          "message": "Required file ROADMAP.adoc not found (Project roadmap)."
+        },
+        {
+          "id": "V1-LANG-ts",
+          "severity": "high",
+          "file": "frontend/vite.config.ts",
+          "line": 0,
+          "message": "TypeScript files found (use AffineScript instead). Found 5 file(s)."
+        },
+        {
+          "id": "V1-LANG-py",
+          "severity": "high",
+          "file": "bench/null_calibration/report_failures.py",
+          "line": 0,
+          "message": "Python files found (use Julia/Rust/AffineScript instead). Found 5 file(s)."
+        },
+        {
+          "id": "V1-COM-CODE_OF_CONDUCT.md",
+          "severity": "medium",
+          "file": "",
+          "line": 0,
+          "message": "CODE_OF_CONDUCT.md file not found (Code of conduct)."
+        }
+      ],
+      "counts": {
+        "critical": 0,
+        "high": 14,
+        "medium": 96,
+        "minor": 2
+      },
+      "state": "red"
+    },
+    {
+      "id": "glambot",
+      "title": "glambot (presentation quality)",
+      "status": "ran",
+      "reason": "",
+      "ref": "e85b71bf139a61f956c7e0717a2912cd6e347cc5",
+      "findings": [
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "proofs/agda/README.md",
+          "line": 3,
+          "message": "Line 91 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "README.md",
+          "line": 3,
+          "message": "Line 88 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "ROADMAP.md",
+          "line": 5,
+          "message": "Line 87 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "notes/commit-signing.md",
+          "line": 30,
+          "message": "Line 89 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "bench/constrained_ordination/README.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "bench/compositional_differential/README.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "bench/advanced_zero_handling/README.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "bench/null_calibration/README.md",
+          "line": 21,
+          "message": "Line 152 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "bench/null_calibration/UPSTREAM_DRAFT.md",
+          "line": 5,
+          "message": "Line 81 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "bench/null_calibration/REPORT.md",
+          "line": 11,
+          "message": "Line 141 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "VALIDATED_STATISTICS_VALIDATION.md",
+          "line": 9,
+          "message": "Line 163 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/release-notes/2026-10-23-governance-security.md",
+          "line": 16,
+          "message": "Line 98 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/release-notes/2026-10-24-scanner-review.md",
+          "line": 34,
+          "message": "Line 153 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/statistics/constrained-ordinations.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/statistics/numeric-contracts.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/statistics/method-catalogue-v1.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/statistics/zero-handling.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/statistics/validation-evidence.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/statistics/issue-1-ultraplan.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/maintenance/repository-hygiene.md",
+          "line": 3,
+          "message": "Line 91 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/sonar-quality-gate.md",
+          "line": 18,
+          "message": "Line 81 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/proposals/security-and-integrity-ultraplan.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/proposals/security-and-integrity-programme.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/security/README.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/security/recon-report.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/security/colour-teams.md",
+          "line": 2,
+          "message": "Line 100 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/ijson-jcs.md",
+          "line": 3,
+          "message": "Line 355 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/format-migration.md",
+          "line": 11,
+          "message": "Line 143 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/occupancy-2026-10.adoc",
+          "line": 2,
+          "message": "Line 94 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "docs/occupancy-models.md",
+          "line": 6,
+          "message": "Line 88 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "SECURITY.md",
+          "line": 7,
+          "message": "Line 88 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "VALIDATED_STATISTICS.md",
+          "line": 34,
+          "message": "Line 143 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "EXPLAINME.adoc",
+          "line": 16,
+          "message": "Line 172 characters exceeds max length of 80."
+        },
+        {
+          "id": "VIS-005",
+          "severity": "info",
+          "file": "CONTRIBUTING.md",
+          "line": 9,
+          "message": "Line 81 characters exceeds max length of 80."
+        },
+        {
+          "id": "ACC-002",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 6,
+          "message": "Alt text should be more descriptive (at least 3 characters)."
+        },
+        {
+          "id": "ACC-003",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 656,
+          "message": "Heading jumps from h1 to h3. Should not skip levels."
+        },
+        {
+          "id": "ACC-003",
+          "severity": "medium",
+          "file": "README.md",
+          "line": 884,
+          "message": "Heading jumps from h1 to h4. Should not skip levels."
+        },
+        {
+          "id": "ACC-003",
+          "severity": "medium",
+          "file": "bench/null_calibration/README.md",
+          "line": 110,
+          "message": "Heading jumps from h1 to h3. Should not skip levels."
+        },
+        {
+          "id": "ACC-003",
+          "severity": "medium",
+          "file": "docs/security/ultraplan-secure-private.md",
+          "line": 225,
+          "message": "Heading jumps from h1 to h3. Should not skip levels."
+        },
+        {
+          "id": "MACH-005",
+          "severity": "info",
+          "file": "",
+          "line": 0,
+          "message": "No robots.txt found. Consider adding one for crawler control."
+        },
+        {
+          "id": "MACH-007",
+          "severity": "info",
+          "file": "",
+          "line": 0,
+          "message": "STATE.scm not found in .machine_readable/ directory."
+        },
+        {
+          "id": "MACH-007",
+          "severity": "info",
+          "file": "",
+          "line": 0,
+          "message": "META.scm not found in .machine_readable/ directory."
+        },
+        {
+          "id": "MACH-007",
+          "severity": "info",
+          "file": "",
+          "line": 0,
+          "message": "ECOSYSTEM.scm not found in .machine_readable/ directory."
+        },
+        {
+          "id": "GS-001",
+          "severity": "info",
+          "file": "",
+          "line": 0,
+          "message": "Install git-seo for comprehensive SEO analysis: https://github.com/hyperpolymath/git-seo"
+        }
+      ],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 5,
+        "minor": 40
+      },
+      "state": "yellow"
+    },
+    {
+      "id": "panicbot",
+      "title": "panicbot (panic recovery, error handling)",
+      "status": "ran",
+      "reason": "",
+      "ref": "e85b71bf139a61f956c7e0717a2912cd6e347cc5",
+      "findings": [
+        {
+          "id": "PA018",
+          "severity": "medium",
+          "file": "scripts/check-julia-syntax.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in scripts/check-julia-syntax.jl"
+        },
+        {
+          "id": "PA003",
+          "severity": "info",
+          "file": "scripts/check-governance-contract.sh",
+          "line": 0,
+          "message": "21 potentially unquoted variable expansions in scripts/check-governance-contract.sh"
+        },
+        {
+          "id": "PA018",
+          "severity": "medium",
+          "file": "src/core/provenance.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/core/provenance.jl"
+        },
+        {
+          "id": "PA007",
+          "severity": "info",
+          "file": "src/core/memory_probe.jl",
+          "line": 0,
+          "message": "3 ccall/FFI calls in src/core/memory_probe.jl"
+        },
+        {
+          "id": "PA018",
+          "severity": "medium",
+          "file": "src/analysis/ordination.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/ordination.jl"
+        },
+        {
+          "id": "PA018",
+          "severity": "medium",
+          "file": "src/analysis/differential.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/differential.jl"
+        },
+        {
+          "id": "PA018",
+          "severity": "medium",
+          "file": "src/analysis/analysis.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/analysis/analysis.jl"
+        },
+        {
+          "id": "PA018",
+          "severity": "medium",
+          "file": "src/pipeline/dada2/context.jl",
+          "line": 0,
+          "message": "eval/Meta.parse in src/pipeline/dada2/context.jl"
+        }
+      ],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 6,
+        "minor": 2
+      },
+      "state": "yellow"
+    },
+    {
+      "id": "rhodibot",
+      "title": "rhodibot (RSR compliance)",
+      "status": "ran",
+      "reason": "",
+      "ref": "e85b71bf139a61f956c7e0717a2912cd6e347cc5",
+      "findings": [
+        {
+          "id": "1.1.2",
+          "severity": "high",
+          "file": "Justfile",
+          "line": 0,
+          "message": "justfile: missing — absent — expected Justfile"
+        },
+        {
+          "id": "1.2.2",
+          "severity": "high",
+          "file": ".pre-commit-config.yaml",
+          "line": 0,
+          "message": "git-hooks: missing — absent — expected .pre-commit-config.yaml"
+        },
+        {
+          "id": "1.2.4",
+          "severity": "high",
+          "file": ".tool-versions",
+          "line": 0,
+          "message": "tool-versions: missing — absent — expected .tool-versions"
+        },
+        {
+          "id": "2.1.1",
+          "severity": "high",
+          "file": "README.adoc",
+          "line": 0,
+          "message": "readme-adoc: missing — absent — expected README.adoc; there is a .gitbot-fleet/report-backs/README.md, README.md, bench/advanced_zero_handling/README.md, bench/compositional_differential/README.md, bench/constrained_ordination/README.md, bench/null_calibration/README.md, docs/security/README.md, proofs/agda/README.md where the canon asks for one ending in .adoc"
+        },
+        {
+          "id": "2.1.2",
+          "severity": "high",
+          "file": "LICENSES/",
+          "line": 0,
+          "message": "license-file: missing — absent — expected LICENSES/"
+        },
+        {
+          "id": "2.1.4",
+          "severity": "high",
+          "file": "CODE_OF_CONDUCT.md",
+          "line": 0,
+          "message": "coc-md: missing — absent — expected CODE_OF_CONDUCT.md"
+        },
+        {
+          "id": "2.1.10",
+          "severity": "high",
+          "file": ".gitattributes",
+          "line": 0,
+          "message": "gitignore: missing — absent — expected .gitattributes"
+        },
+        {
+          "id": "2.2.1",
+          "severity": "high",
+          "file": ".well-known/security.txt",
+          "line": 0,
+          "message": "wellknown-core: missing — absent — expected .well-known/security.txt or .well-known/ai.txt or .well-known/humans.txt"
+        },
+        {
+          "id": "3.1.1",
+          "severity": "high",
+          "file": ".machine_readable/descriptiles/",
+          "line": 0,
+          "message": "descriptiles-dir: missing — absent — expected .machine_readable/descriptiles/"
+        },
+        {
+          "id": "3.1.2",
+          "severity": "high",
+          "file": "STATE.a2ml",
+          "line": 0,
+          "message": "state: missing — absent — expected STATE.a2ml"
+        },
+        {
+          "id": "3.1.3",
+          "severity": "high",
+          "file": "META.a2ml",
+          "line": 0,
+          "message": "meta: missing — absent — expected META.a2ml"
+        },
+        {
+          "id": "3.1.4",
+          "severity": "high",
+          "file": "ECOSYSTEM.a2ml",
+          "line": 0,
+          "message": "ecosystem: missing — absent — expected ECOSYSTEM.a2ml"
+        },
+        {
+          "id": "3.1.5",
+          "severity": "high",
+          "file": "AGENTIC.a2ml",
+          "line": 0,
+          "message": "agentic: missing — absent — expected AGENTIC.a2ml"
+        },
+        {
+          "id": "3.1.6",
+          "severity": "high",
+          "file": "NEUROSYM.a2ml",
+          "line": 0,
+          "message": "neurosym: missing — absent — expected NEUROSYM.a2ml"
+        },
+        {
+          "id": "3.1.7",
+          "severity": "high",
+          "file": "PLAYBOOK.a2ml",
+          "line": 0,
+          "message": "playbook: missing — absent — expected PLAYBOOK.a2ml"
+        },
+        {
+          "id": "3.1.8",
+          "severity": "high",
+          "file": "ANCHOR.a2ml",
+          "line": 0,
+          "message": "anchor: missing — absent — expected ANCHOR.a2ml"
+        },
+        {
+          "id": "3.2.2",
+          "severity": "high",
+          "file": ".machine_readable/rsr-profile.a2ml",
+          "line": 0,
+          "message": "rsr-profile: missing — absent — expected .machine_readable/rsr-profile.a2ml"
+        },
+        {
+          "id": "7.1.2",
+          "severity": "high",
+          "file": "LICENSES/",
+          "line": 0,
+          "message": "reuse-compliant: missing — absent — expected LICENSES/"
+        }
+      ],
+      "counts": {
+        "critical": 0,
+        "high": 18,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "red"
+    },
+    {
+      "id": "seambot",
+      "title": "seambot (integration health: API routes)",
+      "status": "ran",
+      "reason": "",
+      "ref": "e85b71bf139a61f956c7e0717a2912cd6e347cc5",
+      "findings": [
+        {
+          "id": "SEAM-register-exists",
+          "severity": "high",
+          "file": "spec/seams/seam-register.json",
+          "line": 0,
+          "message": "Seam register not found at spec/seams/seam-register.json"
+        }
+      ],
+      "counts": {
+        "critical": 0,
+        "high": 1,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "red"
+    },
+    {
+      "id": "cipherbot",
+      "title": "cipherbot",
+      "status": "not_applicable",
+      "reason": "no cryptography is implemented in this repository",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "grey"
+    },
+    {
+      "id": "sustainabot",
+      "title": "sustainabot",
+      "status": "not_applicable",
+      "reason": "fleet adapter slot reserved; no adapter exists yet (gitbot-fleet README)",
+      "ref": "",
+      "findings": [],
+      "counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "minor": 0
+      },
+      "state": "grey"
+    }
+  ],
+  "state": "purple",
+  "counts": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "minor": 0
+  }
+}
