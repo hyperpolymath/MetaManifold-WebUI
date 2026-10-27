@@ -129,8 +129,8 @@ contains "$caller" 'needs: [workflow-contract]' \
   'this contract runs before the fleet job'
 contains "$caller" 'needs: [workflow-contract, fleet]' \
   'the Hypatia scan runs after both the contract and the fleet report-backs'
-contains "$caller" "if: \${{ always() && needs.workflow-contract.result == 'success' }}" \
-  'a dead fleet job still lets the Hypatia lane render, a failed contract does not'
+contains "$caller" "if: \${{ !cancelled() && needs.workflow-contract.result == 'success' }}" \
+  'a dead fleet job still lets the Hypatia lane render; a failed contract or a cancelled run does not'
 # Fork delta 4: the fleet report-backs. The producer is pinned to a gitbot-fleet
 # commit (same owner, so the Actions policy allows the reusable); the consumer
 # step must sit before the grid renders, or the rows stay orange with the
