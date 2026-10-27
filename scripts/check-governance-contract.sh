@@ -141,7 +141,7 @@ else
   fail 'the fleet report-backs must come from hyperpolymath/gitbot-fleet pinned to a 40-hex commit'
 fi
 if fleet_clear="$(step_block "$REUSABLE" 'Clear any checked-out fleet report-backs')"; then
-  contains "$fleet_clear" "find .gitbot-fleet/report-backs -maxdepth 1 -name '*.json' -type f -print -delete" \
+  contains "$fleet_clear" "find .gitbot-fleet/report-backs -mindepth 1 -maxdepth 1 -name '*.json' -print -exec rm -rf -- {} +" \
     'a committed envelope can never pose as report-back evidence'
   clear_line=$(grep -nF -- '- name: Clear any checked-out fleet report-backs' "$REUSABLE" | cut -d: -f1 | head -n1)
   dl_line0=$(grep -nF -- '- name: Download the fleet report-backs' "$REUSABLE" | cut -d: -f1 | head -n1)
