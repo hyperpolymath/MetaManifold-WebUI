@@ -52,7 +52,7 @@ connection, and it does not fit or alter any scientific model.
 | 12 | edgeR QL | 0.071175 | 0.068532–0.073818 |
 
 Full machine-readable output: [results/native_cluster_check_run_40091522843.csv](results/native_cluster_check_run_40091522843.csv).
-These are normal-approximation cluster intervals derived **from the actual
+The saved CSV records its `alpha = 0.05` threshold explicitly, so a custom\n`--alpha` run cannot be mistaken for nominal 0.05 output.\n\nThese are normal-approximation cluster intervals derived **from the actual
 archived 480k per-taxon records**, not newly generated simulation results.
 
 **Interpretation:** The large Wald inflation is robust to the clustering
