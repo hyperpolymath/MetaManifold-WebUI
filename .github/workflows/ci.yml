@@ -551,6 +551,12 @@ jobs:
           R_APT_VERSION="$(yq -r '.runtimes.r.apt_version' config/defaults/tool_versions.yml)"
           R_APT_VERSION="$R_APT_VERSION" bash scripts/ci/install-r-runtime.sh core
 
+      # Null-calibration uncertainty is independently rechecked with base R,
+      # the same pinned runtime. This catches source/CLI regressions in the
+      # new replacement for the banned Python benchmark utility.
+      - name: Dataset-clustered calibration test (base R)
+        run: Rscript --vanilla bench/null_calibration/test_cluster_check.R
+
       # The evidence scripts are ordinary project code: they load JSON3 and the
       # statistics modules, so the environment must be instantiated after R.
       - name: Instantiate Julia project
