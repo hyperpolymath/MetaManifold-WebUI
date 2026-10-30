@@ -3,6 +3,7 @@
 # Read-only evidence for a native Linux security deployment review.
 # This script DOES NOT certify a deployment or enforce host settings.
 set -eu
+. "$(dirname "$0")/label-state.sh"
 
 if [ "${1-}" = '--help' ]; then
     printf '%s\n' 'Usage: sh scripts/security/linux-preflight.sh' \
@@ -62,27 +63,28 @@ else
     record active_lsms not-observable 'LSM interface may be inaccessible or unmounted'
 fi
 
-# AppArmor current label and SELinux current label may use different proc paths.
+# An AppArmor label may appear in either the module-specific attr or the
+# generic LSM attr, depending on the kernel. Only use the latter as an
+# AppArmor label when the LSM inventory explicitly advertises AppArmor.
 if [ -r /proc/self/attr/apparmor/current ]; then
     aa=$(read_one /proc/self/attr/apparmor/current)
-    case "$aa" in
-        '') aa_state=unknown ;;
-        unconfined*) aa_state=unconfined ;;
-        *) aa_state=label-present ;;
-    esac
-    record apparmor_process "$aa_state" 'Observed on this probe process, not on Julia'
+    record apparmor_process "$(classify_apparmor_label "$aa")" 'Observed on this probe process, not on Julia'
 else
-    record apparmor_process not-observable 'Process AppArmor profile cannot be read'
+    case ",$lsm," in
+        *,apparmor,*)
+            if [ -r /proc/self/attr/current ]; then
+                aa=$(read_one /proc/self/attr/current)
+                record apparmor_process "$(classify_apparmor_label "$aa")" 'Generic LSM attr fallback for this probe; verify worker separately'
+            else
+                record apparmor_process not-observable 'No readable AppArmor process attribute'
+            fi ;;
+        *)
+            record apparmor_process not-observable 'AppArmor profile not established by observable kernel interfaces' ;;
+    esac
 fi
 if [ -r /proc/self/attr/current ]; then
     label=$(read_one /proc/self/attr/current)
-    case "$label" in
-        *:*) proc_state=label-present ;;
-        unconfined*) proc_state=unconfined ;;
-        '') proc_state=unknown ;;
-        *) proc_state=unknown ;;
-    esac
-    record process_security_label "$proc_state" 'Presence of a label is not evidence of effective confinement'
+    record process_security_label "$(classify_generic_label "$label")" 'A label is not evidence of effective worker confinement'
 else
     record process_security_label not-observable 'Current security label cannot be read'
 fi
