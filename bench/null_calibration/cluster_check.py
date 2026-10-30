@@ -25,64 +25,73 @@ REQUIRED = frozenset({"sim", "test", "status", "pvalue", "true_log2fc"})
 Z95 = NormalDist().inv_cdf(0.975)
 
 
+def _record_null(row, seen, clusters, alpha):
+    """Validate a row and accumulate its contribution to a null dataset."""
+    method, sim = row["test"], row["sim"]
+    if not method or not sim:
+        raise ValueError("missing method or simulation identifier")
+    if "taxon" in row:
+        key = (method, sim, row["taxon"])
+        if key in seen:
+            raise ValueError("duplicated (test, sim, taxon) row: " + repr(key))
+        seen.add(key)
+    try:
+        is_null = float(row["true_log2fc"]) == 0
+    except (ValueError, TypeError):
+        raise ValueError("invalid true_log2fc") from None
+    if not is_null:
+        return
+
+    counts = clusters[method][sim]
+    status = row["status"]
+    if status == "failed":
+        return
+    if status not in VALID:
+        raise ValueError("unknown fit status: " + repr(status))
+    try:
+        pvalue = float(row["pvalue"])
+    except (ValueError, TypeError):
+        raise ValueError("valid fit has missing or nonnumeric p-value") from None
+    if not math.isfinite(pvalue) or not (0 <= pvalue <= 1):
+        raise ValueError("valid fit has invalid p-value")
+    counts[0] += 1
+    counts[1] += pvalue < alpha
+
+
+def _summarise_method(method, per_sim, min_clusters):
+    """Estimate one pooled null rate with simulation-clustered uncertainty."""
+    m = len(per_sim)
+    if m < min_clusters:
+        raise ValueError(f"{method}: only {m} independent simulation clusters; require {min_clusters}")
+    n_total = sum(pair[0] for pair in per_sim.values())
+    rejected = sum(pair[1] for pair in per_sim.values())
+    if n_total == 0:
+        raise ValueError(f"{method}: no valid null tests")
+    rate = rejected / n_total
+    # Treat independently simulated datasets as clusters, not individual taxa.
+    residual_ss = sum((k - rate * n) ** 2 for n, k in per_sim.values())
+    se = math.sqrt(m / (m - 1) * residual_ss) / n_total
+    return {"test": method, "n_sims": m, "n_pvalues": n_total,
+            "n_rejected": rejected, "rate": rate, "cluster_se": se,
+            "cluster_95_lo": max(0.0, rate - Z95 * se),
+            "cluster_95_hi": min(1.0, rate + Z95 * se)}
+
+
 def analyse_rows(rows, *, alpha=0.05, min_clusters=30):
-    """Return per-method rows from one benchmark cell's raw p-value records."""
-    if not (0 < alpha < 1):
+    """Return per-method rates from one benchmark cell's raw CSV rows."""
+    if not 0 < alpha < 1:
         raise ValueError("alpha must lie strictly between zero and one")
     if min_clusters < 2:
         raise ValueError("at least two independent simulation clusters required")
-    if not REQUIRED <= set(rows.fieldnames or ()):
-        raise ValueError("missing required CSV columns: " +
-                         ", ".join(sorted(REQUIRED - set(rows.fieldnames or ()))))
+    missing = REQUIRED - set(rows.fieldnames or ())
+    if missing:
+        raise ValueError("missing required CSV columns: " + ", ".join(sorted(missing)))
     clusters = defaultdict(lambda: defaultdict(lambda: [0, 0]))
     seen = set()
     for row in rows:
-        method, sim = row["test"], row["sim"]
-        if not method or not sim:
-            raise ValueError("missing method or simulation identifier")
-        if "taxon" in row:
-            key = (method, sim, row["taxon"])
-            if key in seen:
-                raise ValueError("duplicated (test, sim, taxon) row: " + repr(key))
-            seen.add(key)
-        try:
-            null = float(row["true_log2fc"]) == 0
-        except (ValueError, TypeError):
-            raise ValueError("invalid true_log2fc") from None
-        if not null:
-            continue
-        pair = clusters[method][sim]
-        if row["status"] in VALID:
-            try:
-                p = float(row["pvalue"])
-            except (ValueError, TypeError):
-                raise ValueError("valid fit has missing or nonnumeric p-value") from None
-            if not math.isfinite(p) or not 0 <= p <= 1:
-                raise ValueError("valid fit has invalid p-value")
-            pair[0] += 1
-            pair[1] += p < alpha
-        elif row["status"] != "failed":
-            raise ValueError("unknown fit status: " + repr(row["status"]))
-    out = []
-    for method, per_sim in sorted(clusters.items()):
-        m = len(per_sim)
-        if m < min_clusters:
-            raise ValueError(f"{method}: only {m} independent simulation clusters; require {min_clusters}")
-        N = sum(z[0] for z in per_sim.values())
-        K = sum(z[1] for z in per_sim.values())
-        if N == 0:
-            raise ValueError(f"{method}: no valid null tests")
-        rate = K / N
-        # One independent cluster per simulated dataset. The m/(m-1)
-        # correction and ratio-of-totals residuals permit any dependence
-        # of taxa *within* a simulated dataset.
-        ss = sum((k - rate * n) ** 2 for n, k in per_sim.values())
-        se = math.sqrt(m / (m - 1) * ss) / N
-        out.append({"test": method, "n_sims": m, "n_pvalues": N,
-                    "n_rejected": K, "rate": rate, "cluster_se": se,
-                    "cluster_95_lo": max(0.0, rate - Z95 * se),
-                    "cluster_95_hi": min(1.0, rate + Z95 * se)})
-    return out
+        _record_null(row, seen, clusters, alpha)
+    return [_summarise_method(method, per_sim, min_clusters)
+            for method, per_sim in sorted(clusters.items())]
 
 
 def csv_sources(paths):
@@ -95,9 +104,9 @@ def csv_sources(paths):
                 if not members:
                     raise ValueError(f"{path}: no pvalues_*.csv in ZIP")
                 for member in members:
-                    with z.open(member) as raw:
-                        with io.TextIOWrapper(raw, encoding="utf-8", newline="") as f:
-                            yield f"{path.name}/{member}", f
+                    with z.open(member) as raw, io.TextIOWrapper(
+                            raw, encoding="utf-8", newline="") as f:
+                        yield f"{path.name}/{member}", f
         else:
             with path.open(encoding="utf-8", newline="") as f:
                 yield str(path), f
