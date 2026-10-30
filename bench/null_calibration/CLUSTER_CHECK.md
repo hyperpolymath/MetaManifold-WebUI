@@ -28,7 +28,7 @@ seven planned n=4 positions is introduced.
 
 Retrieve the `null-calibration-raw` ZIP from
 [GitHub Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843)
-while the artifact is retained, then run from the repository root:
+while the artifact is retained. The ZIP used for this analysis had SHA-256\n`0cb93b8bac363125428b70cdc9d27fde21e04c75d317024dc4ff0804a2127869`\n(5,884,846 bytes), containing two raw files of 240,000 and 239,958 rows.\nRun from the repository root:
 
 ```sh
 python3 -m unittest discover -s bench/null_calibration -p 'test_cluster_check.py'
