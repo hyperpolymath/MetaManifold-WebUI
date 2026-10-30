@@ -21,7 +21,7 @@ from pathlib import Path
 from statistics import NormalDist
 
 VALID = frozenset({"ok", "boundary"})
-REQUIRED = frozenset({"sim", "test", "status", "pvalue", "true_log2fc"})
+REQUIRED = frozenset({"sim", "test", "taxon", "status", "pvalue", "true_log2fc"})
 Z95 = NormalDist().inv_cdf(0.975)
 
 
@@ -30,16 +30,23 @@ def _record_null(row, seen, clusters, alpha):
     method, sim = row["test"], row["sim"]
     if not method or not sim:
         raise ValueError("missing method or simulation identifier")
-    if "taxon" in row:
-        key = (method, sim, row["taxon"])
-        if key in seen:
-            raise ValueError("duplicated (test, sim, taxon) row: " + repr(key))
-        seen.add(key)
+    taxon = row["taxon"]
+    if not taxon:
+        raise ValueError("missing taxon identifier")
+    key = (method, sim, taxon)
+    if key in seen:
+        raise ValueError("duplicated (test, sim, taxon) row: " + repr(key))
+    seen.add(key)
+    # Register every method, even if its dataset lacks null observations.
+    # It must fail explicitly instead of disappearing from the report.
+    clusters[method]
     try:
-        is_null = float(row["true_log2fc"]) == 0
+        truth = float(row["true_log2fc"])
     except (ValueError, TypeError):
         raise ValueError("invalid true_log2fc") from None
-    if not is_null:
+    if not math.isfinite(truth):
+        raise ValueError("non-finite true_log2fc")
+    if truth != 0:
         return
 
     counts = clusters[method][sim]
@@ -61,6 +68,8 @@ def _record_null(row, seen, clusters, alpha):
 def _summarise_method(method, per_sim, min_clusters):
     """Estimate one pooled null rate with simulation-clustered uncertainty."""
     m = len(per_sim)
+    if m == 0:
+        raise ValueError(f"{method}: no null observations")
     if m < min_clusters:
         raise ValueError(f"{method}: only {m} independent simulation clusters; require {min_clusters}")
     n_total = sum(pair[0] for pair in per_sim.values())
@@ -90,6 +99,8 @@ def analyse_rows(rows, *, alpha=0.05, min_clusters=30):
     seen = set()
     for row in rows:
         _record_null(row, seen, clusters, alpha)
+    if not clusters:
+        raise ValueError("no method records in CSV")
     return [_summarise_method(method, per_sim, min_clusters)
             for method, per_sim in sorted(clusters.items())]
 
@@ -118,14 +129,14 @@ def main(argv=None):
     p.add_argument("--alpha", type=float, default=0.05)
     p.add_argument("--min-clusters", type=int, default=30)
     args = p.parse_args(argv)
-    fields = ["source", "test", "n_sims", "n_pvalues", "n_rejected", "rate",
+    fields = ["source", "test", "alpha", "n_sims", "n_pvalues", "n_rejected", "rate",
               "cluster_se", "cluster_95_lo", "cluster_95_hi"]
     writer = csv.DictWriter(sys.stdout, fieldnames=fields)
     writer.writeheader()
     for name, stream in csv_sources(args.files):
         for row in analyse_rows(csv.DictReader(stream), alpha=args.alpha,
                                 min_clusters=args.min_clusters):
-            writer.writerow({"source": name, **row})
+            writer.writerow({"source": name, "alpha": args.alpha, **row})
 
 
 if __name__ == "__main__":
