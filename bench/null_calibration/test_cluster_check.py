@@ -47,6 +47,47 @@ class ClusterCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "independent simulation clusters"):
             self.run_rows("1,m,1,ok,0.5,0\n", min_clusters=30)
 
+    def test_missing_taxon_column_and_identifier_refused(self):
+        raw = csv.DictReader(io.StringIO(
+            "sim,test,status,pvalue,true_log2fc\n1,m,ok,0.01,0\n"))
+        with self.assertRaisesRegex(ValueError, "taxon"):
+            analyse_rows(raw, min_clusters=2)
+        with self.assertRaisesRegex(ValueError, "missing taxon identifier"):
+            self.run_rows("1,m,,ok,0.01,0\n", min_clusters=2)
+
+    def test_nonfinite_truth_refused(self):
+        for value in ("nan", "inf", "-inf"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "non-finite true_log2fc"):
+                    self.run_rows(f"1,m,1,ok,0.01,{value}\n", min_clusters=2)
+
+    def test_no_null_method_and_empty_input_refused(self):
+        with self.assertRaisesRegex(ValueError, "no null observations"):
+            self.run_rows("1,m,1,ok,0.01,1\n", min_clusters=2)
+        with self.assertRaisesRegex(ValueError, "no method records"):
+            self.run_rows("", min_clusters=2)
+        # Even with another sufficient method, the nonnull-only method
+        # cannot silently disappear from the output.
+        rows = ("1,m,1,ok,0.01,0\n2,m,1,ok,0.03,0\n"
+                "1,other,1,ok,0.04,1\n")
+        with self.assertRaisesRegex(ValueError, "other: no null observations"):
+            self.run_rows(rows, min_clusters=2)
+
+    def test_custom_alpha_is_in_machine_readable_output(self):
+        from cluster_check import main
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "pvalues_test.csv"
+            path.write_text(self.FIELDS + "1,m,1,ok,0.08,0\n2,m,1,ok,0.5,0\n")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                main([str(path), "--alpha=0.1", "--min-clusters=2"])
+            row = list(csv.DictReader(io.StringIO(output.getvalue())))[0]
+            self.assertEqual(float(row["alpha"]), 0.1)
+            self.assertEqual(int(row["n_rejected"]), 1)
+
     def test_reject_invalid_settings(self):
         data = "1,m,1,ok,0.5,0\n"
         with self.assertRaisesRegex(ValueError, "alpha"):
