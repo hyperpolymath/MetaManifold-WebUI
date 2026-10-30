@@ -66,7 +66,8 @@ fi
 if [ -r /proc/self/attr/apparmor/current ]; then
     aa=$(read_one /proc/self/attr/apparmor/current)
     case "$aa" in
-        ''|unconfined*) aa_state=unconfined ;;
+        '') aa_state=unknown ;;
+        unconfined*) aa_state=unconfined ;;
         *) aa_state=label-present ;;
     esac
     record apparmor_process "$aa_state" 'Observed on this probe process, not on Julia'
