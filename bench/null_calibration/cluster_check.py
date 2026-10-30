@@ -87,7 +87,23 @@ def _summarise_method(method, per_sim, min_clusters):
 
 
 def analyse_rows(rows, *, alpha=0.05, min_clusters=30):
-    """Return per-method rates from one benchmark cell's raw CSV rows."""
+    """Summarise null p-values from one benchmark cell, sorted by method.
+
+    ``rows`` must have CSV field names including ``sim``, ``test``, ``status``,
+    ``pvalue`` and ``true_log2fc``. Only null rows with status ``ok`` or
+    ``boundary`` contribute p-values; failed null rows still count towards the
+    number of simulation clusters. A p-value is rejected when it is strictly
+    below ``alpha``, which must be between zero and one. Each method needs at
+    least ``min_clusters`` simulations containing null rows, with a minimum of
+    two clusters.
+
+    Return a list of dictionaries with counts, the pooled rejection rate, its
+    cluster standard error and a normal 95% interval clipped to [0, 1]. Return
+    an empty list if there are no null rows. Raise ``ValueError`` for invalid
+    settings, missing columns, invalid records, duplicate test/simulation/taxon
+    keys when a taxon column is present, too few clusters or no valid null
+    tests for a method. Errors from the input iterator propagate.
+    """
     if not 0 < alpha < 1:
         raise ValueError("alpha must lie strictly between zero and one")
     if min_clusters < 2:
@@ -106,7 +122,16 @@ def analyse_rows(rows, *, alpha=0.05, min_clusters=30):
 
 
 def csv_sources(paths):
-    """Yield CSV streams, including raw pvalues_*.csv members of ZIP archives."""
+    """Yield ``(source, stream)`` pairs for files and matching ZIP members.
+
+    ZIP members are selected when their filename contains ``pvalues_`` and
+    ends in ``.csv``; they are yielded in sorted order. ZIP sources use the
+    archive's basename followed by the member path. Each UTF-8 text stream is
+    open only until this generator advances or closes.
+
+    Raise ``ValueError`` if a ZIP has no matching members. File, ZIP and text
+    decoding errors propagate when opening or consuming the streams.
+    """
     for path in map(Path, paths):
         if path.suffix.lower() == ".zip":
             with zipfile.ZipFile(path) as z:
@@ -124,6 +149,12 @@ def csv_sources(paths):
 
 
 def main(argv=None):
+    """Write a CSV of per-source, per-method summaries to standard output.
+
+    ``argv`` supplies command-line arguments, or defaults to the process
+    arguments. Argument parsing can raise ``SystemExit``; input and analysis
+    errors propagate and may leave partial CSV output.
+    """
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("files", nargs="+", help="pvalues_*.csv or GitHub Actions artifact ZIP")
     p.add_argument("--alpha", type=float, default=0.05)
