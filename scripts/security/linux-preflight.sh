@@ -16,16 +16,21 @@ if [ "$#" -ne 0 ]; then
     exit 2
 fi
 
-# Values in observations are bounded to a single printable line. Do not print
+# Write $1 with newlines, carriage returns and tabs replaced by spaces, capped
+# at 160 bytes. Other control characters are not removed. Do not print
 # hostnames, usernames, filesystem paths, secrets, or environment variables.
 clean() {
     printf '%s' "$1" | LC_ALL=C tr '\n\r\t' '   ' | LC_ALL=C cut -c 1-160
 }
+# Write a tab-separated record: $1 is the unchanged check name; $2 and $3 are
+# the observation and interpretation, cleaned and capped by clean.
 record() {
     printf '%s\t%s\t%s\n' "$1" "$(clean "$2")" "$(clean "$3")"
 }
+# Write the first line of $1 without its newline, or nothing if it is not
+# readable. Read failures are ignored and may leave partial data; output write
+# failures propagate. Sets answer without evaluating the file contents as code.
 read_one() {
-    # One-line read via shell, never evaluate the contents as code.
     answer=''
     if [ -r "$1" ]; then
         IFS= read -r answer < "$1" || :
