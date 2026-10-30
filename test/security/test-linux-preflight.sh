@@ -11,6 +11,17 @@ if sh "$script" --invalid >/dev/null 2>&1; then
     echo 'Invalid option unexpectedly succeeded' >&2
     exit 1
 fi
+# Pure label fixtures: do not mistake a confined profile named "unconfined_*"
+# for an actually unconfined task, or an unreadable value for evidence.
+. scripts/security/label-state.sh
+[ "$(classify_apparmor_label '')" = unknown ]
+[ "$(classify_apparmor_label unconfined)" = unconfined ]
+[ "$(classify_apparmor_label 'unconfined (complain)')" = unconfined ]
+[ "$(classify_apparmor_label 'unconfined_worker (enforce)')" = label-present ]
+[ "$(classify_apparmor_label 'myprofile (enforce)')" = label-present ]
+[ "$(classify_generic_label 'unconfined_worker (enforce)')" = unknown ]
+[ "$(classify_generic_label 'user_u:user_r:user_t:s0')" = label-present ]
+[ "$(classify_generic_label '')" = unknown ]
 out=$(sh "$script")
 # Every non-comment row must have exactly three tab-separated fields.
 printf '%s\n' "$out" | awk -F '\t' '/^#/ { next } NF != 3 { bad = 1; print "Bad record: " $0 > "/dev/stderr" } END { exit bad }'
