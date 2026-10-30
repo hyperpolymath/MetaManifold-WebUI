@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: MPL-2.0
+# Review-only. No AI-authored finishing-touch commits.
+# Canonical language policy:
+# https://github.com/metadatastician/standards/blob/main/3-practice/LANGUAGE-POLICY.adoc
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "**/*"
+      instructions: >-
+        Estate policy prohibits NEW Python files, scripts, test code,
+        dependencies, and Python package manifests with no exceptions.
+        Do not recommend Python or generate Python fixes. The existing
+        upstream React and TypeScript frontend is temporarily permitted until
+        Marid is ready. Scientific code is Julia and R with pinned toolchains.
+        Flag additions of Python as a policy violation. Do not rewrite
+        unrelated upstream code for cosmetic compliance. Validate any
+        replacement through scientific result parity and tests.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false

@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Language policy (no new Python)
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  no-new-python:
+    name: No new Python
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Refuse Python additions and edits (allow deletion)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          EVENT_KIND: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_KIND" == pull_request ]]; then
+            base=$PR_BASE_SHA
+          elif [[ "$EVENT_KIND" == push ]]; then
+            base=$PUSH_BEFORE_SHA
+            if [[ "$base" == 0000000000000000000000000000000000000000 ]]; then
+              echo 'No push base available: refusing ambiguous evidence' >&2
+              exit 2
+            fi
+          else
+            echo 'Manual probe covers HEAD^..HEAD, not PR merge-base scope'
+            base=$(git rev-parse HEAD^)
+          fi
+          bash scripts/check-no-new-python.sh "$base"
+      - name: Planted-negative and positive controls
+        run: bash scripts/tests/test-no-new-python.sh
