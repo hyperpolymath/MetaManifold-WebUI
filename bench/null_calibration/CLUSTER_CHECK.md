@@ -1,69 +1,81 @@
 # Dataset-clustered uncertainty check — 30 October 2026
 
-This is an **additional inferential sensitivity check**, not a replacement of
-the saved #193 benchmark, and not a change to the production differential
-abundance method. Original results: [REPORT.md](REPORT.md).
+This is an **inferential sensitivity check**, not a change to the production
+differential-abundance method. The existing
+[null calibration report](REPORT.md) contains Wilson intervals pooling taxon
+p-values, which may share estimated TSS/RLE offsets and dispersion trends.
+Independent simulated datasets, rather than individual taxa, are the units
+for this check.
 
-The existing `summarise.R` reports Wilson 95% intervals for pooled taxon
-rejection counts. Taxa share estimated TSS/RLE offsets (and some alternative
-methods share a fitted dispersion trend), so taxon-level p-values are not
-guaranteed independent. Wilson intervals and pooled KS *p-values* require
-independence assumptions that are not fully justified by the simulation.
-
-This check treats each independently generated **dataset** (`sim`) as one
-cluster. Let `n_i` be the valid null tests in dataset `i`, `k_i` be its
-rejections, `m` be the number of independent datasets, and
-`p = sum(k_i)/sum(n_i)`. The cluster-robust ratio standard error is
+For independent datasets i = 1..m, let n_i be valid null tests and k_i
+their rejections. The pooled rate is p = sum(k_i) / sum(n_i), with
+cluster standard error
 
 `SE(p) = sqrt[m/(m-1) * sum((k_i - p*n_i)^2)] / sum(n_i)`
 
-with `p ± 1.959964*SE` clipped to [0,1]. This is a **large-sample**
-95% interval, not an exact finite-sample guarantee, and it assumes
-independence *between* simulated datasets. It keeps the original pooled
-rejection rate and valid-test denominator unchanged. Failures are excluded
-from the rate, as in the original report; no assumption about the missing
-seven planned n=4 positions is introduced.
+and a 95% **large-sample** normal interval p ± 1.959964 * SE, clipped to
+[0,1]. This assumes independence between simulated datasets; it is not
+an exact finite-sample guarantee. Failed fits are excluded from the rate
+denominator, while their null datasets remain in the set of clusters.
 
-## Reproduce with Python 3 standard library only
+## Implementation and policy
 
-Retrieve the `null-calibration-raw` ZIP from
-[GitHub Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843)
-while the artifact is retained. The ZIP used for this analysis had SHA-256\n`0cb93b8bac363125428b70cdc9d27fde21e04c75d317024dc4ff0804a2127869`\n(5,884,846 bytes), containing two raw files of 240,000 and 239,958 rows.\nRun from the repository root:
+The check is written in **base R** using MetaManifold's existing pinned R
+toolchain. No Python, extra R packages, external JSON/YAML processor, new
+scientific algorithm or runtime dependency is introduced.
 
 ```sh
-python3 -m unittest discover -s bench/null_calibration -p 'test_cluster_check.py'
-python3 bench/null_calibration/cluster_check.py path/to/null-calibration-raw.zip > cluster-check.csv
+Rscript --vanilla bench/null_calibration/test_cluster_check.R
+Rscript --vanilla bench/null_calibration/cluster_check.R \
+  path/to/null-calibration-raw.zip > cluster-check.csv
+# Alternatively provide pvalues_*.csv files directly:
+Rscript --vanilla bench/null_calibration/cluster_check.R \
+  --alpha=0.05 --min-clusters=30 path/to/pvalues_null_original_tss_n4_t40.csv
 ```
 
-The Python script also accepts uncompressed `pvalues_*.csv` files. It refuses
-duplicate test/simulation/taxon rows, malformed valid p-values and fewer than
-30 clusters by default. It needs no R runtime, compiled extension, or network
-connection, and it does not fit or alter any scientific model.
+The test script contains valid/invalid fixtures for correlated and unequal
+cluster sizes, missing taxon identifiers, duplicate keys, non-finite truth,
+invalid p-values, all-nonnull methods, missing tests and custom alpha.
+The CLI records `alpha` explicitly. It must refuse bad data; a
+header-only result is not a successful evaluation.
 
-## Native R 4.5.0 run #40091522843: sensitivity result
+## Source artifact and evidence
 
-| n/group | Test | Rejection rate | Clustered 95% interval |
+The source comparator data are from
+[GitHub Actions run 40091522843](https://github.com/hyperpolymath/MetaManifold-WebUI/actions/runs/40091522843)
+using native **R 4.5.0**. Original downloaded ZIP SHA-256:
+`0cb93b8bac363125428b70cdc9d27fde21e04c75d317024dc4ff0804a2127869`,
+5,884,846 bytes, with 240,000 and 239,958 raw rows.
+
+The accompanying
+[archived comparison CSV](results/native_cluster_check_run_40091522843.csv)
+preserves 12 previously computed comparator rates and clustered intervals
+from the original raw artifact. **The base-R replacement has not yet been run
+against that same ZIP in the current editing environment**; numeric parity
+must be checked before this PR is merge-ready. Do not infer validation
+from a clean synthetic unit test alone.
+
+| n/group | Method | Pooled null rejection | Clustered 95% interval |
 |---:|---|---:|---:|
-| 4 | production Wald ML | 0.139651 | 0.136168–0.143134 |
+| 4 | Wald ML | 0.139651 | 0.136168–0.143134 |
 | 4 | glmGamPoi QL | 0.052451 | 0.050241–0.054660 |
 | 4 | edgeR QL | 0.068740 | 0.066180–0.071300 |
-| 12 | production Wald ML | 0.074949 | 0.072212–0.077686 |
+| 12 | Wald ML | 0.074949 | 0.072212–0.077686 |
 | 12 | glmGamPoi QL | 0.049850 | 0.047613–0.052087 |
 | 12 | edgeR QL | 0.071175 | 0.068532–0.073818 |
 
-Full machine-readable output: [results/native_cluster_check_run_40091522843.csv](results/native_cluster_check_run_40091522843.csv).
-The saved CSV records its `alpha = 0.05` threshold explicitly, so a custom\n`--alpha` run cannot be mistaken for nominal 0.05 output.\n\nThese are normal-approximation cluster intervals derived **from the actual
-archived 480k per-taxon records**, not newly generated simulation results.
+The prominent Wald inflation persists under the original clustering
+re-analysis. This is a null-only comparator study under particular simulation
+conditions: it does **not** measure alternative power or BH-FDR, and does
+**not** justify switching the production default.
 
-**Interpretation:** The large Wald inflation is robust to the clustering
-sensitivity check in both measured cells. The glmGamPoi n=4 interval
-barely excludes 0.05 under this particular unadjusted interval, and the
-n=12 interval includes it. Neither establishes a production-default choice:
-the native comparator study was null-only, with no power/BH trade-off
-measured for glmGamPoi; multiple comparisons and new design settings
-also complicate marginal significance claims. Do not call the n=4
-narrow interval a universally established miscalibration.
+## Follow-up checks
 
-The saved baseline and native report have different code versions and
-generators. This check applies **only to the archived native run's raw data**
-and must not be represented as re-analysis of all 16 original WebR cells.
+- [ ] Execute the R fixture suite on the pinned R runtime in CI.
+- [ ] Re-run R against the original digest-pinned ZIP; compare the output to
+      the archived CSV within predeclared numeric tolerances.
+- [ ] Confirm all PR comments, Sonar findings and signed-commit rules pass.
+- [ ] Keep use of KYAML and I-JSON/JCS aligned with the canonical
+      `metadatastician/kyq` and `hyperpolymath/ijson-jcs` projects when the
+      relevant real CLI capabilities exist. This CSV-only tool does not
+      implement or replace either format standard.
