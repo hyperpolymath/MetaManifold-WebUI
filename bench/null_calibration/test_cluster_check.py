@@ -23,6 +23,16 @@ class ClusterCheckTests(unittest.TestCase):
         self.assertAlmostEqual(x["cluster_se"], 0.5)
         self.assertEqual((x["cluster_95_lo"], x["cluster_95_hi"]), (0.0, 1.0))
 
+    def test_pooled_rate_weights_clusters_by_test_count(self):
+        # One rejection in a one-taxon dataset; three valid non-rejections
+        # in another dataset. Pooled rate = 1/4, not mean(1, 0) = 1/2.
+        data = ("1,m,1,ok,0.01,0\n"
+                "2,m,1,ok,0.6,0\n2,m,2,ok,0.9,0\n2,m,3,ok,0.7,0\n")
+        x = self.run_rows(data, min_clusters=2)[0]
+        self.assertEqual((x["n_sims"], x["n_pvalues"], x["n_rejected"]), (2, 4, 1))
+        self.assertAlmostEqual(x["rate"], 0.25)
+        self.assertNotAlmostEqual(x["rate"], 0.5)
+
     def test_failed_and_nonnull_excluded(self):
         data = ("1,m,1,ok,0.01,0\n1,m,2,failed,,0\n"
                 "2,m,1,ok,0.02,1\n2,m,2,boundary,0.90,0\n")
