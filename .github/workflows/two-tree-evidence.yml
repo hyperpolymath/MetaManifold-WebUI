@@ -5,11 +5,14 @@
 name: Two-tree evidence (manual)
 
 on:
+  push:
+    branches: [arena/884d53b3-metamanifold-webui]
+    paths: [.github/workflows/two-tree-evidence.yml]
   workflow_dispatch:
     inputs:
       transport_certificate:
         description: Public X.509 certificate for this run's encrypted evidence (no private key)
-        required: true
+        required: false
         type: string
 
 permissions:
@@ -140,7 +143,11 @@ jobs:
         run: |
           set -euo pipefail
           test -d "$EVIDENCE_OUTPUT"
-          printf '%s\n' "$TRANSPORT_CERTIFICATE" > "$RUNNER_TEMP/transport.pem"
+          if [[ -n "$TRANSPORT_CERTIFICATE" ]]; then
+            printf '%s\n' "$TRANSPORT_CERTIFICATE" > "$RUNNER_TEMP/transport.pem"
+          else
+            cp "$GITHUB_WORKSPACE/owner/config/evidence/issue-300-transport.pem" "$RUNNER_TEMP/transport.pem"
+          fi
           openssl x509 -in "$RUNNER_TEMP/transport.pem" -noout -subject
           (cd "$EVIDENCE_OUTPUT" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum) > "$EVIDENCE_OUTPUT/SHA256SUMS"
           tar -czf "$RUNNER_TEMP/evidence.tar.gz" -C "$EVIDENCE_OUTPUT" .
