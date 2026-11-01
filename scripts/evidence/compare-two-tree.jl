@@ -25,7 +25,11 @@ function normalize(ex)
 end
 function walk!(f, ex)
     f(ex)
-    ex isa Expr && for a in ex.args; walk!(f, a); end
+    if ex isa Expr
+        for a in ex.args
+            walk!(f, a)
+        end
+    end
     ex isa QuoteNode && walk!(f, ex.value)
     nothing
 end

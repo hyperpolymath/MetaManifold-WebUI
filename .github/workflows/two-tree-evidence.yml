@@ -75,7 +75,9 @@ jobs:
             test -z "$(git -C "$root/$tool" status --porcelain=v1)"
             sha256sum "$root/$tool/Cargo.lock"
             rc=0
-            cargo install --path "$root/$tool" --locked --root "$RUNNER_TEMP/tool-root" "$package" \
+            package_path="$root/$tool"
+            if [[ "$tool" == pons-asinorum ]]; then package_path="$package_path/crates/pons-cli"; fi
+            cargo install --path "$package_path" --locked --root "$RUNNER_TEMP/tool-root" "$package" \
               > "$EVIDENCE_OUTPUT/$tool-build.log" 2>&1 || rc=$?
             echo "$rc" > "$EVIDENCE_OUTPUT/$tool-build.exit"
             if [[ "$rc" != 0 ]]; then
