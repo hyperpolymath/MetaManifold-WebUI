@@ -1,0 +1,174 @@
+# SPDX-License-Identifier: MPL-2.0
+# Issue #300: dispatch-only research, not a gate and not an upstream CI proposal.
+# Raw reports may contain unpublished findings. Only a CMS envelope encrypted to
+# the operator's ephemeral public certificate leaves this job as an artifact.
+name: Two-tree evidence (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      transport_certificate:
+        description: Public X.509 certificate for this run's encrypted evidence (no private key)
+        required: true
+        type: string
+
+permissions:
+  contents: write # only the final encrypted Git-blob archival step writes
+
+concurrency:
+  group: two-tree-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      R_LIBS_SITE: /usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library
+      JULIA_PKG_PRECOMPILE_AUTO: 0
+    steps:
+      - name: Check out the evidence harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: owner
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare pinned detached trees
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/evidence"
+          mkdir -p "$workspace"
+          echo "EVIDENCE_WORKSPACE=$workspace" >> "$GITHUB_ENV"
+          echo "EVIDENCE_OUTPUT=$workspace/results" >> "$GITHUB_ENV"
+          config=owner/config/evidence/issue-300.json
+          for side in upstream fork; do
+            repo=$(jq -r ".trees.$side.repository" "$config")
+            sha=$(jq -r ".trees.$side.revision" "$config")
+            git -C owner fetch --no-tags "$repo" "$sha"
+            git -C owner worktree add --detach "$workspace/$side" "$sha"
+            test "$(git -C "$workspace/$side" rev-parse HEAD)" = "$sha"
+            test -z "$(git -C "$workspace/$side" status --porcelain=v1 --untracked-files=all)"
+          done
+          # Absolute owner path is needed after the scanner changes directory.
+          ln -s "$GITHUB_WORKSPACE/owner" "$workspace/owner"
+      - name: Install the analysis Rust toolchain
+        run: |
+          set -euo pipefail
+          version=$(jq -r .rust_toolchain owner/config/evidence/issue-300.json)
+          rustup toolchain install "$version" --profile minimal
+          echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
+      - name: Build pinned static scanners
+        run: |
+          set -euo pipefail
+          config=owner/config/evidence/issue-300.json
+          root="$RUNNER_TEMP/scanners"
+          mkdir -p "$root"
+          for tool in panic-attack pons-asinorum; do
+            repo=$(jq -r ".scanners[\"$tool\"].repository" "$config")
+            sha=$(jq -r ".scanners[\"$tool\"].revision" "$config")
+            package=$(jq -r ".scanners[\"$tool\"].package" "$config")
+            git clone --filter=blob:none "$repo" "$root/$tool"
+            git -C "$root/$tool" checkout --detach "$sha"
+            test -z "$(git -C "$root/$tool" status --porcelain=v1)"
+            sha256sum "$root/$tool/Cargo.lock"
+            cargo install --path "$root/$tool" --locked --root "$RUNNER_TEMP/tool-root" "$package"
+          done
+          echo "$RUNNER_TEMP/tool-root/bin" >> "$GITHUB_PATH"
+      - name: Collect static reports before installing dependencies
+        run: |
+          bash owner/scripts/evidence/collect-two-tree.sh \
+            owner/config/evidence/issue-300.json "$EVIDENCE_WORKSPACE" \
+            "$RUNNER_TEMP/tool-root/bin/panic-attack" "$RUNNER_TEMP/tool-root/bin/pons" \
+            "$EVIDENCE_OUTPUT"
+      - name: Set up Julia and R from the shared runtime pins
+        run: |
+          set -euo pipefail
+          bash owner/scripts/install-ci-julia.sh
+          export R_APT_VERSION=$(jq -r .runtime.r_apt owner/config/evidence/issue-300.json)
+          bash owner/scripts/ci/install-r-runtime.sh full
+          julia --version
+          R --version | head -1
+      - name: Restore Julia and R dependencies and run targeted tests
+        id: targeted_tests
+        continue-on-error: true # evidence is sealed below; a separate assertion fails the job
+        run: |
+          set -euo pipefail
+          bash owner/scripts/evidence/test-two-tree.sh \
+            owner/config/evidence/issue-300.json "$EVIDENCE_WORKSPACE" "$EVIDENCE_OUTPUT"
+      - name: Set up bun and run frontend witnesses
+        id: frontend_tests
+        continue-on-error: true
+        if: always()
+        run: |
+          set -euo pipefail
+          version=$(jq -r .runtime.bun owner/config/evidence/issue-300.json)
+          npm install --prefix "$RUNNER_TEMP/bun-runtime" --ignore-scripts --no-audit --no-fund "bun@$version"
+          export PATH="$RUNNER_TEMP/bun-runtime/node_modules/@oven/bun-linux-x64/bin:$PATH"
+          test "$(bun --version)" = "$version"
+          bun --revision > "$EVIDENCE_OUTPUT/bun-revision.txt"
+          for side in upstream fork; do
+            dest="$EVIDENCE_OUTPUT/$side"
+            (cd "$EVIDENCE_WORKSPACE/$side/frontend"
+             bun install --frozen-lockfile --ignore-scripts > "$dest/bun-install.log" 2>&1
+             rc=0; bun test src > "$dest/bun-test.log" 2>&1 || rc=$?; echo "$rc" > "$dest/bun-test.exit"
+             tc=0; bun run typecheck > "$dest/bun-typecheck.log" 2>&1 || tc=$?; echo "$tc" > "$dest/bun-typecheck.exit"
+             test "$rc" = 0 && test "$tc" = 0)
+          done
+      - name: Compare source structure and classify scanner findings
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f "$EVIDENCE_OUTPUT/upstream/pons.json" && -f "$EVIDENCE_OUTPUT/fork/pons.json" ]]; then
+            julia --project="$EVIDENCE_WORKSPACE/fork" -e 'using Pkg; Pkg.instantiate()'
+            BUN="$RUNNER_TEMP/bun-runtime/node_modules/@oven/bun-linux-x64/bin/bun" \
+              julia --project="$EVIDENCE_WORKSPACE/fork" owner/scripts/evidence/compare-two-tree.jl \
+              owner/config/evidence/issue-300.json "$EVIDENCE_WORKSPACE" "$EVIDENCE_OUTPUT"
+          fi
+      - name: Assert runtime witnesses completed
+        if: always()
+        run: |
+          set -euo pipefail
+          for side in upstream fork; do
+            for test in julia-tests bun-test bun-typecheck; do
+              test "$(cat "$EVIDENCE_OUTPUT/$side/$test.exit")" = 0
+            done
+          done
+      - name: Seal raw evidence before upload
+        if: always()
+        env:
+          TRANSPORT_CERTIFICATE: ${{ inputs.transport_certificate }}
+        run: |
+          set -euo pipefail
+          test -d "$EVIDENCE_OUTPUT"
+          printf '%s\n' "$TRANSPORT_CERTIFICATE" > "$RUNNER_TEMP/transport.pem"
+          openssl x509 -in "$RUNNER_TEMP/transport.pem" -noout -subject
+          (cd "$EVIDENCE_OUTPUT" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum) > "$EVIDENCE_OUTPUT/SHA256SUMS"
+          tar -czf "$RUNNER_TEMP/evidence.tar.gz" -C "$EVIDENCE_OUTPUT" .
+          openssl cms -encrypt -binary -aes-256-cbc -outform DER \
+            -in "$RUNNER_TEMP/evidence.tar.gz" -out "$RUNNER_TEMP/evidence.cms" \
+            "$RUNNER_TEMP/transport.pem"
+          # Never upload the raw directory or print findings to the public log.
+          sha256sum "$RUNNER_TEMP/evidence.cms"
+      - name: Upload encrypted evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: issue-300-encrypted
+          path: ${{ runner.temp }}/evidence.cms
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish an immutable encrypted Git blob
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Git blob creation requires contents:write, but this step never checks
+          # out or executes repository code. The token is scoped to this job's
+          # repository; no commit, branch, issue or alert is changed.
+          # Base64 before jq: DER bytes are not a UTF-8 JSON string.
+          base64 -w0 "$RUNNER_TEMP/evidence.cms" > "$RUNNER_TEMP/evidence.b64"
+          jq -n --rawfile content "$RUNNER_TEMP/evidence.b64" \
+            '{content: $content, encoding: "base64"}' > "$RUNNER_TEMP/blob.json"
+          gh api --method POST "repos/$REPOSITORY/git/blobs" --input "$RUNNER_TEMP/blob.json" --jq .sha

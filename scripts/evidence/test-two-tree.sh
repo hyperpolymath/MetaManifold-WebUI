@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+# Run existing synthetic-data tests at both pins. Never start a live server,
+# SSH session, DOI publication or destructive scanner mode.
+set -euo pipefail
+if [[ $# -ne 3 ]]; then
+  echo 'Usage: test-two-tree.sh CONFIG WORKSPACE OUTPUT' >&2; exit 2
+fi
+config=$(realpath "$1"); workspace=$(realpath "$2"); out=$(realpath "$3")
+for exe in julia R Rscript jq timeout; do command -v "$exe" >/dev/null; done
+julia --version > "$out/julia-version.txt"
+R --version > "$out/r-version.txt"
+# Both Julia lockfiles are byte-identical at the measured tips. Assert this
+# before sharing a depot; R lockfiles differ and are restored separately below.
+up=$(jq -r .trees.upstream.revision "$config"); fork=$(jq -r .trees.fork.revision "$config")
+for file in Project.toml Manifest.toml; do
+  [[ "$(git -C "$workspace/upstream" rev-parse "HEAD:$file")" == \
+     "$(git -C "$workspace/fork" rev-parse "HEAD:$file")" ]]
+done
+# No publication even if the runner has deployment variables configured.
+unset DOI_ENABLED ZENODO_TOKEN JULIA_METAMANIFOLD_ALLOWED_ORIGINS
+export CI=true CI_SKIP_TAXONOMY=1
+failed=0
+for side in upstream fork; do
+  tree="$workspace/$side"; dest="$out/$side"; mkdir -p "$dest"
+  (
+    cd "$tree"
+    julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$dest/julia-instantiate.log" 2>&1
+    sudo env R_LIBS_SITE="$R_LIBS_SITE" R_CLI_DYNAMIC=false TERM=dumb \
+      Rscript --no-init-file -e 'if (!requireNamespace("renv", quietly=TRUE)) install.packages("renv", repos="https://cloud.r-project.org", lib=.Library); renv::restore(project=".", library=.Library, prompt=FALSE)' \
+      > "$dest/renv-restore.log" 2>&1
+    Rscript --no-init-file -e 'cat(R.version.string, "\n"); p <- c("MASS","vegan","zCompositions","glmGamPoi","dada2"); for (x in p) cat(x, if (requireNamespace(x,quietly=TRUE)) as.character(packageVersion(x)) else "ABSENT", "\n")' \
+      > "$dest/r-packages.txt"
+    mapfile -t tests < <(jq -r '.julia_tests[]' "$config")
+    if [[ "$side" == fork ]]; then
+      mapfile -t extra < <(jq -r '.fork_only_julia_tests[]' "$config"); tests+=("${extra[@]}")
+    fi
+    rc=0
+    timeout 1800 julia --project=. -t 2 test/runtests.jl "${tests[@]}" \
+      > "$dest/julia-tests.log" 2>&1 || rc=$?
+    echo "$rc" > "$dest/julia-tests.exit"
+    jq -n --argjson rc "$rc" --argjson tests "$(printf '%s\n' "${tests[@]}" | jq -R . | jq -s .)" \
+      '{command: (["julia","--project=.","-t","2","test/runtests.jl"] + $tests), exit_code: $rc,
+        data: "synthetic fixtures only", live_ssh: false, live_doi: false}' > "$dest/julia-tests-command.json"
+    status="$rc"
+    while IFS= read -r test; do
+      [[ -n "$test" ]] || continue
+      name=$(basename "$test" .R); rc=0
+      timeout 300 Rscript --vanilla "$test" > "$dest/$name.log" 2>&1 || rc=$?
+      echo "$rc" > "$dest/$name.exit"
+      [[ "$rc" == 0 ]] || status=1
+    done < <(jq -r '.r_tests[]' "$config")
+    exit "$status"
+  ) || failed=1
+done
+# Return failure only after both trees have had a chance to produce evidence.
+exit "$failed"
