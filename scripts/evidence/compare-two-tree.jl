@@ -113,14 +113,17 @@ function provenance(owner, base, up, fork, path, ublob, fblob)
     bblob = let result = read(`git -C $owner ls-tree -z $base -- $path`, String)
         isempty(result) ? nothing : split(split(result, '\t')[1], ' ')[3]
     end
+    isnothing(ublob) && return isnothing(bblob) ? "fork-added" : "fork-deleted"
+    isnothing(fblob) && return isnothing(bblob) ? "upstream-added" : "upstream-deleted"
     if ublob == fblob
-        return ublob == bblob ? "shared-unchanged-since-base" : "shared-changed-since-base"
+        return isnothing(bblob) ? "both-added-identical-bytes" :
+            ublob == bblob ? "shared-unchanged-since-base" : "both-changed-identical-bytes"
     elseif ublob == bblob
         return "fork-changed"
     elseif fblob == bblob
         return "upstream-changed"
     else
-        return "both-changed-or-independent-additions"
+        return isnothing(bblob) ? "both-added-different-bytes" : "both-changed-different-bytes"
     end
 end
 

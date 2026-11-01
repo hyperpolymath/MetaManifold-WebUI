@@ -13,8 +13,10 @@ for exe in git jq timeout sha256sum; do command -v "$exe" >/dev/null; done
 [[ -x "$panic" && -x "$pons" ]] || { echo 'Scanner binaries missing' >&2; exit 2; }
 jq -e '.schema_version == 1 and (.trees | keys == ["fork", "upstream"])' "$config" >/dev/null
 mkdir -p "$out"
-[[ -z "$(find "$out" -mindepth 1 -maxdepth 1 -print -quit)" ]] || {
-  echo 'Refusing to overwrite an evidence directory' >&2; exit 2;
+# Build logs may already occupy the run directory. Never overwrite a prior
+# collection, but do not confuse unrelated run logs with scanner evidence.
+[[ ! -e "$out/baselines.json" && ! -e "$out/upstream" && ! -e "$out/fork" ]] || {
+  echo 'Refusing to overwrite an evidence collection' >&2; exit 2;
 }
 cp "$config" "$out/config.json"
 sha256sum "$panic" "$pons" > "$out/scanner-binaries.sha256"
