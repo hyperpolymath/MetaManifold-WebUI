@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           workspace="$RUNNER_TEMP/evidence"
-          mkdir -p "$workspace"
+          mkdir -p "$workspace/results"
           echo "EVIDENCE_WORKSPACE=$workspace" >> "$GITHUB_ENV"
           echo "EVIDENCE_OUTPUT=$workspace/results" >> "$GITHUB_ENV"
           config=owner/config/evidence/issue-300.json
@@ -74,7 +74,11 @@ jobs:
             git -C "$root/$tool" checkout --detach "$sha"
             test -z "$(git -C "$root/$tool" status --porcelain=v1)"
             sha256sum "$root/$tool/Cargo.lock"
-            cargo install --path "$root/$tool" --locked --root "$RUNNER_TEMP/tool-root" "$package"
+            rc=0
+            cargo install --path "$root/$tool" --locked --root "$RUNNER_TEMP/tool-root" "$package" \
+              > "$EVIDENCE_OUTPUT/$tool-build.log" 2>&1 || rc=$?
+            echo "$rc" > "$EVIDENCE_OUTPUT/$tool-build.exit"
+            if [[ "$rc" != 0 ]]; then tail -100 "$EVIDENCE_OUTPUT/$tool-build.log"; exit "$rc"; fi
           done
           echo "$RUNNER_TEMP/tool-root/bin" >> "$GITHUB_PATH"
       - name: Collect static reports before installing dependencies

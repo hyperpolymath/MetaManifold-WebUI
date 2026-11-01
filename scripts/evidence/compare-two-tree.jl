@@ -87,7 +87,7 @@ function external_structure(root, language)
             records = Any[]
             for line in eachline(out)
                 isempty(line) && continue
-                r = Dict{String,Any}(pairs(JSON3.read(line)))
+                r = Dict{String,Any}(string(k) => v for (k, v) in pairs(JSON3.read(line)))
                 r["ast_sha256"] = sha(r["normalized"])
                 delete!(r, "normalized")
                 r["functions"] = Any[Dict("name" => f.name, "ast_sha256" => sha(f.normalized)) for f in r["functions"]]
