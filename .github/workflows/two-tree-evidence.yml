@@ -78,7 +78,12 @@ jobs:
             cargo install --path "$root/$tool" --locked --root "$RUNNER_TEMP/tool-root" "$package" \
               > "$EVIDENCE_OUTPUT/$tool-build.log" 2>&1 || rc=$?
             echo "$rc" > "$EVIDENCE_OUTPUT/$tool-build.exit"
-            if [[ "$rc" != 0 ]]; then tail -100 "$EVIDENCE_OUTPUT/$tool-build.log"; exit "$rc"; fi
+            if [[ "$rc" != 0 ]]; then
+              tail -100 "$EVIDENCE_OUTPUT/$tool-build.log"
+              digest=$(tail -c 3500 "$EVIDENCE_OUTPUT/$tool-build.log" | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+              echo "::error title=$tool source build failed::$digest"
+              exit "$rc"
+            fi
           done
           echo "$RUNNER_TEMP/tool-root/bin" >> "$GITHUB_PATH"
       - name: Collect static reports before installing dependencies
@@ -182,4 +187,6 @@ jobs:
           base64 -w0 "$RUNNER_TEMP/evidence.cms" > "$RUNNER_TEMP/evidence.b64"
           jq -n --rawfile content "$RUNNER_TEMP/evidence.b64" \
             '{content: $content, encoding: "base64"}' > "$RUNNER_TEMP/blob.json"
-          gh api --method POST "repos/$REPOSITORY/git/blobs" --input "$RUNNER_TEMP/blob.json" --jq .sha
+          blob_sha=$(gh api --method POST "repos/$REPOSITORY/git/blobs" --input "$RUNNER_TEMP/blob.json" --jq .sha)
+          echo "::notice title=Encrypted evidence blob::$blob_sha"
+          echo "Encrypted evidence Git blob: $blob_sha"

@@ -135,21 +135,21 @@ function compare(config_path, workspace, out)
         append!(records, external_structure(root, "r"))
         append!(records, external_structure(root, "typescript"))
         json_write(joinpath(out, string(side), "structure.json"), records)
-        for r in records; structures[(side, String(r.path))] = r; end
+        for r in records; structures[(side, String(r["path"]))] = r; end
     end
     inventory = Any[]
     for path in paths
         u = get(blobs[:upstream], path, nothing); f = get(blobs[:fork], path, nothing)
         us = get(structures, (:upstream, path), nothing); fs = get(structures, (:fork, path), nothing)
-        ast_equal = u == f ? true : (isnothing(us) || isnothing(fs) ? nothing : us.ast_sha256 == fs.ast_sha256)
+        ast_equal = u == f ? true : (isnothing(us) || isnothing(fs) ? nothing : us["ast_sha256"] == fs["ast_sha256"])
         push!(inventory, Dict("path" => path, "upstream_blob" => u, "fork_blob" => f,
             "provenance" => provenance(owner, config.merge_base, config.trees.upstream.revision,
                                           config.trees.fork.revision, path, u, f),
-            "upstream_ast_sha256" => isnothing(us) ? nothing : us.ast_sha256,
-            "fork_ast_sha256" => isnothing(fs) ? nothing : fs.ast_sha256,
+            "upstream_ast_sha256" => isnothing(us) ? nothing : us["ast_sha256"],
+            "fork_ast_sha256" => isnothing(fs) ? nothing : fs["ast_sha256"],
             "ast_equal" => ast_equal,
-            "call_edges_equal" => isnothing(us) || isnothing(fs) ? nothing : us.calls == fs.calls,
-            "import_edges_equal" => isnothing(us) || isnothing(fs) ? nothing : us.imports == fs.imports))
+            "call_edges_equal" => isnothing(us) || isnothing(fs) ? nothing : us["calls"] == fs["calls"],
+            "import_edges_equal" => isnothing(us) || isnothing(fs) ? nothing : us["imports"] == fs["imports"]))
     end
     json_write(joinpath(out, "path-provenance.json"), inventory)
 
