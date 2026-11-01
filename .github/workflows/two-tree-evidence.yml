@@ -5,6 +5,8 @@
 name: Two-tree evidence (manual)
 
 on:
+  # Temporary execution bridge while workflow_dispatch is unavailable to the
+  # session token. Remove this push trigger and the public-cert fallback together.
   push:
     branches: [arena/884d53b3-metamanifold-webui]
     paths: [.github/workflows/two-tree-evidence.yml]
