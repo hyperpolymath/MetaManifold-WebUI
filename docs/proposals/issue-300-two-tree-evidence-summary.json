@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "issue": 300,
+  "run_id": 41364756791,
+  "harness_commit": "8416691d156ccf74ffd503cd5fff1fee5091162a",
+  "encrypted_git_blob": "9e37217895ac17c993050d63ffa8972f2d1ac64c",
+  "cms_sha256": "c9d653302961c7cb010335471a5b945cbac9b09260df269962e631990f0ec9de",
+  "trees": {
+    "upstream": {
+      "panic": {
+        "exit": 2,
+        "coverage_status": "partial",
+        "candidate_files": 264,
+        "analyzed_files": 225,
+        "weak_points": 38,
+        "by_severity": {
+          "Medium": 29,
+          "High": 9
+        },
+        "by_category": {
+          "InputBoundary": 12,
+          "UnsafeFFI": 4,
+          "DynamicCodeExecution": 9,
+          "ProofDrift": 10,
+          "InsecureProtocol": 3
+        }
+      },
+      "pons": {
+        "exit": 2,
+        "coverage_status": "partial",
+        "analyzed_files": 109,
+        "findings": 8,
+        "by_evidence": {
+          "HEURISTIC": 8,
+          "DATAFLOW": 0,
+          "PROTOCOL": 0,
+          "SPECULATIVE": 0
+        },
+        "inventory_outcomes": {
+          "excluded-by-policy": 45,
+          "unsupported": 151,
+          "analysed": 109,
+          "parse-error": 1
+        },
+        "unsupported_julia": 105,
+        "unsupported_r": 9
+      },
+      "bun": {
+        "test_exit": 0,
+        "typecheck_exit": 0
+      },
+      "r_dada2_tables_exit": 0
+    },
+    "fork": {
+      "panic": {
+        "exit": 2,
+        "coverage_status": "partial",
+        "candidate_files": 394,
+        "analyzed_files": 329,
+        "weak_points": 45,
+        "by_severity": {
+          "Medium": 34,
+          "High": 10,
+          "Critical": 1
+        },
+        "by_category": {
+          "CommandInjection": 1,
+          "DynamicCodeExecution": 10,
+          "HardcodedSecret": 1,
+          "UnsafeFFI": 3,
+          "ProofDrift": 14,
+          "InputBoundary": 13,
+          "InsecureProtocol": 3
+        }
+      },
+      "pons": {
+        "exit": 2,
+        "coverage_status": "partial",
+        "analyzed_files": 131,
+        "findings": 0,
+        "by_evidence": {
+          "HEURISTIC": 0,
+          "DATAFLOW": 0,
+          "PROTOCOL": 0,
+          "SPECULATIVE": 0
+        },
+        "inventory_outcomes": {
+          "excluded-by-policy": 100,
+          "unsupported": 254,
+          "analysed": 131,
+          "parse-error": 2
+        },
+        "unsupported_julia": 154,
+        "unsupported_r": 12
+      },
+      "bun": {
+        "test_exit": 0,
+        "typecheck_exit": 0
+      },
+      "r_dada2_tables_exit": 0
+    }
+  },
+  "interpretation": "Partial coverage and scanner heuristics are not assurance; see docs/proposals/issue-300-two-tree-evidence.md"
+}

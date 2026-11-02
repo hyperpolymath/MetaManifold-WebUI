@@ -30,15 +30,19 @@ for side in upstream fork; do
   (
     cd "$tree"
     julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$dest/julia-instantiate.log" 2>&1
-    # Each detached worktree gets its own renv project library. A shared system
-    # library would let the fork's extra packages leak into the upstream witness.
+    # A writable, per-tree library outside the measured checkout and outside the
+    # sealed evidence directory. renv's default .Library target is not writable
+    # on the hosted runner; a shared library would also leak fork packages.
+    export R_LIBS_USER="$workspace/r-libraries/$side"
     export RENV_PATHS_CACHE="$workspace/renv-cache"
+    export RENV_CONFIG_AUTOLOADER_ENABLED=FALSE
+    mkdir -p "$R_LIBS_USER" "$RENV_PATHS_CACHE"
     sudo env R_LIBS_SITE="$R_LIBS_SITE" R_CLI_DYNAMIC=false TERM=dumb \
       Rscript --no-init-file -e 'if (!requireNamespace("renv", quietly=TRUE)) install.packages("renv", repos="https://cloud.r-project.org", lib=.Library)' \
       > "$dest/renv-bootstrap.log" 2>&1
-    Rscript --no-init-file -e 'renv::restore(project=".", prompt=FALSE)' \
+    Rscript --no-init-file -e 'renv::restore(project=".", library=Sys.getenv("R_LIBS_USER"), prompt=FALSE)' \
       > "$dest/renv-restore.log" 2>&1
-    Rscript --no-init-file -e 'renv::activate(project="."); cat(R.version.string, "\n"); cat("library:", .libPaths(), "\n"); p <- c("MASS","vegan","zCompositions","glmGamPoi","dada2"); for (x in p) cat(x, if (requireNamespace(x,quietly=TRUE)) as.character(packageVersion(x)) else "ABSENT", "\n")' \
+    Rscript --no-init-file -e 'cat(R.version.string, "\n"); cat("library:", .libPaths(), "\n"); p <- c("MASS","vegan","zCompositions","glmGamPoi","dada2"); for (x in p) cat(x, if (requireNamespace(x,quietly=TRUE)) as.character(packageVersion(x)) else "ABSENT", "\n")' \
       > "$dest/r-packages.txt"
     mapfile -t tests < <(jq -r '.julia_tests[]' "$config")
     if [[ "$side" == fork ]]; then

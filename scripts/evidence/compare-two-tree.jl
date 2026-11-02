@@ -40,8 +40,8 @@ function call_name(ex)
 end
 function julia_structure(root)
     records = Any[]
-    raw = read(`git -C $root ls-files -z -- *.jl`)
-    for path in sort(filter(!isempty, split(String(raw), '\0')))
+    raw = read(`git -C $root ls-files -z`, String)
+    for path in sort(filter(p -> !isempty(p) && endswith(p, ".jl"), split(String(raw), '\0')))
         source = read(joinpath(root, path), String)
         parsed = Meta.parseall(source; filename=path)
         errors = Any[]

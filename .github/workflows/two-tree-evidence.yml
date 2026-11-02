@@ -110,8 +110,7 @@ jobs:
           path: |
             ~/.julia
             ${{ runner.temp }}/evidence/renv-cache
-            ${{ runner.temp }}/evidence/upstream/renv
-            ${{ runner.temp }}/evidence/fork/renv
+            ${{ runner.temp }}/evidence/r-libraries
           key: evidence-runtime-${{ runner.os }}-${{ hashFiles('owner/config/evidence/issue-300.json') }}
           restore-keys: evidence-runtime-${{ runner.os }}-
       - name: Restore Julia and R dependencies and run targeted tests
