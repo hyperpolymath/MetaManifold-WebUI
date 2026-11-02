@@ -212,3 +212,5 @@ jobs:
           blob_sha=$(gh api --method POST "repos/$REPOSITORY/git/blobs" --input "$RUNNER_TEMP/blob.json" --jq .sha)
           echo "::notice title=Encrypted evidence blob::$blob_sha"
           echo "Encrypted evidence Git blob: $blob_sha"
+
+# Temporary collection iteration: comparator parse-error coverage.
