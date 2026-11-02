@@ -100,5 +100,46 @@
       "r_dada2_tables_exit": 0
     }
   },
-  "interpretation": "Partial coverage and scanner heuristics are not assurance; see docs/proposals/issue-300-two-tree-evidence.md"
+  "interpretation": "Partial coverage and scanner heuristics are not assurance; see docs/proposals/issue-300-two-tree-evidence.md",
+  "fault_injection": {
+    "run_id": 41368217747,
+    "harness_commit": "f4712582bfbe4606e023946175090885072c0e98",
+    "encrypted_git_blob": "09f509c2a1369d669a73eb977d05bb705e952a09",
+    "cms_sha256": "3055e93e4f325c252f53345a0afdb40cc896318d9e450f4cdd5169f5daa31201",
+    "exit_both_trees": 0,
+    "live_network": false,
+    "observed_shared_gap": "zero-exit truncated scp download is accepted and renamed to final output"
+  },
+  "runtime_witnesses": {
+    "run_id": 41369383531,
+    "harness_commit": "42a85da88821e1b96dfd2d159c7086e2252b277b",
+    "encrypted_git_blob": "d3caa28333e88e08b65842fd114e2bda0e5823f3",
+    "cms_sha256": "10071b317de3bd09c3d1a9e0906584dddea95ac442ebc500d7b78e6626f87d14",
+    "upstream": {
+      "julia_pass": 896,
+      "julia_fail": 0,
+      "julia_broken": 11,
+      "julia_exit": 0,
+      "fault_injection_exit": 0,
+      "r_dada2_exit": 0,
+      "bun_test_exit": 0,
+      "bun_typecheck_exit": 0
+    },
+    "fork": {
+      "julia_pass": 2617,
+      "julia_fail": 0,
+      "julia_broken": 12,
+      "julia_exit": 0,
+      "fault_injection_exit": 0,
+      "r_dada2_exit": 0,
+      "bun_test_exit": 0,
+      "bun_typecheck_exit": 0
+    },
+    "shared_parse_defect": {
+      "path": "bench/layer1_mock_recovery/evaluate.jl",
+      "blob": "13810703310ae861f4ce9b3681510b2250189aab",
+      "julia_version": "1.12.5",
+      "issue": "unparenthesized @__FILE__ before && rejected by JuliaSyntax"
+    }
+  }
 }

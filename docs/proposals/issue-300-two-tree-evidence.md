@@ -179,13 +179,18 @@ The first full targeted Julia run was not green: upstream selected a fork-only
 7 fail / 1 error / 21 broken. The failures were environment/selection witnesses:
 absent external bioinformatics binaries under `CI=true`, and glmGamPoi not visible
 to embedded R because the first harness restored a shared system library instead
-of the project renv library. The final harness uses `CI=false` loud-skip semantics
-for absent external binaries, per-tree renv libraries, and fork-only test
-selection. It does not claim the repository's full CI suite passed.
+of a per-tree library. A second run corrected test selection and used `CI=false`
+loud-skip semantics, but renv's default restore target was the non-writable system
+library; Julia witnesses still recorded missing R packages (upstream 719 pass /
+1 error / 19 broken; fork 1959 pass / 1 error / 21 broken). The final harness
+restores into a writable per-tree `R_LIBS_USER` outside the measured checkout and
+disables renv autoload so embedded R sees the same library. It does not claim the
+repository's full CI suite passed.
 
 Synthetic SSH/SCP fault injection (`scripts/evidence/fault-injection.jl`) uses
 fake executables confined to a temporary directory and never opens a socket.
-Observed shared `RemoteExec` behaviour:
+It exited 0 at both pins in run `41368217747` (13 assertions per tree). Observed
+shared `RemoteExec` behaviour:
 
 | Fault | Observed result |
 | --- | --- |
@@ -201,11 +206,28 @@ looks current. A narrow upstream-ready proposal is to verify downloaded byte
 count (or content hash) against the remote file before renaming `.part` to final.
 This is a data-integrity proposal, not a confirmed remote-code-execution finding.
 
+The final targeted Julia witnesses exited 0 at both pins in run `41369383531`:
+upstream 896 pass / 0 fail / 11 broken; fork 2617 pass / 0 fail / 12 broken.
+Broken counts are the tests' loud skips for absent external bioinformatics
+binaries, not silent passes. R packages restored per tree at the locked common
+versions (MASS 7.3.65, vegan 2.7.3, zCompositions 1.6.2, glmGamPoi 1.22.0,
+dada2 1.38.0). Synthetic fault injection and the base-R DADA2 table witness also
+exited 0 at both pins.
+
+The structural comparator additionally found a shared, base-present Julia parse
+defect in `bench/layer1_mock_recovery/evaluate.jl` (blob `13810703…` at both tips):
+`abspath(PROGRAM_FILE) == @__FILE__ && main()` is rejected by Julia 1.12.5 as an
+invalid identifier at the macro/`&&` boundary. This is a bench-script entry-point
+defect, not an application-server finding; the comparator records it as
+parse-error coverage rather than aborting the whole inventory. The narrow fix is
+to parenthesize the macro result: `abspath(PROGRAM_FILE) == (@__FILE__) && main()`.
+
 ## 8. Proposals and upstream fit
 
 | Proposal | Benefit | Friction / cost | Regression risk | Licence/dependency fit | Reversal |
 | --- | --- | --- | --- | --- | --- |
 | Verify remote download size/hash before final rename | closes observed short-download acceptance; protects checkpoint integrity | one extra remote stat/hash per output; small CI fault test | low if optional outputs and error messages preserved; must not break legitimate zero-byte outputs | AGPL-compatible Julia; no new dependency | revert the verification commit; `.part` rename remains |
+| Parenthesize `@__FILE__` in the shared mock-recovery evaluator entry point | restores a base-present Julia 1.12 parse/execution path observed to fail | negligible; add a parser/entry-point regression test | low; one-line expression fix | AGPL-compatible Julia; no new dependency | revert one-line fix if parser semantics change |
 | Port fork R package-name guard to shared provenance | rejects injection/path/whitespace/NUL before R interpolation | tiny; existing synthetic tests | low; valid package names unchanged | AGPL-compatible; no new dependency | revert guard and tests together |
 | Port selected fork malformed-JSON/origin negative tests | strengthens shared trusted-local boundary | small test-only PR; no new runtime dependency | low; may expose existing 500s that should become 400s | AGPL-compatible tests | revert test commit |
 | Benchmark Pons string-concat hot spots before rewrite | avoids heuristic-driven performance churn | requires representative tree/Newick fixtures | medium if SVG path semantics change | no new dependency | keep original if no measured win |
@@ -223,7 +245,7 @@ CMS AES-256-CBC to an ephemeral operator certificate, uploads a 14-day ciphertex
 artifact, and publishes the ciphertext as an immutable Git blob. The private key
 never leaves the operator workspace. Raw reports are not published untriaged.
 
-First successful static/runtime archive (run `41364756791`, harness
+First successful static archive (run `41364756791`, harness
 `8416691d156ccf74ffd503cd5fff1fee5091162a`):
 
 - Git blob: `9e37217895ac17c993050d63ffa8972f2d1ac64c`
@@ -231,6 +253,11 @@ First successful static/runtime archive (run `41364756791`, harness
 - plaintext tar SHA-256 before encryption: `55e754488a253c40b84d31469293dad6f9537fa1272091688ad386989d8e6622`
 - Panic binary SHA-256: `05b4eef20024a521de36887523d0ba66cabef5c344b13aff1916828324aebcef`
 - Pons binary SHA-256: `93aeb2655507f6c98508183795025a9c07cb4cc2da0293a4e7fb719129effa7a`
+
+Synthetic fault-injection archive (run `41368217747`, harness
+`f4712582bfbe4606e023946175090885072c0e98`): Git blob
+`09f509c2a1369d669a73eb977d05bb705e952a09`, CMS SHA-256
+`3055e93e4f325c252f53345a0afdb40cc896318d9e450f4cdd5169f5daa31201`.
 
 Limitations that remain first-class:
 

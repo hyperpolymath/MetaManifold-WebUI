@@ -50,7 +50,16 @@ function julia_structure(root)
                 push!(errors, sprint(show, ex))
             end
         end
-        isempty(errors) || error("Julia parse failure in $path: $(join(errors, "; "))")
+        if !isempty(errors)
+            # A parse failure is evidence, not a reason to hide the rest of the
+            # inventory. Keep the path with null AST/call coverage and the exact
+            # parser diagnostic so provenance and triage can still proceed.
+            push!(records, Dict("path" => path, "language" => "julia",
+                "ast_sha256" => nothing, "functions" => Any[], "calls" => Any[], "imports" => Any[],
+                "parse_error" => join(errors, "; "),
+                "limitations" => ["parse-error", "no AST/call/dataflow coverage for this file"]))
+            continue
+        end
         functions = Any[]; calls = Any[]; imports = Any[]
         function visit(ex, caller)
             if ex isa Expr
