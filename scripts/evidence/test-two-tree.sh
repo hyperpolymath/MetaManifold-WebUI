@@ -7,6 +7,7 @@ if [[ $# -ne 3 ]]; then
   echo 'Usage: test-two-tree.sh CONFIG WORKSPACE OUTPUT' >&2; exit 2
 fi
 config=$(realpath "$1"); workspace=$(realpath "$2"); out=$(realpath "$3")
+harness=$(dirname "$(dirname "$(dirname "$config")")")
 for exe in julia R Rscript jq timeout; do command -v "$exe" >/dev/null; done
 julia --version > "$out/julia-version.txt"
 R --version > "$out/r-version.txt"
@@ -19,17 +20,25 @@ for file in Project.toml Manifest.toml; do
 done
 # No publication even if the runner has deployment variables configured.
 unset DOI_ENABLED ZENODO_TOKEN JULIA_METAMANIFOLD_ALLOWED_ORIGINS
-export CI=true CI_SKIP_TAXONOMY=1
+# This is a targeted evidence run, not the repository's full CI job. Keep the
+# tests' own loud-skip behaviour for absent external bioinformatics binaries;
+# required R packages for the selected scientific tests are asserted below.
+export CI=false CI_SKIP_TAXONOMY=1
 failed=0
 for side in upstream fork; do
   tree="$workspace/$side"; dest="$out/$side"; mkdir -p "$dest"
   (
     cd "$tree"
     julia --project=. -e 'using Pkg; Pkg.instantiate()' > "$dest/julia-instantiate.log" 2>&1
+    # Each detached worktree gets its own renv project library. A shared system
+    # library would let the fork's extra packages leak into the upstream witness.
+    export RENV_PATHS_CACHE="$workspace/renv-cache"
     sudo env R_LIBS_SITE="$R_LIBS_SITE" R_CLI_DYNAMIC=false TERM=dumb \
-      Rscript --no-init-file -e 'if (!requireNamespace("renv", quietly=TRUE)) install.packages("renv", repos="https://cloud.r-project.org", lib=.Library); renv::restore(project=".", library=.Library, prompt=FALSE)' \
+      Rscript --no-init-file -e 'if (!requireNamespace("renv", quietly=TRUE)) install.packages("renv", repos="https://cloud.r-project.org", lib=.Library)' \
+      > "$dest/renv-bootstrap.log" 2>&1
+    Rscript --no-init-file -e 'renv::restore(project=".", prompt=FALSE)' \
       > "$dest/renv-restore.log" 2>&1
-    Rscript --no-init-file -e 'cat(R.version.string, "\n"); p <- c("MASS","vegan","zCompositions","glmGamPoi","dada2"); for (x in p) cat(x, if (requireNamespace(x,quietly=TRUE)) as.character(packageVersion(x)) else "ABSENT", "\n")' \
+    Rscript --no-init-file -e 'renv::activate(project="."); cat(R.version.string, "\n"); cat("library:", .libPaths(), "\n"); p <- c("MASS","vegan","zCompositions","glmGamPoi","dada2"); for (x in p) cat(x, if (requireNamespace(x,quietly=TRUE)) as.character(packageVersion(x)) else "ABSENT", "\n")' \
       > "$dest/r-packages.txt"
     mapfile -t tests < <(jq -r '.julia_tests[]' "$config")
     if [[ "$side" == fork ]]; then
@@ -43,6 +52,16 @@ for side in upstream fork; do
       '{command: (["julia","--project=.","-t","2","test/runtests.jl"] + $tests), exit_code: $rc,
         data: "synthetic fixtures only", live_ssh: false, live_doi: false}' > "$dest/julia-tests-command.json"
     status="$rc"
+    fc=0
+    EVIDENCE_FAULT_JSON="$dest/fault-injection.json" timeout 180 \
+      julia --project=. "$harness/scripts/evidence/fault-injection.jl" \
+      > "$dest/fault-injection.log" 2>&1 || fc=$?
+    echo "$fc" > "$dest/fault-injection.exit"
+    jq -n --argjson rc "$fc" --arg script "$harness/scripts/evidence/fault-injection.jl" \
+      '{command: ["julia","--project=.",$script], exit_code: $rc, live_network: false,
+        faults: ["upload-truncate","remote-fail","download-truncate"], data: "synthetic bytes only"}' \
+      > "$dest/fault-injection-command.json"
+    [[ "$fc" == 0 ]] || status=1
     while IFS= read -r test; do
       [[ -n "$test" ]] || continue
       name=$(basename "$test" .R); rc=0

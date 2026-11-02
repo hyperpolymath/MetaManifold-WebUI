@@ -172,7 +172,9 @@ function compare(config_path, workspace, out)
                 "fingerprint" => f.semantic_fingerprint, "blob" => get(blobs[side], path, nothing)))
         end
         for f in panic.weak_points
-            file = String(get(f, :file, "")); path = startswith(file, "./") ? file[3:end] : file
+            raw_file = get(f, :file, nothing)
+            file = raw_file === nothing ? String(get(f, :location, "")) : String(raw_file)
+            path = startswith(file, "./") ? file[3:end] : file
             push!(findings, Dict("tool" => "panic-attack", "side" => string(side), "path" => path,
                 "rule" => f.category, "severity" => f.severity, "evidence" => "HEURISTIC",
                 "message" => f.description, "line" => get(f, :line, nothing),

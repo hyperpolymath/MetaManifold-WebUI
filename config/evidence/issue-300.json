@@ -35,9 +35,9 @@
   },
   "julia_tests": [
     "server_security", "databases", "databases_library", "remote_stages",
-    "provenance", "jobs", "differential", "canonical"
+    "provenance", "jobs", "differential"
   ],
-  "fork_only_julia_tests": ["doi"],
+  "fork_only_julia_tests": ["canonical", "doi"],
   "r_tests": ["test/unit/test_dada2_tables.R"],
   "expected_changed_paths": 278,
   "expected_upstream_only_commits": 49,

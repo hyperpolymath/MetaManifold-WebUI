@@ -104,6 +104,16 @@ jobs:
           bash owner/scripts/ci/install-r-runtime.sh full
           julia --version
           R --version | head -1
+      - name: Cache evidence runtimes
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.julia
+            ${{ runner.temp }}/evidence/renv-cache
+            ${{ runner.temp }}/evidence/upstream/renv
+            ${{ runner.temp }}/evidence/fork/renv
+          key: evidence-runtime-${{ runner.os }}-${{ hashFiles('owner/config/evidence/issue-300.json') }}
+          restore-keys: evidence-runtime-${{ runner.os }}-
       - name: Restore Julia and R dependencies and run targeted tests
         id: targeted_tests
         continue-on-error: true # evidence is sealed below; a separate assertion fails the job
@@ -136,9 +146,18 @@ jobs:
           set -euo pipefail
           if [[ -f "$EVIDENCE_OUTPUT/upstream/pons.json" && -f "$EVIDENCE_OUTPUT/fork/pons.json" ]]; then
             julia --project="$EVIDENCE_WORKSPACE/fork" -e 'using Pkg; Pkg.instantiate()'
+            rc=0
             BUN="$RUNNER_TEMP/bun-runtime/node_modules/@oven/bun-linux-x64/bin/bun" \
               julia --project="$EVIDENCE_WORKSPACE/fork" owner/scripts/evidence/compare-two-tree.jl \
-              owner/config/evidence/issue-300.json "$EVIDENCE_WORKSPACE" "$EVIDENCE_OUTPUT"
+              owner/config/evidence/issue-300.json "$EVIDENCE_WORKSPACE" "$EVIDENCE_OUTPUT" \
+              > "$EVIDENCE_OUTPUT/comparison.log" 2>&1 || rc=$?
+            echo "$rc" > "$EVIDENCE_OUTPUT/comparison.exit"
+            if [[ "$rc" != 0 ]]; then
+              tail -100 "$EVIDENCE_OUTPUT/comparison.log"
+              digest=$(tail -c 3500 "$EVIDENCE_OUTPUT/comparison.log" | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+              echo "::error title=Structural comparison failed::$digest"
+              exit "$rc"
+            fi
           fi
       - name: Assert runtime witnesses completed
         if: always()
