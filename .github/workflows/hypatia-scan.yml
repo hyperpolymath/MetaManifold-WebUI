@@ -84,7 +84,7 @@ jobs:
   fleet:
     name: Fleet report-backs
     needs: [workflow-contract]
-    uses: hyperpolymath/gitbot-fleet/.github/workflows/fleet-report-back-reusable.yml@e85b71bf139a61f956c7e0717a2912cd6e347cc5
+    uses: hyperpolymath/gitbot-fleet/.github/workflows/fleet-report-back-reusable.yml@e44af8144789594fcce891ccc7b77fc9a464a520
     permissions:
       contents: read
 
