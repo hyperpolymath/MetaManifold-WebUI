@@ -855,6 +855,8 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
     if native_adjustment
         tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
         length(tested) >= 2 || throw(ArgumentError("native compositional methods need at least two retained taxa"))
+        all(x -> x <= typemax(Int), @view counts[:, tested]) ||
+            throw(ArgumentError("native compositional counts must fit the platform's Int range"))
         # Stable labels make the package's sorted contrast agree with the
         # user's requested direction, irrespective of run-name sorting.
         native_groups = [g == reference ? "0" : "1" for g in groups]

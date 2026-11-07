@@ -172,8 +172,8 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
                   <th style={{ ...head, textAlign: 'left' }}>{result.rank}</th>
                   <th style={head}>{result.effect.label}</th>
-                  {result.config.method === 'nb_glm' && <th style={head}>Estimate (ln)</th>}
-                  <th style={head}>SE</th>
+                  {['nb_glm', 'ancombc'].includes(result.config.method) && <th style={head}>Estimate (ln)</th>}
+                  <th style={head}>{['nb_glm', 'ancombc'].includes(result.config.method) ? 'SE (ln)' : 'SE'}</th>
                   <th style={head}>p</th>
                   <th style={head}>{result.config.method === 'aldex2' ? 'Expected BH' : 'padj (BH)'}</th>
                   <th style={{ ...head, textAlign: 'left' }}>Status</th>
@@ -184,7 +184,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                   <tr key={r.taxon} style={{ borderBottom: '1px solid var(--color-border)' }}>
                     <td style={{ ...cell, textAlign: 'left' }}>{r.taxon}</td>
                     <td style={cell}>{formatStat(effectValue(result, r))}</td>
-                    {result.config.method === 'nb_glm' && <td style={cell}>{formatStat(r.estimate)}</td>}
+                    {['nb_glm', 'ancombc'].includes(result.config.method) && <td style={cell}>{formatStat(r.estimate)}</td>}
                     <td style={cell}>{formatStat(r.standard_error)}</td>
                     <td style={cell}>{formatStat(r.pvalue)}</td>
                     <td style={cell}>{formatStat(r.padj)}</td>

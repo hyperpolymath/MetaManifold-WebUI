@@ -36,6 +36,12 @@ using MetaManifold.Differential
     @test_throws ArgumentError DifferentialConfig(; method="aldex2", mc_samples=1)
     @test_throws ArgumentError DifferentialConfig(; method="aldex2", seed=-1)
     @test_throws ArgumentError DifferentialConfig(; method="ancombc", dispersion="glmGamPoi")
+    for T in (BigInt, Float64)
+        oversized = T.(counts)
+        oversized[1, 1] = T(big(typemax(Int)) + 1)
+        @test_throws ArgumentError differential_abundance(oversized, samples, taxa, groups;
+            reference="z", contrast="a", config)
+    end
 end
 
 @testset "ANCOM-BC adapter preserves units and structural decisions" begin
