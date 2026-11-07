@@ -6,6 +6,27 @@ using Random
 import CompositionalDA
 using MetaManifold.Differential
 
+@testset "Native configuration boundary fuzz" begin
+    rng = MersenneTwister(23)
+    SV = MetaManifold.Server
+    for _ in 1:256
+        mc = rand(rng,-128:4352)
+        seed = rand(rng,(-1,0,1,17,Int64(typemax(Int32)),Int64(typemax(Int32))+1))
+        @test isnothing(SV._config_value_error("analysis.differential.mc_samples",mc)) == (2 <= mc <= 4096)
+        @test isnothing(SV._config_value_error("analysis.differential.seed",seed)) == (0 <= seed <= typemax(Int32))
+        if 2 <= mc <= 4096 && 0 <= seed <= typemax(Int32)
+            config = DifferentialConfig(;method="aldex2",mc_samples=mc,seed)
+            @test config.mc_samples == mc && config.seed == seed
+        else
+            @test_throws ArgumentError DifferentialConfig(;method="aldex2",mc_samples=mc,seed)
+        end
+    end
+    for invalid in (NaN,Inf,-Inf,nothing,missing,[],Dict(),true,false,"128",2.5)
+        @test !isnothing(SV._config_value_error("analysis.differential.mc_samples",invalid))
+        @test !isnothing(SV._config_value_error("analysis.differential.seed",invalid))
+    end
+end
+
 @testset "Native compositional DA adapter" begin
     counts = [10 20 30 8; 12 21 27 9; 9 18 31 7; 40 19 29 8; 42 20 30 9; 38 22 28 7]
     samples = ["s$i" for i in 1:6]

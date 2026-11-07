@@ -915,7 +915,7 @@ end
             @test isempty(body.size_factors)
             @test body.diagnostics.n_tested == 3
             @test all(row -> row.log2_fold_change === nothing, body.rows)
-            for method in ("unknown", 42)
+            for method in ("unknown", 42, nothing, true, [], Dict(), "ALDEX2", " aldex2 ")
                 r = _da_post("studyD", merge(request, Dict("method" => method)))
                 @test r.status == 400
                 @test JSON3.read(String(r.body)).error == "invalid_config"

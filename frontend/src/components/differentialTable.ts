@@ -10,11 +10,11 @@ const COLUMNS = [
 const ALDEX_COLUMNS = [...COLUMNS, 'aldex_effect', 'aldex_diff_within', 'aldex_abundance',
   'wilcoxon_pvalue', 'wilcoxon_padj'] as const
 
-/** Quote one CSV field when it holds a comma, quote or line break (RFC 4180). */
+/** Quote CSV delimiters and the comment marker used by the documented R reader. */
 export function csvField(value: string | number | null): string {
   if (value === null) return ''
   const s = String(value)
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  return /["#,\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
 /**
