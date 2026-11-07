@@ -60,11 +60,15 @@ describe('native compositional results', () => {
     const native: DifferentialResult = {
       ...result, config: { method: 'aldex2', min_prevalence: 0.1, mc_samples: 128, seed: 17 },
       effect: { key: 'estimate', label: 'log2 CLR difference' },
+      rows: [{ ...result.rows[0], aldex_effect: 2.5, aldex_diff_within: 0.2,
+        aldex_abundance: -1.1, wilcoxon_pvalue: 0.01, wilcoxon_padj: 0.02 }],
     }
     expect(configLine(native)).toContain('mc_samples 128, seed 17')
     expect(configLine(native)).toContain('expected BH across posterior instances')
     expect(configLine(native)).not.toContain('nb_glm')
     expect(differentialCsv(native)).toContain('method aldex2')
+    expect(differentialCsv(native)).toContain('aldex_effect,aldex_diff_within,aldex_abundance,wilcoxon_pvalue,wilcoxon_padj')
+    expect(differentialCsv(native)).toContain(',2.5,0.2,-1.1,0.01,0.02\r\n')
   })
   test('ANCOM-BC export preserves structural decisions without invented numbers', () => {
     const native: DifferentialResult = {

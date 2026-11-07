@@ -893,6 +893,7 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
                 "pvalue" => f.pvalue, "padj" => f.qvalue))
             if aldex
                 merge!(rows[j], Dict("aldex_effect" => f.effect,
+                    "aldex_diff_within" => f.diff_win, "aldex_abundance" => f.rab_all,
                     "wilcoxon_pvalue" => f.wi_pvalue, "wilcoxon_padj" => f.wi_qvalue))
             end
         end

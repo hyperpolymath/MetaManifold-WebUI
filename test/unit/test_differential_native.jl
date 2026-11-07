@@ -23,6 +23,11 @@ using MetaManifold.Differential
         @test row["pvalue"] == expected.table.pvalue[i]
         @test row["padj"] == expected.table.qvalue[i]
         @test row["log2_fold_change"] === nothing
+        @test row["aldex_effect"] == expected.table.effect[i]
+        @test row["aldex_diff_within"] == expected.table.diff_win[i]
+        @test row["aldex_abundance"] == expected.table.rab_all[i]
+        @test row["wilcoxon_pvalue"] == expected.table.wi_pvalue[i]
+        @test row["wilcoxon_padj"] == expected.table.wi_qvalue[i]
     end
     @test actual["config"]["seed"] == 19
     @test actual["config"]["mc_samples"] == 16

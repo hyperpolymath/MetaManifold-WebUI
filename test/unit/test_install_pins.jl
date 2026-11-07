@@ -201,8 +201,18 @@ end
         # by its `uses:` rather than by index, so reordering the steps cannot make this
         # assertion quietly vanish.
         setup = ci_step_using(job, "julia-actions/setup-julia")
-        @test setup !== nothing
-        @test setup["with"]["version"] == pins["runtimes"]["julia"]["version"]
+        if setup === nothing
+            # Fork-only bootstrap checks the same version and archive checksum.
+            manual = only(filter(s -> get(s, "name", "") == "Set up Julia", job["steps"]))
+            script = manual["run"]
+            archive = pins["runtimes"]["julia"]["archives"]["linux-x86_64"]
+            @test occursin(archive["url"], script)
+            @test occursin(archive["sha256"], script)
+            @test occursin("sha256sum -c", script)
+            @test occursin("julia-" * pins["runtimes"]["julia"]["version"] * "/bin", script)
+        else
+            @test setup["with"]["version"] == pins["runtimes"]["julia"]["version"]
+        end
 
         # A floating runner would carry the R apt pin, which names a 24.04 build, off to
         # whatever the next LTS ships.

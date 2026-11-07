@@ -420,6 +420,12 @@ export interface DifferentialRow {
   /** nb_glm only. */
   dispersion_theta: number | null
   prevalence: number
+    /** ALDEx2's dimensionless standardized effect and log2 descriptive statistics. */
+    aldex_effect?: number
+    aldex_diff_within?: number
+    aldex_abundance?: number
+    wilcoxon_pvalue?: number
+    wilcoxon_padj?: number
 }
 
 export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'aldex2' | 'ancombc'
