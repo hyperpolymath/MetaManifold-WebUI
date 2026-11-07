@@ -98,7 +98,23 @@ GitHub's Verified badge is what upstream checks.
 
 ## Branches known to need re-signing
 
-None at present.
+Three upstream PR branches carry commits prepared by an Arena session, which has
+no signing key. Each branch keeps its reviewed, Verified head, so only the
+commits added after that head need the key:
+
+| branch (pushed to this fork) | re-sign from | unsigned commits |
+| --- | --- | --- |
+| `fix/66-resumable-ssh-stages` | `776952f` | `ab576a8`, `a4e2412` |
+| `codex/issue-65-descriptive-statistics` | `a1076ec` | `e0da15b` |
+| `validation/issue-23-native-da` | `4239fed` | `7888150` |
+
+They are already pushed as fast-forwards, so the re-sign is the "PR already
+under review" routine below: rebase `--exec 'git commit --amend --no-edit -S'`
+from the reviewed head, then push without `--force`. `git log --format='%h %G?
+%s' <reviewed-head>..HEAD` should show `G` for every commit before pushing.
+
+Nothing else is pending: the heads of all three PRs were Verified on
+2026-11-07 before this session added to them.
 
 ## Record
 
