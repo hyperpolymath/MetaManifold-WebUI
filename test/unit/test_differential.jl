@@ -590,7 +590,19 @@ end
         @test !isnothing(SV._config_value_error("analysis.differential.offset", "css"))
         @test isnothing(SV._config_value_error("analysis.differential.min_prevalence", 0.1))
         @test isnothing(SV._config_value_error("analysis.differential.method", "clr_welch"))
-        @test !isnothing(SV._config_value_error("analysis.differential.method", "ancombc"))
+        for method in ("aldex2", "ancombc")
+            @test isnothing(SV._config_value_error("analysis.differential.method", method))
+        end
+        @test !isnothing(SV._config_value_error("analysis.differential.method", "unknown"))
+        for (key, valid, invalid) in (("analysis.differential.mc_samples", (2, 128, 4096), (0, 1, 4097, 2.5, true, "128")),
+                                      ("analysis.differential.seed", (0, 17, typemax(Int32)), (-1, 1.5, true, "17", Int64(typemax(Int32))+1)))
+            for v in valid
+                @test isnothing(SV._config_value_error(key, v))
+            end
+            for v in invalid
+                @test !isnothing(SV._config_value_error(key, v))
+            end
+        end
         # Like every other enum key, the config route takes exact spellings.
         for dispersion in ("glm_nb", "glmGamPoi")
             @test isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
@@ -887,6 +899,26 @@ end
 
             r = _da_post("noSuchStudy", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")]))
             @test r.status == 404
+        end
+    end
+
+    @testset "Route: native method override and input refusal" begin
+        _da_fixture() do
+            request = Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                           "table" => "merged", "rank" => "Genus", "method" => "aldex2")
+            r = _da_post("studyD", request)
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            @test body.config.method == "aldex2"
+            @test body.effect.key == "estimate"
+            @test isempty(body.size_factors)
+            @test body.diagnostics.n_tested == 3
+            @test all(row -> row.log2_fold_change === nothing, body.rows)
+            for method in ("unknown", 42)
+                r = _da_post("studyD", merge(request, Dict("method" => method)))
+                @test r.status == 400
+                @test JSON3.read(String(r.body)).error == "invalid_config"
+            end
         end
     end
 

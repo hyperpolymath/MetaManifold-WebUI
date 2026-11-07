@@ -55,6 +55,27 @@ describe('formatStat', () => {
   })
 })
 
+describe('native compositional results', () => {
+  test('ALDEx2 export records posterior settings and expected BH', () => {
+    const native: DifferentialResult = {
+      ...result, config: { method: 'aldex2', min_prevalence: 0.1, mc_samples: 128, seed: 17 },
+      effect: { key: 'estimate', label: 'log2 CLR difference' },
+    }
+    expect(configLine(native)).toContain('mc_samples 128, seed 17')
+    expect(configLine(native)).toContain('expected BH across posterior instances')
+    expect(configLine(native)).not.toContain('nb_glm')
+    expect(differentialCsv(native)).toContain('method aldex2')
+  })
+  test('ANCOM-BC export preserves structural decisions without invented numbers', () => {
+    const native: DifferentialResult = {
+      ...result, config: { method: 'ancombc', min_prevalence: 0.1 },
+      rows: [{ ...result.rows[1], taxon: 'structural', status: 'structural_zero' }],
+    }
+    expect(configLine(native)).toContain('natural-log abundance difference')
+    expect(differentialCsv(native)).toContain('structural,structural_zero,,,,,,,,0.5,')
+  })
+})
+
 describe('clr_welch results', () => {
   const clr: DifferentialResult = {
     ...result,

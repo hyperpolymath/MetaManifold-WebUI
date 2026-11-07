@@ -47,6 +47,12 @@ export function formatStat(value: number | null): string {
  */
 export function configLine(result: DifferentialResult): string {
   const c = result.config
+  if (c.method === 'aldex2') {
+    return `method aldex2, mc_samples ${c.mc_samples}, seed ${c.seed}, min_prevalence ${c.min_prevalence}; estimate is a log2 CLR difference; padj is expected BH across posterior instances`
+  }
+  if (c.method === 'ancombc') {
+    return `method ancombc, min_prevalence ${c.min_prevalence}; estimate is a natural-log abundance difference; structural zeros are separate decisions`
+  }
   return c.method === 'clr_welch'
     ? `method clr_welch, replacement_delta ${c.replacement_delta}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
     : `method nb_glm, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
