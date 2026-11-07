@@ -232,7 +232,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: hyperpolymath/CompositionalDA.jl
-          ref: 480b10bd405c2766f08408105435b33d5dd05050
+          ref: bf84ba0c963e5b49ed9469921ace6e0c17b802a6
           path: .ci-compositionalda
           persist-credentials: false
 
