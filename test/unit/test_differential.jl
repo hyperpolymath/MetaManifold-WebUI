@@ -925,6 +925,11 @@ end
                 @test r.status == 200
                 @test JSON3.read(String(r.body)).config.method == "aldex2"
             end
+            # This fixture has only three taxa; ANCOM-BC must refuse its
+            # bias fit rather than return plausible-looking test statistics.
+            r = _da_post("studyD", merge(request, Dict("method" => "ancombc")))
+            @test r.status == 422
+            @test JSON3.read(String(r.body)).error == "no_taxon_fitted"
         end
     end
 
