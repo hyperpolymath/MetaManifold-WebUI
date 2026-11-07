@@ -6,7 +6,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'validation/issue-23-native-da']
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -62,17 +62,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Set up Julia
-        # Fork-only bootstrap; the pin test checks both archive literals.
-        run: |
-          curl --fail --location --retry 3 -o /tmp/julia.tar.gz https://julialang-s3.julialang.org/bin/linux/x64/1.12/julia-1.12.5-linux-x86_64.tar.gz
-          echo '41b84d727e4e96fbf3ed9e92fa195d773d247b9097f73fad688f8b699758bae7  /tmp/julia.tar.gz' | sha256sum -c -
-          tar -xzf /tmp/julia.tar.gz -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/julia-1.12.5/bin" >> "$GITHUB_PATH"
-      - name: Cache Julia packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2.7.0
         with:
-          path: ~/.julia
-          key: julia-1.12.5-mm23-${{ hashFiles('Manifest.toml') }}
+          # Pinned rather than tracking latest stable, because a pinned Manifest.toml
+          # resolved by an unpinned Julia is not a reproducible build. This must equal
+          # julia_version in Manifest.toml; it cannot be read from the pin file, since
+          # nothing can be read before Julia exists. test/unit/test_install_pins.jl
+          # fails if the three ever disagree.
+          version: "1.12.5"
+
+      - name: Cache Julia packages
+        uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2.1.0
 
       # Every external version CI installs is read from the committed pin file, so CI
       # and a developer's machine cannot drift apart. A temporary environment is used
@@ -225,19 +225,8 @@ jobs:
           sudo ln -sf /opt/FastQC/fastqc /usr/local/bin/fastqc
           fastqc --version
 
-      # Fork-only validation of the unpublished package candidate. This step
-      # and branch trigger must be removed before an upstream integration PR;
-      # that PR requires a General-registered dependency and resolved Manifest.
-      - name: Check out the package candidate for local development testing
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          repository: hyperpolymath/CompositionalDA.jl
-          ref: 911989080145b9ab43ce06a8c1c8dfe6712ca2e3
-          path: .ci-compositionalda
-          persist-credentials: false
-
       - name: Instantiate Julia project
-        run: julia --project=. -e 'import Pkg; Pkg.develop(path=".ci-compositionalda", preserve=Pkg.PRESERVE_ALL); Pkg.instantiate()'
+        run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
@@ -310,7 +299,16 @@ jobs:
           fi
           exit "$status"
 
-      # Fork validation runs all tests without uploading coverage.
+      - name: Process coverage
+        uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38  # v1.2.2
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v6.0.2
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: JoshuaJewell/MetaManifold-WebUI
+          fail_ci_if_error: false
 
   # Machine-checked proofs of the Benjamini-Hochberg adjustment and the TSS/RLE
   # scaling algebra (proofs/agda, proofs/agda/README.md).

@@ -24,7 +24,27 @@
 module Differential
 
 using DataFrames, RCall
-import CompositionalDA
+# The native compositional estimators live in a package that is not yet in the
+# General registry, so `Project.toml` names it and its resolved Manifest entry
+# must arrive with the registration. Until then a checkout without it must still
+# load this module: only the two methods below need the package, and they say so
+# by name instead of failing at load time with a bare `UndefVarError`.
+const _COMPOSITIONAL_DA_AVAILABLE = try
+    @eval import CompositionalDA
+    true
+catch err
+    err isa ArgumentError || err isa LoadError || rethrow()
+    false
+end
+
+function _native_methods_available(method::AbstractString)
+    _COMPOSITIONAL_DA_AVAILABLE || throw(ArgumentError(
+        "'$method' needs the CompositionalDA package, which is not installed in this " *
+        "environment (it is not yet registered in the General registry: see Project.toml). " *
+        "Use 'nb_glm' or 'clr_welch' in the meantime."))
+    nothing
+end
+
 using ..RRuntime: with_r_lock
 using ..Analysis: _palette_hex, R_WAIT_SECONDS
 export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
@@ -853,6 +873,7 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
 
     native_adjustment = config.method in ("aldex2", "ancombc")
     if native_adjustment
+        _native_methods_available(config.method)
         tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
         length(tested) >= 2 || throw(ArgumentError("native compositional methods need at least two retained taxa"))
         all(x -> x <= typemax(Int), @view counts[:, tested]) ||
