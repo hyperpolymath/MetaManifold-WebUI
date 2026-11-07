@@ -915,10 +915,15 @@ end
             @test isempty(body.size_factors)
             @test body.diagnostics.n_tested == 3
             @test all(row -> row.log2_fold_change === nothing, body.rows)
-            for method in ("unknown", 42, nothing, true, [], Dict(), "ALDEX2", " aldex2 ")
+            for method in ("unknown", 42, true, false, [], Dict())
                 r = _da_post("studyD", merge(request, Dict("method" => method)))
                 @test r.status == 400
                 @test JSON3.read(String(r.body)).error == "invalid_config"
+            end
+            for method in ("ALDEX2", " aldex2 ")
+                r = _da_post("studyD", merge(request, Dict("method" => method)))
+                @test r.status == 200
+                @test JSON3.read(String(r.body)).config.method == "aldex2"
             end
         end
     end
