@@ -179,7 +179,8 @@ end
         @test DifferentialConfig().method == "nb_glm"
         @test DifferentialConfig().replacement_delta == 0.65
         @test DifferentialConfig(; method="clr_welch", replacement_delta=0.3).replacement_delta == 0.3
-        @test_throws ArgumentError DifferentialConfig(; method="ancombc")
+        @test DifferentialConfig(; method="ancombc").method == "ancombc"
+        @test DifferentialConfig(; method="aldex2").method == "aldex2"
         # The pre-review name, never released, is not accepted.
         @test_throws ArgumentError DifferentialConfig(; method="clr_lm")
         # The dispersion option: glm_nb is the default and keeps nb_glm's
