@@ -24,11 +24,13 @@
 module Differential
 
 using DataFrames, RCall
-# The native compositional estimators live in a package that is not yet in the
-# General registry, so `Project.toml` names it and its resolved Manifest entry
-# must arrive with the registration. Until then a checkout without it must still
-# load this module: only the two methods below need the package, and they say so
-# by name instead of failing at load time with a bare `UndefVarError`.
+# The native compositional estimators live in a package that is not in the
+# General registry yet, so it is deliberately not declared in `Project.toml`: a
+# declaration `Pkg.instantiate()` cannot resolve fails for every checkout, CI
+# included (the reason, and the steps to re-enable it, are recorded there).
+# Only the two methods below need the package, so a checkout without it must
+# still load this module, and those methods must say so by name instead of
+# failing at load time with a bare `UndefVarError`.
 const _COMPOSITIONAL_DA_AVAILABLE = try
     @eval import CompositionalDA
     true
@@ -37,11 +39,26 @@ catch err
     false
 end
 
+"""
+    compositional_da_available() -> Bool
+
+Whether `CompositionalDA`, the package behind the native `aldex2` and `ancombc`
+differential methods, is loadable in this environment.
+
+The package is not in the General registry, so a plain `Pkg.instantiate()` of
+this project leaves it out and this returns `false`; `aldex2` and `ancombc` then
+refuse with an `ArgumentError` that names the package. To activate them, develop
+it into the environment by path or URL (`Pkg.develop(path="…/CompositionalDA.jl")`)
+and start a fresh session.
+"""
+compositional_da_available() = _COMPOSITIONAL_DA_AVAILABLE
+
 function _native_methods_available(method::AbstractString)
     _COMPOSITIONAL_DA_AVAILABLE || throw(ArgumentError(
         "'$method' needs the CompositionalDA package, which is not installed in this " *
-        "environment (it is not yet registered in the General registry: see Project.toml). " *
-        "Use 'nb_glm' or 'clr_welch' in the meantime."))
+        "environment: it is not in the General registry yet, so it is not a declared " *
+        "dependency and `Pkg.instantiate()` does not install it. Use 'nb_glm' or " *
+        "'clr_welch' in the meantime."))
     nothing
 end
 
@@ -50,7 +67,8 @@ using ..Analysis: _palette_hex, R_WAIT_SECONDS
 export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
        GlmGamPoiUnavailable, OFFSET_METHODS, METHODS, DISPERSIONS, tss_factors,
        rle_factors, size_factors, bh_adjust, validate_counts, replace_zeros,
-       clr_transform, fit_nb, fit_welch, differential_abundance, volcano_chart
+       clr_transform, fit_nb, fit_welch, differential_abundance, volcano_chart,
+       compositional_da_available
 
 # Methods accepted under `analysis.differential.method`.
 const METHODS = ("nb_glm", "clr_welch", "aldex2", "ancombc")
@@ -873,11 +891,14 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
 
     native_adjustment = config.method in ("aldex2", "ancombc")
     if native_adjustment
-        _native_methods_available(config.method)
+        # The input checks come before the dependency check: a malformed matrix
+        # is refused for that reason whether or not CompositionalDA is present,
+        # so the refusal is the same on every machine.
         tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
         length(tested) >= 2 || throw(ArgumentError("native compositional methods need at least two retained taxa"))
         all(x -> x <= typemax(Int), @view counts[:, tested]) ||
             throw(ArgumentError("native compositional counts must fit the platform's Int range"))
+        _native_methods_available(config.method)
         # Stable labels make the package's sorted contrast agree with the
         # user's requested direction, irrespective of run-name sorting.
         native_groups = [g == reference ? "0" : "1" for g in groups]
