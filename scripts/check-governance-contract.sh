@@ -328,6 +328,33 @@ else
   fail "workflows still reference hyperpolymath/standards in a uses:/repository: field - $stale_owner"
 fi
 
+# The same rule for scripts that fetch by URL instead of by `uses:`. This one
+# cannot fail loudly: a `git fetch` and a release-asset download both follow a
+# transfer's redirect, so a script naming the pre-transfer owner keeps working
+# while recording a coordinate that no longer exists. Comment lines are exempt,
+# so the transfer can still be explained where it is relevant.
+# Only a URL with a scheme is a fetch. A `sed` expression or a mutation fixture
+# may name the old owner as the text it rewrites; that is not a reference, and
+# flagging it would make the check unsatisfiable for the test that proves it.
+stale_script_owner="$(grep -rnE 'https?://github\.com/hyperpolymath/standards([^A-Za-z0-9_.-]|$)' scripts/ 2>/dev/null \
+  | grep -vE ':[0-9]+:[[:space:]]*#' || true)"
+if [ -z "$stale_script_owner" ]; then
+  pass 'no script still fetches the pre-transfer standards owner'
+else
+  fail "scripts still reach hyperpolymath/standards by URL - $stale_script_owner"
+fi
+
+# A workflow that claims `gh actions-lock` management while the repository has
+# no actions.lock is a claim nobody can verify: the header came with an upstream
+# copy and the lock was never onboarded. Either onboard with the supported tool
+# (never by hand) or drop the header; claiming and having are not the same.
+if [ ! -f .github/workflows/actions.lock ] \
+    && grep -rqs 'managed by gh actions-lock' .github/workflows/; then
+  fail "a workflow claims gh actions-lock management but .github/workflows/actions.lock does not exist - $(grep -rls 'managed by gh actions-lock' .github/workflows/ | tr '\n' ' ')"
+else
+  pass 'no workflow claims an actions.lock this repository does not have'
+fi
+
 upload_count="$(grep -c 'uses: github/codeql-action/upload-sarif@' "$REUSABLE" || true)"
 if [ "$upload_count" -eq 1 ]; then
   pass 'there is exactly one SARIF upload site to guard'

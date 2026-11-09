@@ -5,16 +5,17 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
-mkdir -p "$fixture/scripts" "$fixture/config/hypatia" "$fixture/.github/workflows"
+mkdir -p "$fixture/scripts/ci" "$fixture/config/hypatia" "$fixture/.github/workflows"
 cp "$ROOT/scripts/check-governance-contract.sh" "$fixture/scripts/"
 cp "$ROOT/config/format-tools.toml" "$fixture/config/"
 reset_fixture() {
   cp "$ROOT"/.github/workflows/*.yml "$fixture/.github/workflows/"
   cp "$ROOT/config/hypatia/upstream-typescript-allowlist.txt" "$fixture/config/hypatia/"
+  cp "$ROOT/scripts/ci/fetch-statistics-tools.sh" "$fixture/scripts/ci/"
 }
 reset_fixture
 bash "$fixture/scripts/check-governance-contract.sh" > "$fixture/log" 2>&1
-for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger stale-standards-owner scorecard-owner deed-remote scorecard-remote deed-source-sha scorecard-source-sha scorecard-no-upload scorecard-quiet-reconcile cross-owner-reusable fleet-unpinned fleet-before-contract fleet-dropped-download fleet-download-after-render fleet-download-fatal fleet-committed-evidence fleet-symlinked-evidence fleet-ignores-cancel; do
+for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate baseline-grouping-gate sarif upstream-exception effective-grid jcs-manifest jcs-canonicalizer raw-ijson k9-pin k9-require k9-indeterminate k9-verdict scanner-advisory scanner-secrets scanner-trigger scorecard-trigger stale-standards-owner scorecard-owner deed-remote scorecard-remote deed-source-sha scorecard-source-sha scorecard-no-upload scorecard-quiet-reconcile cross-owner-reusable fleet-unpinned fleet-before-contract fleet-dropped-download fleet-download-after-render fleet-download-fatal fleet-committed-evidence fleet-symlinked-evidence fleet-ignores-cancel stale-standards-remote lock-header-without-lock; do
   reset_fixture
   case "$mutation" in
     allowlist-addition) echo 'frontend/src/fork-only.ts' >> "$fixture/config/hypatia/upstream-typescript-allowlist.txt" ;;
@@ -59,6 +60,15 @@ for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate bas
     fleet-committed-evidence) sed -i '/^      - name: Clear any checked-out fleet report-backs$/,/-exec rm -rf -- {} +$/d' "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     fleet-symlinked-evidence) sed -i "s|-mindepth 1 -maxdepth 1 -name '\*.json' -print -exec rm -rf -- {} +|-maxdepth 1 -name '*.json' -type f -print -delete|" "$fixture/.github/workflows/hypatia-scan-reusable.yml" ;;
     fleet-ignores-cancel) sed -i "s|if: \${{ !cancelled() \&\& needs.workflow-contract.result == 'success' }}|if: \${{ always() \&\& needs.workflow-contract.result == 'success' }}|" "$fixture/.github/workflows/hypatia-scan.yml" ;;
+    # A script that fetches by URL keeps working across a transfer's redirect
+    # while naming an owner that no longer holds the repository: a coordinate
+    # that resolves only as a courtesy, and a future pin review that reads the
+    # wrong history.
+    stale-standards-remote) sed -i 's@github.com/metadatastician/standards@github.com/hyperpolymath/standards@' "$fixture/scripts/ci/fetch-statistics-tools.sh" ;;
+    # A lock header without a lock is an unverifiable claim: nothing ever
+    # onboarded this repository, so no check reads the refs the header says are
+    # read.
+    lock-header-without-lock) sed -i '1i # This workflow is managed by gh actions-lock.' "$fixture/.github/workflows/ci.yml" ;;
     # A copy is only a copy while it still comes from the audited commit and
     # keeps the guards whose absence froze code scanning upstream.
     deed-source-sha) sed -i 's@75bd5994470661a099df562d6d5ad2fe744dbd66@main@' "$fixture/.github/workflows/deed-conformance-reusable.yml" ;;

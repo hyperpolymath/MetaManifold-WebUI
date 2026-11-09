@@ -560,6 +560,7 @@ jobs:
       # The evidence scripts are ordinary project code: they load JSON3 and the
       # statistics modules, so the environment must be instantiated after R.
       - name: Instantiate Julia project
+        id: instantiate
         run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
 
@@ -603,8 +604,17 @@ jobs:
       # Six mutants are defined; four keep the campaign inside the job timeout.
       # The script restores every file and re-verifies its digest, so a failed
       # run cannot leave a planted defect behind.
+      #
+      # always(), but only once the environment exists. Run unconditionally, the
+      # campaign outlived an earlier failure and died with "Package JSON3 is
+      # required but does not seem to be installed: Run Pkg.instantiate()" — a
+      # second failure that named neither the real cause nor a mutable file, and
+      # masked the tool-install failure above it in the checks API. Gating on the
+      # instantiate step keeps the campaign's real value (it still runs when the
+      # study, the gates or an earlier evidence step failed) without inventing a
+      # failure that cannot distinguish a broken mutant from an absent project.
       - name: Mutation campaign
-        if: always()
+        if: always() && steps.instantiate.outcome == 'success'
         env:
           RUN_LOG_TITLE: Mutation campaign
         run: |

@@ -3,8 +3,9 @@
 # standards checkout/evidence use that immutable source rather than this
 # caller's workflow SHA; optional corpus-log copying does not fail an empty
 # corpus. Validator, renderer, semantic gate and ratchet are unchanged.
-# This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
+# De-onboarded from actions.lock: this repository keeps no actions.lock, and
+# every action and reusable reference here is a literal full commit SHA.
 # Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 name: k9-conformance
 
@@ -130,8 +131,18 @@ jobs:
       - name: Install Nickel (pinned, sha256-verified; one version estate-wide)
         run: |
           set -euo pipefail
-          URL="https://github.com/tweag/nickel/releases/download/${NICKEL_VERSION}/nickel-x86_64-linux"
-          curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o "$RUNNER_TEMP/nickel" "$URL"
+          # Canonical owner, not the pre-rename `tweag/nickel`: that path now
+          # answers 301 and depends on GitHub keeping the redirect, which is the
+          # courtesy this repository has already been burned by once (a transfer
+          # that `git` and the REST API follow and that other references do not).
+          # --retry-all-errors, because plain --retry ignores an HTTP status
+          # (curl exit 22), which is how this step died while the asset itself was
+          # present. The pinned SHA256 below is what makes the retry safe.
+          URL="https://github.com/nickel-lang/nickel/releases/download/${NICKEL_VERSION}/nickel-x86_64-linux"
+          curl -sSfL --proto '=https' --proto-redir '=https' --tlsv1.2 \
+            --retry 4 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 20 --max-time 300 \
+            -o "$RUNNER_TEMP/nickel" "$URL"
           echo "${NICKEL_SHA256}  ${RUNNER_TEMP}/nickel" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/nickel"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"

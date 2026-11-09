@@ -132,7 +132,8 @@ deadline, 64 MiB derived-record read cap, and a 20,000-cell UI display cap.
 ## 13. Repository standards gates in CI, with retained artifacts
 
 **Met.** A dedicated CI job pins the standards commit
-(`hyperpolymath/standards` at `c6d7860`), installs `yq` v4.53.3 with a SHA-256
+(`metadatastician/standards` at `c6d7860` — the same commit, under the owner the
+repository moved to on 2026-10-25), installs `yq` v4.53.3 with a SHA-256
 check, builds `hyperpolymath/ijson-jcs` at `3a9a4ee`, then runs:
 
 - `scripts/kyaml-format.sh --check config/defaults/validated_statistics.kyaml`
