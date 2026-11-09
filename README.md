@@ -263,9 +263,10 @@ by this endpoint, including when called from a group Analysis workspace.
   (default) or `rle` scaling. `dispersion` selects the fits and the test:
   `glm_nb` (default) fits `MASS::glm.nb` per taxon with its own
   maximum-likelihood theta and Wald-tests the group coefficient; `glmGamPoi`
-  fits one `glmGamPoi::glm_gp` across the taxa passing `min_prevalence`
-  that have reads in at least one sample, sharing a dispersion trend across
-  them (taxa with no reads at all are reported as filtered), and reports `glmGamPoi::test_de`'s
+  fits one `glmGamPoi::glm_gp` across the taxa passing `min_prevalence`,
+  sharing a dispersion trend across them; a taxon refused for constant counts
+  or for no reads in one group is reported as failed under either choice and
+  is kept out of that shared fit, and reports `glmGamPoi::test_de`'s
   quasi-likelihood F-test. Under `glmGamPoi` the p-value comes from that
   F-test, the standard error is `test_de`'s `lfc_se`, and theta is each
   taxon's own estimate before shrinkage. It requires the pinned glmGamPoi R

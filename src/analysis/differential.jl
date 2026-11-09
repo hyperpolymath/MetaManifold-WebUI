@@ -68,8 +68,8 @@ above its taxon's smallest observed proportion is lowered to this fraction of it
 `"glmGamPoi"`): `"glm_nb"` (the default) fits `MASS::glm.nb` per taxon with
 its maximum-likelihood theta and Wald-tests the group coefficient;
 `"glmGamPoi"` fits one `glmGamPoi::glm_gp` across the taxa passing
-`min_prevalence` that have reads in at least one sample, with overdispersion
-shrinkage toward the cross-taxon trend,
+`min_prevalence` that are not refused (constant counts, or no reads in one
+group), with overdispersion shrinkage toward the cross-taxon trend,
 and reports `glmGamPoi::test_de`'s quasi-likelihood F-test of the group
 contrast — glmGamPoi's own published inference (Lund et al., 2012) — with its
 log2 fold changes. `"glmGamPoi"` is refused for `clr_welch`.
@@ -292,11 +292,32 @@ da_result <- data.frame(status = rep("ok", da_n), note = rep("", da_n),
                         estimate = rep(NA_real_, da_n), se = rep(NA_real_, da_n),
                         statistic = rep(NA_real_, da_n), pvalue = rep(NA_real_, da_n),
                         theta = rep(NA_real_, da_n), stringsAsFactors = FALSE)
-# "glmGamPoi": one glmGamPoi::glm_gp fit across all taxa supplies glmGamPoi's
-# own published inference -- glmGamPoi::test_de's quasi-likelihood F-test of
-# the group coefficient. glm_gp refits the coefficients at its cross-taxon
-# dispersion trend and shrinks each taxon's quasi-likelihood dispersion by
-# empirical Bayes. glm_gp works genes x samples, so the counts are transposed,
+# A taxon is refused, with its reason, when its counts are constant across
+# samples (all-zero taxa included: there is nothing to estimate) or when one
+# group has no reads in any sample. Complete separation sends the group
+# coefficient off to infinity and its test loses its footing; that p is not
+# evidence of no difference. The reason is decided here, once, for both paths.
+da_refusal <- function(y) {
+  if (length(unique(y)) < 2L)
+    return("the counts are constant across samples: there is nothing to estimate")
+  absent <- levels(da_g)[vapply(levels(da_g), function(l) all(y[da_g == l] == 0), logical(1))]
+  if (length(absent) > 0L)
+    return(paste0("no reads in any '", absent[[1]], "' sample (complete ",
+                  "separation): the fold change is unbounded and ",
+                  if (da_use_glp) "its test" else "the Wald test",
+                  " is undefined, so no p-value is reported"))
+  ""
+}
+da_refused <- vapply(seq_len(da_n), function(j) da_refusal(da_counts[, j]), character(1))
+# "glmGamPoi": one glmGamPoi::glm_gp fit across the taxa that are not refused
+# supplies glmGamPoi's own published inference -- glmGamPoi::test_de's
+# quasi-likelihood F-test of the group coefficient. glm_gp refits the
+# coefficients at its cross-taxon dispersion trend and shrinks each taxon's
+# quasi-likelihood dispersion by empirical Bayes, so every taxon in the fit
+# moves every other taxon's test. A refused taxon is reported without a test,
+# so it is kept out of the fit: an all-zero taxon, for one, enters with
+# overdispersion 0 and quasi-likelihood dispersion 1. glm_gp works genes x
+# samples, so the counts are transposed,
 # and size_factors takes the linear size factor (the per-taxon fits below use
 # its log as their offset). The contrast reaches test_de as numeric weights on
 # the design's columns, never as text: test_de parses and evaluates a text
@@ -306,11 +327,14 @@ da_result <- data.frame(status = rep("ok", da_n), note = rep("", da_n),
 # estimator or significance test is permitted.
 da_glp <- NULL
 da_glp_failed <- ""
-if (da_use_glp) {
+da_fitted <- which(!nzchar(da_refused))
+da_fit_row <- integer(da_n)
+da_fit_row[da_fitted] <- seq_along(da_fitted)
+if (da_use_glp && length(da_fitted) > 0L) {
   da_design <- model.matrix(~ da_g)
   da_contrast <- as.numeric(colnames(da_design) == da_term)
   da_gp <- tryCatch(
-    glmGamPoi::glm_gp(t(da_counts), design = da_design,
+    glmGamPoi::glm_gp(t(da_counts[, da_fitted, drop = FALSE]), design = da_design,
                       size_factors = exp(da_offset), overdispersion_shrinkage = TRUE),
     error = function(e) e)
   if (inherits(da_gp, "error")) {
@@ -322,7 +346,7 @@ if (da_use_glp) {
     if (inherits(da_glp, "error")) {
       da_glp_failed <- paste("test_de stopped with an error:", conditionMessage(da_glp))
       da_glp <- NULL
-    } else if (nrow(da_glp) != da_n) {
+    } else if (nrow(da_glp) != length(da_fitted)) {
       da_glp_failed <- "test_de returned no row for each taxon"
       da_glp <- NULL
     }
@@ -334,24 +358,12 @@ for (da_j in seq_len(da_n)) {
     da_result[da_j, "note"] <- da_glp_failed
     next
   }
+  if (nzchar(da_refused[da_j])) {
+    da_result[da_j, "status"] <- "failed"
+    da_result[da_j, "note"] <- da_refused[da_j]
+    next
+  }
   da_y <- da_counts[, da_j]
-  if (length(unique(da_y)) < 2L) {
-    da_result[da_j, "status"] <- "failed"
-    da_result[da_j, "note"] <- "the counts are constant across samples: there is nothing to estimate"
-    next
-  }
-  # Complete separation: with no reads in every sample of one group the group
-  # coefficient runs off to infinity and its test loses its footing. That p is
-  # not evidence of no difference, so the taxon is refused with its reason.
-  da_absent <- levels(da_g)[vapply(levels(da_g), function(l) all(da_y[da_g == l] == 0), logical(1))]
-  if (length(da_absent) > 0L) {
-    da_result[da_j, "status"] <- "failed"
-    da_result[da_j, "note"] <- paste0("no reads in any '", da_absent[[1]], "' sample (complete ",
-                                      "separation): the fold change is unbounded and ",
-                                      if (da_use_glp) "its test" else "the Wald test",
-                                      " is undefined, so no p-value is reported")
-    next
-  }
   if (da_use_glp) {
     # glmGamPoi's own test on its own fit. `lfc` is the log2 fold change of
     # the group contrast and `lfc_se` its standard error; both are converted
@@ -366,16 +378,16 @@ for (da_j in seq_len(da_n)) {
     # the row is marked, as under glm_nb, and keeps its statistics, since the
     # test does not read it. An unusable overdispersion fails only its own
     # taxon.
-    da_od <- da_gp[["overdispersions"]][da_j]
+    da_od <- da_gp[["overdispersions"]][da_fit_row[da_j]]
     if (!is.finite(da_od) || da_od < 0) {
       da_result[da_j, "status"] <- "failed"
       da_result[da_j, "note"] <- "the negative-binomial overdispersion for this taxon is not usable"
       next
     }
-    da_est <- da_glp[["lfc"]][da_j] * log(2)
-    da_se <- da_glp[["lfc_se"]][da_j] * log(2)
-    da_stat <- da_glp[["f_statistic"]][da_j]
-    da_p <- da_glp[["pval"]][da_j]
+    da_est <- da_glp[["lfc"]][da_fit_row[da_j]] * log(2)
+    da_se <- da_glp[["lfc_se"]][da_fit_row[da_j]] * log(2)
+    da_stat <- da_glp[["f_statistic"]][da_fit_row[da_j]]
+    da_p <- da_glp[["pval"]][da_fit_row[da_j]]
     if (!is.finite(da_est) || !is.finite(da_se) || !is.finite(da_stat) ||
         !is.finite(da_p) || da_p < 0 || da_p > 1) {
       da_result[da_j, "status"] <- "failed"
@@ -518,7 +530,8 @@ function fit_nb(counts::AbstractMatrix{<:Integer}, groups::AbstractVector{<:Abst
                         "'da_term', 'da_n', 'da_result', 'da_design', 'da_contrast', 'da_glp', " *
                         "'da_glp_failed', 'da_gp', " *
                         "'da_j', 'da_y', 'da_absent', 'da_od', 'da_est', 'da_se', 'da_stat', " *
-                        "'da_p', 'da_warns', 'da_fit', 'da_co', 'da_row', 'da_theta'))); invisible(gc())")
+                        "'da_p', 'da_warns', 'da_fit', 'da_co', 'da_row', 'da_theta', 'da_refusal', " *
+                        "'da_refused', 'da_fitted', 'da_fit_row'))); invisible(gc())")
         end
     end
     DataFrame(status    = String.(raw.status),
@@ -763,11 +776,11 @@ natural-log fold change. `config.dispersion` selects the fits and the test:
 `"glm_nb"` (per-taxon `MASS::glm.nb` with its maximum-likelihood theta) or
 `"glmGamPoi"` (one `glmGamPoi::glm_gp` fit across the taxa passing the
 prevalence filter, with overdispersion shrinkage, and `glmGamPoi::test_de`'s
-quasi-likelihood F-test of the group contrast). Under `"glmGamPoi"` taxa with
-no reads in any sample are always left out of that shared fit and reported as
-filtered, because they would otherwise shift the dispersion trend and the
-shrinkage prior every other taxon is tested against; `"glm_nb"` fits each
-taxon alone and reports them as failed. The result's `config`
+quasi-likelihood F-test of the group contrast). Under either choice a
+taxon whose counts are constant (all-zero included) or that has no reads in
+one group is reported as failed with its reason; under `"glmGamPoi"` it is
+also left out of the shared fit, because it would otherwise move the
+dispersion trend and the shrinkage prior every other taxon is tested against. The result's `config`
 includes the selected dispersion name.
 
 `clr_welch`, in this order: (1) `min_prevalence` chooses the taxa, and taxa with
@@ -845,18 +858,6 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
     if config.method == "nb_glm"
         factors = size_factors(counts, samples, config.offset)
         tested = findall(>=(config.min_prevalence), prevalence)
-        if config.dispersion == "glmGamPoi"
-            # glmGamPoi fits every taxon together: an all-zero taxon has a
-            # dispersion of exactly 0 and a quasi-likelihood dispersion of
-            # exactly 1, and both feed the trend and the shrinkage prior that
-            # every other taxon is tested against. Leave such taxa out of the
-            # shared fit (glm_nb fits each alone and reports them as constant).
-            for j in findall(==(0), present)
-                rows[j]["note"] =
-                    "no reads in any sample of either group, so it is not part of the shared glmGamPoi fit"
-            end
-            tested = filter(j -> present[j] > 0, tested)
-        end
         fits = isempty(tested) ? nothing :
             fit_nb(Int.(counts[:, tested]), groups, log.(factors); levels,
                    dispersion=config.dispersion)

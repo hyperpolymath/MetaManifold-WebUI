@@ -515,32 +515,40 @@ end
         end
     end
 
-    @testset "Zero-read taxa stay out of the shared glmGamPoi fit" begin
+    @testset "Refused taxa stay out of the shared glmGamPoi fit" begin
         if !HAVE_GLMGAMPOI
             # Issue #37's contract: these comparisons fail, not skip, in CI.
             @test !_GLMGAMPOI_IN_CI
             @test_skip false
         else
+            # Two all-zero taxa, a constant one and one with no reads in A.
+            only_b = vcat(fill(0, 12), [50, 80, 120, 30, 60, 90, 40, 70, 110, 55, 65, 85])
+            extra = hcat(zeros(Int, 24, 2), fill(5, 24), only_b)
+            refused = ["z1", "z2", "t_const", "only_b"]
             cfg = DifferentialConfig(dispersion="glmGamPoi")
             base = differential_abundance(effect, effect_samples, effect_taxa, effect_groups;
                                           reference="A", contrast="B", config=cfg)
-            with = differential_abundance(hcat(effect, zeros(Int, size(effect, 1), 2)),
-                                          effect_samples, vcat(effect_taxa, ["z1", "z2"]),
-                                          effect_groups; reference="A", contrast="B", config=cfg)
+            with = differential_abundance(hcat(effect, extra), effect_samples,
+                                          vcat(effect_taxa, refused), effect_groups;
+                                          reference="A", contrast="B", config=cfg)
             b0 = Dict(r["taxon"] => r for r in base["rows"])
             b1 = Dict(r["taxon"] => r for r in with["rows"])
-            # Inside the shared fit the two zero rows move every other taxon's
-            # F and p (by 0.03 in p on this table), so equality shows they
-            # are out of it.
+            # Inside the shared fit each of these taxa moves every other
+            # taxon's F and p (by up to 0.03 in p on this table), so equality
+            # shows they are out of it.
             for t in effect_taxa, k in ("estimate", "standard_error", "statistic", "pvalue", "padj")
                 @test b1[t][k] ≈ b0[t][k]
             end
-            for z in ("z1", "z2")
-                @test b1[z]["status"] == "filtered"
-                @test occursin("no reads in any sample", b1[z]["note"])
-                @test isnothing(b1[z]["pvalue"])
+            for t in refused
+                @test b1[t]["status"] == "failed"
+                @test all(isnothing, (b1[t]["estimate"], b1[t]["pvalue"], b1[t]["padj"]))
             end
-            @test with["diagnostics"]["n_filtered"] == 2
+            for t in ("z1", "z2", "t_const")
+                @test occursin("constant", b1[t]["note"])
+            end
+            @test occursin("complete separation", b1["only_b"]["note"])
+            @test with["diagnostics"]["n_failed"] == 4
+            @test with["status"] == "partial"
         end
     end
 
