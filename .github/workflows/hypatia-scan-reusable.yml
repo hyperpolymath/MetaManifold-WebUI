@@ -1,6 +1,9 @@
-# This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
-# This workflow is managed by gh actions-lock.
+# De-onboarded from actions.lock. This repository keeps no actions.lock, and
+# every action and reusable reference in this file is a literal full commit SHA,
+# so there is nothing a lock would pin. The upstream copy's header claiming lock
+# management is removed rather than the lock invented: an onboarded caller of a
+# cross-repository reusable is the shape that startup-fails with zero jobs.
 #
 # Fork-local copy of metadatastician/standards/.github/workflows/
 # hypatia-scan-reusable.yml at 01c9b0c9f2646ebea0b30a9588462642ac94aee9.

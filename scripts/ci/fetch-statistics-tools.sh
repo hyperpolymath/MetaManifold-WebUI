@@ -30,8 +30,14 @@ if [[ -n "${GITHUB_PATH:-}" ]]; then
   echo "$temp/bin" >> "$GITHUB_PATH"
 fi
 
+# Same retry policy as scripts/ci/fetch_pinned.sh: --retry alone skips TLS and
+# receive failures, and a release-asset fetch can also fail with an HTTP status
+# (curl exit 22) while GitHub is serving a 5xx or throttling, so the retry has
+# to cover every error class. The checksum below is what makes the retry safe.
 curl --fail --silent --show-error --location \
   --proto '=https' --proto-redir '=https' --tlsv1.2 \
+  --retry 4 --retry-delay 5 --retry-all-errors \
+  --connect-timeout 20 --max-time 600 \
   --output "$temp/bin/yq" \
   "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
 
@@ -51,7 +57,13 @@ fetch_commit() {
   [[ "$(git -C "$destination" rev-parse HEAD)" == "$commit" ]]
 }
 
-fetch_commit https://github.com/hyperpolymath/standards "$STANDARDS_SHA" "$temp/standards"
+# The canonical name, not the pre-transfer one. A `git fetch` follows a
+# transfer's redirect (that is why this kept working after 2026-10-25 while
+# `uses:` references to the same repository did not), but a redirect is a
+# courtesy, not a contract: the estate records canonical coordinates, and the
+# governance contract already refuses the old owner in workflow refs. The
+# commit is unchanged — only the name used to reach it.
+fetch_commit https://github.com/metadatastician/standards "$STANDARDS_SHA" "$temp/standards"
 fetch_commit https://github.com/hyperpolymath/ijson-jcs "$IJSON_JCS_SHA" "$temp/ijson-jcs"
 
 cargo build --quiet --release --manifest-path "$temp/ijson-jcs/Cargo.toml"
