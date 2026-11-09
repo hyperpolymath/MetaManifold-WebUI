@@ -361,7 +361,8 @@ analysis:
     # nb_glm only: the fits and the test. glm_nb (the default) fits
     # MASS::glm.nb per taxon with its maximum-likelihood theta and Wald-tests
     # the group coefficient. glmGamPoi fits one glmGamPoi::glm_gp across the
-    # taxa passing min_prevalence, with overdispersion shrinkage toward the
+    # taxa passing min_prevalence that have reads in at least one sample
+    # (taxa with no reads at all are filtered), with overdispersion shrinkage toward the
     # cross-taxon trend, and reports glmGamPoi::test_de's quasi-likelihood
     # F-test of the group contrast with its log2 fold changes; the reported
     # theta inverts glm_gp's negative-binomial overdispersion, and a taxon

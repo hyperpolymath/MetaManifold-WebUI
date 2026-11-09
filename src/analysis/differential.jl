@@ -68,7 +68,8 @@ above its taxon's smallest observed proportion is lowered to this fraction of it
 `"glmGamPoi"`): `"glm_nb"` (the default) fits `MASS::glm.nb` per taxon with
 its maximum-likelihood theta and Wald-tests the group coefficient;
 `"glmGamPoi"` fits one `glmGamPoi::glm_gp` across the taxa passing
-`min_prevalence`, with overdispersion shrinkage toward the cross-taxon trend,
+`min_prevalence` that have reads in at least one sample, with overdispersion
+shrinkage toward the cross-taxon trend,
 and reports `glmGamPoi::test_de`'s quasi-likelihood F-test of the group
 contrast — glmGamPoi's own published inference (Lund et al., 2012) — with its
 log2 fold changes. `"glmGamPoi"` is refused for `clr_welch`.
@@ -762,7 +763,11 @@ natural-log fold change. `config.dispersion` selects the fits and the test:
 `"glm_nb"` (per-taxon `MASS::glm.nb` with its maximum-likelihood theta) or
 `"glmGamPoi"` (one `glmGamPoi::glm_gp` fit across the taxa passing the
 prevalence filter, with overdispersion shrinkage, and `glmGamPoi::test_de`'s
-quasi-likelihood F-test of the group contrast). The result's `config`
+quasi-likelihood F-test of the group contrast). Under `"glmGamPoi"` taxa with
+no reads in any sample are always left out of that shared fit and reported as
+filtered, because they would otherwise shift the dispersion trend and the
+shrinkage prior every other taxon is tested against; `"glm_nb"` fits each
+taxon alone and reports them as failed. The result's `config`
 includes the selected dispersion name.
 
 `clr_welch`, in this order: (1) `min_prevalence` chooses the taxa, and taxa with
@@ -846,9 +851,9 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
             # exactly 1, and both feed the trend and the shrinkage prior that
             # every other taxon is tested against. Leave such taxa out of the
             # shared fit (glm_nb fits each alone and reports them as constant).
-            for j in tested
-                present[j] == 0 && (rows[j]["note"] =
-                    "no reads in any sample of either group, so it is not part of the shared glmGamPoi fit")
+            for j in findall(==(0), present)
+                rows[j]["note"] =
+                    "no reads in any sample of either group, so it is not part of the shared glmGamPoi fit"
             end
             tested = filter(j -> present[j] > 0, tested)
         end
