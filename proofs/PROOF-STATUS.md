@@ -45,7 +45,7 @@ repository is **engineering**. It carries status tokens only and is not graded
 The input digest identifies the receipt. Recompute it with:
 
 ```sh
-(find proofs/agda -name '*.agda' -o -name '*.agda-lib') | LC_ALL=C sort | xargs sha256sum | sha256sum
+(set -o pipefail; find proofs/agda \( -name '*.agda' -o -name '*.agda-lib' \) -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)
 ```
 
 A receipt whose digest no longer matches is superseded. Any grade below
@@ -66,6 +66,13 @@ Every row is `PROVEN` in Agda under the receipt above. The Rocq and Lean legs
 are not started, so the correspondence state of each is `AGDA-VERIFIED`, and
 the derived grade is `PWG-3`. That is a description of the artefact, not a
 discharge: each row still owes both recheck legs (§8.4).
+
+The rows are the theorems the requirement tables in
+[`agda/README.md`](agda/README.md) name. Supporting lemmas are not graded on
+their own: they are checked under the same receipt as the theorems that use
+them, and a recheck leg re-proves them with those theorems. For example,
+`bh-nonneg`, `bh-dominates-p` and `bh-at-most-one` are the three projections
+of `bh-bounded`.
 
 | Theorem | Module | Agda | Rocq leg | Lean leg | PWG |
 |---|---|---|---|---|---|
@@ -128,8 +135,11 @@ That link is argued from the code (`ASSUMED`), not proved. In this tree both
 | `validateMove-sound` | CladeCumulus | this repository's clade-move validator | `PROVEN` |
 | `unrun-status-not-computed`, `computed-status` | Significance | a proposed publication interface (experimental, no refinement to Julia) | `PROVEN` |
 
-That the Agda models follow the Julia functions is argued in
+That the other Agda models follow the Julia functions is argued in
 [`agda/README.md`](agda/README.md), not formalised: `ASSUMED`.
+`Significance` is not a model of Julia's `AlphaSignificance`: Julia's
+non-computed constructor still accepts a `pairwise` table, and the Agda
+`reveals-nothing` carries none.
 
 Open obligation (§3): `Significance` states an *interface* property in Agda.
 Under §1 an interface contract belongs in Idris2, and §3 moves it there when

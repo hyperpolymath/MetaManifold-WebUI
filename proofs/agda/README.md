@@ -51,8 +51,11 @@ To check locally:
 ```sh
 bash proofs/tests/axiom-audit.sh
 cd proofs/agda && LC_ALL=C.UTF-8 agda --safe --without-K --cubical-compatible MetaManifold/All.agda
-# needs standard-library-2.1 in $AGDA_DIR/libraries; under a non-UTF-8
-# locale Agda exits 42 while printing its warnings, instead of reporting
+# needs standard-library-2.1 listed in the `libraries` file of Agda's
+# configuration directory (`agda --print-agda-app-dir` prints it; it is
+# $AGDA_DIR when that is set). Any installed UTF-8 locale works in place of
+# C.UTF-8 (`locale -a` lists them); under a non-UTF-8 locale Agda exits 42
+# while printing its warnings, instead of reporting.
 ```
 
 ## What is modelled
