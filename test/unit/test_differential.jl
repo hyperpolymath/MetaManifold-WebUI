@@ -502,43 +502,60 @@ end
         end
     end
 
-    @testset "Zero-read taxa stay out of the shared glmGamPoi fit" begin
+    @testset "glm_nb still reports a zero-read taxon as constant" begin
         if !HAVE_MASS
             @test_skip false
         else
-            zeros2 = zeros(Int, size(effect, 1), 2)
-            counts = hcat(effect, zeros2)
-            taxa = vcat(effect_taxa, ["z1", "z2"])
-            # glm_nb fits each taxon alone and keeps refusing a constant one.
-            res = differential_abundance(counts, effect_samples, taxa, effect_groups;
-                                         reference="A", contrast="B")
+            # glm_nb fits each taxon alone, so a zero-read taxon stays failed.
+            res = differential_abundance(hcat(effect, zeros(Int, size(effect, 1), 2)),
+                                         effect_samples, vcat(effect_taxa, ["z1", "z2"]),
+                                         effect_groups; reference="A", contrast="B")
             byt = Dict(r["taxon"] => r for r in res["rows"])
             @test byt["z1"]["status"] == "failed"
             @test occursin("constant", byt["z1"]["note"])
         end
+    end
+
+    @testset "Refused taxa stay out of the shared glmGamPoi fit" begin
         if !HAVE_GLMGAMPOI
+            # Issue #37's contract: these comparisons fail, not skip, in CI.
             @test !_GLMGAMPOI_IN_CI
             @test_skip false
         else
+            # Two all-zero taxa, a constant one and one with no reads in A.
+            only_b = vcat(fill(0, 12), [50, 80, 120, 30, 60, 90, 40, 70, 110, 55, 65, 85])
+            extra = hcat(zeros(Int, 24, 2), fill(5, 24), only_b)
+            refused = ["z1", "z2", "t_const", "only_b"]
             cfg = DifferentialConfig(dispersion="glmGamPoi")
             base = differential_abundance(effect, effect_samples, effect_taxa, effect_groups;
                                           reference="A", contrast="B", config=cfg)
-            with = differential_abundance(hcat(effect, zeros(Int, size(effect, 1), 2)),
-                                          effect_samples, vcat(effect_taxa, ["z1", "z2"]),
-                                          effect_groups; reference="A", contrast="B", config=cfg)
+            with = differential_abundance(hcat(effect, extra), effect_samples,
+                                          vcat(effect_taxa, refused), effect_groups;
+                                          reference="A", contrast="B", config=cfg)
             b0 = Dict(r["taxon"] => r for r in base["rows"])
             b1 = Dict(r["taxon"] => r for r in with["rows"])
+            # Inside the shared fit each of these taxa moves every other
+            # taxon's F and p (by up to 0.03 in p on this table), so equality
+            # shows they are out of it.
             for t in effect_taxa, k in ("estimate", "standard_error", "statistic", "pvalue", "padj")
                 @test b1[t][k] ≈ b0[t][k]
             end
-            @test b1["z1"]["status"] == "filtered"
-            @test occursin("no reads in any sample", b1["z1"]["note"])
-            @test isnothing(b1["z1"]["pvalue"])
+            for t in refused
+                @test b1[t]["status"] == "failed"
+                @test all(isnothing, (b1[t]["estimate"], b1[t]["pvalue"], b1[t]["padj"]))
+            end
+            for t in ("z1", "z2", "t_const")
+                @test occursin("constant", b1[t]["note"])
+            end
+            @test occursin("complete separation", b1["only_b"]["note"])
+            @test with["diagnostics"]["n_failed"] == 4
+            @test with["status"] == "partial"
         end
     end
 
     @testset "glmGamPoi separation note does not name the Wald test" begin
         if !HAVE_GLMGAMPOI
+            # Issue #37's contract: these comparisons fail, not skip, in CI.
             @test !_GLMGAMPOI_IN_CI
             @test_skip false
         else
@@ -549,6 +566,7 @@ end
                                          config=DifferentialConfig(dispersion="glmGamPoi"))
             note = Dict(r["taxon"] => r for r in res["rows"])["only_b"]["note"]
             @test occursin("complete separation", note)
+            @test occursin("its test is undefined", note)
             @test !occursin("Wald", note)
         end
     end
