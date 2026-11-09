@@ -74,7 +74,7 @@ K9!
         id = "upstream-license-untouched",
         target = "LICENSE",
         check_command = "test -s LICENSE && test -s CITATION.cff",
-        rationale = "Upstream AGPL-3.0-only LICENSE, CITATION.cff, and existing copyright headers are never rewritten on this fork.",
+        rationale = "Upstream AGPL-3.0-only LICENSE, CITATION.cff, and existing copyright headers are never rewritten away from upstream's own declarations on this fork; a drifted fork copy is restored to upstream's (proofs/: MPL-2.0 code, CC-BY-SA-4.0 prose, upstream 4dce274).",
       },
     ],
   },

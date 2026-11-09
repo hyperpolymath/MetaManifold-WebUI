@@ -27,7 +27,7 @@
   (policies
     (licensing
       :initial-assignment "New files the fork authors carry MPL-2.0 with an SPDX header, as upstream CONTRIBUTING.md permits."
-      :existing-declarations "Manual-Only. Upstream AGPL-3.0 and CC BY-SA 4.0 headers, LICENSE and CITATION.cff are never changed on this fork.")
+      :existing-declarations "Manual-Only. LICENSE, CITATION.cff and every header upstream declares are never changed away from upstream's own declaration on this fork. A fork copy that has drifted from it is restored to it: proofs/ carries MPL-2.0 for code and CC-BY-SA-4.0 for prose, as upstream 4dce274 declares.")
     (fleet
       :enrolment ".gitbot-fleet/enrolment.json"
       :report-backs ".gitbot-fleet/report-backs/")))
