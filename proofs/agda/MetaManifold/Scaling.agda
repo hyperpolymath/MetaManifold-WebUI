@@ -44,7 +44,7 @@
 --                         reads in every sample, every RLE factor is positive in
 --                         exact arithmetic
 
-{-# OPTIONS --safe --without-K #-}
+{-# OPTIONS --safe --without-K --cubical-compatible #-}
 
 module MetaManifold.Scaling where
 

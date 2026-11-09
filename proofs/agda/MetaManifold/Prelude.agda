@@ -21,7 +21,7 @@
 -- `proofs/tests/axiom-audit.sh` checks that there is no postulate, hole or
 -- unsafe pragma anywhere in the tree.
 
-{-# OPTIONS --safe --without-K #-}
+{-# OPTIONS --safe --without-K --cubical-compatible #-}
 
 module MetaManifold.Prelude where
 

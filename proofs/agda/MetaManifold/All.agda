@@ -5,7 +5,7 @@
 -- module; the axiom audit (proofs/tests/axiom-audit.sh) refuses any module
 -- under proofs/agda/ that this file does not reach.
 
-{-# OPTIONS --safe --without-K #-}
+{-# OPTIONS --safe --without-K --cubical-compatible #-}
 
 module MetaManifold.All where
 

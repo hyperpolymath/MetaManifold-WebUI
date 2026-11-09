@@ -10,7 +10,7 @@
 -- A Julia integration needs explicit publication guards and regression tests.
 -- Exact rationals and lists abstract Float64 p-values and DataFrame rows.
 
-{-# OPTIONS --safe --without-K #-}
+{-# OPTIONS --safe --without-K --cubical-compatible #-}
 
 module MetaManifold.Significance where
 

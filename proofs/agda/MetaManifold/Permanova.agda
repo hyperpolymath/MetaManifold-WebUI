@@ -67,7 +67,7 @@
 --                          the twelve-sample fixture in test_permanova.jl: group
 --                          is never exchanged, run is
 
-{-# OPTIONS --safe --without-K #-}
+{-# OPTIONS --safe --without-K --cubical-compatible #-}
 
 module MetaManifold.Permanova where
 

@@ -65,7 +65,7 @@
 -- but not of the procedure: the rank of a p-value never exceeds the family
 -- size, so every factor m/(j+1) is ≥ 1, and R-BH-2a holds.  It is proved here.
 
-{-# OPTIONS --safe --without-K #-}
+{-# OPTIONS --safe --without-K --cubical-compatible #-}
 
 module MetaManifold.BenjaminiHochberg where
 

@@ -11,7 +11,10 @@
 #   root is how the positive control runs the audit against a scratch copy.
 #
 # Fails (exit 1) on:
-#   1. a module without `--safe` and `--without-K` in its OPTIONS pragma
+#   1. a module without `--safe`, `--without-K` and `--cubical-compatible`
+#      in its OPTIONS pragma (the estate PROOF-POLICY §2.1 invocation), or
+#      one that enables full `--cubical`, which needs a separately reviewed
+#      proof profile
 #   2. a `postulate`, anywhere in code (not only at the start of a line)
 #   3. FOREIGN / COMPILE / BUILTIN pragmas
 #   4. unsound flags (--type-in-type, --no-positivity-check,
@@ -65,6 +68,12 @@ audit_file() {
   fi
   if ! grep -qE '^\{-#[[:space:]]*OPTIONS.*--without-K' "$f"; then
     fail "$rel does not declare --without-K"
+  fi
+  if ! grep -qE '^\{-#[[:space:]]*OPTIONS.*--cubical-compatible' "$f"; then
+    fail "$rel does not declare --cubical-compatible"
+  fi
+  if grep -qE -- '--cubical([[:space:]=]|#|$)' "$f"; then
+    fail "$rel enables full --cubical, which needs a separately reviewed proof profile"
   fi
 
   if hits="$(grep -nE '(^|[^[:alnum:]_])postulate([^[:alnum:]_]|$)' <<<"$code")"; then
