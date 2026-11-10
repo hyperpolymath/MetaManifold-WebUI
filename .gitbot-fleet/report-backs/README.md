@@ -6,7 +6,8 @@ without `.json` (for example, `rhodibot.json` becomes `rhodibot`). This identity
 should match the key in `.gitbot-fleet/enrolment.json` (`rhodibot`, `seambot`, ...).
 
 The Hypatia verdict grid reads this directory
-(`.github/workflows/hypatia-scan-reusable.yml` passes it to
+(the standards Hypatia lane, `metadatastician/standards`
+`.github/workflows/hypatia-scan-reusable.yml`, passes it to
 `scripts/verdict-grid.sh --report-backs`), so a report-back here is the only
 way a member's row stops being orange. The envelope is the one in
 `docs/VERDICT-GRID-SPEC.adoc` of

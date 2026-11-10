@@ -296,10 +296,21 @@ SHA, and the two fork-local copies (`deed-conformance-reusable.yml`,
 `k9-conformance-reusable.yml`) are deleted. This needs the entry
 `metadatastician/standards/.github/workflows/*@*` in Settings → Actions →
 General. Without it the `Governance (fork)` run fails at plan time with zero
-jobs. The contract now permits exactly those two cross-owner calls, each at a
-full commit SHA and both at the same commit. The Hypatia, Scorecard and
-secret-scanner lanes are still fork-local. The text below describes the state
-before that date.
+jobs.
+
+The Hypatia lane and the comment poster followed on the same day. The
+fork-local `hypatia-scan-reusable.yml` existed for two behaviours, and the
+standards lane now offers both as opt-in inputs:
+`sarif-upload-on-pull-request: false` and `inherited-language-paths` (the
+upstream TypeScript list in `config/hypatia/`). The copy, its filter script
+`scripts/filter-hypatia-inherited-language.sh` and that script's test are
+deleted. The pull-request comment now comes from the standards posting engine,
+so it has the layout that `3-practice/fork-governance/SPEC.adoc` fixes.
+
+The contract permits exactly four cross-owner calls (DEED, K9, Hypatia, the
+posting engine), each at a full commit SHA and all at the same commit. The
+Scorecard and secret-scanner lanes are still fork-local. The text below
+describes the state before that date.
 
 Neither copy re-implements anything. The DEED copy is the upstream *caller*
 path — the self-test, fixture-corpus and uuid-v8 steps were gated on
@@ -366,7 +377,8 @@ recorded here so the choice does not have to be rediscovered.
    six-day-old tree 119 commits behind. That is owner work, not cleanup.
 6. **Reconciling the `hyperpolymath/standards` pins.** Seven workflows reference
    that repository at four different commits, two of them inside
-   `hypatia-scan-reusable.yml` itself. Some pins are deliberate and pinned by
+   `hypatia-scan-reusable.yml` itself (that file was deleted on 2026-11-10; the
+   governance lanes now share one pin). Some pins are deliberate and pinned by
    `scripts/check-governance-contract.sh` (`c6d78606…` for K9, the secret
    scanner and Scorecard; `01c9b0c9…` for the verdict-grid renderer), so a
    reconciliation has to move the contract's constants and the allowlist digest
