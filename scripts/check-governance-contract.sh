@@ -368,12 +368,15 @@ fi
 # Both lanes call metadatastician/standards directly (owner decision,
 # 2026-11-10). A pin that is not a full commit SHA is a float, and two
 # different pins are two standards revisions in one verdict.
+# Print the pin of each call to the named standards lane, one per line. No
+# call is no output, never a failed command: the checks below report it.
 lane_pin() {
-  grep -E "^    uses: metadatastician/standards/\.github/workflows/$1@[0-9a-f]{40}\$" <<<"$caller" \
+  local lane=$1
+  { grep -E "^    uses: metadatastician/standards/\.github/workflows/${lane}@[0-9a-f]{40}\$" <<<"$caller" || true; } \
     | sed 's/.*@//'
 }
 k9_pin="$(lane_pin 'k9-conformance\.yml')"
-if [ "$(grep -c . <<<"$k9_pin")" = 1 ]; then
+if [[ "$(grep -c . <<<"$k9_pin" || true)" == 1 ]]; then
   pass 'K9 validation calls the standards lane at one immutable commit'
 else
   fail 'K9 validation must call metadatastician/standards k9-conformance.yml at one full commit SHA'
@@ -433,12 +436,12 @@ else
 fi
 
 deed_pin="$(lane_pin 'deed-conformance\.yml')"
-if [ "$(grep -c . <<<"$deed_pin")" = 1 ]; then
+if [[ "$(grep -c . <<<"$deed_pin" || true)" == 1 ]]; then
   pass 'DEED validation calls the standards lane at one immutable commit'
 else
   fail 'DEED validation must call metadatastician/standards deed-conformance.yml at one full commit SHA'
 fi
-if [ -n "$deed_pin" ] && [ "$deed_pin" = "$k9_pin" ]; then
+if [[ -n "$deed_pin" && "$deed_pin" == "$k9_pin" ]]; then
   pass 'the DEED and K9 lanes use the same standards commit'
 else
   fail "the DEED and K9 lanes must use one standards commit - deed=$deed_pin k9=$k9_pin"

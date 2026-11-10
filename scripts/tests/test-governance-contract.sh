@@ -85,6 +85,16 @@ for mutation in allowlist-addition baseline-zero-gate baseline-operator-gate bas
   if [[ "$mutation" == allowlist-addition ]]; then
     grep -Fq 'ERROR: the complete allowlist must match the pinned upstream TypeScript snapshot' "$fixture/log"
   fi
+  # A lane without a full pin must be named, not die on a failed command.
+  if [[ "$mutation" == k9-pin ]]; then
+    grep -Fq 'ERROR: K9 validation must call metadatastician/standards k9-conformance.yml at one full commit SHA' "$fixture/log"
+  fi
+  if [[ "$mutation" == deed-unpinned ]]; then
+    grep -Fq 'ERROR: DEED validation must call metadatastician/standards deed-conformance.yml at one full commit SHA' "$fixture/log"
+  fi
+  if [[ "$mutation" == lane-pins-split ]]; then
+    grep -Fq 'ERROR: the DEED and K9 lanes must use one standards commit' "$fixture/log"
+  fi
   if [[ "$mutation" == baseline-*-gate ]]; then
     grep -Fq 'ERROR: the advisory baseline gate requires nonblocking mode and either findings or a committed baseline' "$fixture/log"
   fi
