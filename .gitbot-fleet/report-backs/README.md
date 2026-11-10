@@ -33,8 +33,8 @@ scanner words (`critical`, `high`, `medium`, `low`); both normalise.
 **How the files get here.** The `fleet` job of `.github/workflows/hypatia-scan.yml`
 (gitbot-fleet's `fleet-report-back-reusable.yml`) runs the enrolled adapters on
 the PR head and uploads the envelopes as the `fleet-report-backs` artifact;
-the fork-local Hypatia reusable downloads that artifact into this directory
-just before it renders the grid (fork delta 4). Nothing is ever committed here:
+the standards `hypatia-scan-reusable.yml` downloads that artifact into this
+directory just before it renders the grid. Nothing is ever committed here:
 an envelope is evidence about one commit, and a committed one would read as
 current when it is stale. The directory exists because this repository's deed
 declares it (`MetaManifold-WebUI_chora.deed`,
