@@ -53,13 +53,35 @@ and start a fresh session.
 """
 compositional_da_available() = _COMPOSITIONAL_DA_AVAILABLE
 
-function _native_methods_available(method::AbstractString)
-    _COMPOSITIONAL_DA_AVAILABLE || throw(ArgumentError(
+# The module the native methods call when the caller names none: the package
+# where the import above succeeded, `nothing` where it did not.
+const _DEFAULT_NATIVE_BACKEND = _COMPOSITIONAL_DA_AVAILABLE ? CompositionalDA : nothing
+
+"""
+    _native_backend(override)
+
+The module the native methods call: `override` when one is given, otherwise the
+`CompositionalDA` this session loaded, or `nothing` when it loaded none.
+
+This is the seam that keeps the adapter testable. `CompositionalDA` is not in
+the General registry, so CI never has it, and without a seam the adapter is
+unreachable there. The tests pass a stand-in module with the same two entry
+points and the same error type, so the adapter code they run is the code that
+runs in production; only the estimator behind the boundary differs.
+"""
+_native_backend(override) = override === nothing ? _DEFAULT_NATIVE_BACKEND : override
+
+"Whether `backend` defines the package's `CompositionError` and `err` is one."
+_is_composition_error(backend::Module, err) =
+    isdefined(backend, :CompositionError) && err isa backend.CompositionError
+
+function _native_methods_available(method::AbstractString, backend)
+    backend === nothing || return nothing
+    throw(ArgumentError(
         "'$method' needs the CompositionalDA package, which is not installed in this " *
         "environment: it is not in the General registry yet, so it is not a declared " *
         "dependency and `Pkg.instantiate()` does not install it. Use 'nb_glm' or " *
         "'clr_welch' in the meantime."))
-    nothing
 end
 
 using ..RRuntime: with_r_lock
@@ -802,7 +824,8 @@ _row(taxon, prevalence, note) = Dict{String,Any}(
 
 """
     differential_abundance(counts, samples, taxa, groups; reference, contrast,
-                           config=DifferentialConfig()) -> Dict{String,Any}
+                           config=DifferentialConfig(), native_backend=nothing)
+        -> Dict{String,Any}
 
 Test every taxon (column) of the samples x taxa read-count matrix for a
 difference in abundance between the samples labelled `contrast` and those
@@ -838,6 +861,17 @@ family is the fitted taxa that produced a p-value; failed and filtered taxa
 carry `padj = nothing`. The result's `effect` names the row key that holds the
 effect size and its label.
 
+`aldex2` and `ancombc` are the native methods. They need the `CompositionalDA`
+package, which is not in the General registry yet, so `Pkg.instantiate()` does
+not install it and they refuse by name on such a checkout;
+`compositional_da_available()` answers the same question without raising.
+`native_backend` is the module those two methods call, and defaults to the
+`CompositionalDA` this session loaded. Passing a module with the same entry
+points (`aldex2`, `ancombc`, `CompositionError`) is how the adapter is tested
+where the package cannot be installed; nothing else about the call changes, and
+the result records the module that produced it under
+`diagnostics.native_method.package`.
+
 Throws `ArgumentError` for unusable input (including a zero replacement that
 cannot be made), `ScalingRefusal` when the offset cannot be computed,
 `MASSUnavailable`, `GlmGamPoiUnavailable` or `ZCompositionsUnavailable` when a
@@ -851,7 +885,8 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
                                 taxa::AbstractVector{<:AbstractString},
                                 groups::AbstractVector{<:AbstractString};
                                 reference::AbstractString, contrast::AbstractString,
-                                config::DifferentialConfig=DifferentialConfig())
+                                config::DifferentialConfig=DifferentialConfig(),
+                                native_backend=nothing)
     reference == contrast && throw(ArgumentError(
         "the two groups must differ, but both are '$reference'"))
     length(groups) == length(samples) || throw(ArgumentError(
@@ -898,20 +933,21 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
         length(tested) >= 2 || throw(ArgumentError("native compositional methods need at least two retained taxa"))
         all(x -> x <= typemax(Int), @view counts[:, tested]) ||
             throw(ArgumentError("native compositional counts must fit the platform's Int range"))
-        _native_methods_available(config.method)
+        backend = _native_backend(native_backend)
+        _native_methods_available(config.method, backend)
         # Stable labels make the package's sorted contrast agree with the
         # user's requested direction, irrespective of run-name sorting.
         native_groups = [g == reference ? "0" : "1" for g in groups]
         native = try
             if config.method == "aldex2"
-                CompositionalDA.aldex2(Int.(counts[:, tested]), taxa[tested], native_groups;
+                backend.aldex2(Int.(counts[:, tested]), taxa[tested], native_groups;
                     mc_samples=config.mc_samples, seed=config.seed)
             else
-                CompositionalDA.ancombc(Int.(counts[:, tested]), taxa[tested], native_groups;
+                backend.ancombc(Int.(counts[:, tested]), taxa[tested], native_groups;
                     prevalence=0.0, structural_zeros=true, conserve=true)
             end
         catch e
-            e isa CompositionalDA.CompositionError && error(sprint(showerror, e))
+            _is_composition_error(backend, e) && error(sprint(showerror, e))
             rethrow()
         end
         by_taxon = Dict(String(r.feature) => r for r in eachrow(native.table))
@@ -959,7 +995,9 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
         if config.method == "aldex2"
             merge!(config_echo, Dict("mc_samples" => config.mc_samples, "seed" => config.seed))
         end
-        diagnostics["native_method"] = Dict("package" => "CompositionalDA",
+        # The module that actually produced the numbers, so a record made with a
+        # stand-in cannot read as one made with the package.
+        diagnostics["native_method"] = Dict("package" => string(nameof(backend)),
             "version" => string(native.provenance.package_version),
             "parameters" => Dict(string(k) => v for (k, v) in native.provenance.parameters))
         diagnostics["n_structural_zero"] = count(r -> r["status"] == "structural_zero", rows)

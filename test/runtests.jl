@@ -85,6 +85,12 @@ using MetaManifold.Tools, MetaManifold.TaxonomyTableTools, MetaManifold.ProjectS
 using MetaManifold.DiversityMetrics, MetaManifold.Analysis
 using MetaManifold.Categories, MetaManifold.CompositionLibrary
 
+## The stand-in backend for the native differential adapter. CompositionalDA is
+## not in the General registry, so CI cannot install it, and without a stand-in
+## the adapter in src/analysis/differential.jl is unreachable here. `module` is
+## not valid inside the `@testset` below, so the stand-in is loaded at top level.
+include(joinpath(@__DIR__, "support", "native_da_stub.jl"))
+
 ## Unit tests (always run)
 @testset "MetaManifold" begin
 
