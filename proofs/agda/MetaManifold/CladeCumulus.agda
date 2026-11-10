@@ -29,7 +29,7 @@
 -- Not modelled here: IEEE-754 Float64 rounding, `log(1 + residual)` cloud
 -- sizing, and external tree heuristics (FastTree, IQ-TREE, Neighbor-Joining).
 
-{-# OPTIONS --safe --without-K #-}
+{-# OPTIONS --safe --without-K --cubical-compatible #-}
 
 module MetaManifold.CladeCumulus where
 

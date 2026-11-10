@@ -18,11 +18,22 @@ the reported `min_p_value`, and which terms have their p-value withheld
 (`_varies_within_any_block`). Both arrive with the PERMANOVA change (branch
 `fix/permanova-terms`, PR #35), which these proofs depend on.
 
-Every module is checked with `--safe --without-K`. There are no postulates,
+Every module is checked with `--safe --without-K --cubical-compatible`, the
+invocation the estate PROOF-POLICY (§2.1) requires. There are no postulates,
 no holes and no termination or positivity pragmas.
 `proofs/tests/axiom-audit.sh` enforces this. It also fails if any module is
 not imported by `MetaManifold/All.agda`, because a module that nothing imports
-is never type-checked.
+is never type-checked, and if any module enables full `--cubical`, which would
+need a separately reviewed proof profile.
+
+Under `--cubical-compatible` Agda reports 158 `UnsupportedIndexedMatch`
+warnings: some definitions match on indexed data in a way that will not
+compute when applied to cubical transports. That concerns computation under
+full Cubical Agda, which these proofs do not use. It is not an error, and no
+theorem depends on it.
+
+Per-theorem status, classification and receipts are in
+[`../PROOF-STATUS.md`](../PROOF-STATUS.md).
 
 ## Toolchain
 
@@ -39,7 +50,12 @@ To check locally:
 
 ```sh
 bash proofs/tests/axiom-audit.sh
-cd proofs/agda && agda MetaManifold/All.agda   # needs standard-library-2.1 in $AGDA_DIR/libraries
+cd proofs/agda && LC_ALL=C.UTF-8 agda --safe --without-K --cubical-compatible MetaManifold/All.agda
+# needs standard-library-2.1 listed in the `libraries` file of Agda's
+# configuration directory (`agda --print-agda-app-dir` prints it; it is
+# $AGDA_DIR when that is set). Any installed UTF-8 locale works in place of
+# C.UTF-8 (`locale -a` lists them); under a non-UTF-8 locale Agda exits 42
+# while printing its warnings, instead of reporting.
 ```
 
 ## What is modelled

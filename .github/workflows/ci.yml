@@ -671,14 +671,19 @@ jobs:
       - name: Axiom audit
         run: bash proofs/tests/axiom-audit.sh
 
+      # The invocation is the estate PROOF-POLICY §2.1 one, written out rather
+      # than left to the .agda-lib flags. Agda prints its warnings with
+      # Unicode, and under the image's default POSIX locale it then exits 42
+      # instead of reporting, so the locale is UTF-8.
       - name: Type-check
         env:
           AGDA_DIR: /tmp/agda-dir
+          LC_ALL: C.UTF-8
         run: |
           mkdir -p "$AGDA_DIR"
           echo /usr/share/agda-stdlib/standard-library.agda-lib > "$AGDA_DIR/libraries"
           cd proofs/agda
-          if ! agda MetaManifold/All.agda >/tmp/agda.log 2>&1; then
+          if ! agda --safe --without-K --cubical-compatible MetaManifold/All.agda >/tmp/agda.log 2>&1; then
             cat /tmp/agda.log
             msg="$(awk 'NR > 1 { printf "%%0A" } { gsub(/%/, "%25"); printf "%s", $0 }' /tmp/agda.log | tail -c 3500)"
             echo "::error file=proofs/agda/MetaManifold/All.agda,title=Agda type-check failed::$msg"
