@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# Fork governance lane. DEED and K9 conformance come from metadatastician/standards; the
-# Hypatia verdict grid uses a fork-local copy of the standards reusable so its
-# advisory PR scan cannot become a blocking code-scanning-results check. Both
-# sources are pinned to commits. The grid covers Hypatia, panic-attack, pons
+# Fork governance lane. The DEED and K9 conformance lanes call
+# metadatastician/standards directly, at one full commit SHA (owner decision,
+# 2026-11-10). The Actions policy of this repository must permit
+# `metadatastician/standards/.github/workflows/*@*` for those calls to start.
+# The Hypatia verdict grid still uses a fork-local copy of the standards
+# reusable so its advisory PR scan cannot become a blocking
+# code-scanning-results check. Every source is pinned to a commit.
+# The grid covers Hypatia, panic-attack, pons
 # asinorum and the gitbot-fleet report-backs under .gitbot-fleet/. This workflow
 # is the fork's; nothing in it is proposed upstream, and upstream's ci.yml is
 # untouched.
@@ -43,7 +47,6 @@ jobs:
           bash scripts/tests/test-governance-contract.sh
           bash scripts/tests/test-hypatia-inherited-language-exception.sh
           bash scripts/tests/test-ci-logging.sh
-          bash scripts/tests/test-k9-log-copy.sh
           bash scripts/tests/test-scanner-boundaries.sh
           # Branch triage and the pull-request freshness rule: the scripts the
           # hygiene workflows run, tested where every other shell test runs.
@@ -52,13 +55,11 @@ jobs:
 
   deed:
     name: DEED syntax
-    # Fork-local copy of the standards lane at 75bd5994. A reusable workflow
-    # from another owner is refused by this repository's Actions policy at plan
-    # time (zero jobs, no error line in any check summary), so the copy is what
-    # keeps the lane visible after standards moved to metadatastician on
-    # 2026-10-25. The linter itself is still fetched from standards at that
-    # commit by the called workflow.
-    uses: ./.github/workflows/deed-conformance-reusable.yml
+    # The standards lane, called directly. If the Actions policy stops
+    # permitting metadatastician/standards, this run fails at plan time with
+    # zero jobs and no error line in any check summary: read the workflow page.
+    # The K9 lane below must keep the same pin; the contract check enforces it.
+    uses: metadatastician/standards/.github/workflows/deed-conformance.yml@f85b6c11e5b02c51b1f0a94d40f39d9d72246396
     permissions:
       contents: read
     with:
@@ -66,7 +67,7 @@ jobs:
 
   k9:
     name: K9 conformance
-    uses: ./.github/workflows/k9-conformance-reusable.yml
+    uses: metadatastician/standards/.github/workflows/k9-conformance.yml@f85b6c11e5b02c51b1f0a94d40f39d9d72246396
     permissions:
       contents: read
       pull-requests: read

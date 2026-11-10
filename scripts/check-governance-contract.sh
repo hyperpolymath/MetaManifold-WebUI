@@ -364,15 +364,20 @@ fi
 
 # These are independent conformance families. An empty K9 corpus must be
 # shown explicitly; missing semantic evidence must not become a green DEED row.
-contains "$caller" 'uses: ./.github/workflows/k9-conformance-reusable.yml' \
-  'K9 validation uses the guarded fork-local reusable'
-k9_workflow="$(cat .github/workflows/k9-conformance-reusable.yml)"
-contains "$k9_workflow" 'ref: c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \
-  'the K9 validator and renderer use the immutable standards source'
-not_contains "$k9_workflow" 'ref: ${{ job.workflow_sha }}' \
-  'the K9 standards checkout cannot use the caller SHA'
-contains "$k9_workflow" 'if [ -f "$RUNNER_TEMP/corpus.log" ]; then' \
-  'optional corpus-log copying cannot fail an empty K9 corpus'
+#
+# Both lanes call metadatastician/standards directly (owner decision,
+# 2026-11-10). A pin that is not a full commit SHA is a float, and two
+# different pins are two standards revisions in one verdict.
+lane_pin() {
+  grep -E "^    uses: metadatastician/standards/\.github/workflows/$1@[0-9a-f]{40}\$" <<<"$caller" \
+    | sed 's/.*@//'
+}
+k9_pin="$(lane_pin 'k9-conformance\.yml')"
+if [ "$(grep -c . <<<"$k9_pin")" = 1 ]; then
+  pass 'K9 validation calls the standards lane at one immutable commit'
+else
+  fail 'K9 validation must call metadatastician/standards k9-conformance.yml at one full commit SHA'
+fi
 contains "$caller" 'require-files: true' \
   'the committed K9 corpus cannot silently become empty'
 contains "$caller" 'fail-on-indeterminate: true' \
@@ -407,36 +412,39 @@ else
   pass 'Scorecard OIDC publication is not enabled for PRs'
 fi
 
-# The two lanes that used to call a reusable owned by `standards` directly.
+# Reusable workflows owned by another account.
 #
-# The repository's Actions policy allows a reusable workflow only from a
-# repository owned by `hyperpolymath`. A call to another owner from a different
-# owner fails AT PLAN TIME - zero jobs, no name, no line in any check summary -
-# so it is silent. `standards` moved to `metadatastician` on 2026-10-25 and both
-# lanes went dark that way. The rule below is the durable part: no workflow here
-# may call a reusable workflow from a different owner, whatever the repository
-# is called or whoever owns it next.
+# A call the Actions policy does not permit fails AT PLAN TIME - zero jobs, no
+# name, no line in any check summary - so it is silent. `standards` moved to
+# `metadatastician` on 2026-10-25 and two lanes went dark that way. On
+# 2026-11-10 the owner decided to permit metadatastician/standards reusables
+# in the policy. The rule below is the durable part: the only cross-owner reusables
+# are the two named standards lanes, each at a full commit SHA. Anything else
+# stays fork-local or owned by the repository owner.
 cross_owner="$(grep -rnE '^[[:space:]]*uses:[[:space:]]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\.github/workflows/' \
   .github/workflows/ 2>/dev/null \
   | grep -vE 'uses:[[:space:]]+\./\.github/workflows/' \
-  | grep -vE 'uses:[[:space:]]+hyperpolymath/' || true)"
+  | grep -vE 'uses:[[:space:]]+hyperpolymath/' \
+  | grep -vE 'uses:[[:space:]]+metadatastician/standards/\.github/workflows/(deed|k9)-conformance\.yml@[0-9a-f]{40}[[:space:]]*$' || true)"
 if [ -z "$cross_owner" ]; then
-  pass 'every reusable workflow is fork-local or owned by the repository owner'
+  pass 'every reusable workflow is fork-local, owner-owned or a pinned standards lane'
 else
-  fail "a reusable workflow owned by another account fails at plan time with no jobs - $cross_owner"
+  fail "a reusable workflow outside the permitted set fails at plan time with no jobs - $cross_owner"
 fi
 
-deed_reusable="$(cat .github/workflows/deed-conformance-reusable.yml)"
-contains "$deed_reusable" 'deed-conformance.yml at 75bd5994470661a099df562d6d5ad2fe744dbd66' \
-  'the fork-local DEED lane records its immutable standards source'
-contains "$deed_reusable" 'ref: 75bd5994470661a099df562d6d5ad2fe744dbd66' \
-  'the DEED linter is still fetched from standards at that commit'
-contains "$caller" 'uses: ./.github/workflows/deed-conformance-reusable.yml' \
-  'DEED validation uses the guarded fork-local reusable'
+deed_pin="$(lane_pin 'deed-conformance\.yml')"
+if [ "$(grep -c . <<<"$deed_pin")" = 1 ]; then
+  pass 'DEED validation calls the standards lane at one immutable commit'
+else
+  fail 'DEED validation must call metadatastician/standards deed-conformance.yml at one full commit SHA'
+fi
+if [ -n "$deed_pin" ] && [ "$deed_pin" = "$k9_pin" ]; then
+  pass 'the DEED and K9 lanes use the same standards commit'
+else
+  fail "the DEED and K9 lanes must use one standards commit - deed=$deed_pin k9=$k9_pin"
+fi
 contains "$caller" 'require-files: true' \
   'a zero-file DEED corpus cannot silently pass'
-not_contains "$caller" 'uses: metadatastician/standards/.github/workflows/deed-conformance.yml@' \
-  'the governance lane cannot call the DEED reusable across owners'
 
 scorecard_reusable="$(cat .github/workflows/scorecard-reusable.yml)"
 contains "$scorecard_reusable" 'scorecard-reusable.yml at c6d78606f3928c22c3b0bdc6f5f5b47b96e05a5d' \

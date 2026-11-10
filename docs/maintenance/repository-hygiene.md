@@ -70,7 +70,7 @@ are unaffected: none of them was in a lane.
 | --- | --- |
 | `.github/workflows/pr-freshness.yml` | Runs `scripts/maintenance/check-pr-freshness.sh` on every pull request open, push, reopen and ready-for-review. Fails with a check annotation naming how far behind the branch is, or which merge commit breaks rule 2. |
 | `.github/workflows/branch-hygiene.yml` | Weekly, and on demand: runs the triage and updates **one** rolling issue, closing it when no drifted branch remains. One issue updated in place, because a job that opens an issue every week is the mechanism that produced the pile it is meant to clear. |
-| `.github/workflows/deed-conformance-reusable.yml`, `.github/workflows/scorecard-reusable.yml` | Fork-local copies of the two standards reusables, so the lanes keep running whatever the Actions policy says about other owners. Guarded by the contract: source commit, no cross-owner call, and the Scorecard SARIF guards. |
+| `.github/workflows/scorecard-reusable.yml` | Fork-local copy of the standards Scorecard reusable, so the lane keeps running whatever the Actions policy says about other owners. Guarded by the contract: source commit, no cross-owner call, and the Scorecard SARIF guards. The DEED copy that sat beside it was removed on 2026-11-10; see "Update 2026-11-10" below. |
 | `scripts/check-governance-contract.sh` (owner rule) | Fails if any workflow calls a reusable workflow that is neither fork-local nor owned by `hyperpolymath` — the failure mode that produces **no jobs and no error line** in any summary. |
 | `.github/dependabot.yml` | Both ecosystems set `rebase-strategy: auto`. Dependabot does not rebase by default, so with two open updates the second becomes stale the moment the first merges and **Branch freshness** would fail a one-line dependency bump on a rule the bump did not break. Rebasing keeps that check meaning what it says. |
 | `scripts/tests/test-triage-branches.sh`, `scripts/tests/test-check-pr-freshness.sh` | Both scripts are tested against fixture repositories: merged, drifted-with-nothing-new, drifted-with-a-dropped-file, orphan, unrelated-history and shallow cases. They run with the other shell tests in the `Advisory scan contract` job. |
@@ -289,6 +289,17 @@ today without an owner action.** `deed-conformance-reusable.yml` and
 | --- | --- | --- | --- |
 | DEED syntax / lint | `metadatastician/standards/…/deed-conformance.yml@75bd5994` | `./.github/workflows/deed-conformance-reusable.yml` | the linter, fetched from `standards` at `75bd5994` (a *checkout*, which cross-owner is allowed) |
 | OpenSSF Scorecard | `metadatastician/standards/…/scorecard-reusable.yml@c6d78606` | `./.github/workflows/scorecard-reusable.yml` | the reconciler helper checkout at `5a0891e9`, `ossf/scorecard-action@fa7117db` |
+
+**Update 2026-11-10.** The owner chose way out 1: permit the new owner. The DEED
+and K9 lanes now call `metadatastician/standards` directly, at one full commit
+SHA, and the two fork-local copies (`deed-conformance-reusable.yml`,
+`k9-conformance-reusable.yml`) are deleted. This needs the entry
+`metadatastician/standards/.github/workflows/*@*` in Settings → Actions →
+General. Without it the `Governance (fork)` run fails at plan time with zero
+jobs. The contract now permits exactly those two cross-owner calls, each at a
+full commit SHA and both at the same commit. The Hypatia, Scorecard and
+secret-scanner lanes are still fork-local. The text below describes the state
+before that date.
 
 Neither copy re-implements anything. The DEED copy is the upstream *caller*
 path — the self-test, fixture-corpus and uuid-v8 steps were gated on
