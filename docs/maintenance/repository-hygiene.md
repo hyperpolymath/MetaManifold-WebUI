@@ -378,8 +378,9 @@ recorded here so the choice does not have to be rediscovered.
 6. **Reconciling the `hyperpolymath/standards` pins.** Seven workflows reference
    that repository at four different commits, two of them inside
    `hypatia-scan-reusable.yml` itself (that file was deleted on 2026-11-10; the
-   governance lanes now share one pin). Some pins are deliberate and pinned by
-   `scripts/check-governance-contract.sh` (`c6d78606…` for K9, the secret
-   scanner and Scorecard; `01c9b0c9…` for the verdict-grid renderer), so a
+   governance lanes now share one pin). Some pins are deliberate and checked by
+   `scripts/check-governance-contract.sh` (`c6d78606…` for the secret scanner
+   and Scorecard copies; one shared pin, `d73229d8…` on 2026-11-10, for the
+   DEED, K9 and Hypatia lanes and the posting engine), so a
    reconciliation has to move the contract's constants and the allowlist digest
    together, and is a review of its own rather than a tidy.
