@@ -2,19 +2,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# Guard the fork-local Hypatia scan contract. A PR scan remains visible without
-# creating an independent blocking SARIF check, and the upstream TypeScript
-# exception stays exact-path, narrow-rule, and audit-preserving.
+# Guard the fork's governance contract. The DEED, K9 and Hypatia lanes and the
+# comment poster call metadatastician/standards at one full commit SHA. A PR
+# scan stays visible without an independent blocking SARIF check, and the
+# upstream TypeScript exception stays exact-path and narrow-rule.
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 CALLER=.github/workflows/hypatia-scan.yml
-REUSABLE=.github/workflows/hypatia-scan-reusable.yml
 ALLOWLIST=config/hypatia/upstream-typescript-allowlist.txt
-FORMAT_TOOLS=config/format-tools.toml
-STANDARDS_SHA=01c9b0c9f2646ebea0b30a9588462642ac94aee9
 UPSTREAM_SHA=a325589d3d318847c15b21cd34fb7d6e7a6d2f7b
 # SHA-256 of the sorted unique paths audited at UPSTREAM_SHA, with a final LF.
 ALLOWLIST_SHA256=531f92fdf33487a03b03381c40a6cc9a53a771b870b92fc18feed18c9c1798a7
@@ -56,22 +54,15 @@ step_block() { # file step-name
   ' "$1"
 }
 
-for file in "$CALLER" "$REUSABLE"; do
-  if [ -s "$file" ]; then
-    pass "$file exists"
-  else
-    fail "$file is missing or empty"
-  fi
-done
+if [ -s "$CALLER" ]; then
+  pass "$CALLER exists"
+else
+  fail "$CALLER is missing or empty"
+fi
 if [ -s "$ALLOWLIST" ]; then
   pass "$ALLOWLIST exists"
 else
   fail "$ALLOWLIST is missing or empty"
-fi
-if [ -s "$FORMAT_TOOLS" ]; then
-  pass "$FORMAT_TOOLS exists"
-else
-  fail "$FORMAT_TOOLS is missing or empty"
 fi
 
 # Do not continue with misleading secondary errors if an input is absent.
@@ -114,61 +105,62 @@ if [ "$failures" -gt 0 ]; then
 fi
 
 caller="$(cat "$CALLER")"
-reusable="$(cat "$REUSABLE")"
 
-contains "$caller" 'uses: ./.github/workflows/hypatia-scan-reusable.yml' \
-  'the governance lane calls the fork-local reusable'
-# The standards repository is metadatastician/standards; it was
-# hyperpolymath/standards until the transfer on 2026-10-25. Both names are
-# checked, because a bypass through either one skips the fork guard.
-not_contains "$caller" 'uses: metadatastician/standards/.github/workflows/hypatia-scan-reusable.yml@' \
-  'the governance lane cannot bypass the fork guard by calling standards directly'
-not_contains "$caller" 'uses: hyperpolymath/standards/.github/workflows/hypatia-scan-reusable.yml@' \
-  'the governance lane cannot bypass the fork guard through the pre-transfer name'
+# Print the pin of each call to the named standards workflow, one per line. No
+# call is no output, never a failed command: the checks below report it.
+lane_pin() {
+  local lane=$1
+  { grep -E "^    uses: metadatastician/standards/\.github/workflows/${lane}@[0-9a-f]{40}\$" <<<"$caller" || true; } \
+    | sed 's/.*@//'
+}
+
+# The Hypatia lane calls metadatastician/standards directly (owner decision,
+# 2026-11-10). The fork-local copy existed for two behaviours. Both are now
+# opt-in inputs of the standards lane, and removing either one changes what a
+# pull request can be blocked by, so both are required here.
+hypatia_pin="$(lane_pin 'hypatia-scan-reusable\.yml')"
+if [[ "$(grep -c . <<<"$hypatia_pin" || true)" == 1 ]]; then
+  pass 'the Hypatia lane calls the standards lane at one immutable commit'
+else
+  fail 'the Hypatia lane must call metadatastician/standards hypatia-scan-reusable.yml at one full commit SHA'
+fi
+if [ ! -e .github/workflows/hypatia-scan-reusable.yml ]; then
+  pass 'no stale fork-local copy of the Hypatia lane remains'
+else
+  fail 'a fork-local hypatia-scan-reusable.yml must not sit beside the direct call'
+fi
+if grep -Eq '^      sarif-upload-on-pull-request: false$' <<<"$caller"; then
+  pass 'pull request scans do not create an independent blocking code-scanning check'
+else
+  fail 'the Hypatia lane must set sarif-upload-on-pull-request: false'
+fi
+if grep -Eq "^      inherited-language-paths: ${ALLOWLIST//./\\.}\$" <<<"$caller"; then
+  pass 'the Hypatia lane applies the upstream TypeScript exception'
+else
+  fail "the Hypatia lane must set inherited-language-paths: $ALLOWLIST"
+fi
+if grep -Eq '^      block-on-(high|critical): true$' <<<"$caller"; then
+  fail 'the Hypatia lane is advisory here; a blocking threshold needs an owner decision and a baseline'
+else
+  pass 'the Hypatia lane stays advisory'
+fi
 contains "$caller" 'needs: [workflow-contract]' \
   'this contract runs before the fleet job'
-contains "$caller" 'needs: [workflow-contract, fleet]' \
-  'the Hypatia scan runs after both the contract and the fleet report-backs'
+contains "$caller" 'needs: [workflow-contract, fleet, previous-grid]' \
+  'the Hypatia scan runs after the contract, the fleet report-backs and the previous grid'
 contains "$caller" "if: \${{ !cancelled() && needs.workflow-contract.result == 'success' }}" \
   'a dead fleet job still lets the Hypatia lane render; a failed contract or a cancelled run does not'
-# Fork delta 4: the fleet report-backs. The producer is pinned to a gitbot-fleet
-# commit (same owner, so the Actions policy allows the reusable); the consumer
-# step must sit before the grid renders, or the rows stay orange with the
-# artifact sitting unread in the run.
+contains "$caller" "previous-grid-artifact: \${{ github.event_name == 'pull_request' && 'hypatia-grid-previous' || '' }}" \
+  'the revision comparison reads the previous grid only on pull requests'
+contains "$caller" '(.user.login // "") == "github-actions[bot]"' \
+  'only a bot-authored comment is read as the previous grid'
+# The fleet report-backs. The producer is pinned to a gitbot-fleet commit (same
+# owner, so the Actions policy allows the reusable). The standards lane
+# downloads the `fleet-report-backs` artifact before it renders the grid.
 if grep -Eq '^    uses: hyperpolymath/gitbot-fleet/\.github/workflows/fleet-report-back-reusable\.yml@[0-9a-f]{40}$' <<<"$caller"; then
   pass 'the fleet report-backs come from gitbot-fleet at an immutable commit'
 else
   fail 'the fleet report-backs must come from hyperpolymath/gitbot-fleet pinned to a 40-hex commit'
-fi
-if fleet_clear="$(step_block "$REUSABLE" 'Clear any checked-out fleet report-backs')"; then
-  contains "$fleet_clear" "find .gitbot-fleet/report-backs -mindepth 1 -maxdepth 1 -name '*.json' -print -exec rm -rf -- {} +" \
-    'a committed envelope can never pose as report-back evidence'
-  clear_line=$(grep -nF -- '- name: Clear any checked-out fleet report-backs' "$REUSABLE" | cut -d: -f1 | head -n1)
-  dl_line0=$(grep -nF -- '- name: Download the fleet report-backs' "$REUSABLE" | cut -d: -f1 | head -n1)
-  if [ -n "$clear_line" ] && [ -n "$dl_line0" ] && [ "$clear_line" -lt "$dl_line0" ]; then
-    pass 'the checked-out report-backs are cleared before the artifact is downloaded'
-  else
-    fail 'the report-backs clear step must precede the download'
-  fi
-else
-  fail 'the fleet report-backs clear step exists'
-fi
-if fleet_dl="$(step_block "$REUSABLE" 'Download the fleet report-backs')"; then
-  contains "$fleet_dl" 'path: .gitbot-fleet/report-backs' \
-    'the report-backs land where the renderer reads them'
-  contains "$fleet_dl" 'continue-on-error: true' \
-    'a missing report-backs artifact leaves rows orange instead of killing the lane'
-  contains "$fleet_dl" 'name: ${{ inputs.report-backs-artifact }}' \
-    'the artifact name is the caller-visible input, not a literal'
-  dl_line=$(grep -nF -- '- name: Download the fleet report-backs' "$REUSABLE" | cut -d: -f1 | head -n1)
-  render_line=$(grep -nF -- '- name: Render the verdict grid' "$REUSABLE" | cut -d: -f1 | head -n1)
-  if [ -n "$dl_line" ] && [ -n "$render_line" ] && [ "$dl_line" -lt "$render_line" ]; then
-    pass 'the report-backs are downloaded before the verdict grid renders'
-  else
-    fail 'the report-backs download must precede the verdict grid render step'
-  fi
-else
-  fail 'the fleet report-backs download step exists'
 fi
 if grep -Eq '^  pull_request:$' <<<"$caller"; then
   pass 'governance still runs for pull requests'
@@ -179,142 +171,6 @@ if grep -Eq '^  push:$' <<<"$caller"; then
   pass 'governance still runs for pushes to the default branch'
 else
   fail 'governance still runs for pushes to the default branch'
-fi
-
-contains "$reusable" "hypatia-scan-reusable.yml at $STANDARDS_SHA." \
-  'the fork records its immutable standards source'
-not_contains "$reusable" 'ref: ${{ job.workflow_sha }}' \
-  'a standards checkout cannot use the MetaManifold workflow SHA'
-
-if jcs_pin="$(step_block "$REUSABLE" 'Read the pinned ijson-jcs identity')"; then
-  contains "$jcs_pin" 'config/format-tools.toml' \
-    'the JCS tool pin comes from the repository format-tools manifest'
-  contains "$jcs_pin" "['ijson_jcs']" \
-    'the JCS installer reads the ijson-jcs identity from the manifest'
-  contains "$jcs_pin" "pin['rust_toolchain']" \
-    'the JCS Rust toolchain is resolved from the same manifest'
-else
-  fail 'the pinned ijson-jcs identity step exists'
-fi
-if jcs_install="$(step_block "$REUSABLE" 'Install pinned ijson-jcs')"; then
-  contains "$jcs_install" 'cargo "+$IJSON_JCS_RUST_TOOLCHAIN" install --quiet' \
-    'ijson-jcs is built with the pinned Rust toolchain'
-  contains "$jcs_install" '--git "$IJSON_JCS_REPOSITORY" --rev "$IJSON_JCS_REVISION"' \
-    'ijson-jcs is built from the immutable repository revision'
-  contains "$jcs_install" '--locked' \
-    'ijson-jcs dependencies are installed from Cargo.lock'
-else
-  fail 'the pinned ijson-jcs install step exists'
-fi
-if jcs_verify="$(step_block "$REUSABLE" 'Verify ijson-jcs and test the exception output')"; then
-  contains "$jcs_verify" 'IJSON_JCS="$IJSON_JCS" bash scripts/tests/test-hypatia-inherited-language-exception.sh' \
-    'the exception transform is tested with the real pinned canonicalizer'
-else
-  fail 'the pinned ijson-jcs smoke and exception test step exists'
-fi
-
-if upload="$(step_block "$REUSABLE" 'Upload SARIF to code scanning')"; then
-  contains "$upload" "if: github.event_name != 'pull_request'" \
-    'advisory pull-request scans skip SARIF upload'
-  contains "$upload" 'uses: github/codeql-action/upload-sarif@' \
-    'push and manual scans retain code-scanning reconciliation'
-  contains "$upload" 'sarif_file: hypatia-effective.sarif' \
-    'code scanning receives the exception-aware SARIF projection'
-else
-  fail 'the SARIF upload step exists'
-fi
-
-if scan="$(step_block "$REUSABLE" 'Run Hypatia scan')"; then
-  not_contains "$scan" 'if: github.event_name' \
-    'the Hypatia scanner itself remains enabled for every event'
-  contains "$scan" 'hypatia-findings.json' \
-    'the scanner still emits raw JSON findings'
-else
-  fail 'the Hypatia scan step exists'
-fi
-
-if exception="$(step_block "$REUSABLE" 'Apply upstream-inherited TypeScript exception')"; then
-  contains "$exception" 'if: ${{ always() }}' \
-    'the exception step records a result even after scan failures'
-  contains "$exception" 'scripts/filter-hypatia-inherited-language.sh' \
-    'the fork-local allowlist transform is applied after path normalization'
-  contains "$exception" 'hypatia-findings.effective.json' \
-    'the exception creates a distinct effective findings projection'
-  contains "$exception" 'hypatia-effective.sarif' \
-    'the exception creates a distinct effective SARIF projection'
-  contains "$exception" '"$HOME/.cargo/bin/ijson-jcs"' \
-    'the effective findings are canonicalized with the pinned CLI'
-else
-  fail 'the upstream-inherited TypeScript exception step exists'
-fi
-if raw_validation="$(step_block "$REUSABLE" 'Validate findings and count severities')"; then
-  contains "$raw_validation" 'ijson-jcs" canon < hypatia-findings.json' \
-    'raw findings are strict I-JSON validated before jq parses them'
-else
-  fail 'raw I-JSON validation is part of the findings check'
-fi
-
-if artifacts="$(step_block "$REUSABLE" 'Upload findings artifacts')"; then
-  contains "$artifacts" 'hypatia-findings.json' \
-    'raw findings remain available on advisory pull-request runs'
-  contains "$artifacts" 'hypatia-findings.effective.json' \
-    'the exception-aware findings remain available alongside raw evidence'
-  not_contains "$artifacts" 'if: github.event_name' \
-    'artifact upload is not accidentally restricted by event'
-else
-  fail 'the findings-artifact step exists'
-fi
-
-if grid="$(step_block "$REUSABLE" 'Render the verdict grid')"; then
-  contains "$grid" 'if: ${{ always() }}' \
-    'the verdict grid still renders after scanner failures'
-  contains "$grid" '--hypatia' \
-    'the verdict grid still consumes Hypatia findings'
-  contains "$grid" 'hypatia-findings.effective.json' \
-    'the verdict grid prefers the exception-aware projection'
-else
-  fail 'the verdict-grid render step exists'
-fi
-
-if baseline="$(step_block "$REUSABLE" 'Filter SARIF through the baseline before upload')"; then
-  contains "$baseline" 'hypatia-effective.sarif hypatia-findings.effective.json' \
-    'baseline filtering uses the same exception-aware findings as the grid'
-else
-  fail 'the SARIF baseline-filter step exists'
-fi
-if gate="$(step_block "$REUSABLE" 'Gate on baseline (blocking when a baseline is committed)')"; then
-  contains "$gate" 'hypatia-findings.effective.json' \
-    'the baseline gate consumes exception-aware findings'
-  if grep -Fxq "        if: '!inputs.block-on-high && (steps.inherited-language.outputs.findings_count > 0 || hashFiles(''.hypatia-baseline.json'') != '''')'" <<<"$gate"; then
-    pass 'the advisory baseline gate requires nonblocking mode and either findings or a committed baseline'
-  else
-    fail 'the advisory baseline gate requires nonblocking mode and either findings or a committed baseline'
-  fi
-else
-  fail 'the baseline gate step exists'
-fi
-if blocking="$(step_block "$REUSABLE" 'Block high and critical findings when requested')"; then
-  contains "$blocking" 'hypatia-effective.sarif' \
-    'the blocking gate evaluates exception-aware SARIF'
-else
-  fail 'the requested high/critical gate step exists'
-fi
-if advisory="$(step_block "$REUSABLE" 'Check for critical issues (ADVISORY — does not gate)')"; then
-  contains "$advisory" 'steps.inherited-language.outputs.critical' \
-    'the critical advisory count excludes only the inherited TypeScript exception'
-else
-  fail 'the critical advisory step exists'
-fi
-not_contains "$reusable" 'steps.scan.outputs.critical > 0' \
-  'the raw critical count cannot drive an exception-inconsistent advisory'
-
-if renderer="$(step_block "$REUSABLE" 'Check out the verdict grid renderer at this workflow'"'"'s commit')"; then
-  contains "$renderer" 'repository: metadatastician/standards' \
-    'the renderer comes from the standards repository'
-  contains "$renderer" "ref: $STANDARDS_SHA" \
-    'the standards renderer uses the immutable source pin'
-else
-  fail 'the standards renderer checkout exists'
 fi
 
 # Only real reference lines count. A comment may (and the fork-local DEED lane
@@ -355,26 +211,12 @@ else
   pass 'no workflow claims an actions.lock this repository does not have'
 fi
 
-upload_count="$(grep -c 'uses: github/codeql-action/upload-sarif@' "$REUSABLE" || true)"
-if [ "$upload_count" -eq 1 ]; then
-  pass 'there is exactly one SARIF upload site to guard'
-else
-  fail "expected one SARIF upload site, found $upload_count"
-fi
 
 # These are independent conformance families. An empty K9 corpus must be
 # shown explicitly; missing semantic evidence must not become a green DEED row.
 #
-# Both lanes call metadatastician/standards directly (owner decision,
-# 2026-11-10). A pin that is not a full commit SHA is a float, and two
-# different pins are two standards revisions in one verdict.
-# Print the pin of each call to the named standards lane, one per line. No
-# call is no output, never a failed command: the checks below report it.
-lane_pin() {
-  local lane=$1
-  { grep -E "^    uses: metadatastician/standards/\.github/workflows/${lane}@[0-9a-f]{40}\$" <<<"$caller" || true; } \
-    | sed 's/.*@//'
-}
+# A pin that is not a full commit SHA is a float, and two different pins are
+# two standards revisions in one verdict.
 k9_pin="$(lane_pin 'k9-conformance\.yml')"
 if [[ "$(grep -c . <<<"$k9_pin" || true)" == 1 ]]; then
   pass 'K9 validation calls the standards lane at one immutable commit'
@@ -387,9 +229,33 @@ contains "$caller" 'fail-on-indeterminate: true' \
   'missing K9 semantic evidence fails closed'
 contains "$caller" 'needs: [deed, k9, hypatia]' \
   'the PR verdict waits for all three independent lanes'
-contains "$caller" 'name: k9-grid' 'the K9 artifact remains visible in the PR verdict'
+contains "$caller" 'name: k9-grid' 'the K9 artifact remains visible to the badge job'
 contains "$caller" 'out/k9-grid.json' 'the governance-badges branch publishes the K9 badge'
-contains "$caller" '${K9_VERDICT:-orange}' 'an absent K9 verdict is indeterminate'
+
+# The comment comes from the standards posting engine, so its markers and its
+# order are the ones 3-practice/fork-governance/SPEC.adoc fixes. canon-ref
+# names the renderer commit: a second commit there is a second renderer.
+verdict_pin="$(lane_pin 'fork-governance-reusable\.yml')"
+if [[ "$(grep -c . <<<"$verdict_pin" || true)" == 1 ]]; then
+  pass 'the PR comment comes from the standards posting engine at one immutable commit'
+else
+  fail 'the verdict job must call metadatastician/standards fork-governance-reusable.yml at one full commit SHA'
+fi
+canon_ref="$({ grep -E '^      canon-ref: [0-9a-f]{40}$' <<<"$caller" || true; } | sed 's/.*: //')"
+if [[ -n "$canon_ref" && "$canon_ref" == "$verdict_pin" ]]; then
+  pass 'the comment renderer is the posting engine commit'
+else
+  fail "canon-ref must be the full commit SHA of the posting engine - canon-ref=$canon_ref engine=$verdict_pin"
+fi
+contains "$caller" "if: \${{ always() && github.event_name == 'pull_request' }}" \
+  'the comment is posted even when a lane fails'
+for input in 'deed-result: ${{ needs.deed.result }}' 'k9-result: ${{ needs.k9.result }}' \
+    'k9-verdict: ${{ needs.k9.outputs.verdict }}' 'hypatia-result: ${{ needs.hypatia.result }}' \
+    'hypatia-verdict: ${{ needs.hypatia.outputs.verdict }}' 'hypatia-advisory: ${{ needs.hypatia.outputs.advisory }}'; do
+  contains "$caller" "$input" "the posting engine receives ${input%%:*} from the lane, not a typed value"
+done
+not_contains "$caller" 'gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"' \
+  'this workflow has no second comment poster'
 
 secret_workflow="$(cat .github/workflows/secret-scanner.yml)"
 contains "$secret_workflow" 'uses: ./.github/workflows/secret-scanner-reusable.yml' \
@@ -422,18 +288,19 @@ fi
 # `metadatastician` on 2026-10-25 and two lanes went dark that way. On
 # 2026-11-10 the owner decided to permit metadatastician/standards reusables
 # in the policy. The rule below is the durable part: the only cross-owner reusables
-# are the two named standards lanes, each at a full commit SHA. Anything else
+# are the four named standards workflows, each at a full commit SHA. Anything else
 # stays fork-local or owned by the repository owner.
 cross_owner="$(grep -rnE '^[[:space:]]*uses:[[:space:]]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\.github/workflows/' \
   .github/workflows/ 2>/dev/null \
   | grep -vE 'uses:[[:space:]]+\./\.github/workflows/' \
   | grep -vE 'uses:[[:space:]]+hyperpolymath/' \
-  | grep -vE 'uses:[[:space:]]+metadatastician/standards/\.github/workflows/(deed|k9)-conformance\.yml@[0-9a-f]{40}[[:space:]]*$' || true)"
+  | grep -vE 'uses:[[:space:]]+metadatastician/standards/\.github/workflows/(deed-conformance|k9-conformance|hypatia-scan-reusable|fork-governance-reusable)\.yml@[0-9a-f]{40}[[:space:]]*$' || true)"
 if [ -z "$cross_owner" ]; then
   pass 'every reusable workflow is fork-local, owner-owned or a pinned standards lane'
 else
   fail "a reusable workflow outside the permitted set fails at plan time with no jobs - $cross_owner"
 fi
+
 
 deed_pin="$(lane_pin 'deed-conformance\.yml')"
 if [[ "$(grep -c . <<<"$deed_pin" || true)" == 1 ]]; then
@@ -441,10 +308,10 @@ if [[ "$(grep -c . <<<"$deed_pin" || true)" == 1 ]]; then
 else
   fail 'DEED validation must call metadatastician/standards deed-conformance.yml at one full commit SHA'
 fi
-if [[ -n "$deed_pin" && "$deed_pin" == "$k9_pin" ]]; then
-  pass 'the DEED and K9 lanes use the same standards commit'
+if [[ -n "$deed_pin" && "$deed_pin" == "$k9_pin" && "$deed_pin" == "$hypatia_pin" && "$deed_pin" == "$verdict_pin" ]]; then
+  pass 'the three lanes and the posting engine use the same standards commit'
 else
-  fail "the DEED and K9 lanes must use one standards commit - deed=$deed_pin k9=$k9_pin"
+  fail "the three lanes and the posting engine must use one standards commit - deed=$deed_pin k9=$k9_pin hypatia=$hypatia_pin verdict=$verdict_pin"
 fi
 contains "$caller" 'require-files: true' \
   'a zero-file DEED corpus cannot silently pass'
