@@ -384,7 +384,7 @@ function jcs(id,   t, i, n, s, ix, j, tmp) {
   if (t == "F") return "false"
   if (t == "i") {
     if (BAD[id] != "") die(BAD[id])
-    return sprintf("%d", V[id])
+    return sprintf("%.0f", V[id])
   }
   if (t == "f") {
     if (BAD[id] != "") die(BAD[id])
@@ -804,7 +804,9 @@ function check_dataset(d,   dsid, yn, y, tr, trs, rawn, i, j, mn, mp, z, zn, xn,
     else hellinger(MC, MCI, RN, RP, MR)
     for (i = 0; i < RN; i++) for (j = 0; j < RP; j++) MRI[i, j] = 0
     mn = RN; mp = RP
-    a = (YN < RN) ? YN : RN; b = (YP < RP) ? YP : RP
+    # The stored matrix must have the shape of the one rebuilt from raw_counts.
+    if (YN != RN || YP != RP) die(dsid ": stored transformed matrix has a different shape from raw_counts")
+    a = RN; b = RP
     for (i = 0; i < a; i++) for (j = 0; j < b; j++)
       if (abs(MY[i, j] - MR[i, j]) > 1e-10) die(dsid ": stored transformed matrix drifted from raw_counts")
   } else {

@@ -93,6 +93,9 @@ section=samples
 label="" ; lists=()
 n_samples="$(jq '.sample_labels | length' "$input")"
 count=0
+# Captured with a checked assignment, so a failure in blocks stops the script
+# instead of reading as empty input.
+block_lines="$(blocks)"
 while IFS=$'\t' read -r tag rest; do
   case "$tag" in
     L) label="$rest"; lists=() ;;
@@ -103,7 +106,7 @@ while IFS=$'\t' read -r tag rest; do
       count=$((count + 1)) ;;
     *) ;;
   esac
-done < <(blocks)
+done <<<"$block_lines"
 
 join() { local IFS=,; echo "$*"; }
 printf '{"samples":[%s],"groups":[%s]}\n' "$(join "${samples[@]}")" "$(join "${groups[@]}")" | jq -ac .

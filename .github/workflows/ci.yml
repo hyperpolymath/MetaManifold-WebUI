@@ -733,6 +733,7 @@ jobs:
       AGDA_BIN_VERSION: 2.6.4.3-1+b2
       AGDA_STDLIB_VERSION: 2.1-4
       AGDA_FLAGS: --safe --without-K --cubical-compatible
+      AGDA_TARGET: MetaManifold/All.agda
       # The image of the container: above, the one literal that `container:`
       # cannot read from env. The hash step refuses to run if the two differ.
       AGDA_IMAGE: debian:trixie-20250929-slim@sha256:1caf1c703c8f7e15dcf2e7769b35000c764e6f50e4d7401c355fb0248f3ddfdb
@@ -752,10 +753,12 @@ jobs:
           set -euo pipefail
           # A container job's steps cannot read the container image from the
           # context, so the image is a literal in env; it must be the one in use.
-          grep -qF "container: $AGDA_IMAGE" .github/workflows/ci.yml \
-            || { echo "ERROR: AGDA_IMAGE differs from the container image" >&2; exit 1; }
+          # Only this job's container line counts: the occupancy job has its own.
+          container="$(awk '/^  agda:/ { a = 1; next } a && /^  [a-z_]+:/ { a = 0 } a && /^    container:/ { sub(/^    container: */, ""); print; exit }' .github/workflows/ci.yml)"
+          [ "$container" = "$AGDA_IMAGE" ] \
+            || { echo "ERROR: AGDA_IMAGE differs from the Agda job container" >&2; exit 1; }
           hash="$( {
-            printf '%s\n' "$AGDA_IMAGE" "$AGDA_BIN_VERSION" "$AGDA_STDLIB_VERSION" "$AGDA_FLAGS"
+            printf '%s\n' "$AGDA_IMAGE" "$AGDA_BIN_VERSION" "$AGDA_STDLIB_VERSION" "$AGDA_FLAGS" "$AGDA_TARGET"
             find proofs -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
           } | sha256sum | cut -d' ' -f1 )"
           echo "hash=$hash" >> "$GITHUB_OUTPUT"
@@ -832,7 +835,7 @@ jobs:
           cd proofs/agda
           # AGDA_FLAGS is word-split on purpose: each flag is its own argument.
           # shellcheck disable=SC2086
-          if ! agda $AGDA_FLAGS MetaManifold/All.agda >/tmp/agda.log 2>&1; then
+          if ! agda $AGDA_FLAGS "$AGDA_TARGET" >/tmp/agda.log 2>&1; then
             cat /tmp/agda.log
             msg="$(awk 'NR > 1 { printf "%%0A" } { gsub(/%/, "%25"); printf "%s", $0 }' /tmp/agda.log | tail -c 3500)"
             echo "::error file=proofs/agda/MetaManifold/All.agda,title=Agda type-check failed::$msg"
