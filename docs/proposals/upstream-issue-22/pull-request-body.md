@@ -12,6 +12,10 @@ abundance, the way issue #22 ruled: "MN/DM regression would come in as (2),
 MGLM through RCall, in line with CONTRIBUTING." It is one commit on top of
 `89be534`.
 
+The commit was written with a coding agent and is signed by the HoTT-stuff
+account. [OWNER: name the person who answers for every line of the diff, as
+CONTRIBUTING asks, then delete this bracket.]
+
 - **`src/analysis/differential.jl`**: two new values of
   `analysis.differential.method`, `multinomial` and `dirichlet_multinomial`.
   Each fits one `MGLM::MGLMreg.fit` model (`dist = "MN"` or `"DM"`) of the
