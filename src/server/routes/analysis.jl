@@ -1257,7 +1257,8 @@ function _differential_config(study::String)
                            "analysis.differential.dm_overdispersion_method", "mle")),
                        max_iter=max_iter_val,
                        tol=Float64(val("analysis.differential.tolerance", 1e-8)),
-                       max_seconds=Float64(val("analysis.differential.max_seconds", 300.0)))
+                       max_seconds=Float64(val("analysis.differential.max_seconds", 300.0)),
+                       mn_backend=String(val("analysis.differential.mn_backend", "julia")))
 end
 
 """
@@ -1338,6 +1339,7 @@ function _differential(study::String, body)
         e isa MASSUnavailable  && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa ZCompositionsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa GlmGamPoiUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
+        e isa MGLMUnavailable  && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa RStatsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
         e isa CompositionalRefusal && return json_error(422, "model_refused", sprint(showerror, e))
         e isa RuntimeRefusal   && return json_error(422, "runtime_budget_exceeded", sprint(showerror, e))

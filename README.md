@@ -344,6 +344,14 @@ not exclude samples from this analysis.
   Both multinomial models bound their Newton fit with `max_iter`, `tolerance`
   and `max_seconds`, and a fit that does not converge is refused. Dirichlet-
   multinomial diagnostics report the concentration, theta, and boundary status.
+- `mn_backend: mglm` fits either model with `MGLM::MGLMreg.fit` through R instead,
+  the route upstream ruled for these models (JoshuaJewell/MetaManifold-WebUI#22).
+  Its multinomial is the same model and reproduces the Julia fit; its
+  Dirichlet-multinomial is a different model, with a log link on every taxon's
+  Dirichlet parameter and so a concentration per group. It fits by maximum
+  likelihood, so it refuses `mn_penalty` and `mom`, and does not use the Newton
+  settings. When a group shows no overdispersion its rows are marked `boundary`,
+  or MGLM's own refusal is kept and points to `multinomial`.
 
 ZINB and hurdle models can overfit sparse data; do not select ZINB solely
 because counts are sparse. Compare against NB diagnostics. The methods report
@@ -837,6 +845,7 @@ analysis:
     mn_reference_taxon: ~        # multinomial models: null selects the most abundant fitted taxon
     mn_penalty: 0.0              # multinomial models: non-negative L2 penalty
     dm_overdispersion_method: mle # dirichlet_multinomial: mle | mom
+    mn_backend: julia            # multinomial models: julia | mglm (MGLM through R)
     max_iter: 500                # multinomial models: Newton iteration cap
     tolerance: 0.00000001        # multinomial models: convergence tolerance
     max_seconds: 300.0           # multinomial models: wall-clock budget

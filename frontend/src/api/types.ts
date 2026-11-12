@@ -467,6 +467,8 @@ export interface DifferentialResult {
     mn_penalty?: number
     /** dirichlet_multinomial only: how the concentration was estimated. */
     dm_overdispersion_method?: 'mle' | 'mom'
+    /** multinomial and dirichlet_multinomial: this fork's Julia models or MGLM through R. */
+    mn_backend?: 'julia' | 'mglm'
     /** multinomial and dirichlet_multinomial: the optimiser settings used. */
     tolerance?: number
     max_iter?: number
@@ -505,7 +507,13 @@ export interface DifferentialResult {
       reference_taxon: string; penalty: number; n_parameters: number; iterations: number
       converged: boolean; log_likelihood: number; runtime_seconds: number; n_taxa_fitted: number
     }
-    /** dirichlet_multinomial only: c and theta = 1 / (1 + c) in (0, 1). */
+    /** mn_backend mglm only: the MGLM distribution, its warnings, and for the
+     * Dirichlet-multinomial each group's concentration alpha0 and theta = 1 / (1 + alpha0). */
+    mglm?: {
+      distribution: 'MN' | 'DM'; warnings: string[]
+      overdispersion?: Record<string, { alpha0: number | null; theta: number | null }>
+    }
+    /** dirichlet_multinomial with the julia backend only: c and theta = 1 / (1 + c) in (0, 1). */
     overdispersion?: {
       method: 'mle' | 'mom'; concentration: number; theta: number; at_bound: boolean
     }

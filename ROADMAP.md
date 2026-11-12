@@ -11,7 +11,8 @@ occupancy work. The GitHub Wiki roadmap still needs a synchronized update; see
   (`ancom_bc`, `aldex2`, `songbird`, `multinomial`, `dirichlet_multinomial`);
   see [the differential-abundance section](README.md#differential-abundance).
   `songbird` and `multinomial` are two implementations of the same
-  baseline-category multinomial model.
+  baseline-category multinomial model. `mn_backend: mglm` fits `multinomial`
+  and `dirichlet_multinomial` with MGLM through R, as upstream ruled on #22.
 - `zinb` and `hurdle_nb` are available in the differential-abundance config and
   UI. They report the count effect and zero/occurrence effect and test group
   effects jointly. The UI surfaces model cautions; BH adjustment remains on.

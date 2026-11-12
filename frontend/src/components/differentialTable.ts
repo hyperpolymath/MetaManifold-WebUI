@@ -56,6 +56,10 @@ export function configLine(result: DifferentialResult): string {
       const overdispersion = c.method === 'dirichlet_multinomial'
         ? `, overdispersion ${c.dm_overdispersion_method}`
         : ''
+      if (c.mn_backend === 'mglm') {
+        return `method ${c.method}, backend mglm, reference ${c.mn_reference_taxon}, ` +
+          `min_prevalence ${c.min_prevalence}; estimates are log2 fold changes against the reference taxon`
+      }
       return `method ${c.method}${overdispersion}, reference ${c.mn_reference_taxon}, ` +
         `penalty ${c.mn_penalty}, min_prevalence ${c.min_prevalence}; estimates are ` +
         'log2 fold changes against the reference taxon'

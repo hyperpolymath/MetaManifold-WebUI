@@ -435,6 +435,14 @@ analysis:
     # alternation). The result reports the concentration c and theta = 1/(1+c),
     # the model's intra-sample correlation; theta -> 0 is the multinomial.
     dm_overdispersion_method: mle
+    # multinomial and dirichlet_multinomial: which implementation fits them.
+    # julia is this fork's own models, with mn_penalty and dm_overdispersion_method.
+    # mglm is MGLM::MGLMreg.fit through R, the route upstream ruled for these
+    # models: maximum likelihood with no penalty, and a Dirichlet-multinomial whose
+    # concentration is estimated per group (a log link on every taxon's parameter),
+    # so it is not the same model as julia's, which has one concentration. mglm
+    # ignores max_iter, tolerance and max_seconds and refuses a penalty or mom.
+    mn_backend: julia
     # Optimiser settings for the two multinomial models, which are fitted in
     # Julia: the Newton iteration cap, the convergence tolerance (largest
     # coefficient update, relative to the coefficients), and the wall-clock

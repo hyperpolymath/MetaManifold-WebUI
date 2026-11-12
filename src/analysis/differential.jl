@@ -23,8 +23,9 @@
 #   reference-frame invariant CLR-centred differentials (Morton et al. 2019;
 #   Zhang et al. 2017) fitted by damped Newton-Raphson with exact O(K)
 #   Sherman-Morrison Fisher-information inversion.
-# - multinomial and dirichlet_multinomial: joint compositional models fitted in
-#   Julia against a reference taxon; the latter estimates extra-multinomial
+# - multinomial and dirichlet_multinomial: joint compositional models fitted
+#   against a reference taxon, in Julia (the default) or by MGLM through R
+#   (`mn_backend: mglm`); the Dirichlet-multinomial estimates extra-multinomial
 #   overdispersion. Neither uses a library-size offset or zero replacement.
 # - zinb and hurdle_nb: two-part negative-binomial models with a joint test of
 #   group effects in the zero/occurrence and count processes.
@@ -42,11 +43,12 @@ using ..CompositionalModels: CompositionalFit, CompositionalRefusal, RuntimeRefu
        DM_METHODS, CONCENTRATION_MIN, CONCENTRATION_MAX, fit_multinomial,
        fit_dirichlet_multinomial
 export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
-       GlmGamPoiUnavailable, CompositionalRefusal, RuntimeRefusal, RStatsUnavailable,
-       OFFSET_METHODS, METHODS, COMPOSITIONAL_METHODS, DISPERSIONS, REPLACEMENT_METHODS,
+       GlmGamPoiUnavailable, MGLMUnavailable, CompositionalRefusal, RuntimeRefusal,
+       RStatsUnavailable, OFFSET_METHODS, METHODS, COMPOSITIONAL_METHODS, MN_BACKENDS,
+       MAX_COMPOSITIONAL_TAXA, DISPERSIONS, REPLACEMENT_METHODS,
        MIN_MC_SAMPLES, MAX_MC_SAMPLES, DEFAULT_MC_SAMPLES,
        tss_factors, rle_factors, size_factors, bh_adjust, validate_counts, replace_zeros,
-       clr_transform, fit_nb, fit_two_part_nb, fit_occupancy, fit_welch,
+       clr_transform, fit_nb, fit_two_part_nb, fit_occupancy, fit_welch, fit_mglm,
        fit_ancom_bc, fit_aldex2, fit_songbird, differential_abundance, volcano_chart
 
 # The two joint models use a reference taxon and the optimiser settings below.
@@ -55,6 +57,39 @@ export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavail
 const COMPOSITIONAL_METHODS = ("multinomial", "dirichlet_multinomial")
 const METHODS = ("nb_glm", "clr_welch", "zinb", "hurdle_nb", "ancom_bc",
                  "aldex2", "songbird", COMPOSITIONAL_METHODS...)
+
+# Which implementation fits `multinomial` and `dirichlet_multinomial`: this
+# fork's own Julia models (`CompositionalModels`, the default, with a ridge
+# penalty and a common Dirichlet concentration), or MGLM through RCall, the
+# route upstream ruled for these models (JoshuaJewell/MetaManifold-WebUI#22).
+# The two multinomials are the same model. The two Dirichlet-multinomials are
+# not: MGLM puts a log link on every taxon's Dirichlet parameter, so each group
+# has its own concentration.
+const MN_BACKENDS = ("julia", "mglm")
+
+# At most this many taxa enter one MGLM fit. Its information matrix is dense,
+# (2 x taxa) squared, and MGLM forms and eigen-decomposes it on every fit: on
+# 40 samples a fit of about 450 taxa took 3 to 6 seconds on one core, and the
+# cost grows with the cube of the taxa. A larger table is refused with a
+# pointer to `min_prevalence`, never cut down silently.
+const MAX_COMPOSITIONAL_TAXA = 1000
+
+# MGLMreg.fit's own iteration cap. A fit that reaches it has not converged
+# and is refused.
+const MGLM_MAXITERS = 150
+
+# The Dirichlet-multinomial's overdispersion multiplies a count's multinomial
+# variance by 1 + (m - 1) theta, for a sample of m reads. When that excess is
+# below this fraction at a group's mean read total, the counts show no
+# overdispersion there: the group's concentration has no finite estimate and
+# MGLM stops while it is still growing. The log-ratio contrasts are then the
+# multinomial ones (checked to agree to about 1e-5, with standard errors
+# 0.15% larger, on simulated multinomial counts), so their rows keep their
+# statistics and are marked `boundary`, as `nb_glm` does at its theta bound.
+# MGLM's own check may instead call such a fit a saddle point, because the
+# information is nearly flat along the growing concentration; that refusal
+# stands, and its reason then says so and points to method multinomial.
+const DM_EXCESS_FLOOR = 0.01
 
 # The per-taxon dispersion `nb_glm` uses: maximum likelihood (MASS::glm.nb's
 # own theta) or glmGamPoi's shrinkage estimator, which shares information
@@ -126,6 +161,10 @@ or `"mom"` for the Dirichlet-multinomial model. `max_iter` must be at least 1;
 `tol` is a positive, finite convergence tolerance and `max_seconds` a positive,
 finite runtime budget in seconds. `mc_samples` is the ALDEx2 Monte-Carlo
 instance count, a whole number in [16, 4096]; booleans are refused.
+`mn_backend` fits the two multinomial methods with this fork's Julia models
+(`"julia"`, the default) or with `MGLM::MGLMreg.fit` through R (`"mglm"`);
+`"mglm"` refuses a non-zero `mn_penalty` and `dm_overdispersion_method="mom"`,
+and does not use `max_iter`, `tol` or `max_seconds`.
 `dispersion` names the per-taxon dispersion `nb_glm` uses (`"ml"` or
 `"glmGamPoi"`): `"ml"` takes the maximum-likelihood theta from `MASS::glm.nb`,
 `"glmGamPoi"` uses `overdispersion_shrinkage_list.dispersion_trend` from
@@ -162,6 +201,7 @@ struct DifferentialConfig
     tol                :: Float64
     max_seconds        :: Float64
     mc_samples         :: Int
+    mn_backend         :: String
     function DifferentialConfig(offset::AbstractString="tss", min_prevalence::Real=0.0;
                                 method::AbstractString="nb_glm",
                                 replacement_delta::Real=DEFAULT_DELTA,
@@ -174,7 +214,8 @@ struct DifferentialConfig
                                 max_iter::Integer=COMPOSITIONAL_MAX_ITER,
                                 tol::Real=COMPOSITIONAL_TOL,
                                 max_seconds::Real=COMPOSITIONAL_MAX_SECONDS,
-                                mc_samples::Real=DEFAULT_MC_SAMPLES)
+                                mc_samples::Real=DEFAULT_MC_SAMPLES,
+                                mn_backend::AbstractString="julia")
         m = lowercase(strip(String(method)))
         m in METHODS || throw(ArgumentError(
             "analysis.differential.method must be one of $(join(METHODS, ", ")), not '$method'"))
@@ -229,10 +270,26 @@ struct DifferentialConfig
          MIN_MC_SAMPLES <= mc_samples <= MAX_MC_SAMPLES) || throw(ArgumentError(
             "analysis.differential.mc_samples must be a whole number in " *
             "[$MIN_MC_SAMPLES, $MAX_MC_SAMPLES], not $mc_samples"))
+        b = lowercase(strip(String(mn_backend)))
+        b in MN_BACKENDS || throw(ArgumentError(
+            "analysis.differential.mn_backend must be one of $(join(MN_BACKENDS, ", ")), not '$mn_backend'"))
+        (b == "julia" || compositional) || throw(ArgumentError(
+            "analysis.differential.mn_backend applies to method multinomial or " *
+            "dirichlet_multinomial, but method is '$m'; set it to julia"))
+        # MGLM fits by maximum likelihood with no penalty, and estimates each
+        # group's Dirichlet concentration itself: the Julia-only settings would
+        # be silently ignored, so they are refused.
+        (b == "julia" || mn_penalty == 0) || throw(ArgumentError(
+            "analysis.differential.mn_penalty is not available with mn_backend: mglm, which " *
+            "fits by maximum likelihood; set mn_penalty to 0 or mn_backend to julia"))
+        (b == "julia" || dm == "mle") || throw(ArgumentError(
+            "analysis.differential.dm_overdispersion_method: mom is not available with " *
+            "mn_backend: mglm, which estimates each group's concentration by maximum " *
+            "likelihood; set it to mle or mn_backend to julia"))
         a = isnothing(bayesian_alpha) ? nothing : Float64(bayesian_alpha)
         new(m, o, Float64(min_prevalence), Float64(replacement_delta), d, r, a, ref,
             Float64(mn_penalty), dm, Int(max_iter), Float64(tol), Float64(max_seconds),
-            Int(mc_samples))
+            Int(mc_samples), b)
     end
 end
 
@@ -250,6 +307,19 @@ end
 
 Base.showerror(io::IO, e::ScalingRefusal) =
     print(io, "$(uppercase(e.method)) scaling refused: $(e.reason)")
+
+"""
+    MGLMUnavailable()
+
+Raised when the R package MGLM, which fits the `multinomial` and
+`dirichlet_multinomial` models, cannot be loaded. No other method is
+substituted.
+"""
+struct MGLMUnavailable <: Exception end
+
+Base.showerror(io::IO, ::MGLMUnavailable) = print(io,
+    "the R package MGLM is not available, so the multinomial and Dirichlet-multinomial " *
+    "models cannot be fitted; restore the pinned R library (Rscript -e 'renv::restore()')")
 
 """
     MASSUnavailable()
@@ -1145,6 +1215,141 @@ function fit_welch(values::AbstractMatrix{<:Real}, groups::AbstractVector{<:Abst
               se        = _num.(raw.se),
               statistic = _num.(raw.statistic),
               pvalue    = _num.(raw.pvalue))
+end
+
+# One MGLM fit of the whole composition, with the same `da_` naming as `_FIT_R`.
+# The reference taxon is the last column, which is MGLM's own baseline for
+# "MN"; for "DM" every taxon has its own coefficients, and the reference enters
+# through the contrast below. MGLMreg.fit sets options(warn = -1) while it
+# iterates and restores it only on a normal return, so the caller's setting is
+# restored here whatever happens. Any error, a fit that reaches the iteration
+# cap, a warning that the fit did not converge or is not at a maximum, and an
+# information matrix that is not positive definite each refuse the whole fit:
+# there is no fallback to another model.
+#
+# For taxon j the group coefficient's index in MGLM's coefficient vector is
+# (j - 1) * 2 + 2, column-major over a 2 x taxa matrix. Under "MN" that
+# coefficient is itself the change in log(p_j / p_reference). Under "DM"
+# log(alpha_j / alpha_reference) has the same meaning, so the estimate is the
+# difference of the two group coefficients and its variance takes their
+# covariance from the inverse of the observed information.
+const _FIT_MGLM_R = raw"""
+da_g <- factor(da_group, levels = da_levels)
+da_X <- model.matrix(~ da_g)
+da_warns <- character(0)
+da_ow <- options(warn = 0)
+da_fit <- tryCatch(
+  withCallingHandlers(
+    MGLM::MGLMreg.fit(Y = da_counts, X = da_X, dist = da_dist, maxiters = da_maxiters),
+    warning = function(w) {
+      da_warns <<- c(da_warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }),
+  error = function(e) e)
+options(da_ow)
+# MGLM's own minorisation steps fit binomial and Poisson GLMs to non-integer
+# working responses, and dbinom warns once per value ("non-integer x =
+# 2.18..."). The value is dropped so that each kind of warning is listed once.
+da_warns <- unique(sub("= [-+0-9.eE]+$", "= ...", trimws(da_warns)))
+da_k <- ncol(da_counts)
+da_out <- list(reason = "", warnings = da_warns, iterations = NA_real_,
+               loglik = NA_real_, estimate = rep(NA_real_, da_k - 1),
+               se = rep(NA_real_, da_k - 1), statistic = rep(NA_real_, da_k - 1),
+               pvalue = rep(NA_real_, da_k - 1), alpha0 = rep(NA_real_, 2))
+da_fatal <- grepl("converge|saddle|singular|Out of range|diverge|removed", da_warns)
+# Each group's total concentration, kept even when the fit is refused: a
+# concentration that ran off to infinity explains a refusal at the boundary.
+if (da_dist == "DM" && !inherits(da_fit, "error")) {
+  da_B <- da_fit@coefficients
+  da_out$alpha0 <- c(sum(exp(da_B[1, ])), sum(exp(da_B[1, ] + da_B[2, ])))
+}
+if (inherits(da_fit, "error")) {
+  da_out$reason <- paste("MGLMreg.fit stopped with an error:", conditionMessage(da_fit))
+} else if (da_fit@iter >= da_maxiters) {
+  da_out$reason <- paste("the fit did not converge within", da_maxiters, "iterations")
+} else if (any(da_fatal)) {
+  da_out$reason <- paste("the fit is not a usable maximum:", paste(da_warns[da_fatal], collapse = "; "))
+} else {
+  da_out$iterations <- da_fit@iter
+  da_out$loglik <- da_fit@logL
+  da_B <- da_fit@coefficients
+  da_V <- tryCatch(chol2inv(chol(-da_fit@Hessian)), error = function(e) NULL)
+  if (is.null(da_V)) {
+    da_out$reason <- "the observed information is not positive definite, so there are no standard errors"
+  } else {
+    for (da_j in seq_len(da_k - 1)) {
+      da_a <- (da_j - 1) * 2 + 2
+      if (da_dist == "MN") {
+        da_est <- da_B[2, da_j]
+        da_var <- da_V[da_a, da_a]
+      } else {
+        da_r <- (da_k - 1) * 2 + 2
+        da_est <- da_B[2, da_j] - da_B[2, da_k]
+        da_var <- da_V[da_a, da_a] + da_V[da_r, da_r] - 2 * da_V[da_a, da_r]
+      }
+      da_out$estimate[da_j] <- da_est
+      da_out$se[da_j] <- sqrt(da_var)
+    }
+    da_out$statistic <- da_out$estimate / da_out$se
+    da_out$pvalue <- 2 * pnorm(-abs(da_out$statistic))
+  }
+}
+"""
+
+"""
+    fit_mglm(counts, groups; levels, dist) -> NamedTuple
+
+Fit one MGLM regression of the samples x taxa integer matrix `counts` on the
+two-level factor `groups`, with `levels = (reference, contrast)`. `dist` is
+`"MN"` (multinomial logit) or `"DM"` (Dirichlet-multinomial, a log link on
+every taxon's Dirichlet parameter). The last column is the reference taxon.
+
+Returns `reason` (empty when the fit is usable, otherwise why it was refused),
+`warnings` (every distinct warning MGLM raised), `iterations`, `loglik`, and
+for each taxon but the reference, in column order: `estimate` (the change in
+the natural log of the taxon's ratio to the reference, contrast over
+reference), `se`, `statistic` (Wald z) and `pvalue` (two-sided), each `nothing`
+when not finite. For `"DM"`, `alpha0` holds each group's total Dirichlet
+concentration, reference first; otherwise both are `nothing`. Throws
+`MGLMUnavailable` when MGLM cannot be loaded and `RBusyError` when the R runtime
+stays busy.
+"""
+function fit_mglm(counts::AbstractMatrix{<:Integer}, groups::AbstractVector{<:AbstractString};
+                  levels::NTuple{2,String}, dist::AbstractString)
+    dist in ("MN", "DM") || throw(ArgumentError("dist must be MN or DM, not '$dist'"))
+    size(counts, 1) == length(groups) || throw(ArgumentError(
+        "counts have $(size(counts, 1)) samples and groups $(length(groups))"))
+    size(counts, 2) >= 2 || throw(ArgumentError(
+        "a compositional model needs at least 2 taxa; there are $(size(counts, 2))"))
+    raw = with_r_lock(; timeout=R_WAIT_SECONDS[]) do
+        RCall.rcopy(RCall.reval("requireNamespace('MGLM', quietly = TRUE)")) ||
+            throw(MGLMUnavailable())
+        RCall.globalEnv[:da_counts] = Matrix{Float64}(counts)
+        RCall.globalEnv[:da_group] = String.(groups)
+        RCall.globalEnv[:da_levels] = collect(levels)
+        RCall.globalEnv[:da_dist] = String(dist)
+        RCall.globalEnv[:da_maxiters] = MGLM_MAXITERS
+        try
+            RCall.reval(_FIT_MGLM_R)
+            RCall.rcopy(Dict{Symbol,Any}, RCall.reval("da_out"))
+        finally
+            RCall.reval("rm(list = intersect(ls(), c('da_counts', 'da_group', 'da_levels', " *
+                        "'da_dist', 'da_maxiters', 'da_g', 'da_X', 'da_warns', 'da_ow', " *
+                        "'da_fit', 'da_k', 'da_out', 'da_fatal', 'da_B', 'da_V', 'da_j', " *
+                        "'da_a', 'da_r', 'da_est', 'da_var'))); invisible(gc())")
+        end
+    end
+    vec_num(x) = _num.(x isa AbstractVector ? x : [x])
+    warns = raw[:warnings]
+    (reason     = String(raw[:reason]),
+     warnings   = warns isa AbstractString ? [String(warns)] : String.(collect(warns)),
+     iterations = _num(raw[:iterations]),
+     loglik     = _num(raw[:loglik]),
+     estimate   = vec_num(raw[:estimate]),
+     se         = vec_num(raw[:se]),
+     statistic  = vec_num(raw[:statistic]),
+     pvalue     = vec_num(raw[:pvalue]),
+     alpha0     = vec_num(raw[:alpha0]))
 end
 
 """
@@ -2069,6 +2274,111 @@ end
 
 
 """
+    _compositional_mglm!(rows, diagnostics, sub, tested, ref_pos, ref_name, groups,
+                         samples, levels, config) -> (method_text, effect, config_echo)
+
+The `mn_backend: mglm` path of `multinomial` and `dirichlet_multinomial`: one
+`fit_mglm` fit of the samples x taxa counts `sub` (the columns of the taxa
+`tested`, reference at `ref_pos`), written into `rows` and `diagnostics` in the
+shape the Julia path uses. The checks and statuses are the upstream ones
+(JoshuaJewell/MetaManifold-WebUI#22): at most `MAX_COMPOSITIONAL_TAXA` taxa, 2
+samples a group for the Dirichlet-multinomial, every sample with reads in the
+fitted taxa, MGLM's own refusals kept, and a group with no overdispersion marked
+`boundary` or explained. Throws `ArgumentError` for unusable input and
+`MGLMUnavailable` when MGLM cannot be loaded.
+"""
+function _compositional_mglm!(rows, diagnostics, sub::AbstractMatrix{<:Integer}, tested,
+                              ref_pos::Integer, ref_name::AbstractString, groups, samples,
+                              levels::NTuple{2,String}, config::DifferentialConfig)
+    dm = config.method == "dirichlet_multinomial"
+    n_ref, n_con = count(==(levels[1]), groups), count(==(levels[2]), groups)
+    dm && !(n_ref >= 2 && n_con >= 2) && throw(ArgumentError(
+        "the Dirichlet-multinomial model estimates each group's overdispersion from the " *
+        "variation between its samples, so it needs at least 2 samples in each group; " *
+        "'$(levels[1])' has $n_ref and '$(levels[2])' has $n_con"))
+    length(tested) >= 2 || throw(ArgumentError(
+        "a compositional model needs at least 2 taxa with reads in both groups; there are $(length(tested))"))
+    length(tested) <= MAX_COMPOSITIONAL_TAXA || throw(ArgumentError(
+        "$(length(tested)) taxa would enter one compositional fit, above the limit of " *
+        "$MAX_COMPOSITIONAL_TAXA; raise analysis.differential.min_prevalence or choose a coarser rank"))
+    # MGLM's baseline is the last column.
+    perm = [filter(!=(ref_pos), eachindex(tested)); ref_pos]
+    y = Int.(sub[:, perm])
+    for i in axes(y, 1)
+        sum(view(y, i, :)) > 0 || throw(ArgumentError(
+            "sample '$(samples[i])' has no reads in the $(length(perm)) taxa the compositional " *
+            "model fits, so it has no composition; lower analysis.differential.min_prevalence " *
+            "or leave the sample out"))
+    end
+    dist = dm ? "DM" : "MN"
+    started = time()
+    fit = fit_mglm(y, groups; levels, dist)
+    elapsed = time() - started
+    theta = [isnothing(a) ? nothing : 1 / (1 + a) for a in fit.alpha0]
+    flat = String[]
+    if dm
+        for g in 1:2
+            m = [sum(view(y, i, :)) for i in axes(y, 1) if groups[i] == levels[g]]
+            !isnothing(theta[g]) && (sum(m) / length(m) - 1) * theta[g] < DM_EXCESS_FLOOR &&
+                push!(flat, levels[g])
+        end
+    end
+    flat_text = "no overdispersion beyond multinomial sampling in " *
+                join(("'$l'" for l in flat), " and ") * ", so the Dirichlet concentration " *
+                "there has no finite estimate"
+    reason = isempty(fit.reason) || isempty(flat) ? fit.reason :
+        fit.reason * "; the counts show " * flat_text * ", so use method multinomial"
+    boundary_note = flat_text * "; the log-ratio estimate stands and equals the multinomial " *
+                    "one, so method multinomial fits these counts as well"
+    for (k, l) in enumerate(perm[1:end-1])
+        j = tested[l]
+        est, se = fit.estimate[k], fit.se[k]
+        if !isempty(reason)
+            merge!(rows[j], Dict{String,Any}("status" => "failed", "note" => reason))
+        elseif isnothing(est) || isnothing(se) || se <= 0 || isnothing(fit.pvalue[k])
+            merge!(rows[j], Dict{String,Any}("status" => "failed",
+                "note" => "MGLM returned a non-finite estimate, standard error or p-value"))
+        else
+            merge!(rows[j], Dict{String,Any}(
+                "status" => isempty(flat) ? "ok" : "boundary",
+                "note" => isempty(flat) ? "" : boundary_note,
+                "estimate" => est, "log2_fold_change" => est / log(2),
+                "standard_error" => se, "statistic" => fit.statistic[k],
+                "pvalue" => fit.pvalue[k], "dispersion_theta" => nothing))
+        end
+    end
+    j = tested[ref_pos]
+    merge!(rows[j], Dict{String,Any}("status" => "reference",
+        "note" => "reference taxon: the denominator of every log ratio, so it carries no test",
+        "estimate" => 0.0, "log2_fold_change" => 0.0))
+    model = dm ? "Dirichlet-multinomial regression by MGLM (MGLM::MGLMreg.fit, dist = \"DM\", " *
+                 "a log link on every taxon's Dirichlet parameter, so each group has its own " *
+                 "mean composition and concentration)" :
+                 "Multinomial logit regression by MGLM (MGLM::MGLMreg.fit, dist = \"MN\")"
+    method_text = "$model over $(length(perm)) taxa with '$(ref_name)' as the reference taxon, " *
+                  "conditioned on each sample's total (no size factor, no zero replacement); " *
+                  "Wald z-test of the change in each taxon's log ratio to the reference; " *
+                  "Benjamini-Hochberg adjustment over the fitted taxa" *
+                  (dm ? "" : ". The multinomial has no overdispersion, so its standard errors " *
+                             "are too small when samples vary more than sampling alone explains")
+    effect = Dict("key" => "log2_fold_change", "label" => "log2 fold change vs $(ref_name)")
+    config_echo = Dict{String,Any}("method" => config.method, "mn_backend" => "mglm",
+                                   "min_prevalence" => config.min_prevalence,
+                                   "mn_reference_taxon" => ref_name, "mn_penalty" => 0.0)
+    diagnostics["model"] = Dict{String,Any}(
+        "reference_taxon" => ref_name, "penalty" => 0.0,
+        "n_parameters" => 2 * (dm ? length(perm) : length(perm) - 1),
+        "iterations" => fit.iterations, "converged" => isempty(fit.reason),
+        "log_likelihood" => fit.loglik, "runtime_seconds" => elapsed,
+        "n_taxa_fitted" => length(perm))
+    diagnostics["mglm"] = Dict{String,Any}("distribution" => dist, "warnings" => fit.warnings)
+    dm && (diagnostics["mglm"]["overdispersion"] = Dict{String,Any}(
+        levels[g] => Dict{String,Any}("alpha0" => fit.alpha0[g], "theta" => theta[g]) for g in 1:2))
+    (method_text, effect, config_echo)
+end
+
+
+"""
     differential_abundance(counts, samples, taxa, groups; reference, contrast,
                            config=DifferentialConfig(), seed=DEFAULT_DA_SEED) -> Dict{String,Any}
 
@@ -2326,97 +2636,104 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
             design[i, 2] = groups[i] == contrast ? 1.0 : 0.0
         end
         sub = Matrix{Int}(counts[:, tested])
-        started = time()
-        fit = config.method == "multinomial" ?
-            fit_multinomial(sub, design; reference=ref_pos, penalty=config.mn_penalty,
-                            max_iter=config.max_iter, tol=config.tol,
-                            max_seconds=config.max_seconds) :
-            fit_dirichlet_multinomial(sub, design; reference=ref_pos, penalty=config.mn_penalty,
-                                      overdispersion_method=config.dm_overdispersion_method,
-                                      max_iter=config.max_iter, tol=config.tol,
-                                      max_seconds=config.max_seconds)
-        elapsed = time() - started
-        # A joint fit that has not converged describes neither taxon: there is
-        # no per-taxon rescue, so it is refused rather than reported.
-        fit.converged || throw(CompositionalRefusal(
-            "the $(config.method == "multinomial" ? "multinomial" : "Dirichlet-multinomial") " *
-            "fit did not converge in $(config.max_iter) Newton steps on $(length(tested)) taxa; " *
-            "raise analysis.differential.max_iter, raise min_prevalence so fewer taxa are " *
-            "fitted, or analyse a coarser taxonomic rank"))
-        c = fit.concentration
-        at_bound = config.method == "dirichlet_multinomial" &&
-                   !(c > CONCENTRATION_MIN * (1 + 1e-6) && c < CONCENTRATION_MAX * (1 - 1e-6))
-        boundary_note = c >= CONCENTRATION_MAX * (1 - 1e-6) ?
-            "the Dirichlet concentration reached its upper bound: no overdispersion is " *
-            "detectable, so the model is effectively multinomial" :
-            "the Dirichlet concentration reached its lower bound: the composition is nearly " *
-            "degenerate and the standard errors are not trustworthy"
-        for (l, j) in enumerate(tested)
-            if l == ref_pos
-                rows[j]["status"] = "reference"
-                rows[j]["note"] = "reference taxon: the denominator of every log ratio; its " *
-                    "coefficient is fixed at zero, so it carries no test"
-                rows[j]["estimate"] = 0.0
-                rows[j]["log2_fold_change"] = 0.0
-                continue
+        if config.mn_backend == "mglm"
+            method_text, effect, config_echo = _compositional_mglm!(
+                rows, diagnostics, sub, tested, ref_pos, ref_name, groups, samples, levels, config)
+            size_factor_rows = Dict{String,Any}[]
+        else
+            started = time()
+            fit = config.method == "multinomial" ?
+                fit_multinomial(sub, design; reference=ref_pos, penalty=config.mn_penalty,
+                                max_iter=config.max_iter, tol=config.tol,
+                                max_seconds=config.max_seconds) :
+                fit_dirichlet_multinomial(sub, design; reference=ref_pos, penalty=config.mn_penalty,
+                                          overdispersion_method=config.dm_overdispersion_method,
+                                          max_iter=config.max_iter, tol=config.tol,
+                                          max_seconds=config.max_seconds)
+            elapsed = time() - started
+            # A joint fit that has not converged describes neither taxon: there is
+            # no per-taxon rescue, so it is refused rather than reported.
+            fit.converged || throw(CompositionalRefusal(
+                "the $(config.method == "multinomial" ? "multinomial" : "Dirichlet-multinomial") " *
+                "fit did not converge in $(config.max_iter) Newton steps on $(length(tested)) taxa; " *
+                "raise analysis.differential.max_iter, raise min_prevalence so fewer taxa are " *
+                "fitted, or analyse a coarser taxonomic rank"))
+            c = fit.concentration
+            at_bound = config.method == "dirichlet_multinomial" &&
+                       !(c > CONCENTRATION_MIN * (1 + 1e-6) && c < CONCENTRATION_MAX * (1 - 1e-6))
+            boundary_note = c >= CONCENTRATION_MAX * (1 - 1e-6) ?
+                "the Dirichlet concentration reached its upper bound: no overdispersion is " *
+                "detectable, so the model is effectively multinomial" :
+                "the Dirichlet concentration reached its lower bound: the composition is nearly " *
+                "degenerate and the standard errors are not trustworthy"
+            for (l, j) in enumerate(tested)
+                if l == ref_pos
+                    rows[j]["status"] = "reference"
+                    rows[j]["note"] = "reference taxon: the denominator of every log ratio; its " *
+                        "coefficient is fixed at zero, so it carries no test"
+                    rows[j]["estimate"] = 0.0
+                    rows[j]["log2_fold_change"] = 0.0
+                    continue
+                end
+                k = l < ref_pos ? l : l - 1
+                est = fit.coefficients[k, 2]
+                se = fit.standard_errors[k, 2]
+                zz = fit.statistic[k, 2]
+                pv = fit.pvalue[k, 2]
+                if isnan(est) || isnan(se) || isnan(pv)
+                    rows[j]["status"] = "failed"
+                    rows[j]["note"] = "the fit returned a non-finite estimate or standard error"
+                    continue
+                end
+                merge!(rows[j], Dict{String,Any}(
+                    "status" => at_bound ? "boundary" : "ok",
+                    "note" => at_bound ? boundary_note : "",
+                    "estimate" => est,
+                    "log2_fold_change" => est / log(2),
+                    "standard_error" => se, "statistic" => zz, "pvalue" => pv,
+                    "dispersion_theta" => nothing))
             end
-            k = l < ref_pos ? l : l - 1
-            est = fit.coefficients[k, 2]
-            se = fit.standard_errors[k, 2]
-            zz = fit.statistic[k, 2]
-            pv = fit.pvalue[k, 2]
-            if isnan(est) || isnan(se) || isnan(pv)
-                rows[j]["status"] = "failed"
-                rows[j]["note"] = "the fit returned a non-finite estimate or standard error"
-                continue
+            model = config.method == "multinomial" ? "multinomial logistic" :
+                    "Dirichlet-multinomial"
+            method_text = "$model regression over $(length(tested)) taxa with " *
+                "'$(ref_name)' as the reference taxon (softmax link, each sample's read " *
+                "composition, no size factor and no zero replacement); " *
+                (config.method == "multinomial" ?
+                 "Wald test of the group coefficient from the observed information, with a " *
+                 "ridge penalty of $(config.mn_penalty); " :
+                 "concentration estimated by $(uppercase(config.dm_overdispersion_method)), " *
+                 "theta = $(round(fit.overdispersion; sigdigits=3)), Wald test of the group " *
+                 "coefficient from the observed information; ") *
+                "Benjamini-Hochberg adjustment over the fitted taxa. Estimates are log fold " *
+                "changes in relative abundance against '$(ref_name)' (a log ratio of two taxa, " *
+                "so coherent under compositionality): " *
+                (config.method == "multinomial" ?
+                 "Songbird's model, Morton et al. 2019" :
+                 "La Rosa et al. 2012 for the Dirichlet-multinomial")
+            effect = Dict("key" => "log2_fold_change",
+                          "label" => "log2 fold change vs $(ref_name)")
+            size_factor_rows = Dict{String,Any}[]
+            config_echo = Dict{String,Any}("method" => config.method,
+                                           "min_prevalence" => config.min_prevalence,
+                                           "mn_reference_taxon" => ref_name,
+                                           "mn_penalty" => config.mn_penalty,
+                                           "tolerance" => config.tol,
+                                           "max_iter" => config.max_iter,
+                                           "max_seconds" => config.max_seconds,
+                                           "mn_backend" => config.mn_backend)
+            config.method == "dirichlet_multinomial" &&
+                (config_echo["dm_overdispersion_method"] = config.dm_overdispersion_method)
+            diagnostics["model"] = Dict{String,Any}(
+                "reference_taxon" => ref_name, "penalty" => config.mn_penalty,
+                "n_parameters" => fit.n_parameters, "iterations" => fit.iterations,
+                "converged" => fit.converged, "log_likelihood" => fit.loglik,
+                "runtime_seconds" => elapsed, "n_taxa_fitted" => length(tested))
+            if config.method == "dirichlet_multinomial"
+                diagnostics["overdispersion"] = Dict{String,Any}(
+                    "method" => config.dm_overdispersion_method,
+                    "concentration" => c, "theta" => fit.overdispersion,
+                    "at_bound" => at_bound)
             end
-            merge!(rows[j], Dict{String,Any}(
-                "status" => at_bound ? "boundary" : "ok",
-                "note" => at_bound ? boundary_note : "",
-                "estimate" => est,
-                "log2_fold_change" => est / log(2),
-                "standard_error" => se, "statistic" => zz, "pvalue" => pv,
-                "dispersion_theta" => nothing))
-        end
-        model = config.method == "multinomial" ? "multinomial logistic" :
-                "Dirichlet-multinomial"
-        method_text = "$model regression over $(length(tested)) taxa with " *
-            "'$(ref_name)' as the reference taxon (softmax link, each sample's read " *
-            "composition, no size factor and no zero replacement); " *
-            (config.method == "multinomial" ?
-             "Wald test of the group coefficient from the observed information, with a " *
-             "ridge penalty of $(config.mn_penalty); " :
-             "concentration estimated by $(uppercase(config.dm_overdispersion_method)), " *
-             "theta = $(round(fit.overdispersion; sigdigits=3)), Wald test of the group " *
-             "coefficient from the observed information; ") *
-            "Benjamini-Hochberg adjustment over the fitted taxa. Estimates are log fold " *
-            "changes in relative abundance against '$(ref_name)' (a log ratio of two taxa, " *
-            "so coherent under compositionality): " *
-            (config.method == "multinomial" ?
-             "Songbird's model, Morton et al. 2019" :
-             "La Rosa et al. 2012 for the Dirichlet-multinomial")
-        effect = Dict("key" => "log2_fold_change",
-                      "label" => "log2 fold change vs $(ref_name)")
-        size_factor_rows = Dict{String,Any}[]
-        config_echo = Dict{String,Any}("method" => config.method,
-                                       "min_prevalence" => config.min_prevalence,
-                                       "mn_reference_taxon" => ref_name,
-                                       "mn_penalty" => config.mn_penalty,
-                                       "tolerance" => config.tol,
-                                       "max_iter" => config.max_iter,
-                                       "max_seconds" => config.max_seconds)
-        config.method == "dirichlet_multinomial" &&
-            (config_echo["dm_overdispersion_method"] = config.dm_overdispersion_method)
-        diagnostics["model"] = Dict{String,Any}(
-            "reference_taxon" => ref_name, "penalty" => config.mn_penalty,
-            "n_parameters" => fit.n_parameters, "iterations" => fit.iterations,
-            "converged" => fit.converged, "log_likelihood" => fit.loglik,
-            "runtime_seconds" => elapsed, "n_taxa_fitted" => length(tested))
-        if config.method == "dirichlet_multinomial"
-            diagnostics["overdispersion"] = Dict{String,Any}(
-                "method" => config.dm_overdispersion_method,
-                "concentration" => c, "theta" => fit.overdispersion,
-                "at_bound" => at_bound)
         end
     elseif config.method == "ancom_bc"
         (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
