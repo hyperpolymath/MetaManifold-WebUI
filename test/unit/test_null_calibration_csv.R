@@ -65,12 +65,19 @@ stopifnot(grepl("unreadable result CSV", read_error, fixed = TRUE))
 julia <- Sys.which("julia")
 stopifnot(nzchar(julia))
 reader_script <- "bench/null_calibration/report_failures.jl"
+# R puts its own libraries on LD_LIBRARY_PATH, and Julia ships its own copies of
+# some of them, so Julia is started without the variable.
 annotations <- suppressWarnings(system2(
-  julia,
-  args = c("--startup-file=no", shQuote(reader_script), shQuote(cell)),
+  "env",
+  args = c("-u", "LD_LIBRARY_PATH", julia, "--startup-file=no",
+           shQuote(reader_script), shQuote(cell)),
   stdout = TRUE, stderr = TRUE, stdin = csv_path
 ))
 reader_status <- attr(annotations, "status")
+if (!(is.null(reader_status) || identical(reader_status, 0L))) {
+  cat("report_failures.jl exited with status", reader_status, "\n",
+      paste(annotations, collapse = "\n"), "\n")
+}
 expected_annotations <- c(
   paste0("::warning title=", cell,
          ": a requested test failed::", duplicate_test, " :: comma, quote ", double_quote,
