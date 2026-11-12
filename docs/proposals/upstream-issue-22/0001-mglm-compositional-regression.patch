@@ -1,0 +1,1322 @@
+From 37c9ffa527014e6823d517116248d7a0676a8a07 Mon Sep 17 00:00:00 2001
+From: CLAUDE <355856132+HoTT-stuff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 17:28:06 +0000
+Subject: [PATCH] Add multinomial and Dirichlet-multinomial differential
+ abundance through MGLM
+
+Two new values of analysis.differential.method, as ruled on issue #22: MN/DM
+regression comes in through MGLM via RCall, with MGLM pinned in renv.lock.
+
+- multinomial and dirichlet_multinomial fit one MGLM::MGLMreg.fit model of the
+  composition of the taxa passing min_prevalence, conditioned on each sample's
+  read total (dist "MN" or "DM"). Every estimate is the change in a taxon's log
+  ratio to a reference taxon, with a Wald z-test and BH adjustment over the
+  fitted taxa. For DM the contrast is the difference of two group
+  coefficients, and its standard error takes their covariance from the
+  inverse observed information.
+- analysis.differential.mn_reference_taxon names the reference; empty uses
+  the fitted taxon with the most reads. Its row has status "reference".
+- A taxon with no reads in every sample of one group is failed and left out
+  of the composition (complete separation). DM needs 2 samples per group. At
+  most 1000 taxa enter one fit.
+- A fit that errors, reaches MGLM's iteration cap, warns that it did not
+  converge or is not a maximum, or whose information is not positive
+  definite fails every taxon with that reason. MGLM's options(warn = -1) is
+  restored whatever happens.
+- When a DM group shows no overdispersion, its concentration has no finite
+  estimate. The rows are marked boundary and keep their statistics, since a
+  log-ratio contrast does not depend on that concentration; or MGLM's own
+  refusal is kept and names the flat group. Only when both groups are flat
+  are the estimates the multinomial's, and only then is multinomial
+  suggested.
+- MGLMUnavailable is a 503 at the route; MGLM is added to the installer, the
+  runtime package list and the CI package checks.
+- Tests: the multinomial against its closed form (pooled log ratios, SE from
+  reciprocal pooled counts), the Dirichlet-multinomial against stats::optim
+  on an independently written likelihood with stats::optimHess, the boundary
+  with one group and with both groups flat, refusals, separation, the 503
+  path and the route.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0136P7ZoFbrtmpRbKPqk25ok
+---
+ .github/workflows/ci.yml                      |   4 +-
+ README.md                                     |   4 +-
+ config/defaults/pipeline.yml                  |  19 +-
+ docs/guide/web-interface.md                   |  27 +-
+ frontend/src/api/types.ts                     |  27 +-
+ frontend/src/components/DifferentialPanel.tsx |   4 +
+ frontend/src/components/PipelineStages.tsx    |   5 +-
+ .../src/components/differentialTable.test.ts  |  25 ++
+ frontend/src/components/differentialTable.ts  |   8 +-
+ install.jl                                    |   4 +-
+ renv.lock                                     |  34 ++
+ src/analysis/differential.jl                  | 407 +++++++++++++++++-
+ src/core/r_runtime.jl                         |   1 +
+ src/server/routes/analysis.jl                 |  12 +-
+ src/server/routes/config.jl                   |   5 +
+ test/unit/test_differential.jl                | 330 ++++++++++++++
+ 16 files changed, 867 insertions(+), 49 deletions(-)
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 3b2d922..e5cae65 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -160,7 +160,7 @@ jobs:
+           sudo chmod 777 "$RENV_PATHS_CACHE"
+           sudo env R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'install.packages(c("renv", "BiocManager"), repos="https://cloud.r-project.org", lib=.Library)'
+           sudo env RENV_PATHS_CACHE="$RENV_PATHS_CACHE" R_CLI_DYNAMIC=false TERM=dumb Rscript --no-init-file -e 'renv::restore(project=".", library=.Library, prompt=FALSE)'
+-          Rscript --no-init-file -e 'for (pkg in c("dada2","Biostrings","ShortRead","vegan","MASS","zCompositions","glmGamPoi")) if (!require(pkg,character.only=TRUE,quietly=TRUE)) stop(pkg, " failed to install")'
++          Rscript --no-init-file -e 'for (pkg in c("dada2","Biostrings","ShortRead","vegan","MASS","zCompositions","glmGamPoi","MGLM")) if (!require(pkg,character.only=TRUE,quietly=TRUE)) stop(pkg, " failed to install")'
+ 
+       - name: Check DADA2 CSV assembly
+         run: Rscript --vanilla test/unit/test_dada2_tables.R
+@@ -257,7 +257,7 @@ jobs:
+           julia --project=. -e '
+             using RCall
+             R"cat(.libPaths(), sep=\"\n\")"
+-            for pkg in ["dada2", "vegan", "MASS", "zCompositions", "glmGamPoi"]
++            for pkg in ["dada2", "vegan", "MASS", "zCompositions", "glmGamPoi", "MGLM"]
+               R"if (!require($pkg, character.only=TRUE, quietly=TRUE)) stop($pkg, \" not found\")"
+             end
+           '
+diff --git a/README.md b/README.md
+index eacdc7b..dae3723 100644
+--- a/README.md
++++ b/README.md
+@@ -23,7 +23,7 @@ MetaManifold is a self-hosted web application for amplicon metabarcoding, built
+ - **Compare denoising and clustering directly.** DADA2 ASVs and swarm OTUs come from the same trimmed reads, with vsearch and DADA2 taxonomy in one table.
+ - **Change a setting without repeating the run.** Configuration cascades from instance to study, group and run. Stages affected by a change are flagged stale, and only those stages rerun.
+ - **Place sequences on a tree and work with the result.** Build a reference tree once, place ASVs from any study on it, and inspect or export the placement in an interactive viewer.
+-- **Test differences between communities.** Alpha diversity with significance testing, NMDS, PERMANOVA with PERMDISP, and negative-binomial or CLR differential abundance between two conditions. A test that could not run is reported as such, never as a null result.
++- **Test differences between communities.** Alpha diversity with significance testing, NMDS, PERMANOVA with PERMDISP, and negative-binomial, CLR, multinomial or Dirichlet-multinomial differential abundance between two conditions. A test that could not run is reported as such, never as a null result.
+ - **Finish in the same place.** Lay out multi-panel figures at journal column widths, build publication tables, and download charts, tables and trees as one report.
+ - **Show how a result was made.** Each run records the configuration, tool versions and database hashes behind every stage in `attestation.yml`. Julia, R and tool versions are pinned.
+ 
+@@ -41,7 +41,7 @@ MetaManifold is a self-hosted web application for amplicon metabarcoding, built
+ | --- | --- |
+ | **Reads** | Illumina-style paired-end amplicons. PacBio and Oxford Nanopore reads are not supported, and neither is shotgun metagenomics. |
+ | **Markers and references** | Designed for 18S with PR2, and configurable for other databases. Bacterial 16S will run, but the eukaryote-specific categories and filters will do little for it. |
+-| **Differential abundance** | Two conditions at a time, using a negative-binomial GLM or Welch's t-test on centred log-ratios. There are no multi-factor model formulas, and ANCOM-BC is not included. |
++| **Differential abundance** | Two conditions at a time, using a negative-binomial GLM, Welch's t-test on centred log-ratios, or a multinomial or Dirichlet-multinomial regression (MGLM) against a reference taxon. There are no multi-factor model formulas, and ANCOM-BC is not included. |
+ | **Where it runs** | Linux, and Windows through WSL. macOS is supported by the installer but not routinely tested. DADA2 and phylogeny stages can be sent to one server over SSH. There is no Slurm or other scheduler integration, and no official container image. |
+ | **Who can use an instance** | Designed for one user or a trusted group. The server binds to `127.0.0.1` by default and has no login or user accounts, so do not expose it directly to the internet. |
+ 
+diff --git a/config/defaults/pipeline.yml b/config/defaults/pipeline.yml
+index f55fa4f..ff931d3 100644
+--- a/config/defaults/pipeline.yml
++++ b/config/defaults/pipeline.yml
+@@ -354,21 +354,30 @@ analysis:
+     normalisation: hellinger
+     # Reads per sample for rarefy or srs; 0 uses the smallest non-empty sample.
+     depth: 0
+-  # Differential abundance: a negative-binomial model per taxon (MASS::glm.nb)
+-  # comparing two conditions on the raw read counts, with Benjamini-Hochberg
+-  # adjusted p-values.
++  # Differential abundance: per-taxon or compositional models comparing two
++  # conditions on the raw read counts, with Benjamini-Hochberg adjusted p-values.
+   differential:
+     # The model fitted to each taxon. nb_glm: a negative-binomial GLM on the read
+     # counts with a library-size offset; the effect is a log2 fold change. clr_welch:
+     # Welch's t-test on centred log-ratios over the taxa passing min_prevalence,
+     # after zCompositions::cmultRepl replaces their zeros; the effect is a
+-    # difference in CLR units, not a fold change.
++    # difference in CLR units, not a fold change. multinomial and
++    # dirichlet_multinomial: one joint model of each sample's composition
++    # (MGLM::MGLMreg.fit) conditioned on its read total; the effect is the log2
++    # fold change of each taxon's ratio to the reference taxon below. The
++    # Dirichlet-multinomial also estimates each group's overdispersion and needs
++    # 2 samples per group. Both refuse a taxon with no reads in one group.
+     method: nb_glm
+     # How library size enters each model, as a log offset: tss (total reads per
+     # sample) or rle (median-of-ratios over the taxa present in every sample).
+     # rle is refused when no taxon is present in every sample.
+-    # Used by nb_glm only; clr_welch ignores it, since log-ratios carry no library size.
++    # Used by nb_glm only; clr_welch and the compositional models ignore it, since
++    # log-ratios carry no library size.
+     offset: tss
++    # multinomial and dirichlet_multinomial only: the taxon every estimate is a
++    # log ratio against. ~ uses the fitted taxon with the most reads. It must
++    # have reads in both groups and pass min_prevalence.
++    mn_reference_taxon: ~
+     # nb_glm only: the fits and the test. glm_nb (the default) fits
+     # MASS::glm.nb per taxon with its maximum-likelihood theta and Wald-tests
+     # the group coefficient. glmGamPoi fits one glmGamPoi::glm_gp across the
+diff --git a/docs/guide/web-interface.md b/docs/guide/web-interface.md
+index eea2846..c3ca828 100644
+--- a/docs/guide/web-interface.md
++++ b/docs/guide/web-interface.md
+@@ -72,7 +72,8 @@ read-count bounds to the differential-abundance request, so those bounds do
+ not exclude samples from this analysis.
+ 
+ All `analysis.differential` options below (`method`, `offset`, `dispersion`,
+-`min_prevalence` and `replacement_delta`) are resolved at study scope.
++`min_prevalence`, `replacement_delta` and `mn_reference_taxon`) are resolved
++at study scope.
+ Set them in the study configuration; group and run overrides are not used
+ by this endpoint, including when called from a group Analysis workspace.
+ 
+@@ -94,8 +95,28 @@ by this endpoint, including when called from a group Analysis workspace.
+   replacement with `zCompositions::cmultRepl`. The effect is a CLR difference,
+   not a fold change. `replacement_delta` controls the replacement fraction
+   (default 0.65); `offset` is not used.
+-
+-For either method, `min_prevalence` (default 0) filters taxa by the fraction of
++- `multinomial` and `dirichlet_multinomial`: one joint model of every
++  sample's composition, fitted by `MGLM::MGLMreg.fit` (`dist = "MN"` or
++  `"DM"`) and conditioned on each sample's read total, so there is no offset
++  and no zero replacement. Every effect is the log2 fold change of a taxon's
++  ratio to a reference taxon, which `mn_reference_taxon` names; empty (the
++  default) uses the fitted taxon with the most reads. The reference row has
++  status `reference` and no test. A taxon with no reads in every sample of one
++  group has no finite estimate, so it is reported as failed and left out of
++  the composition. The multinomial has no overdispersion, so its standard
++  errors are too small when samples differ by more than sampling explains.
++  The Dirichlet-multinomial lets each group's mean composition and
++  overdispersion differ, needs at least 2 samples in each group, and reports
++  each group's `theta` (0 is the multinomial). When a group shows no
++  overdispersion its concentration has no finite estimate. The rows are then
++  marked `boundary` and keep their statistics, because a log-ratio contrast
++  does not depend on that concentration; or MGLM refuses the fit and the
++  refusal names the flat group. Only when both groups are flat do the
++  estimates equal the multinomial's, and only then does the note point to
++  `multinomial`. At most 1000 taxa enter one
++  fit. These methods need the pinned MGLM R package.
++
++For every method, `min_prevalence` (default 0) filters taxa by the fraction of
+ samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
+ that produced a p-value. Failed or filtered taxa have no substitute p-value;
+ inspect their status and note in the results table. Invalid input or an
+diff --git a/frontend/src/api/types.ts b/frontend/src/api/types.ts
+index c14d2c6..25c1ba2 100644
+--- a/frontend/src/api/types.ts
++++ b/frontend/src/api/types.ts
+@@ -396,8 +396,12 @@ export interface DifferentialRequest {
+   aggregate?: boolean
+ }
+ 
+-/** `ok` and `boundary` rows carry statistics; `failed` and `filtered` rows say why not. */
+-export type DifferentialStatus = 'ok' | 'boundary' | 'failed' | 'filtered'
++/**
++ * `ok` and `boundary` rows carry statistics; `failed` and `filtered` rows say why
++ * not. `reference` is the compositional models' reference taxon, which every
++ * other estimate is a log ratio against, so it has no test of its own.
++ */
++export type DifferentialStatus = 'ok' | 'boundary' | 'failed' | 'filtered' | 'reference'
+ 
+ export interface DifferentialRow {
+   taxon: string
+@@ -406,12 +410,14 @@ export interface DifferentialRow {
+   /**
+    * nb_glm: natural-log fold change, contrast over reference. clr_welch: mean
+    * CLR of contrast minus mean CLR of reference, which is not a fold change.
++   * multinomial and dirichlet_multinomial: natural-log fold change of the
++   * taxon's ratio to the reference taxon, contrast over reference.
+    */
+   estimate: number | null
+-  /** nb_glm only; null for clr_welch. */
++  /** nb_glm and the compositional models; null for clr_welch. */
+   log2_fold_change: number | null
+   standard_error: number | null
+-  /** z (nb_glm) or Welch's t (clr_welch). */
++  /** z (nb_glm and the compositional models) or Welch's t (clr_welch). */
+   statistic: number | null
+   pvalue: number | null
+   /** Benjamini-Hochberg adjusted; null outside the tested family. */
+@@ -421,7 +427,7 @@ export interface DifferentialRow {
+   prevalence: number
+ }
+ 
+-export type DifferentialMethod = 'nb_glm' | 'clr_welch'
++export type DifferentialMethod = 'nb_glm' | 'clr_welch' | 'multinomial' | 'dirichlet_multinomial'
+ 
+ /** Which row field holds the effect size, and what to call it. */
+ export interface DifferentialEffect {
+@@ -448,6 +454,8 @@ export interface DifferentialResult {
+     dispersion?: 'glm_nb' | 'glmGamPoi'
+     /** clr_welch only. */
+     replacement_delta?: number
++    /** The compositional models only: the requested reference taxon, null for the most abundant. */
++    mn_reference_taxon?: string | null
+   }
+   diagnostics: {
+     n_taxa: number; n_tested: number; n_failed: number; n_boundary: number; n_filtered: number
+@@ -459,6 +467,15 @@ export interface DifferentialResult {
+       n_taxa_unobserved: number; median_imputed_fraction: number; max_imputed_fraction: number
+       warnings: string[]
+     }
++    /** The compositional models only: the taxon every estimate is relative to. */
++    reference_taxon?: string
++    n_taxa_in_composition?: number
++    mglm?: {
++      distribution: 'MN' | 'DM'; iterations: number | null; log_likelihood: number | null
++      warnings: string[]
++    }
++    /** dirichlet_multinomial only: each group's total concentration and theta = 1 / (1 + alpha0). */
++    overdispersion?: Record<string, { alpha0: number | null; theta: number | null }>
+   }
+   rows: DifferentialRow[]
+   figure: unknown
+diff --git a/frontend/src/components/DifferentialPanel.tsx b/frontend/src/components/DifferentialPanel.tsx
+index f893b0e..40b6b1b 100644
+--- a/frontend/src/components/DifferentialPanel.tsx
++++ b/frontend/src/components/DifferentialPanel.tsx
+@@ -141,6 +141,10 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
+                 `replaced values hold ${(100 * z.median_imputed_fraction).toPrecision(2)}% of the median sample ` +
+                 `and at most ${(100 * z.max_imputed_fraction).toPrecision(2)}% of any, and are not measurements.`
+             })()}
++            {result.diagnostics.reference_taxon &&
++              ` Every effect is relative to the reference taxon ${result.diagnostics.reference_taxon}, over ${result.diagnostics.n_taxa_in_composition} taxa.`}
++            {result.diagnostics.overdispersion &&
++              ` Overdispersion theta: ${Object.entries(result.diagnostics.overdispersion).map(([g, o]) => `${g} ${formatStat(o.theta)}`).join(', ')}.`}
+           </p>
+ 
+           <AnalysisChart study={study} figure={result.figure} />
+diff --git a/frontend/src/components/PipelineStages.tsx b/frontend/src/components/PipelineStages.tsx
+index b72a90e..28578f7 100644
+--- a/frontend/src/components/PipelineStages.tsx
++++ b/frontend/src/components/PipelineStages.tsx
+@@ -152,7 +152,8 @@ export const CONFIG_DESCRIPTIONS: Record<string, string> = {
+   'analysis.alpha.rarefaction_iterations': 'rarefy draws averaged for each alpha diversity value.',
+   'analysis.beta.normalisation':  'Preparation before the Bray-Curtis dissimilarity used by NMDS and PERMANOVA: hellinger (square root of relative abundances), none, rarefy or srs.',
+   'analysis.beta.depth':          'Reads per sample for rarefy or srs; 0 uses the smallest non-empty sample.',
+-  'analysis.differential.method': 'Model fitted to each taxon: nb_glm (negative-binomial GLM on read counts; effect is a log2 fold change) or clr_welch (Welch\'s t-test on centred log-ratios over the taxa passing min_prevalence, after zCompositions::cmultRepl zero replacement; effect is a CLR difference, not a fold change).',
++  'analysis.differential.method': 'Model fitted to each taxon: nb_glm (negative-binomial GLM on read counts; effect is a log2 fold change) clr_welch (Welch\'s t-test on centred log-ratios over the taxa passing min_prevalence, after zCompositions::cmultRepl zero replacement; effect is a CLR difference, not a fold change), multinomial or dirichlet_multinomial (one MGLM model of each sample\'s composition; effect is the log2 fold change of each taxon\'s ratio to the reference taxon; the Dirichlet-multinomial also estimates each group\'s overdispersion and needs 2 samples per group).',
++  'analysis.differential.mn_reference_taxon': 'multinomial and dirichlet_multinomial only: the taxon every effect is a log ratio against. Empty uses the fitted taxon with the most reads. It must have reads in both groups and pass min_prevalence.',
+   'analysis.differential.offset': 'Library-size offset in each negative-binomial model: tss (total reads per sample) or rle (median-of-ratios over taxa present in every sample; refused when there are none). Used by nb_glm only.',
+   'analysis.differential.dispersion': 'nb_glm only: glm_nb fits MASS::glm.nb per taxon with its own maximum-likelihood theta; glmGamPoi fits one glmGamPoi::glm_gp across taxa with overdispersion shrinkage and reports glmGamPoi::test_de’s quasi-likelihood F-test with its log2 fold changes.',
+   'analysis.differential.min_prevalence': 'Fraction of samples, 0 to 1, in which a taxon must have reads to be tested; taxa below it are listed as filtered.',
+@@ -253,7 +254,7 @@ export const CONFIG_TYPES: Record<string, ConfigType> = {
+   'analysis.alpha.rarefaction_iterations': { kind: 'int' },
+   'analysis.beta.normalisation':  { kind: 'enum', options: ['hellinger', 'none', 'rarefy', 'srs'] },
+   'analysis.beta.depth':          { kind: 'int' },
+-  'analysis.differential.method': { kind: 'enum', options: ['nb_glm', 'clr_welch'] },
++  'analysis.differential.method': { kind: 'enum', options: ['nb_glm', 'clr_welch', 'multinomial', 'dirichlet_multinomial'] },
+   'analysis.differential.offset': { kind: 'enum', options: ['tss', 'rle'] },
+   'analysis.differential.dispersion': { kind: 'enum', options: ['glm_nb', 'glmGamPoi'] },
+   'analysis.differential.min_prevalence': { kind: 'float', min: 0, max: 1, step: 0.05 },
+diff --git a/frontend/src/components/differentialTable.test.ts b/frontend/src/components/differentialTable.test.ts
+index 5aa50a1..922f6e4 100644
+--- a/frontend/src/components/differentialTable.test.ts
++++ b/frontend/src/components/differentialTable.test.ts
+@@ -75,3 +75,28 @@ describe('clr_welch results', () => {
+     expect(differentialCsv(clr).split('\r\n')[2]).toBe(`# ${configLine(clr)}`)
+   })
+ })
++
++describe('compositional results', () => {
++  const mn: DifferentialResult = {
++    ...result,
++    method: 'Multinomial logit regression',
++    effect: { key: 'log2_fold_change', label: 'log2 fold change of the ratio to Prevotella' },
++    config: { method: 'dirichlet_multinomial', min_prevalence: 0.1, mn_reference_taxon: null },
++    diagnostics: { ...result.diagnostics, reference_taxon: 'Prevotella', n_taxa_in_composition: 2 },
++    rows: [
++      result.rows[0],
++      { taxon: 'Prevotella', status: 'reference', note: 'the reference taxon', estimate: null,
++        log2_fold_change: null, standard_error: null, statistic: null, pvalue: null, padj: null,
++        dispersion_theta: null, prevalence: 1 },
++    ],
++  }
++
++  test('the settings line names the reference taxon actually used', () => {
++    expect(configLine(mn)).toBe("method dirichlet_multinomial, reference taxon Prevotella, min_prevalence 0.1; estimate is the fold change of each taxon's ratio to the reference taxon")
++  })
++
++  test('the reference row is kept in the CSV with no statistics', () => {
++    const lines = differentialCsv(mn).trimEnd().split('\r\n')
++    expect(lines[5]).toBe('Prevotella,reference,,,,,,,,1,the reference taxon')
++  })
++})
+diff --git a/frontend/src/components/differentialTable.ts b/frontend/src/components/differentialTable.ts
+index a089ec9..1f29af2 100644
+--- a/frontend/src/components/differentialTable.ts
++++ b/frontend/src/components/differentialTable.ts
+@@ -42,11 +42,15 @@ export function formatStat(value: number | null): string {
+ 
+ /**
+  * The settings line of the CSV: the method and the parameters it used. The
+- * offset belongs to nb_glm and the replacement delta to clr_welch, so each line
+- * names only its own method's parameters.
++ * offset belongs to nb_glm, the replacement delta to clr_welch and the reference
++ * taxon to the compositional models, so each line names only its own method's
++ * parameters.
+  */
+ export function configLine(result: DifferentialResult): string {
+   const c = result.config
++  if (c.method === 'multinomial' || c.method === 'dirichlet_multinomial') {
++    return `method ${c.method}, reference taxon ${result.diagnostics.reference_taxon}, min_prevalence ${c.min_prevalence}; estimate is the fold change of each taxon's ratio to the reference taxon`
++  }
+   return c.method === 'clr_welch'
+     ? `method clr_welch, replacement_delta ${c.replacement_delta}, min_prevalence ${c.min_prevalence}; estimate is a CLR difference, not a fold change`
+     : `method nb_glm, offset ${c.offset}, min_prevalence ${c.min_prevalence}`
+diff --git a/install.jl b/install.jl
+index 86b7287..d3cf7f8 100644
+--- a/install.jl
++++ b/install.jl
+@@ -883,8 +883,8 @@ function setup_r_packages(; rebuild::Bool=false)::Tuple{Symbol,String}
+     # Verdict is whether the packages the pipeline loads are actually usable, not
+     # renv's exit code: restore can fail on one leaf package and still leave a
+     # working library, or "succeed" against a stale cache.
+-    # MASS, zCompositions and glmGamPoi back the differential abundance methods.
+-    pkgs = ["dada2", "vegan", "MASS", "zCompositions", "glmGamPoi"]
++    # MASS, zCompositions, glmGamPoi and MGLM back the differential abundance methods.
++    pkgs = ["dada2", "vegan", "MASS", "zCompositions", "glmGamPoi", "MGLM"]
+     probe = """
+         pkgs <- c($(join(repr.(pkgs), ", ")))
+         cat(paste(pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)],
+diff --git a/renv.lock b/renv.lock
+index 9944f58..cd33064 100644
+--- a/renv.lock
++++ b/renv.lock
+@@ -589,6 +589,40 @@
+       "Maintainer": "Brian Ripley <Brian.Ripley@R-project.org>",
+       "Repository": "CRAN"
+     },
++    "MGLM": {
++      "Package": "MGLM",
++      "Version": "0.2.3",
++      "Source": "Repository",
++      "Date": "2026-08-23",
++      "Title": "Multivariate Response Generalized Linear Models",
++      "Authors@R": "c( person(\"Yiwen\", \"Zhang\", email = \"zhangyiwen1015@gmail.com\", role = c(\"aut\")), person(\"Hua\", \"Zhou\", email = \"huazhou@ucla.edu\", role = c(\"aut\")), person(\"Juhyun\", \"Kim\", email = \"juhkim111@ucla.edu\", role = c(\"cre\")), person(\"Magdalena\", \"Czapiewska\", role = c(\"ctb\"), comment = c(ORCID = \"0009-0004-3265-1614\")) )",
++      "Depends": [
++        "R (>= 3.0.0)"
++      ],
++      "Imports": [
++        "methods",
++        "stats",
++        "parallel",
++        "stats4"
++      ],
++      "Suggests": [
++        "ggplot2",
++        "plyr",
++        "reshape2",
++        "knitr",
++        "testthat (>= 3.0.0)"
++      ],
++      "Description": "Provides functions that (1) fit multivariate discrete distributions, (2) generate random numbers from multivariate discrete distributions, and (3) run regression and penalized regression on the multivariate categorical response data.  Implemented models include: multinomial logit model, Dirichlet multinomial model, generalized Dirichlet multinomial model, and negative multinomial model. Making the best of the minorization-maximization (MM) algorithm and Newton-Raphson method, we derive and implement stable and efficient algorithms to find the maximum likelihood estimates. On a multi-core machine, multi-threading is supported.",
++      "VignetteBuilder": "knitr",
++      "LazyLoad": "yes",
++      "LazyData": "yes",
++      "Repository": "CRAN",
++      "License": "GPL (>= 2)",
++      "RoxygenNote": "7.1.2",
++      "NeedsCompilation": "no",
++      "Author": "Yiwen Zhang [aut], Hua Zhou [aut], Juhyun Kim [cre], Magdalena Czapiewska [ctb] (ORCID: <https://orcid.org/0009-0004-3265-1614>)",
++      "Maintainer": "Juhyun Kim <juhkim111@ucla.edu>"
++    },
+     "Matrix": {
+       "Package": "Matrix",
+       "Version": "1.7-3",
+diff --git a/src/analysis/differential.jl b/src/analysis/differential.jl
+index a172429..1549608 100644
+--- a/src/analysis/differential.jl
++++ b/src/analysis/differential.jl
+@@ -3,8 +3,8 @@
+ # SPDX-License-Identifier: MPL-2.0
+ 
+ ## Differential abundance
+-# Per-taxon models comparing two groups of samples, with Benjamini-Hochberg
+-# correction across the taxa that produced a p-value. Two methods:
++# Models comparing two groups of samples, with Benjamini-Hochberg correction
++# across the taxa that produced a p-value. Four methods:
+ #
+ # - nb_glm: a negative-binomial GLM per taxon (MASS::glm.nb) on the observed
+ #   integer read counts, with a library-size offset. There are no pseudocounts.
+@@ -12,6 +12,11 @@
+ #   log-ratios, over the taxa that pass `min_prevalence`, after their zeros are
+ #   replaced by zCompositions::cmultRepl (Bayesian-multiplicative, for counts).
+ #   The estimate is a difference in CLR units, not a fold change.
++# - multinomial and dirichlet_multinomial: one joint model of each sample's
++#   vector of counts (MGLM::MGLMreg.fit, dist "MN" or "DM"), conditioned on the
++#   sample's read total, so there is no offset and no pseudocount. The estimate
++#   is the change in a taxon's log ratio to a reference taxon. The
++#   Dirichlet-multinomial also estimates each group's overdispersion.
+ #
+ # Count matrices here are samples x taxa, as everywhere else in `Analysis`.
+ # Anything that is not a non-negative integer count is refused rather than
+@@ -23,12 +28,43 @@ using DataFrames, RCall
+ using ..RRuntime: with_r_lock
+ using ..Analysis: _palette_hex, R_WAIT_SECONDS
+ export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
+-       GlmGamPoiUnavailable, OFFSET_METHODS, METHODS, DISPERSIONS, tss_factors,
++       GlmGamPoiUnavailable, MGLMUnavailable, OFFSET_METHODS, METHODS,
++       COMPOSITIONAL_METHODS, MAX_COMPOSITIONAL_TAXA, DISPERSIONS, tss_factors,
+        rle_factors, size_factors, bh_adjust, validate_counts, replace_zeros,
+-       clr_transform, fit_nb, fit_welch, differential_abundance, volcano_chart
++       clr_transform, fit_nb, fit_welch, fit_mglm, differential_abundance, volcano_chart
++
++# The joint compositional models, fitted by MGLM against a reference taxon.
++const COMPOSITIONAL_METHODS = ("multinomial", "dirichlet_multinomial")
+ 
+ # Methods accepted under `analysis.differential.method`.
+-const METHODS = ("nb_glm", "clr_welch")
++const METHODS = ("nb_glm", "clr_welch", COMPOSITIONAL_METHODS...)
++
++# At most this many taxa enter one MGLM fit. Its information matrix is dense,
++# (2 x taxa) squared, and MGLM forms and eigen-decomposes it on every fit: on
++# 40 samples a fit of about 450 taxa took 3 to 6 seconds on one core, and the
++# cost grows with the cube of the taxa. A larger table is refused with a
++# pointer to `min_prevalence`, never cut down silently.
++const MAX_COMPOSITIONAL_TAXA = 1000
++
++# MGLMreg.fit's own iteration cap. A fit that reaches it has not converged
++# and is refused.
++const MGLM_MAXITERS = 150
++
++# The Dirichlet-multinomial's overdispersion multiplies a count's multinomial
++# variance by 1 + (m - 1) theta, for a sample of m reads. When that excess is
++# below this fraction at a group's mean read total, the counts show no
++# overdispersion there: the group's concentration has no finite estimate and
++# MGLM stops while it is still growing, so this flag depends on where it
++# stopped. A log-ratio contrast does not depend on a group's concentration, so
++# the rows keep their statistics and are marked `boundary`, as `nb_glm` does
++# at its theta bound. Only when both groups are flat are the contrasts the
++# multinomial ones (the tests check estimates to 1e-4 and standard errors at
++# most 1% larger); with one overdispersed group they are not, and the
++# multinomial would understate that group's variance. MGLM's own check may
++# instead call such a fit a saddle point, because the information is nearly
++# flat along the growing concentration; that refusal stands, and its reason
++# says which group is flat.
++const DM_EXCESS_FLOOR = 0.01
+ 
+ # What `nb_glm` does and how it tests, accepted under
+ # `analysis.differential.dispersion`: `"glm_nb"` fits each taxon with
+@@ -54,13 +90,20 @@ const DEFAULT_DELTA = 0.65
+ 
+ """
+     DifferentialConfig(offset="tss", min_prevalence=0.0; method="nb_glm",
+-                       replacement_delta=0.65, dispersion="glm_nb")
++                       replacement_delta=0.65, dispersion="glm_nb",
++                       mn_reference_taxon=nothing)
+ 
+ Settings for one differential abundance analysis, read from
+-`analysis.differential` in the pipeline config. `method` is `"nb_glm"` or
+-`"clr_welch"`. `offset` names the size factor method (`"tss"` or `"rle"`) and is
+-used by `nb_glm` only: a library-size offset has no meaning for a test on
+-log-ratios, which are already free of library size.
++`analysis.differential` in the pipeline config. `method` is `"nb_glm"`,
++`"clr_welch"`, `"multinomial"` or `"dirichlet_multinomial"`. `offset` names the
++size factor method (`"tss"` or `"rle"`) and is used by `nb_glm` only: a
++library-size offset has no meaning for a test on log-ratios, which are already
++free of library size, nor for the two compositional models, which condition on
++each sample's total.
++`mn_reference_taxon` names the taxon every compositional estimate is a log
++ratio against; `nothing` or blank text selects the fitted taxon with the most
++reads. It is stripped of surrounding whitespace, and refused for the other
++methods.
+ `min_prevalence` is the fraction of samples, in [0, 1], in which a taxon must
+ have at least one read to be tested. `replacement_delta`, in (0, 1), is the
+ `frac` passed to `zCompositions::cmultRepl` by `clr_welch`: an imputed proportion
+@@ -85,10 +128,12 @@ struct DifferentialConfig
+     min_prevalence    :: Float64
+     replacement_delta :: Float64
+     dispersion        :: String
++    mn_reference_taxon :: Union{Nothing,String}
+     function DifferentialConfig(offset::AbstractString="tss", min_prevalence::Real=0.0;
+                                 method::AbstractString="nb_glm",
+                                 replacement_delta::Real=DEFAULT_DELTA,
+-                                dispersion::AbstractString="glm_nb")
++                                dispersion::AbstractString="glm_nb",
++                                mn_reference_taxon::Union{Nothing,AbstractString}=nothing)
+         m = lowercase(strip(String(method)))
+         m in METHODS || throw(ArgumentError(
+             "analysis.differential.method must be one of $(join(METHODS, ", ")), not '$method'"))
+@@ -107,7 +152,12 @@ struct DifferentialConfig
+             "analysis.differential.min_prevalence must be a fraction in [0, 1], not $min_prevalence"))
+         (isfinite(replacement_delta) && 0 < replacement_delta < 1) || throw(ArgumentError(
+             "analysis.differential.replacement_delta must be in (0, 1), not $replacement_delta"))
+-        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d)
++        ref = isnothing(mn_reference_taxon) ? "" : strip(String(mn_reference_taxon))
++        (isempty(ref) || m in COMPOSITIONAL_METHODS) || throw(ArgumentError(
++            "analysis.differential.mn_reference_taxon applies to method multinomial or " *
++            "dirichlet_multinomial, but method is '$m'; only those models have a reference taxon"))
++        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d,
++            isempty(ref) ? nothing : String(ref))
+     end
+ end
+ 
+@@ -164,6 +214,19 @@ Base.showerror(io::IO, ::GlmGamPoiUnavailable) = print(io,
+     "fitted; restore the pinned R library (Rscript -e 'renv::restore()') " *
+     "or use analysis.differential.dispersion: glm_nb")
+ 
++"""
++    MGLMUnavailable()
++
++Raised when the R package MGLM, which fits the `multinomial` and
++`dirichlet_multinomial` models, cannot be loaded. No other method is
++substituted.
++"""
++struct MGLMUnavailable <: Exception end
++
++Base.showerror(io::IO, ::MGLMUnavailable) = print(io,
++    "the R package MGLM is not available, so the multinomial and Dirichlet-multinomial " *
++    "models cannot be fitted; restore the pinned R library (Rscript -e 'renv::restore()')")
++
+ """
+     _geomean(x) -> Float64
+ 
+@@ -737,6 +800,147 @@ function fit_welch(values::AbstractMatrix{<:Real}, groups::AbstractVector{<:Abst
+               pvalue    = _num.(raw.pvalue))
+ end
+ 
++# One MGLM fit of the whole composition, with the same `da_` naming as `_FIT_R`.
++# The reference taxon is the last column, which is MGLM's own baseline for
++# "MN"; for "DM" every taxon has its own coefficients, and the reference enters
++# through the contrast below. MGLMreg.fit sets options(warn = -1) while it
++# iterates and restores it only on a normal return, so the caller's setting is
++# restored here whatever happens. Any error, a fit that reaches the iteration
++# cap, a warning that the fit did not converge or is not at a maximum, and an
++# information matrix that is not positive definite each refuse the whole fit:
++# there is no fallback to another model.
++#
++# For taxon j the group coefficient's index in MGLM's coefficient vector is
++# (j - 1) * 2 + 2, column-major over a 2 x taxa matrix. Under "MN" that
++# coefficient is itself the change in log(p_j / p_reference). Under "DM"
++# log(alpha_j / alpha_reference) has the same meaning, so the estimate is the
++# difference of the two group coefficients and its variance takes their
++# covariance from the inverse of the observed information.
++const _FIT_MGLM_R = raw"""
++da_g <- factor(da_group, levels = da_levels)
++da_X <- model.matrix(~ da_g)
++da_warns <- character(0)
++da_ow <- options(warn = 0)
++da_fit <- tryCatch(
++  withCallingHandlers(
++    MGLM::MGLMreg.fit(Y = da_counts, X = da_X, dist = da_dist, maxiters = da_maxiters),
++    warning = function(w) {
++      da_warns <<- c(da_warns, conditionMessage(w))
++      invokeRestart("muffleWarning")
++    }),
++  error = function(e) e)
++options(da_ow)
++# MGLM's own minorisation steps fit binomial and Poisson GLMs to non-integer
++# working responses, and dbinom warns once per value ("non-integer x =
++# 2.18..."). The value is dropped so that each kind of warning is listed once.
++da_warns <- unique(sub("= [-+0-9.eE]+$", "= ...", trimws(da_warns)))
++da_k <- ncol(da_counts)
++da_out <- list(reason = "", warnings = da_warns, iterations = NA_real_,
++               loglik = NA_real_, estimate = rep(NA_real_, da_k - 1),
++               se = rep(NA_real_, da_k - 1), statistic = rep(NA_real_, da_k - 1),
++               pvalue = rep(NA_real_, da_k - 1), alpha0 = rep(NA_real_, 2),
++               theta = rep(NA_real_, 2))
++da_fatal <- grepl("converge|saddle|singular|Out of range|diverge|removed", da_warns)
++# Each group's total concentration, kept even when the fit is refused: a
++# concentration that ran off to infinity explains a refusal at the boundary.
++if (da_dist == "DM" && !inherits(da_fit, "error")) {
++  da_B <- da_fit@coefficients
++  da_out$alpha0 <- c(sum(exp(da_B[1, ])), sum(exp(da_B[1, ] + da_B[2, ])))
++  # Computed here so that an infinite concentration gives theta = 0.
++  da_out$theta <- 1 / (1 + da_out$alpha0)
++}
++if (inherits(da_fit, "error")) {
++  da_out$reason <- paste("MGLMreg.fit stopped with an error:", conditionMessage(da_fit))
++} else if (da_fit@iter >= da_maxiters) {
++  da_out$reason <- paste("the fit did not converge within", da_maxiters, "iterations")
++} else if (any(da_fatal)) {
++  da_out$reason <- paste("the fit is not a usable maximum:", paste(da_warns[da_fatal], collapse = "; "))
++} else {
++  da_out$iterations <- da_fit@iter
++  da_out$loglik <- da_fit@logL
++  da_B <- da_fit@coefficients
++  da_V <- tryCatch(chol2inv(chol(-da_fit@Hessian)), error = function(e) NULL)
++  if (is.null(da_V)) {
++    da_out$reason <- "the observed information is not positive definite, so there are no standard errors"
++  } else {
++    for (da_j in seq_len(da_k - 1)) {
++      da_a <- (da_j - 1) * 2 + 2
++      if (da_dist == "MN") {
++        da_est <- da_B[2, da_j]
++        da_var <- da_V[da_a, da_a]
++      } else {
++        da_r <- (da_k - 1) * 2 + 2
++        da_est <- da_B[2, da_j] - da_B[2, da_k]
++        da_var <- da_V[da_a, da_a] + da_V[da_r, da_r] - 2 * da_V[da_a, da_r]
++      }
++      da_out$estimate[da_j] <- da_est
++      da_out$se[da_j] <- sqrt(da_var)
++    }
++    da_out$statistic <- da_out$estimate / da_out$se
++    da_out$pvalue <- 2 * pnorm(-abs(da_out$statistic))
++  }
++}
++"""
++
++"""
++    fit_mglm(counts, groups; levels, dist) -> NamedTuple
++
++Fit one MGLM regression of the samples x taxa integer matrix `counts` on the
++two-level factor `groups`, with `levels = (reference, contrast)`. `dist` is
++`"MN"` (multinomial logit) or `"DM"` (Dirichlet-multinomial, a log link on
++every taxon's Dirichlet parameter). The last column is the reference taxon.
++
++Returns `reason` (empty when the fit is usable, otherwise why it was refused),
++`warnings` (every distinct warning MGLM raised), `iterations`, `loglik`, and
++for each taxon but the reference, in column order: `estimate` (the change in
++the natural log of the taxon's ratio to the reference, contrast over
++reference), `se`, `statistic` (Wald z) and `pvalue` (two-sided), each `nothing`
++when not finite. For `"DM"`, `alpha0` holds each group's total Dirichlet
++concentration and `theta` each `1 / (1 + alpha0)`, reference first, so an
++infinite concentration has `alpha0 = nothing` and `theta = 0`; otherwise all
++four are `nothing`. Throws
++`MGLMUnavailable` when MGLM cannot be loaded and `RBusyError` when the R runtime
++stays busy.
++"""
++function fit_mglm(counts::AbstractMatrix{<:Integer}, groups::AbstractVector{<:AbstractString};
++                  levels::NTuple{2,String}, dist::AbstractString)
++    dist in ("MN", "DM") || throw(ArgumentError("dist must be MN or DM, not '$dist'"))
++    size(counts, 1) == length(groups) || throw(ArgumentError(
++        "counts have $(size(counts, 1)) samples and groups $(length(groups))"))
++    size(counts, 2) >= 2 || throw(ArgumentError(
++        "a compositional model needs at least 2 taxa; there are $(size(counts, 2))"))
++    raw = with_r_lock(; timeout=R_WAIT_SECONDS[]) do
++        RCall.rcopy(RCall.reval("requireNamespace('MGLM', quietly = TRUE)")) ||
++            throw(MGLMUnavailable())
++        RCall.globalEnv[:da_counts] = Matrix{Float64}(counts)
++        RCall.globalEnv[:da_group] = String.(groups)
++        RCall.globalEnv[:da_levels] = collect(levels)
++        RCall.globalEnv[:da_dist] = String(dist)
++        RCall.globalEnv[:da_maxiters] = MGLM_MAXITERS
++        try
++            RCall.reval(_FIT_MGLM_R)
++            RCall.rcopy(Dict{Symbol,Any}, RCall.reval("da_out"))
++        finally
++            RCall.reval("rm(list = intersect(ls(), c('da_counts', 'da_group', 'da_levels', " *
++                        "'da_dist', 'da_maxiters', 'da_g', 'da_X', 'da_warns', 'da_ow', " *
++                        "'da_fit', 'da_k', 'da_out', 'da_fatal', 'da_B', 'da_V', 'da_j', " *
++                        "'da_a', 'da_r', 'da_est', 'da_var'))); invisible(gc())")
++        end
++    end
++    vec_num(x) = _num.(x isa AbstractVector ? x : [x])
++    warns = raw[:warnings]
++    (reason     = String(raw[:reason]),
++     warnings   = warns isa AbstractString ? [String(warns)] : String.(collect(warns)),
++     iterations = _num(raw[:iterations]),
++     loglik     = _num(raw[:loglik]),
++     estimate   = vec_num(raw[:estimate]),
++     se         = vec_num(raw[:se]),
++     statistic  = vec_num(raw[:statistic]),
++     pvalue     = vec_num(raw[:pvalue]),
++     alpha0     = vec_num(raw[:alpha0]),
++     theta      = vec_num(raw[:theta]))
++end
++
+ """
+     _row(taxon, prevalence, note) -> Dict{String,Any}
+ 
+@@ -779,21 +983,39 @@ change, relative to the geometric mean of the tested taxa. Replaced zeros are
+ not measurements; `diagnostics.zero_replacement` reports their share of each
+ sample. Each group needs at least 2 samples.
+ 
+-For both methods, samples with no reads are left out before anything else and
++`multinomial` and `dirichlet_multinomial` fit one `MGLM::MGLMreg.fit` model of
++the composition of the taxa that pass `min_prevalence` and have reads in both
++groups, conditioned on each sample's read total. A taxon with no reads in every
++sample of one group (complete separation) is `failed` with its reason and left
++out of the composition. The reference taxon is `config.mn_reference_taxon`, or
++the fitted taxon with the most reads; its row has status `reference` and no
++statistics. Every other estimate is the change in the natural log of the
++taxon's ratio to the reference, contrast over reference, with a Wald z-test.
++`dirichlet_multinomial` needs at least 2 samples in each group and reports each
++group's total concentration `alpha0` and `theta = 1 / (1 + alpha0)` in
++`diagnostics.overdispersion`; when a group shows no overdispersion (excess
++variance below `DM_EXCESS_FLOOR` at its mean read total) the fitted rows are
++`boundary`, keeping their statistics. At most `MAX_COMPOSITIONAL_TAXA` taxa enter a
++fit. A fit that errors, reaches MGLM's iteration cap, warns that it did not
++converge or is not at a maximum, or has an information matrix that is not
++positive definite fails every taxon with that reason.
++
++For every method, samples with no reads are left out before anything else and
+ named in `diagnostics.samples_without_reads`; they have no library size and no
+ composition. Taxa present in fewer than `config.min_prevalence` of the
+ samples are reported as `filtered` and not fitted, and the Benjamini-Hochberg
+-family is the fitted taxa that produced a p-value; failed and filtered taxa
+-carry `padj = nothing`. The result's `effect` names the row key that holds the
+-effect size and its label.
++family is the fitted taxa that produced a p-value; failed, filtered and
++reference taxa carry `padj = nothing`. The result's `effect` names the row key
++that holds the effect size and its label.
+ 
+ Throws `ArgumentError` for unusable input (including a zero replacement that
+-cannot be made), `ScalingRefusal` when the offset cannot be computed,
+-`MASSUnavailable`, `GlmGamPoiUnavailable` or `ZCompositionsUnavailable` when a
+-required R package is missing, `RBusyError` when the R runtime stays busy, and
+-an `ErrorException` when no taxon could be fitted at all, including when the
+-`glm_gp` fit fails. Uncaught R errors from the fitting and zero-replacement
+-helpers propagate.
++cannot be made, an unknown or unfitted reference taxon, and too many taxa for a
++compositional fit), `ScalingRefusal` when the offset cannot be computed,
++`MASSUnavailable`, `GlmGamPoiUnavailable`, `ZCompositionsUnavailable` or
++`MGLMUnavailable` when a required R package is missing, `RBusyError` when the R
++runtime stays busy, and an `ErrorException` when no taxon could be fitted at
++all, including when the `glm_gp` or MGLM fit fails. Uncaught R errors from the
++fitting and zero-replacement helpers propagate.
+ """
+ function differential_abundance(counts::AbstractMatrix{<:Real},
+                                 samples::AbstractVector{<:AbstractString},
+@@ -883,7 +1105,7 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
+         config_echo = Dict{String,Any}("method" => config.method, "offset" => config.offset,
+                                        "min_prevalence" => config.min_prevalence,
+                                        "dispersion" => config.dispersion)
+-    else
++    elseif config.method == "clr_welch"
+         (n_ref >= 2 && n_con >= 2) || throw(ArgumentError(
+             "Welch's t-test needs at least 2 samples in each group to estimate its variance; " *
+             "'$reference' has $n_ref and '$contrast' has $n_con$dropped_note"))
+@@ -924,6 +1146,145 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
+             "median_imputed_fraction" => _median(sorted_mass),
+             "max_imputed_fraction" => last(sorted_mass),
+             "warnings" => replaced.warnings)
++    else
++        dm = config.method == "dirichlet_multinomial"
++        dm && !(n_ref >= 2 && n_con >= 2) && throw(ArgumentError(
++            "the Dirichlet-multinomial model estimates each group's overdispersion from the " *
++            "variation between its samples, so it needs at least 2 samples in each group; " *
++            "'$reference' has $n_ref and '$contrast' has $n_con$dropped_note"))
++        for j in findall(==(0), present)
++            rows[j]["note"] = "no reads in any sample of either group, so it is not part of the composition"
++        end
++        candidates = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
++        # Complete separation: a taxon with no reads in every sample of one group
++        # has an unbounded log ratio there, so it has no maximum-likelihood
++        # estimate. It is refused with its reason and left out of the
++        # composition the model fits, rather than being given a diverged value.
++        separated = Dict{Int,String}()
++        for j in candidates
++            g = findfirst(l -> all(i -> groups[i] != l || counts[i, j] == 0, eachindex(groups)), levels)
++            isnothing(g) || (separated[j] = levels[g])
++        end
++        for (j, lvl) in separated
++            rows[j]["status"] = "failed"
++            rows[j]["note"] = "no reads in any '$lvl' sample (complete separation): its log ratio " *
++                              "is unbounded and the Wald test is undefined, so it is left out of " *
++                              "the composition and no p-value is reported"
++        end
++        tested = filter(j -> !haskey(separated, j), candidates)
++        length(tested) >= 2 || throw(ArgumentError(
++            "a compositional model needs at least 2 taxa with reads in both groups at or above " *
++            "analysis.differential.min_prevalence = $(config.min_prevalence); there are $(length(tested))"))
++        length(tested) <= MAX_COMPOSITIONAL_TAXA || throw(ArgumentError(
++            "$(length(tested)) taxa would enter one compositional fit, above the limit of " *
++            "$MAX_COMPOSITIONAL_TAXA; raise analysis.differential.min_prevalence or choose a " *
++            "coarser rank"))
++        totals = [sum(view(counts, :, j)) for j in axes(counts, 2)]
++        ref = if isnothing(config.mn_reference_taxon)
++            tested[argmax(totals[tested])]
++        else
++            k = findfirst(==(config.mn_reference_taxon), taxa)
++            isnothing(k) && throw(ArgumentError(
++                "analysis.differential.mn_reference_taxon is '$(config.mn_reference_taxon)', " *
++                "which is not a taxon of this table"))
++            k in tested || throw(ArgumentError(
++                "analysis.differential.mn_reference_taxon '$(config.mn_reference_taxon)' is not " *
++                "fitted (" * (haskey(separated, k) ? "it has no reads in any '$(separated[k])' sample" :
++                              present[k] == 0 ? "it has no reads" :
++                              "it is below min_prevalence") *
++                "), so it cannot anchor the log ratios; choose a taxon with reads in both groups"))
++            k
++        end
++        order = [filter(!=(ref), tested); ref]
++        sub = Int.(counts[:, order])
++        for i in axes(sub, 1)
++            sum(view(sub, i, :)) > 0 || throw(ArgumentError(
++                "sample '$(samples[i])' has no reads in the $(length(order)) taxa the " *
++                "compositional model fits, so it has no composition; lower " *
++                "analysis.differential.min_prevalence or leave the sample out"))
++        end
++        dist = dm ? "DM" : "MN"
++        fit = fit_mglm(sub, groups; levels, dist)
++        # A group whose counts show no overdispersion: see DM_EXCESS_FLOOR.
++        theta = fit.theta
++        flat = String[]
++        if dm
++            for g in 1:2
++                m = [sum(view(sub, i, :)) for i in axes(sub, 1) if groups[i] == levels[g]]
++                !isnothing(theta[g]) && (sum(m) / length(m) - 1) * theta[g] < DM_EXCESS_FLOOR &&
++                    push!(flat, levels[g])
++            end
++        end
++        # Only when both groups are flat is the multinomial the same fit; with one
++        # overdispersed group it would understate that group's variance.
++        both_flat = length(flat) == 2
++        flat_text = "no overdispersion beyond multinomial sampling in " *
++                    join(("'$l'" for l in flat), " and ") * ", so the Dirichlet concentration " *
++                    "there has no finite estimate"
++        other = both_flat || isempty(flat) ? "" : only(filter(!=(only(flat)), collect(levels)))
++        # MGLM's own refusal stands; at the boundary it is explained.
++        reason = isempty(fit.reason) || isempty(flat) ? fit.reason :
++            fit.reason * "; the counts show " * flat_text *
++            (both_flat ? ", so use method multinomial" :
++                         ", while '$other' is overdispersed, so method multinomial would " *
++                         "understate its variance")
++        for (k, j) in enumerate(order[1:end-1])
++            est, se = fit.estimate[k], fit.se[k]
++            if !isempty(reason)
++                merge!(rows[j], Dict{String,Any}("status" => "failed", "note" => reason))
++            elseif isnothing(est) || isnothing(se) || se <= 0 || isnothing(fit.pvalue[k])
++                merge!(rows[j], Dict{String,Any}("status" => "failed",
++                    "note" => "MGLM returned a non-finite estimate, standard error or p-value"))
++            else
++                merge!(rows[j], Dict{String,Any}(
++                    "status" => "ok", "note" => "", "estimate" => est,
++                    "log2_fold_change" => est / log(2), "standard_error" => se,
++                    "statistic" => fit.statistic[k], "pvalue" => fit.pvalue[k]))
++            end
++        end
++        merge!(rows[ref], Dict{String,Any}("status" => "reference",
++            "note" => "the reference taxon: every other estimate is the change in that taxon's " *
++                      "log ratio to this one, so it has no test of its own"))
++        model = dm ? "Dirichlet-multinomial regression (MGLM::MGLMreg.fit, dist = \"DM\", a log " *
++                     "link on every taxon's Dirichlet parameter, so each group has its own mean " *
++                     "composition and overdispersion)" :
++                     "Multinomial logit regression (MGLM::MGLMreg.fit, dist = \"MN\")"
++        method_text = "$model of the composition of the $(length(order)) taxa passing " *
++                      "min_prevalence with reads in both groups, conditioned on each sample's " *
++                      "total; Wald z-test of the change in each taxon's log ratio to the " *
++                      "reference taxon '$(taxa[ref])'; Benjamini-Hochberg adjustment over the " *
++                      "fitted taxa" *
++                      (dm ? "" : ". The multinomial has no overdispersion, so its standard " *
++                                 "errors are too small when samples vary more than sampling " *
++                                 "alone explains; the Dirichlet-multinomial allows for that")
++        effect = Dict("key" => "log2_fold_change",
++                      "label" => "log2 fold change of the ratio to $(taxa[ref])")
++        size_factor_rows = Dict{String,Any}[]
++        config_echo = Dict{String,Any}("method" => config.method,
++                                       "min_prevalence" => config.min_prevalence,
++                                       "mn_reference_taxon" => config.mn_reference_taxon)
++        diagnostics["reference_taxon"] = String(taxa[ref])
++        diagnostics["n_taxa_in_composition"] = length(order)
++        diagnostics["mglm"] = Dict{String,Any}(
++            "distribution" => dist, "iterations" => fit.iterations,
++            "log_likelihood" => fit.loglik, "warnings" => fit.warnings)
++        if dm && isempty(reason) && !isempty(flat)
++            note = flat_text * "; a log-ratio contrast does not depend on that concentration, " *
++                   "so the estimate stands" *
++                   (both_flat ? ", and it equals the multinomial one, so method multinomial " *
++                                "fits these counts as well" :
++                                "; '$other' is overdispersed, so method multinomial would " *
++                                "understate its variance")
++            for j in order[1:end-1]
++                rows[j]["status"] == "ok" &&
++                    merge!(rows[j], Dict{String,Any}("status" => "boundary", "note" => note))
++            end
++        end
++        if dm
++            diagnostics["overdispersion"] = Dict{String,Any}(
++                levels[g] => Dict{String,Any}("alpha0" => fit.alpha0[g], "theta" => theta[g])
++                for g in 1:2)
++        end
+     end
+ 
+     family = findall(r -> r["status"] in ("ok", "boundary") && !isnothing(r["pvalue"]), rows)
+diff --git a/src/core/r_runtime.jl b/src/core/r_runtime.jl
+index 133c8d4..cce057b 100644
+--- a/src/core/r_runtime.jl
++++ b/src/core/r_runtime.jl
+@@ -29,6 +29,7 @@ const REQUIRED_R_PACKAGES = [
+     "glmGamPoi"     => "shared dispersion-trend differential abundance",
+     "MASS"          => "negative-binomial differential abundance",
+     "zCompositions" => "CLR differential abundance (clr_welch)",
++    "MGLM"          => "multinomial and Dirichlet-multinomial differential abundance",
+ ]
+ 
+ # Thrown when a caller that declines to wait indefinitely gives up on the runtime.
+diff --git a/src/server/routes/analysis.jl b/src/server/routes/analysis.jl
+index 1e3d8bd..37f6368 100644
+--- a/src/server/routes/analysis.jl
++++ b/src/server/routes/analysis.jl
+@@ -1202,18 +1202,23 @@ end
+ 
+ The study's `analysis.differential` settings, resolved through the config
+ cascade. Missing or `nothing` values use the defaults in `DifferentialConfig`,
+-including `dispersion="glm_nb"`. Invalid settings propagate the constructor's
+-`ArgumentError`; values that cannot be converted to strings or numbers also
++including `dispersion="glm_nb"` and no `mn_reference_taxon`. Invalid settings
++propagate the constructor's `ArgumentError`, as does an `mn_reference_taxon`
++that is not text; other values that cannot be converted to strings or numbers
+ raise their conversion errors.
+ """
+ function _differential_config(study::String)
+     resolved = _resolved_run_config(study, nothing, nothing, nothing)
+     val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
++    ref = get(get(resolved, "analysis.differential.mn_reference_taxon", (; value=nothing)), :value, nothing)
++    (isnothing(ref) || ref isa AbstractString) || throw(ArgumentError(
++        "analysis.differential.mn_reference_taxon must be a taxon name or empty, not $ref"))
+     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
+                        Float64(val("analysis.differential.min_prevalence", 0.0));
+                        method=String(val("analysis.differential.method", "nb_glm")),
+                        replacement_delta=Float64(val("analysis.differential.replacement_delta", 0.65)),
+-                       dispersion=String(val("analysis.differential.dispersion", "glm_nb")))
++                       dispersion=String(val("analysis.differential.dispersion", "glm_nb")),
++                       mn_reference_taxon=ref)
+ end
+ 
+ """
+@@ -1293,6 +1298,7 @@ function _differential(study::String, body)
+         e isa MASSUnavailable  && return json_error(503, "r_unavailable", sprint(showerror, e))
+         e isa ZCompositionsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
+         e isa GlmGamPoiUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
++        e isa MGLMUnavailable  && return json_error(503, "r_unavailable", sprint(showerror, e))
+         e isa ErrorException   && return json_error(422, "no_taxon_fitted", e.msg)
+         rethrow()
+     end
+diff --git a/src/server/routes/config.jl b/src/server/routes/config.jl
+index 71f2493..6dc4e88 100644
+--- a/src/server/routes/config.jl
++++ b/src/server/routes/config.jl
+@@ -142,6 +142,11 @@ function _config_value_error(key::String, value)
+             return "$key may contain only letters, digits, spaces and - _ . = , / : +"
+         return nothing
+     end
++    # A taxon name, or ~ for the most abundant fitted taxon.
++    if key == "analysis.differential.mn_reference_taxon"
++        (isnothing(v) || v isa AbstractString) || return "$key must be a taxon name or empty"
++        return nothing
++    end
+     if key in _NULLABLE_NUMBERS
+         (isnothing(v) || (v isa Real && !(v isa Bool))) || return "$key must be a number or empty"
+         return nothing
+diff --git a/test/unit/test_differential.jl b/test/unit/test_differential.jl
+index e82104d..af08f38 100644
+--- a/test/unit/test_differential.jl
++++ b/test/unit/test_differential.jl
+@@ -1019,4 +1019,334 @@ end
+             @test !rcopy(Bool, reval("exists('requireNamespace', envir = globalenv(), inherits = FALSE)"))
+         end
+     end
++
++    ## multinomial and dirichlet_multinomial (MGLM). The multinomial is checked
++    # against its closed form: with only a group term the fitted composition of
++    # each group is its pooled proportions, so the estimate is a difference of
++    # pooled log ratios and its variance the sum of four reciprocal pooled
++    # counts. The Dirichlet-multinomial has no closed form; it is checked
++    # against stats::optim on a likelihood written out here from the
++    # Dirichlet-multinomial density, with the covariance from stats::optimHess.
++    @testset "Compositional configuration" begin
++        for m in COMPOSITIONAL_METHODS
++            @test DifferentialConfig(; method=m).method == m
++            @test isnothing(DifferentialConfig(; method=m).mn_reference_taxon)
++            @test isnothing(DifferentialConfig(; method=m, mn_reference_taxon="  ").mn_reference_taxon)
++            @test DifferentialConfig(; method=" $(uppercase(m)) ", mn_reference_taxon=" Bacteroides ").mn_reference_taxon == "Bacteroides"
++            @test_throws ArgumentError DifferentialConfig(; method=m, dispersion="glmGamPoi")
++        end
++        for m in ("nb_glm", "clr_welch")
++            @test_throws ArgumentError DifferentialConfig(; method=m, mn_reference_taxon="Bacteroides")
++            @test isnothing(DifferentialConfig(; method=m, mn_reference_taxon="").mn_reference_taxon)
++        end
++        SV = MetaManifold.Server
++        for m in COMPOSITIONAL_METHODS
++            @test isnothing(SV._config_value_error("analysis.differential.method", m))
++        end
++        @test isnothing(SV._config_value_error("analysis.differential.mn_reference_taxon", "Bacteroides"))
++        @test isnothing(SV._config_value_error("analysis.differential.mn_reference_taxon", nothing))
++        for bad in (1, 2.5, true, ["Bacteroides"])
++            @test !isnothing(SV._config_value_error("analysis.differential.mn_reference_taxon", bad))
++        end
++        @test "MGLM" in first.(MetaManifold.RRuntime.REQUIRED_R_PACKAGES)
++    end
++
++    # Input refusals that happen before R is reached, so they hold on any machine.
++    @testset "Compositional input refusals" begin
++        g = ["A", "A", "A", "B", "B", "B"]
++        s = ["s$i" for i in 1:6]
++        kw = (; reference="A", contrast="B")
++        cfg(m; ref=nothing) = DifferentialConfig(; method=m, mn_reference_taxon=ref)
++        # The Dirichlet-multinomial needs 2 samples a group.
++        @test_throws ArgumentError differential_abundance([5 6; 7 3; 9 4], s[1:3], ["p", "q"],
++            ["A", "A", "B"]; kw..., config=cfg("dirichlet_multinomial"))
++        # One taxon with reads in both groups is not a composition.
++        @test_throws ArgumentError differential_abundance([5 0; 7 0; 9 0; 4 1; 3 2; 6 1], s, ["p", "q"], g;
++            kw..., config=cfg("multinomial"))
++        # Unknown, separated and filtered reference taxa are named, not replaced.
++        x = [5 6 0; 7 3 0; 9 4 0; 4 8 3; 3 2 2; 6 1 4]
++        for (ref, why) in (("nope", "not a taxon"), ("r", "no reads in any 'A' sample"))
++            e = try
++                differential_abundance(x, s, ["p", "q", "r"], g; kw..., config=cfg("multinomial"; ref))
++                nothing
++            catch err
++                err
++            end
++            @test e isa ArgumentError && occursin(why, e.msg)
++        end
++        e = try
++            differential_abundance(x, s, ["p", "q", "r"], g; kw...,
++                config=DifferentialConfig("tss", 0.9; method="multinomial", mn_reference_taxon="r"))
++            nothing
++        catch err
++            err
++        end
++        @test e isa ArgumentError && occursin("below min_prevalence", e.msg)
++        # A sample whose reads are all in left-out taxa has no composition.
++        e = try
++            differential_abundance([5 6 0 0; 7 3 0 0; 0 0 0 9; 4 8 3 0; 3 2 2 0; 6 1 4 0], s, ["p", "q", "r", "u"], g;
++                kw..., config=cfg("multinomial"))
++            nothing
++        catch err
++            err
++        end
++        @test e isa ArgumentError && occursin("sample 's3' has no reads", e.msg)
++        # Too many taxa for one fit is refused before R is asked.
++        big = ones(Int, 6, MAX_COMPOSITIONAL_TAXA + 1)
++        e = try
++            differential_abundance(big, s, ["t$j" for j in axes(big, 2)], g; kw..., config=cfg("multinomial"))
++            nothing
++        catch err
++            err
++        end
++        @test e isa ArgumentError && occursin("above the limit", e.msg)
++    end
++
++    # Issue #37's contract, applied to MGLM: in CI the compositional fits fail,
++    # not skip, when the package is missing.
++    HAVE_MGLM = HAVE_R && _r_has("MGLM")
++    HAVE_MGLM || @info (get(ENV, "CI", "") == "true" ?
++        "MGLM unavailable IN CI - the compositional fit tests FAIL" :
++        "R or MGLM unavailable - the compositional fit tests are SKIPPED")
++    _mglm_ready() = HAVE_MGLM || (get(ENV, "CI", "") == "true" ? (@test HAVE_MGLM; false) : (@test_skip HAVE_MGLM; false))
++
++    @testset "multinomial matches its closed form" begin
++        if _mglm_ready()
++            warn0 = rcopy(R"getOption('warn')")
++            y = [230 265 144 100 61; 238 239 166 77 80; 240 242 155 80 83; 221 263 165 71 80;
++                 328 162 161 45 104; 347 152 152 46 103; 347 154 153 45 101; 303 148 163 37 149]
++            g = [i <= 4 ? "A" : "B" for i in 1:8]
++            taxa = ["t1", "t2", "t3", "t4", "t5"]
++            for ref in (nothing, "t4")
++                res = differential_abundance(y, ["s$i" for i in 1:8], taxa, g; reference="A", contrast="B",
++                    config=DifferentialConfig(; method="multinomial", mn_reference_taxon=ref))
++                r = something(ref, "t1")   # t1 has the most reads
++                @test res["diagnostics"]["reference_taxon"] == r
++                @test res["diagnostics"]["mglm"]["distribution"] == "MN"
++                @test res["status"] == "ok"
++                rk = findfirst(==(r), taxa)
++                SA = vec(sum(y[1:4, :]; dims=1)); SB = vec(sum(y[5:8, :]; dims=1))
++                byt = Dict(x["taxon"] => x for x in res["rows"])
++                @test byt[r]["status"] == "reference" && isnothing(byt[r]["pvalue"]) && isnothing(byt[r]["padj"])
++                for (j, t) in enumerate(taxa)
++                    j == rk && continue
++                    est = log(SB[j] / SB[rk]) - log(SA[j] / SA[rk])
++                    se = sqrt(1 / SA[j] + 1 / SA[rk] + 1 / SB[j] + 1 / SB[rk])
++                    @test byt[t]["status"] == "ok"
++                    @test isapprox(byt[t]["estimate"], est; atol=1e-8)
++                    @test isapprox(byt[t]["log2_fold_change"], est / log(2); atol=1e-8)
++                    @test isapprox(byt[t]["standard_error"], se; rtol=1e-8)
++                    @test byt[t]["statistic"] ≈ byt[t]["estimate"] / byt[t]["standard_error"]
++                    z = byt[t]["statistic"]
++                    @test byt[t]["pvalue"] ≈ rcopy(R"2 * pnorm(-abs($z))")
++                end
++                @test res["diagnostics"]["n_tested"] == 4
++                @test res["effect"]["label"] == "log2 fold change of the ratio to $r"
++                @test !haskey(res["diagnostics"], "overdispersion")
++            end
++            # MGLMreg.fit sets warn = -1 while it iterates; the caller's setting is back.
++            @test rcopy(R"getOption('warn')") == warn0
++        end
++    end
++
++    @testset "dirichlet_multinomial matches an independent optimiser" begin
++        if _mglm_ready()
++            warn0 = rcopy(R"getOption('warn')")
++            y = [440 397 350 240 73; 315 382 364 397 42; 597 296 249 268 90; 618 295 318 242 27;
++                 279 450 314 403 54; 246 255 457 184 358; 583 377 74 184 282; 190 239 185 578 308;
++                 105 954 58 218 165; 295 713 255 163 74]
++            g = [i <= 5 ? "A" : "B" for i in 1:10]
++            taxa = ["t1", "t2", "t3", "t4", "t5"]
++            res = differential_abundance(y, ["s$i" for i in 1:10], taxa, g; reference="A", contrast="B",
++                config=DifferentialConfig(; method="dirichlet_multinomial", mn_reference_taxon="t2"))
++            @test res["status"] == "ok"
++            @test res["diagnostics"]["mglm"]["distribution"] == "DM"
++            # Each kind of MGLM warning is listed once, without its value.
++            @test !any(w -> occursin(r"= [0-9]", w), res["diagnostics"]["mglm"]["warnings"])
++            # Independent fit: alpha_ij = exp(b0_j + b1_j * B_i), parameters column-major.
++            @rput y
++            R"""
++            da_t_X <- cbind(1, rep(c(0, 1), each = 5))
++            da_t_nll <- function(th) {
++              A <- exp(da_t_X %*% matrix(th, 2, ncol(y))); m <- rowSums(y); a0 <- rowSums(A)
++              -sum(lgamma(a0) - lgamma(a0 + m) + rowSums(lgamma(y + A) - lgamma(A)))
++            }
++            da_t_pA <- colSums(y[1:5, ]) / sum(y[1:5, ]); da_t_pB <- colSums(y[6:10, ]) / sum(y[6:10, ])
++            da_t_o <- optim(c(rbind(log(10 * da_t_pA), log(da_t_pB / da_t_pA))), da_t_nll, method = "BFGS",
++                            control = list(maxit = 10000, reltol = 1e-15))
++            da_t_V <- solve(optimHess(da_t_o$par, da_t_nll))
++            da_t_B <- matrix(da_t_o$par, 2, ncol(y))
++            da_t_ll <- -da_t_o$value + sum(lgamma(rowSums(y) + 1)) - sum(lgamma(y + 1))
++            """
++            @test rcopy(R"da_t_o$convergence") == 0
++            B = rcopy(R"da_t_B"); V = rcopy(R"da_t_V"); ll = rcopy(R"da_t_ll")
++            R"rm(list = ls(pattern = '^da_t_')); rm(y)"
++            # MGLM's maximum is at least as high as the independent one.
++            @test res["diagnostics"]["mglm"]["log_likelihood"] >= ll - 1e-6
++            byt = Dict(x["taxon"] => x for x in res["rows"])
++            @test byt["t2"]["status"] == "reference"
++            r = 2 * 2
++            for j in (1, 3, 4, 5)
++                a = 2 * j
++                @test isapprox(byt[taxa[j]]["estimate"], B[2, j] - B[2, 2]; atol=2e-3)
++                @test isapprox(byt[taxa[j]]["standard_error"], sqrt(V[a, a] + V[r, r] - 2 * V[a, r]); rtol=2e-3)
++            end
++            od = res["diagnostics"]["overdispersion"]
++            for (grp, a0) in (("A", sum(exp.(B[1, :]))), ("B", sum(exp.(B[1, :] .+ B[2, :]))))
++                @test isapprox(od[grp]["alpha0"], a0; rtol=1e-2)
++                @test od[grp]["theta"] ≈ 1 / (1 + od[grp]["alpha0"])
++            end
++            # These counts are overdispersed (concentrations 30 and 12), so no row is at a boundary.
++            @test res["diagnostics"]["n_boundary"] == 0
++            @test rcopy(R"getOption('warn')") == warn0
++        end
++    end
++
++    @testset "Compositional fits: separation, boundary and refusal" begin
++        if _mglm_ready()
++            g = [i <= 4 ? "A" : "B" for i in 1:8]
++            s = ["s$i" for i in 1:8]
++            # Identical compositions in every sample: no overdispersion at all.
++            flat = repeat([100 200 300 400 0 0], 8)
++            flat[5:8, 5] .= 7            # t5 has reads only in B: complete separation
++            res = differential_abundance(flat, s, ["t$j" for j in 1:6], g; reference="A", contrast="B",
++                config=DifferentialConfig(; method="dirichlet_multinomial"))
++            byt = Dict(x["taxon"] => x for x in res["rows"])
++            @test byt["t4"]["status"] == "reference"
++            @test byt["t5"]["status"] == "failed" && occursin("no reads in any 'A' sample", byt["t5"]["note"])
++            @test byt["t6"]["status"] == "filtered" && isnothing(byt["t6"]["pvalue"])
++            @test all(byt["t$j"]["status"] == "boundary" for j in 1:3)
++            @test occursin("no overdispersion", byt["t1"]["note"])
++            # At the boundary the log ratios are the multinomial ones, here exactly 0.
++            @test all(abs(byt["t$j"]["estimate"]) < 1e-6 for j in 1:3)
++            @test res["diagnostics"]["n_boundary"] == 3 && res["diagnostics"]["n_tested"] == 3
++            @test res["diagnostics"]["n_taxa_in_composition"] == 4
++            @test res["status"] == "partial"
++
++            # Without MGLM the methods refuse by name; nothing is substituted.
++            reval("""requireNamespace <- function(package, ...) {
++                if (identical(package, "MGLM")) FALSE
++                else base::requireNamespace(package, ...)
++            }""")
++            try
++                e = try
++                    differential_abundance(flat, s, ["t$j" for j in 1:6], g; reference="A", contrast="B",
++                        config=DifferentialConfig(; method="multinomial"))
++                    nothing
++                catch err
++                    err
++                end
++                @test e isa MGLMUnavailable
++                @test occursin("renv::restore()", sprint(showerror, e))
++                _da_fixture() do
++                    root = MetaManifold.Server.ServerState._root[]
++                    write(joinpath(root, "data", "studyD", "pipeline.yml"),
++                          "analysis:\n  differential:\n    method: multinomial\n")
++                    r = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
++                                                "table" => "merged", "rank" => "Genus"))
++                    body = JSON3.read(String(r.body))
++                    @test r.status == 503 && body.error == "r_unavailable" && occursin("MGLM", body.message)
++                end
++            finally
++                reval("rm(requireNamespace)")
++            end
++        end
++    end
++
++    # The boundary wording depends on how many groups are flat. Both tables are
++    # fixed draws: multinomial counts (both flat), and multinomial counts in A
++    # with Dirichlet-multinomial counts in B (one flat).
++    @testset "dirichlet_multinomial at the boundary: one group or both" begin
++        if _mglm_ready()
++            closed(y, h, r) = begin
++                SA = vec(sum(y[1:h, :]; dims=1)); SB = vec(sum(y[h+1:end, :]; dims=1))
++                ([log(SB[j] / SB[r]) - log(SA[j] / SA[r]) for j in axes(y, 2) if j != r],
++                 [sqrt(1 / SA[j] + 1 / SA[r] + 1 / SB[j] + 1 / SB[r]) for j in axes(y, 2) if j != r])
++            end
++            fit(y, g) = differential_abundance(y, ["s$i" for i in axes(y, 1)], ["t1", "t2", "t3", "t4"], g;
++                reference="A", contrast="B",
++                config=DifferentialConfig(; method="dirichlet_multinomial", mn_reference_taxon="t4"))
++            rowsof(res) = [Dict(x["taxon"] => x for x in res["rows"])["t$j"] for j in 1:3]
++
++            both = [106 201 311 382; 106 202 313 379; 107 190 302 401; 108 196 304 392;
++                    117 181 296 406; 86 194 327 393; 109 185 303 403; 92 181 311 416]
++            res = fit(both, [i <= 4 ? "A" : "B" for i in 1:8])
++            est, se = closed(both, 4, 4)
++            rs = rowsof(res)
++            @test all(r -> r["status"] == "boundary", rs)
++            @test all(r -> occursin("'A' and 'B'", r["note"]) && occursin("equals the multinomial", r["note"]), rs)
++            # Both groups flat: the contrasts are the multinomial ones, and their
++            # standard errors are no smaller and at most 1% larger.
++            @test all(isapprox(rs[k]["estimate"], est[k]; atol=1e-4) for k in 1:3)
++            @test all(1 <= rs[k]["standard_error"] / se[k] < 1.01 for k in 1:3)
++
++            one = [144 316 448 592; 167 299 459 575; 150 290 469 591; 140 289 454 617; 156 319 459 566;
++                   263 201 736 300; 658 216 357 269; 139 402 330 629; 773 164 340 223; 569 372 190 369]
++            res = fit(one, [i <= 5 ? "A" : "B" for i in 1:10])
++            est, se = closed(one, 5, 4)
++            rs = rowsof(res)
++            @test res["diagnostics"]["overdispersion"]["A"]["theta"] < res["diagnostics"]["overdispersion"]["B"]["theta"]
++            @test all(r -> r["status"] == "boundary", rs)
++            # One group flat: the estimate stands, but it is not the multinomial's,
++            # and the note says so instead of pointing to the multinomial.
++            @test all(r -> occursin("in 'A'", r["note"]) && occursin("'B' is overdispersed", r["note"]) &&
++                           !occursin("equals the multinomial", r["note"]), rs)
++            @test maximum(abs(rs[k]["estimate"] - est[k]) for k in 1:3) > 0.03
++            @test all(rs[k]["standard_error"] > 3 * se[k] for k in 1:3)
++        end
++    end
++
++    @testset "Route: compositional models selected by the study config" begin
++        _da_fixture() do
++            root = MetaManifold.Server.ServerState._root[]
++            cfgfile = joinpath(root, "data", "studyD", "pipeline.yml")
++            post() = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
++                                             "table" => "merged", "rank" => "Genus"))
++            write(cfgfile, "analysis:\n  differential:\n    method: multinomial\n")
++            r = post()
++            body = JSON3.read(String(r.body))
++            if !HAVE_MGLM
++                HAVE_R ? (@test r.status == 503 && body.error == "r_unavailable") :
++                         (@test_skip r.status == 200)
++            else
++                @test r.status == 200
++                # Flat has the most reads (238), so it is the reference.
++                @test body.diagnostics.reference_taxon == "Flat"
++                @test body.config.method == "multinomial" && body.config.mn_reference_taxon === nothing
++                @test isempty(body.size_factors)
++                byt = Dict(String(x.taxon) => x for x in body.rows)
++                @test byt["Flat"].status == "reference"
++                @test byt["Up"].log2_fold_change > 0 && byt["Down"].log2_fold_change < 0
++                @test occursin("ratio to Flat", body.figure.layout.xaxis.title)
++            end
++            write(cfgfile, "analysis:\n  differential:\n    method: multinomial\n    mn_reference_taxon: Down\n")
++            r = post()
++            body = JSON3.read(String(r.body))
++            if HAVE_MGLM
++                @test r.status == 200
++                @test body.diagnostics.reference_taxon == "Down" && body.config.mn_reference_taxon == "Down"
++            end
++            # These few reads show no overdispersion, so the Dirichlet concentration
++            # runs off and MGLM refuses the fit as a saddle point. The refusal stands,
++            # names the boundary and points to the multinomial.
++            write(cfgfile, "analysis:\n  differential:\n    method: dirichlet_multinomial\n")
++            r = post()
++            body = JSON3.read(String(r.body))
++            if HAVE_MGLM
++                @test r.status == 422 && body.error == "no_taxon_fitted"
++                @test occursin("saddle point", body.message) && occursin("use method multinomial", body.message)
++            end
++            # A reference that is not text, or one for a method without a reference, is a 400.
++            for yml in ("method: multinomial\n    mn_reference_taxon: 3\n",
++                        "method: nb_glm\n    mn_reference_taxon: Up\n")
++                write(cfgfile, "analysis:\n  differential:\n    $yml")
++                r = post()
++                @test r.status == 400 && JSON3.read(String(r.body)).error == "invalid_config"
++            end
++            # A reference that is not in the table is invalid input.
++            write(cfgfile, "analysis:\n  differential:\n    method: multinomial\n    mn_reference_taxon: Nope\n")
++            r = post()
++            @test r.status == 400 && JSON3.read(String(r.body)).error == "invalid_input"
++        end
++    end
+ end
+-- 
+2.43.0
+

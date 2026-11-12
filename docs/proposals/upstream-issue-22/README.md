@@ -30,6 +30,7 @@ each item by hand.
 |---|---|
 | `pull-request-body.md` | The body of the upstream pull request |
 | `comment-to-joshua.md` | A comment on upstream #22, after the pull request's CI is green |
+| `0001-mglm-compositional-regression.patch` | The upstream commit, so it survives the session that built it. `git am` it onto upstream `89be534`; the result has the same tree as `37c9ffa`, and needs signing again |
 
 ## Sending it
 
