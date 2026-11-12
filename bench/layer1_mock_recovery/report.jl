@@ -60,4 +60,4 @@ function main()
     @info "Report written" out_path
 end
 
-abspath(PROGRAM_FILE) == @__FILE__ && main()
+abspath(PROGRAM_FILE) == (@__FILE__) && main()

@@ -178,6 +178,11 @@ jobs:
       - name: Parse Julia sources before dependency setup
         run: julia scripts/check-julia-syntax.jl
 
+      # The gate once printed "Julia parse failed" and exited 0. This plants an
+      # unparsable file and requires the gate to fail on it.
+      - name: Check the syntax gate can fail
+        run: bash scripts/tests/test-check-julia-syntax.sh
+
       # Every external version CI installs is read from the committed pin file, so CI
       # and a developer's machine cannot drift apart. yq is already on the runner, so
       # no Julia (and no package install) is needed just to read a YAML file. A pin
