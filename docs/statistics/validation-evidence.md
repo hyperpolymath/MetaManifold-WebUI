@@ -175,7 +175,7 @@ issue #2 remains blocked until this layer is approved.
 
 ```bash
 # Focused
-julia --project=. -t2 --compiled-modules=no test/runtests.jl \
+julia --project=. -t2 test/runtests.jl \
   validated_statistics numeric_policy exact_summaries high_precision \
   derived_analyses method_catalogue statistics_boundaries \
   statistics_adversarial statistics_properties statistics_ui

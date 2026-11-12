@@ -208,15 +208,6 @@ jobs:
       - name: Parse Julia sources before dependency setup
         run: julia scripts/check-julia-syntax.jl
 
-      - name: Cache Julia packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.julia/artifacts
-            ~/.julia/packages
-            ~/.julia/registries
-          key: julia-${{ runner.os }}-${{ hashFiles('Manifest.toml', 'config/defaults/tool_versions.yml') }}
-
       # Every external version CI installs is read from the committed pin file, so CI
       # and a developer's machine cannot drift apart. A temporary environment is used
       # because the project environment cannot be instantiated until R is present:
@@ -230,6 +221,7 @@ jobs:
             using YAML
             pins = YAML.load_file("config/defaults/tool_versions.yml")
             open(ENV["GITHUB_ENV"], "a") do io
+                println(io, "JULIA_VERSION=", pins["runtimes"]["julia"]["version"])
                 println(io, "R_APT_VERSION=", pins["runtimes"]["r"]["apt_version"])
                 println(io, "BUN_VERSION=", pins["toolchain"]["bun"]["version"])
                 println(io, "CUTADAPT_SPEC=cutadapt==", pins["tools"]["cutadapt"]["version"])
@@ -244,6 +236,21 @@ jobs:
                     println(io, uppercase(tool), "_SHA256=", archive["sha256"])
                 end
             end'
+
+      # Packages, artifacts and the precompiled caches. The compiled caches are
+      # valid only for the Julia that wrote them, and RCall's image is built
+      # against the installed R, so the key names the Julia pin, the R apt pin
+      # and the Manifest. The job's own name is in the key so the standards job
+      # does not race this one to save the same entry.
+      - name: Cache Julia packages and compiled caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.julia/artifacts
+            ~/.julia/packages
+            ~/.julia/registries
+            ~/.julia/compiled
+          key: julia-test-${{ runner.os }}-J${{ env.JULIA_VERSION }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('Manifest.toml') }}
 
       # R + required packages (needed by RCall)
       # Install R directly via apt to avoid r-lib/actions/setup-r mangling
@@ -359,7 +366,11 @@ jobs:
           sudo ln -sf /opt/FastQC/fastqc /usr/local/bin/fastqc
           fastqc --version
 
+      # No precompile here: RCall is rebuilt below and that invalidates its image
+      # and everything that loads it, so precompiling now would be done twice.
       - name: Instantiate Julia project
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
       - name: Set up Bun
@@ -389,6 +400,12 @@ jobs:
       - name: Rebuild RCall against installed R
         run: julia --project=. -e 'import Pkg; Pkg.build("RCall")'
 
+      # Explicit, so a precompile failure (an RCall image that does not match the
+      # installed R, for one) fails here with its own error and not later as a
+      # slow load inside the test run.
+      - name: Precompile Julia project
+        run: julia --project=. -e 'import Pkg; Pkg.precompile()'
+
       - name: Verify R packages visible from RCall
         run: |
           julia --project=. -e '
@@ -408,7 +425,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          julia --project=. -t2 --compiled-modules=no test/runtests.jl validated_statistics numeric_policy exact_summaries high_precision derived_analyses method_catalogue statistics_boundaries statistics_adversarial statistics_properties statistics_ui 2>&1 | tee /tmp/validated-statistics-tests.log
+          julia --project=. -t2 test/runtests.jl validated_statistics numeric_policy exact_summaries high_precision derived_analyses method_catalogue statistics_boundaries statistics_adversarial statistics_properties statistics_ui 2>&1 | tee /tmp/validated-statistics-tests.log
           # Preserve both exits immediately: a successful Julia run must not
           # hide a failed log write (e.g. a full runner filesystem).
           statuses=("${PIPESTATUS[@]}")
@@ -462,7 +479,7 @@ jobs:
         run: |
           command -v vsearch # The full suite must run the occupancy experiment, not skip it.
           set +e
-          julia --project=. -t 2 --code-coverage=user --compiled-modules=no test/runtests.jl --integration --server 2>&1 | tee /tmp/julia-tests.log
+          julia --project=. -t 2 --code-coverage=@ test/runtests.jl --integration --server 2>&1 | tee /tmp/julia-tests.log
           # Preserve both exits immediately: a successful Julia run must not
           # hide a failed log write (e.g. a full runner filesystem).
           statuses=("${PIPESTATUS[@]}")
@@ -538,6 +555,25 @@ jobs:
       - name: Set up Julia
         run: bash scripts/install-ci-julia.sh
 
+      - name: Read pinned runtime versions
+        run: |
+          {
+            echo "JULIA_VERSION=$(yq -r '.runtimes.julia.version' config/defaults/tool_versions.yml)"
+            echo "R_APT_VERSION=$(yq -r '.runtimes.r.apt_version' config/defaults/tool_versions.yml)"
+          } >> "$GITHUB_ENV"
+
+      # Same reasoning as the Julia tests job: the compiled caches depend on the
+      # Julia pin and on the R that RCall was built against.
+      - name: Cache Julia packages and compiled caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.julia/artifacts
+            ~/.julia/packages
+            ~/.julia/registries
+            ~/.julia/compiled
+          key: julia-standards-${{ runner.os }}-J${{ env.JULIA_VERSION }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('Manifest.toml') }}
+
       # The versions, the HTTPS restriction and the exact-commit fetches live in
       # the script (one reviewed place), not interpolated into this workflow.
       - name: Install pinned standards tools
@@ -561,8 +597,14 @@ jobs:
       # statistics modules, so the environment must be instantiated after R.
       - name: Instantiate Julia project
         id: instantiate
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
+      # Explicit, so a precompile failure fails here and names itself.
+      - name: Precompile Julia project
+        id: precompile
+        run: julia --project=. -e 'import Pkg; Pkg.precompile()'
 
 
       # YAML-POLICY Y-3 / D307. --check exits 1 on drift and 2 when yq is
@@ -614,7 +656,7 @@ jobs:
       # study, the gates or an earlier evidence step failed) without inventing a
       # failure that cannot distinguish a broken mutant from an absent project.
       - name: Mutation campaign
-        if: always() && steps.instantiate.outcome == 'success'
+        if: always() && steps.instantiate.outcome == 'success' && steps.precompile.outcome == 'success'
         env:
           RUN_LOG_TITLE: Mutation campaign
         run: |

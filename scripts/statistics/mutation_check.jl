@@ -96,7 +96,7 @@ function _sha256(path::AbstractString)
 end
 
 function _run_tests(julia::String, tests::Vector{String}, log::String)
-    command = Cmd(`$julia --project=. -t2 --compiled-modules=no test/runtests.jl $(tests...)`;
+    command = Cmd(`$julia --project=. -t2 test/runtests.jl $(tests...)`;
                   dir=ROOT)
     open(log, "w") do io
         println(io, "\$ ", command)
