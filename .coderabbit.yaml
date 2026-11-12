@@ -3,6 +3,8 @@
 # Canonical language policy:
 # https://github.com/metadatastician/standards/blob/main/3-practice/LANGUAGE-POLICY.adoc
 reviews:
+  # No "review skipped" status comments, such as "Draft PR not reviewed".
+  review_status: false
   auto_review:
     enabled: true
     drafts: false
@@ -30,3 +32,7 @@ reviews:
       enabled: false
     resolve_merge_conflict:
       enabled: false
+# No automatic "Issue Planner" comments on new issues.
+issue_enrichment:
+  auto_enrich:
+    enabled: false
