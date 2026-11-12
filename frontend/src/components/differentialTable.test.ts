@@ -224,3 +224,16 @@ describe('calibration caveat', () => {
     expect(lines[3]).toBe('taxon,status,log2_fold_change,estimate,standard_error,statistic,pvalue,padj,dispersion_theta,zero_process_log_odds,prevalence,note')
   })
 })
+
+describe('multinomial results from the mglm backend', () => {
+  test('the settings line names the backend and no Julia-only setting', () => {
+    const base: DifferentialResult = {
+      ...result,
+      config: { method: 'multinomial', mn_backend: 'mglm', min_prevalence: 0.1,
+                mn_reference_taxon: 'Bacteroides', mn_penalty: 0 },
+    }
+    expect(configLine(base)).toBe(
+      'method multinomial, backend mglm, reference Bacteroides, min_prevalence 0.1; ' +
+      'estimates are log2 fold changes against the reference taxon')
+  })
+})

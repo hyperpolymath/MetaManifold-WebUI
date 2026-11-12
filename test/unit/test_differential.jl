@@ -2386,4 +2386,139 @@ end
             end
         end
     end
+
+    ## mn_backend: mglm, the MGLM-through-R route upstream ruled for these models
+    # (JoshuaJewell/MetaManifold-WebUI#22). The multinomial is the same model in
+    # both backends, so MGLM must reproduce the Julia fit and the closed form; the
+    # Dirichlet-multinomials are different models and are not compared.
+    HAVE_MGLM = HAVE_R && _r_has("MGLM")
+    HAVE_MGLM || @info (get(ENV, "CI", "") == "true" ?
+        "MGLM unavailable IN CI - the mglm backend tests FAIL" :
+        "R or MGLM unavailable - the mglm backend tests are SKIPPED")
+    _mglm_ready() = HAVE_MGLM || (get(ENV, "CI", "") == "true" ? (@test HAVE_MGLM; false) : (@test_skip HAVE_MGLM; false))
+
+    @testset "mn_backend configuration" begin
+        @test DifferentialConfig().mn_backend == "julia"
+        for m in COMPOSITIONAL_METHODS
+            @test DifferentialConfig(; method=m, mn_backend=" MGLM ").mn_backend == "mglm"
+            @test_throws ArgumentError DifferentialConfig(; method=m, mn_backend="songbird")
+            @test_throws ArgumentError DifferentialConfig(; method=m, mn_backend="mglm", mn_penalty=0.5)
+        end
+        @test_throws ArgumentError DifferentialConfig(; method="dirichlet_multinomial",
+                                                      mn_backend="mglm", dm_overdispersion_method="mom")
+        @test_throws ArgumentError DifferentialConfig(; method="nb_glm", mn_backend="mglm")
+        SV = MetaManifold.Server
+        @test isnothing(SV._config_value_error("analysis.differential.mn_backend", "mglm"))
+        @test !isnothing(SV._config_value_error("analysis.differential.mn_backend", "R"))
+        eff(pairs...) = Dict{String,Any}(pairs...)
+        @test isnothing(SV._differential_settings_error(eff(
+            "analysis.differential.method" => "multinomial", "analysis.differential.mn_backend" => "mglm")))
+        @test !isnothing(SV._differential_settings_error(eff(
+            "analysis.differential.method" => "nb_glm", "analysis.differential.mn_backend" => "mglm")))
+        @test !isnothing(SV._differential_settings_error(eff(
+            "analysis.differential.method" => "multinomial", "analysis.differential.mn_backend" => "mglm",
+            "analysis.differential.mn_penalty" => 0.5)))
+        @test !isnothing(SV._differential_settings_error(eff(
+            "analysis.differential.method" => "dirichlet_multinomial",
+            "analysis.differential.mn_backend" => "mglm",
+            "analysis.differential.dm_overdispersion_method" => "mom")))
+    end
+
+    @testset "mn_backend mglm: multinomial equals the Julia fit and the closed form" begin
+        if _mglm_ready()
+            y = [230 265 144 100 61; 238 239 166 77 80; 240 242 155 80 83; 221 263 165 71 80;
+                 328 162 161 45 104; 347 152 152 46 103; 347 154 153 45 101; 303 148 163 37 149]
+            g = [i <= 4 ? "A" : "B" for i in 1:8]
+            taxa = ["t1", "t2", "t3", "t4", "t5"]
+            s = ["s$i" for i in 1:8]
+            warn0 = rcopy(R"getOption('warn')")
+            run(b) = differential_abundance(y, s, taxa, g; reference="A", contrast="B",
+                config=DifferentialConfig(; method="multinomial", mn_backend=b, mn_reference_taxon="t4"))
+            jl, mg = run("julia"), run("mglm")
+            @test rcopy(R"getOption('warn')") == warn0
+            @test mg["config"]["mn_backend"] == "mglm" && jl["config"]["mn_backend"] == "julia"
+            @test mg["diagnostics"]["mglm"]["distribution"] == "MN"
+            SA = vec(sum(y[1:4, :]; dims=1)); SB = vec(sum(y[5:8, :]; dims=1))
+            bj = Dict(x["taxon"] => x for x in jl["rows"]); bm = Dict(x["taxon"] => x for x in mg["rows"])
+            @test bm["t4"]["status"] == "reference" && bm["t4"]["estimate"] == 0.0
+            for (j, t) in enumerate(taxa)
+                t == "t4" && continue
+                est = log(SB[j] / SB[4]) - log(SA[j] / SA[4])
+                se = sqrt(1 / SA[j] + 1 / SA[4] + 1 / SB[j] + 1 / SB[4])
+                @test bm[t]["status"] == "ok"
+                @test isapprox(bm[t]["estimate"], est; atol=1e-8)
+                @test isapprox(bm[t]["standard_error"], se; rtol=1e-8)
+                @test isapprox(bm[t]["estimate"], bj[t]["estimate"]; atol=1e-6)
+                @test isapprox(bm[t]["standard_error"], bj[t]["standard_error"]; rtol=1e-6)
+                @test isapprox(bm[t]["pvalue"], bj[t]["pvalue"]; rtol=1e-4, atol=1e-300)
+                @test isapprox(bm[t]["padj"], bj[t]["padj"]; rtol=1e-4, atol=1e-300)
+            end
+        end
+    end
+
+    @testset "mn_backend mglm: Dirichlet-multinomial reports each group's concentration" begin
+        if _mglm_ready()
+            y = [440 397 350 240 73; 315 382 364 397 42; 597 296 249 268 90; 618 295 318 242 27;
+                 279 450 314 403 54; 246 255 457 184 358; 583 377 74 184 282; 190 239 185 578 308;
+                 105 954 58 218 165; 295 713 255 163 74]
+            g = [i <= 5 ? "A" : "B" for i in 1:10]
+            res = differential_abundance(y, ["s$i" for i in 1:10], ["t$j" for j in 1:5], g;
+                reference="A", contrast="B",
+                config=DifferentialConfig(; method="dirichlet_multinomial", mn_backend="mglm",
+                                          mn_reference_taxon="t2"))
+            od = res["diagnostics"]["mglm"]["overdispersion"]
+            # Simulated with concentrations 30 (A) and 12 (B); estimated per group.
+            @test 10 < od["A"]["alpha0"] < 90 && 4 < od["B"]["alpha0"] < 36
+            @test od["A"]["theta"] ≈ 1 / (1 + od["A"]["alpha0"])
+            @test !haskey(res["diagnostics"], "overdispersion")
+            @test res["diagnostics"]["n_boundary"] == 0
+            @test all(x -> x["status"] in ("ok", "reference"), res["rows"])
+            @test_throws ArgumentError differential_abundance(y[[1, 2, 3, 6], :], ["s$i" for i in 1:4],
+                ["t$j" for j in 1:5], ["A", "A", "A", "B"]; reference="A", contrast="B",
+                config=DifferentialConfig(; method="dirichlet_multinomial", mn_backend="mglm"))
+        end
+    end
+
+    @testset "mn_backend mglm: one flat group is not called multinomial" begin
+        if _mglm_ready()
+            # Multinomial counts in A, Dirichlet-multinomial counts in B.
+            y = [144 316 448 592; 167 299 459 575; 150 290 469 591; 140 289 454 617; 156 319 459 566;
+                 263 201 736 300; 658 216 357 269; 139 402 330 629; 773 164 340 223; 569 372 190 369]
+            res = differential_abundance(y, ["s$i" for i in 1:10], ["t1", "t2", "t3", "t4"],
+                [i <= 5 ? "A" : "B" for i in 1:10]; reference="A", contrast="B",
+                config=DifferentialConfig(; method="dirichlet_multinomial", mn_backend="mglm",
+                                          mn_reference_taxon="t4"))
+            rs = [x for x in res["rows"] if x["status"] != "reference"]
+            @test all(r -> r["status"] == "boundary", rs)
+            @test all(r -> occursin("'B' is overdispersed", r["note"]) &&
+                           !occursin("equals the multinomial", r["note"]), rs)
+        end
+    end
+
+    @testset "Route: mn_backend mglm selected by the study config" begin
+        _da_fixture() do
+            root = MetaManifold.Server.ServerState._root[]
+            cfgfile = joinpath(root, "data", "studyD", "pipeline.yml")
+            post() = _da_post("studyD", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                                             "table" => "merged", "rank" => "Genus"))
+            write(cfgfile, "analysis:\n  differential:\n    method: multinomial\n    mn_backend: mglm\n")
+            r = post()
+            body = JSON3.read(String(r.body))
+            if !HAVE_MGLM
+                HAVE_R ? (@test r.status == 503 && body.error == "r_unavailable") :
+                         (@test_skip r.status == 200)
+            else
+                @test r.status == 200
+                @test body.config.mn_backend == "mglm" && occursin("MGLM", body.method)
+                byt = Dict(String(x.taxon) => x for x in body.rows)
+                @test byt["Flat"].status == "reference"
+                # The same numbers as the Julia backend's route test above.
+                @test byt["Up"].estimate ≈ 1.972120415794 rtol=1e-6
+                @test byt["Down"].estimate ≈ -2.185860818556 rtol=1e-6
+            end
+            write(cfgfile, "analysis:\n  differential:\n    method: multinomial\n    mn_backend: mglm\n    mn_penalty: 0.5\n")
+            r = post()
+            @test r.status == 400 && JSON3.read(String(r.body)).error == "invalid_config"
+        end
+    end
 end

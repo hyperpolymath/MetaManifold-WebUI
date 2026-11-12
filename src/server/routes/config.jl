@@ -110,6 +110,7 @@ const _ENUM_VALUES = Dict(
     "analysis.differential.offset"   => Differential.OFFSET_METHODS,
     "analysis.differential.dispersion" => Differential.DISPERSIONS,
     "analysis.differential.dm_overdispersion_method" => Differential.DM_METHODS,
+    "analysis.differential.mn_backend" => Differential.MN_BACKENDS,
     "analysis.differential.replacement_method" => Differential.REPLACEMENT_METHODS,
     "analysis.ordination.method"     => string.(Ordination.ORDINATION_METHODS),
     "analysis.ordination.distance"   => string.(Ordination.ORDINATION_DISTANCES),
@@ -284,6 +285,7 @@ const _DIFFERENTIAL_SETTING_DEFAULTS = Dict{String,Any}(
     "analysis.differential.mn_reference_taxon" => nothing,
     "analysis.differential.mn_penalty" => 0.0,
     "analysis.differential.dm_overdispersion_method" => "mle",
+    "analysis.differential.mn_backend" => "julia",
 )
 
 const _DIFFERENTIAL_SETTING_KEYS = collect(keys(_DIFFERENTIAL_SETTING_DEFAULTS))
@@ -411,6 +413,7 @@ function _differential_settings_error(effective::AbstractDict)
     reference = value("analysis.differential.mn_reference_taxon")
     penalty = value("analysis.differential.mn_penalty")
     overdispersion = value("analysis.differential.dm_overdispersion_method")
+    backend = value("analysis.differential.mn_backend")
     method isa AbstractString || return nothing
     m = lowercase(strip(method))
     compositional = m in Differential.COMPOSITIONAL_METHODS
@@ -432,6 +435,15 @@ function _differential_settings_error(effective::AbstractDict)
        m != "dirichlet_multinomial"
         return "analysis.differential.dm_overdispersion_method requires method: " *
                "dirichlet_multinomial; method is '$method'"
+    end
+    if backend isa AbstractString && lowercase(strip(backend)) == "mglm"
+        compositional || return "analysis.differential.mn_backend: mglm requires method: " *
+            "multinomial or dirichlet_multinomial; method is '$method'"
+        penalty isa Real && !(penalty isa Bool) && penalty != 0 &&
+            return "analysis.differential.mn_penalty is not available with mn_backend: mglm; set it to 0"
+        overdispersion isa AbstractString && lowercase(strip(overdispersion)) != "mle" &&
+            return "analysis.differential.dm_overdispersion_method: mom is not available with " *
+                "mn_backend: mglm; set it to mle"
     end
     nothing
 end
