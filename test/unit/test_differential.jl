@@ -2479,6 +2479,22 @@ end
         end
     end
 
+    @testset "mn_backend mglm: one flat group is not called multinomial" begin
+        if _mglm_ready()
+            # Multinomial counts in A, Dirichlet-multinomial counts in B.
+            y = [144 316 448 592; 167 299 459 575; 150 290 469 591; 140 289 454 617; 156 319 459 566;
+                 263 201 736 300; 658 216 357 269; 139 402 330 629; 773 164 340 223; 569 372 190 369]
+            res = differential_abundance(y, ["s$i" for i in 1:10], ["t1", "t2", "t3", "t4"],
+                [i <= 5 ? "A" : "B" for i in 1:10]; reference="A", contrast="B",
+                config=DifferentialConfig(; method="dirichlet_multinomial", mn_backend="mglm",
+                                          mn_reference_taxon="t4"))
+            rs = [x for x in res["rows"] if x["status"] != "reference"]
+            @test all(r -> r["status"] == "boundary", rs)
+            @test all(r -> occursin("'B' is overdispersed", r["note"]) &&
+                           !occursin("equals the multinomial", r["note"]), rs)
+        end
+    end
+
     @testset "Route: mn_backend mglm selected by the study config" begin
         _da_fixture() do
             root = MetaManifold.Server.ServerState._root[]

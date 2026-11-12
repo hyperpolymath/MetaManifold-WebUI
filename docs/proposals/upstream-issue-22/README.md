@@ -14,7 +14,7 @@ each item by hand.
 
 ## The two parts
 
-1. **The upstream branch.** One signed commit, `1fa1d55`, on upstream `main`
+1. **The upstream branch.** One signed commit, `37c9ffa`, on upstream `main`
    at `89be534`: the two methods through `MGLM::MGLMreg.fit`, MGLM 0.2.3 in
    `renv.lock`, and tests against a closed form and an independent optimiser.
    It contains none of this fork's own code.

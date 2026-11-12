@@ -82,13 +82,16 @@ const MGLM_MAXITERS = 150
 # variance by 1 + (m - 1) theta, for a sample of m reads. When that excess is
 # below this fraction at a group's mean read total, the counts show no
 # overdispersion there: the group's concentration has no finite estimate and
-# MGLM stops while it is still growing. The log-ratio contrasts are then the
-# multinomial ones (checked to agree to about 1e-5, with standard errors
-# 0.15% larger, on simulated multinomial counts), so their rows keep their
-# statistics and are marked `boundary`, as `nb_glm` does at its theta bound.
-# MGLM's own check may instead call such a fit a saddle point, because the
-# information is nearly flat along the growing concentration; that refusal
-# stands, and its reason then says so and points to method multinomial.
+# MGLM stops while it is still growing, so this flag depends on where it
+# stopped. A log-ratio contrast does not depend on a group's concentration, so
+# the rows keep their statistics and are marked `boundary`, as `nb_glm` does
+# at its theta bound. Only when both groups are flat are the contrasts the
+# multinomial ones (the tests check estimates to 1e-4 and standard errors at
+# most 1% larger); with one overdispersed group they are not, and the
+# multinomial would understate that group's variance. MGLM's own check may
+# instead call such a fit a saddle point, because the information is nearly
+# flat along the growing concentration; that refusal stands, and its reason
+# says which group is flat.
 const DM_EXCESS_FLOOR = 0.01
 
 # The per-taxon dispersion `nb_glm` uses: maximum likelihood (MASS::glm.nb's
@@ -1255,13 +1258,16 @@ da_k <- ncol(da_counts)
 da_out <- list(reason = "", warnings = da_warns, iterations = NA_real_,
                loglik = NA_real_, estimate = rep(NA_real_, da_k - 1),
                se = rep(NA_real_, da_k - 1), statistic = rep(NA_real_, da_k - 1),
-               pvalue = rep(NA_real_, da_k - 1), alpha0 = rep(NA_real_, 2))
+               pvalue = rep(NA_real_, da_k - 1), alpha0 = rep(NA_real_, 2),
+               theta = rep(NA_real_, 2))
 da_fatal <- grepl("converge|saddle|singular|Out of range|diverge|removed", da_warns)
 # Each group's total concentration, kept even when the fit is refused: a
 # concentration that ran off to infinity explains a refusal at the boundary.
 if (da_dist == "DM" && !inherits(da_fit, "error")) {
   da_B <- da_fit@coefficients
   da_out$alpha0 <- c(sum(exp(da_B[1, ])), sum(exp(da_B[1, ] + da_B[2, ])))
+  # Computed here so that an infinite concentration gives theta = 0.
+  da_out$theta <- 1 / (1 + da_out$alpha0)
 }
 if (inherits(da_fit, "error")) {
   da_out$reason <- paste("MGLMreg.fit stopped with an error:", conditionMessage(da_fit))
@@ -1310,7 +1316,9 @@ for each taxon but the reference, in column order: `estimate` (the change in
 the natural log of the taxon's ratio to the reference, contrast over
 reference), `se`, `statistic` (Wald z) and `pvalue` (two-sided), each `nothing`
 when not finite. For `"DM"`, `alpha0` holds each group's total Dirichlet
-concentration, reference first; otherwise both are `nothing`. Throws
+concentration and `theta` each `1 / (1 + alpha0)`, reference first, so an
+infinite concentration has `alpha0 = nothing` and `theta = 0`; otherwise all
+four are `nothing`. Throws
 `MGLMUnavailable` when MGLM cannot be loaded and `RBusyError` when the R runtime
 stays busy.
 """
@@ -1349,7 +1357,8 @@ function fit_mglm(counts::AbstractMatrix{<:Integer}, groups::AbstractVector{<:Ab
      se         = vec_num(raw[:se]),
      statistic  = vec_num(raw[:statistic]),
      pvalue     = vec_num(raw[:pvalue]),
-     alpha0     = vec_num(raw[:alpha0]))
+     alpha0     = vec_num(raw[:alpha0]),
+     theta      = vec_num(raw[:theta]))
 end
 
 """
@@ -2314,7 +2323,7 @@ function _compositional_mglm!(rows, diagnostics, sub::AbstractMatrix{<:Integer},
     started = time()
     fit = fit_mglm(y, groups; levels, dist)
     elapsed = time() - started
-    theta = [isnothing(a) ? nothing : 1 / (1 + a) for a in fit.alpha0]
+    theta = fit.theta
     flat = String[]
     if dm
         for g in 1:2
@@ -2323,13 +2332,24 @@ function _compositional_mglm!(rows, diagnostics, sub::AbstractMatrix{<:Integer},
                 push!(flat, levels[g])
         end
     end
+    # Only when both groups are flat is the multinomial the same fit; with one
+    # overdispersed group it would understate that group's variance.
+    both_flat = length(flat) == 2
     flat_text = "no overdispersion beyond multinomial sampling in " *
                 join(("'$l'" for l in flat), " and ") * ", so the Dirichlet concentration " *
                 "there has no finite estimate"
+    other = both_flat || isempty(flat) ? "" : only(filter(!=(only(flat)), collect(levels)))
     reason = isempty(fit.reason) || isempty(flat) ? fit.reason :
-        fit.reason * "; the counts show " * flat_text * ", so use method multinomial"
-    boundary_note = flat_text * "; the log-ratio estimate stands and equals the multinomial " *
-                    "one, so method multinomial fits these counts as well"
+        fit.reason * "; the counts show " * flat_text *
+        (both_flat ? ", so use method multinomial" :
+                     ", while '$other' is overdispersed, so method multinomial would " *
+                     "understate its variance")
+    boundary_note = flat_text * "; a log-ratio contrast does not depend on that concentration, " *
+                    "so the estimate stands" *
+                    (both_flat ? ", and it equals the multinomial one, so method multinomial " *
+                                 "fits these counts as well" :
+                                 "; '$other' is overdispersed, so method multinomial would " *
+                                 "understate its variance")
     for (k, l) in enumerate(perm[1:end-1])
         j = tested[l]
         est, se = fit.estimate[k], fit.se[k]

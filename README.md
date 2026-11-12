@@ -350,8 +350,9 @@ not exclude samples from this analysis.
   Dirichlet-multinomial is a different model, with a log link on every taxon's
   Dirichlet parameter and so a concentration per group. It fits by maximum
   likelihood, so it refuses `mn_penalty` and `mom`, and does not use the Newton
-  settings. When a group shows no overdispersion its rows are marked `boundary`,
-  or MGLM's own refusal is kept and points to `multinomial`.
+  settings. When a group shows no overdispersion its rows are marked `boundary`
+  and keep their statistics, or MGLM's own refusal is kept and names the flat
+  group; only when both groups are flat do the estimates equal the multinomial's.
 
 ZINB and hurdle models can overfit sparse data; do not select ZINB solely
 because counts are sparse. Compare against NB diagnostics. The methods report

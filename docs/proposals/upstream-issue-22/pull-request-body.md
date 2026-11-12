@@ -36,9 +36,13 @@ MGLM through RCall, in line with CONTRIBUTING." It is one commit on top of
 - **DM with no overdispersion.** When a group's counts show no overdispersion,
   its Dirichlet concentration has no finite estimate. MGLM then stops while the
   concentration is still growing. If MGLM still gives standard errors, the rows
-  are marked `boundary`, as `nb_glm` does at its theta bound; their estimates
-  equal the multinomial's. If MGLM refuses the fit as a saddle point, that
-  refusal stands and the message says to use `multinomial`.
+  are marked `boundary`, as `nb_glm` does at its theta bound, and keep their
+  statistics, because a log-ratio contrast does not depend on that
+  concentration. If MGLM refuses the fit as a saddle point, that refusal
+  stands and the message names the flat group. Only when both groups are flat
+  are the estimates the multinomial's, and only then does the message point
+  to `multinomial`. With one group overdispersed, the multinomial would
+  understate that group's variance, and the message says so.
 - **R state.** `MGLMreg.fit` sets `options(warn = -1)` while it iterates and
   restores it only on a normal return. The wrapper restores the caller's
   setting whatever happens. MGLM's internal steps raise one `non-integer x =`
@@ -57,8 +61,8 @@ All commands ran on Ubuntu 24.04 (x86-64) with Julia 1.12.5, R 4.5.0 (apt
 1.3.10; I did not run the frontend with 1.3.10.
 
 - `CI=true RENV_CONFIG_AUTOLOADER_ENABLED=FALSE julia --project=. -t 2 test/runtests.jl --server`:
-  3022 passed, 6 failed, 11 broken. `Differential abundance` passed 502 of
-  502. The 6 failures are all in `Provenance` / `live probes of what is
+  3031 passed, 6 failed, 11 broken. `Differential abundance` passed 511 of
+  511. The 6 failures are all in `Provenance` / `live probes of what is
   actually installed`: cutadapt, fastqc, multiqc, vsearch, swarm and cd-hit
   are not installed on that machine. They are unrelated to this change, and
   CI installs those tools.
@@ -75,7 +79,13 @@ All commands ran on Ubuntu 24.04 (x86-64) with Julia 1.12.5, R 4.5.0 (apt
     `stats::optimHess`. Estimates agree within 2e-3 and standard errors within
     a relative 2e-3. MGLM's log-likelihood is at least as high as the
     independent one.
-  - Each refusal named above, the boundary marking, the 503 path when MGLM
+  - The boundary on two fixed tables. With both groups flat, the estimates
+    equal the closed form to 1e-4, and the standard errors are no smaller
+    and at most 1% larger. With one group flat, the rows are `boundary`, the
+    note does not call them multinomial, the estimates differ from the
+    closed form by more than 0.03, and the standard errors are more than 3
+    times the multinomial ones.
+  - Each refusal named above, the 503 path when MGLM
     cannot be loaded, the route, the config checks, and that R's `warn` option
     is unchanged after a fit.
   - In CI the MGLM-dependent tests fail rather than skip when MGLM is missing,

@@ -38,16 +38,17 @@ ratios; the variance is the sum of reciprocal pooled counts) to 1e-8. The
 Dirichlet-multinomial matches `stats::optim` on an independently written
 likelihood to 2e-3, with standard errors from `stats::optimHess`. With Julia
 1.12.5, R 4.5.0 and the library restored from the branch's `renv.lock`, the
-differential suite passes 502 of 502. The full unit and server suite fails
+differential suite passes 511 of 511. The full unit and server suite fails
 only on the live-tool probes for tools that machine did not have (cutadapt,
 fastqc, multiqc, vsearch, swarm, cd-hit). The pull request's own CI run is the
 check that counts.
 
 **Two limits, stated in the code and docs.** When a group shows no
-overdispersion, the Dirichlet concentration has no finite estimate. The rows
-are then marked `boundary` with the multinomial's estimates, or MGLM's own
-refusal is kept and points to `multinomial`. MGLM's penalised regression is
-not offered, because it has no valid Wald standard errors.
+overdispersion, its Dirichlet concentration has no finite estimate. The rows
+are then marked `boundary` and keep their statistics, or MGLM's own refusal
+is kept and names the flat group. Only when both groups are flat are the
+estimates the multinomial's; the tests check both cases. MGLM's penalised
+regression is not offered, because it has no valid Wald standard errors.
 
 You closed this issue as not planned. If that means "not for now", the pull
 request can wait. If it means you no longer want these models, say so and I
