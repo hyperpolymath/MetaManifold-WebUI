@@ -35,9 +35,9 @@ never counted as a pass.
 ## 3. Known-answer and independent references
 
 **Met.** Julia known-answer tests in `test_exact_summaries.jl` and
-`test_high_precision.jl`; independent Python `fractions` and `decimal`
-references in `test/references/exact_summary_reference.py` and
-`test/references/check_high_precision_references.py`, with the CI step
+`test_high_precision.jl`; independent GNU `bc` fraction and high-precision
+references in `test/references/exact_summary_reference.sh` and
+`test/references/check_high_precision_references.sh`, with the CI step
 `Check independent high-precision references` verifying the constants embedded
 in the Julia tests. The reference implementations share no code with the layer.
 
@@ -181,7 +181,7 @@ julia --project=. -t2 test/runtests.jl \
   statistics_adversarial statistics_properties statistics_ui
 
 # Independent references
-python3 test/references/check_high_precision_references.py --check \
+bash test/references/check_high_precision_references.sh --check \
   test/unit/test_high_precision.jl
 
 # Simulation, mutation, benchmark

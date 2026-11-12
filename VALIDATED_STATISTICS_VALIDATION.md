@@ -13,7 +13,7 @@ independent scientific review.
 | Exact sample proportions | Non-negative counts and positive total; zero total gives undefined values | `[1,1,1]` gives three `1/3`; Python `fractions.Fraction` compares full sample results | Values beyond `2^53`, zero-total samples, scale invariance, feature permutations, random integer matrices with proportions summing to one | Implemented |
 | Exact group proportions | Same count contract; members and group labels are bound to the input fingerprint | Hand-computed two-group fixture | Empty groups and aligned-label failures; group zero-total state | Implemented |
 | Observed richness | Number of strictly positive exact counts; empty sample richness is zero | Uniform three-taxon and single-taxon fixtures | Empty and extreme-scale samples | Implemented |
-| High-precision Shannon | Positive total; scoped MPFR precision above 53 bits; undefined at zero total | Python `decimal` references for `log(2)`, `log(3)`, and counts `[1,2,3,4]` at a 220-digit context | Extreme rare-taxon scale that underflows `Float64`; precision round-trip and concurrent 128/256/512/1024-bit scopes | Implemented; no exactness or sampling-error claim |
+| High-precision Shannon | Positive total; scoped MPFR precision above 53 bits; undefined at zero total | GNU `bc` references for `log(2)`, `log(3)`, and counts `[1,2,3,4]` at a 220-digit context | Extreme rare-taxon scale that underflows `Float64`; precision round-trip and concurrent 128/256/512/1024-bit scopes | Implemented; no exactness or sampling-error claim |
 | High-precision Gini–Simpson | Positive total; exact `(N²-Σc²)/N²` intermediate within the configured rational budget; undefined at zero total | Exact known answers `2/3`, `0`, and `7/10`, converted once to MPFR | Extreme scale, budget exhaustion, serialization and concurrency tests | Implemented |
 | Fixed-decimal display | Display only; exact/storage values remain separate | `1/3`, `1/2`, and negative half-way fixtures | Huge `BigFloat` display avoids `Float64` overflow; ties-away-from-zero check | Implemented |
 | Direct JSON boundary | JSON object, explicit validated policy, features-by-samples matrix, 16 MiB / 100,000-cell limits | In-process and real-listener request fixtures | Deterministic malformed-input fuzz, wrong shapes, unsafe integers, float representations and unknown policies | Implemented |
@@ -21,8 +21,8 @@ independent scientific review.
 | Immutable derived analysis | Canonical JSON-safe record; content ID recomputed on load; no replacement of an existing destination | Repeat save/load and canonical-byte round trip | Concurrent publishers, same-ID tampering, invalid record, failed publication cleanup and source/run ownership checks | Implemented |
 
 The high-precision reference generator is
-`test/references/check_high_precision_references.py`; it uses Python's `decimal`
-module and does not read output from the Julia implementation. The CI job checks
+`test/references/check_high_precision_references.sh`; it uses GNU `bc`
+(not Julia's MPFR or GMP) and does not read output from the Julia implementation. The CI job checks
 that the constants embedded in the Julia tests still match that independent
 generator.
 

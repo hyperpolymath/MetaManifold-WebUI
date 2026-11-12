@@ -60,14 +60,14 @@ read_error <- tryCatch({
 }, error = function(e) conditionMessage(e))
 stopifnot(grepl("unreadable result CSV", read_error, fixed = TRUE))
 
-# The workflow calls this same CSV-aware Python reader. It emits distinct
+# The workflow calls this same CSV-aware Julia reader. It emits distinct
 # reasons once, skips NA notes and escapes annotation control characters.
-python <- Sys.which("python3")
-stopifnot(nzchar(python))
-reader_script <- "bench/null_calibration/report_failures.py"
+julia <- Sys.which("julia")
+stopifnot(nzchar(julia))
+reader_script <- "bench/null_calibration/report_failures.jl"
 annotations <- suppressWarnings(system2(
-  python,
-  args = c(shQuote(reader_script), shQuote(cell)),
+  julia,
+  args = c("--startup-file=no", shQuote(reader_script), shQuote(cell)),
   stdout = TRUE, stderr = TRUE, stdin = csv_path
 ))
 reader_status <- attr(annotations, "status")

@@ -1,0 +1,99 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+ *
+ * Independent high-precision known answers for test/unit/test_high_precision.jl.
+ *
+ * GNU bc shares no code with Julia (MPFR, GMP). Every operation is rounded to
+ * n significant digits, half to even, one operation at a time, which is how the
+ * Python decimal reference this replaces rounded, so the digit strings match.
+ *
+ * The driver sets n (significant digits) before loading this file and prints
+ * the four mantissas with their decimal exponents.
+ */
+
+scale = n + 120
+
+/* ln(x) to n + 40 digits; callers round the result. */
+define lg(x) {
+    auto s, v
+    s = scale
+    scale = n + 100
+    v = l(x)
+    scale = s
+    return (v)
+}
+
+/* Decimal exponent e of x > 0: 10^e <= x < 10^(e+1). */
+define ex(x) {
+    auto e
+    e = 0
+    while (x >= 10) { x = x / 10; e = e + 1 }
+    while (x < 1) { x = x * 10; e = e - 1 }
+    return (e)
+}
+
+/* x > 0 rounded to n significant digits, half to even. */
+define rn(x) {
+    auto e, y, i, f, s
+    if (x == 0) return (0)
+    if (x < 0) return (-rn(-x))
+    s = scale
+    scale = n + 60
+    e = ex(x)
+    y = x * 10 ^ (n - 1 - e)
+    scale = 0
+    i = y / 1
+    scale = n + 60
+    f = y - i
+    if (f > 0.5) i = i + 1
+    if (f == 0.5) {
+        /* % is exact only at scale 0, so the parity test is done there. */
+        scale = 0
+        if (i % 2 == 1) i = i + 1
+        scale = n + 60
+    }
+    y = i / 10 ^ (n - 1 - e)
+    scale = s
+    return (y)
+}
+
+/* The mantissa integer of a value already rounded by rn(): n digits. */
+define mt(x) {
+    auto e, s, v
+    s = scale
+    scale = n + 60
+    e = ex(x)
+    v = x * 10 ^ (n - 1 - e)
+    scale = 0
+    v = v / 1
+    scale = s
+    return (v)
+}
+
+ln2 = rn(lg(2))
+ln3 = rn(lg(3))
+tt  = rn(2 / 3)
+
+h = 0
+for (c = 1; c <= 4; c++) {
+    q = rn(c / 10)
+    t = rn(q * rn(lg(q)))
+    h = rn(h - t)
+}
+
+"REF_LN2 "; mt(ln2); "
+"
+"EX_LN2 "; ex(ln2); "
+"
+"REF_LN3 "; mt(ln3); "
+"
+"EX_LN3 "; ex(ln3); "
+"
+"REF_TWO_THIRDS "; mt(tt); "
+"
+"EX_TWO_THIRDS "; ex(tt); "
+"
+"REF_H_1234 "; mt(h); "
+"
+"EX_H_1234 "; ex(h); "
+"
+quit

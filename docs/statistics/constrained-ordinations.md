@@ -85,7 +85,7 @@ When `variance_partitioning = true` and 2 to 4 constraining covariates vary:
 
 - Capability & compatibility contract (KYAML): `config/defaults/ordination.kyaml` (`GET /api/v1/ordination/contract`)
 - Canonical response schema (RFC 7493 I-JSON + RFC 8785 JCS): `docs/schemas/constrained-ordination.schema.json`
-- Independent Python stdlib reference oracle & canonical fixture: `test/references/check_ordination_references.py` and `test/fixtures/ordination_reference.json`
+- Independent awk reference oracle & canonical fixture: `test/references/check_ordination_references.sh` and `test/fixtures/ordination_reference.json`
 
 ---
 

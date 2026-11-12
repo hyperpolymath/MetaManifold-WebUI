@@ -60,15 +60,15 @@ K9!
       },
       {
         id = "high-precision-reference-oracle",
-        target = "test/references/check_high_precision_references.py",
-        check_command = "python3 test/references/check_high_precision_references.py --check test/unit/test_high_precision.jl",
+        target = "test/references/check_high_precision_references.sh",
+        check_command = "bash test/references/check_high_precision_references.sh --check test/unit/test_high_precision.jl",
         rationale = "Independent arbitrary-precision reference constants must match the Julia test suite.",
       },
       {
         id = "constrained-ordination-reference-oracle",
-        target = "test/references/check_ordination_references.py",
-        check_command = "python3 test/references/check_ordination_references.py --check test/fixtures/ordination_reference.json",
-        rationale = "Independent Python reference constants for RDA eigenvalues, Ezekiel adjusted-R2, two-way variance partitioning, and canonical JCS schema/fixtures must match within 1e-6.",
+        target = "test/references/check_ordination_references.sh",
+        check_command = "bash test/references/check_ordination_references.sh --check test/fixtures/ordination_reference.json",
+        rationale = "Independent awk reference constants for RDA eigenvalues, Ezekiel adjusted-R2, two-way variance partitioning, and canonical JCS schema/fixtures must match within 1e-6.",
       },
       {
         id = "upstream-license-untouched",

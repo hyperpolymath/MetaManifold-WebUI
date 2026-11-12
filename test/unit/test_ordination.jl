@@ -18,7 +18,7 @@ using RCall
 const _ORD_SV = MetaManifold.Server
 const _ORD_REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const _ORD_REF_PATH = joinpath(_ORD_REPO_ROOT, "test", "fixtures", "ordination_reference.json")
-const _ORD_PY_ORACLE = joinpath(_ORD_REPO_ROOT, "test", "references", "check_ordination_references.py")
+const _ORD_PY_ORACLE = joinpath(_ORD_REPO_ROOT, "test", "references", "check_ordination_references.sh")
 
 function _ord_http(method::String, path::String, body = nothing; raw::Bool = false)
     payload = isnothing(body) ? UInt8[] : (raw ? body : jcs_bytes(body))
@@ -85,9 +85,9 @@ end
 
 @testset "Constrained ordinations (Issue #19)" begin
 
-    @testset "Independent Python reference oracle, KYAML contract, and JCS schema" begin
-        if !isnothing(Sys.which("python3"))
-            proc = run(`python3 $_ORD_PY_ORACLE --check $_ORD_REF_PATH`)
+    @testset "Independent awk reference oracle, KYAML contract, and JCS schema" begin
+        if !isnothing(Sys.which("awk"))
+            proc = run(`bash $_ORD_PY_ORACLE --check $_ORD_REF_PATH`)
             @test proc.exitcode == 0
         end
         contract = load_ordination_contract()
