@@ -42,48 +42,31 @@ jobs:
           persist-credentials: false   # nothing here pushes
           fetch-depth: 0
 
-      # --no-renames, so a file renamed out of a listed path is reported as a
-      # deletion under its original name and still counts. -z with a
-      # NUL-delimited read, so a pathname Git would quote or that contains a
-      # newline arrives raw and matches the pattern. The base SHA travels
-      # through env, not template interpolation into the script.
+      # The diff logic is scripts/ci/classify-change.sh, shared with the occupancy
+      # gate: a diff to a file, --no-renames -z, and a failed diff fails the gate
+      # (an unreadable comparison must never read as "nothing relevant", because
+      # a skipped job satisfies a required check). The base SHA travels through
+      # env, not template interpolation into the script. Every pattern is quoted,
+      # so the glob fires at match time, against the diff, and is not expanded
+      # against the checkout the runner happens to be standing in.
       - name: Does the change touch anything the suite exercises?
         id: pr
         if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          relevant=false
-          # Every pattern is quoted, so the glob survives array assignment and
-          # fires at `case` time, against the diff -- an unquoted `src/*` would
-          # expand against the checkout the runner happens to be standing in.
-          patterns=('src/*' 'test/*' 'scripts/*' 'frontend/*' 'config/*'
-                    'bench/*' 'data/*' 'proofs/*' 'R/*' 'renv/*' 'Project.toml'
-                    'Manifest.toml' 'renv.lock' '.Rprofile' 'install.sh' 'install.jl'
-                    'start.sh' 'docs/occupancy/*' 'docs/occupancy-2026-10.adoc'
-                    '.github/workflows/*')
-          # The diff goes to a file first because a process substitution hides
-          # git diff's exit status: an unavailable comparison SHA (a force-push
-          # on the base branch, for instance) or a repository error would read
-          # as "no changes", and the gate would post relevant=false -- skipping
-          # the Julia suite and the proof checker, whose `skipped` conclusion
-          # satisfies a required check -- so a relevant PR would pass silently.
-          # A failed diff must fail the gate itself: that is the one failure
-          # the required-check design cannot afford to skip. As in the
-          # occupancy gate, which this mirrors.
-          changed="$RUNNER_TEMP/ci-changed-files"
-          if ! git diff --no-renames --name-only -z "$BASE_SHA...HEAD" > "$changed"; then
-            echo "ERROR: git diff $BASE_SHA...HEAD failed" >&2
-            exit 1
-          fi
-          while IFS= read -r -d '' file; do
-            for pattern in "${patterns[@]}"; do
-              case "$file" in
-                $pattern) relevant=true; break 2 ;;
-              esac
-            done
-          done < "$changed"
-          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
+          bash "$GITHUB_WORKSPACE/scripts/ci/classify-change.sh" \
+            'src/*' 'test/*' 'scripts/*' 'frontend/*' 'config/*' \
+            'bench/*' 'data/*' 'proofs/*' 'R/*' 'renv/*' 'Project.toml' \
+            'Manifest.toml' 'renv.lock' '.Rprofile' 'install.sh' 'install.jl' \
+            'start.sh' 'docs/occupancy/*' 'docs/occupancy-2026-10.adoc' \
+            '.github/workflows/*'
+
+      # The classifier's own fail-closed controls, so a change to it cannot
+      # quietly turn a failed diff into a pass.
+      - name: Check the classifier fails closed
+        if: github.event_name == 'pull_request'
+        run: bash scripts/tests/test-classify-change.sh
 
   occupancy_gate:
     name: Occupancy relevance
@@ -108,45 +91,25 @@ jobs:
           persist-credentials: false   # nothing here pushes
           fetch-depth: 0
 
+      # Same classifier as the code gate (scripts/ci/classify-change.sh). The base
+      # SHA is GitHub-supplied, but it travels through env all the same: zizmor
+      # flags template expressions interpolated into run scripts, and the
+      # script is easier to run locally with the value in the environment.
       - name: Does the change touch the occupancy reading?
         id: pr
         if: github.event_name == 'pull_request'
         env:
-          # zizmor flags template expressions interpolated into run scripts
-          # (template-injection), and the gate script is easier to run locally
-          # with the value in an environment variable in any case. The base SHA
-          # is GitHub-supplied, but the indirection costs nothing.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          relevant=false
-          patterns=('src/core/memory_probe.jl' 'src/core/provenance.jl' 'src/pipeline/tools.jl'
-                    'src/server/routes/pipeline.jl' 'test/occupancy_disagreement_test.jl'
-                    'test/unit/test_occupancy_grade.jl' 'scripts/check-occupancy-grades.jl'
-                    'scripts/lint-occupancy-readings.sh' 'docs/occupancy/*'
-                    'docs/occupancy-2026-10.adoc' 'scripts/check-occupancy.sh'
-                    'scripts/fetch-siblings.sh' 'scripts/install-ci-julia.sh'
-                    'Project.toml' 'Manifest.toml' 'renv.lock' 'config/defaults/tool_versions.yml'
-                    '.github/workflows/*')
-          # The diff goes to a file first because a process substitution hides
-          # git diff's exit status: an unavailable comparison SHA or a repository
-          # error would read as "no changes", and the gate would post
-          # relevant=false -- skipping the two occupancy jobs, whose `skipped`
-          # conclusion satisfies a required check -- so a relevant PR would
-          # pass silently. A failed diff must fail the gate itself: that is
-          # the one failure the required-check design cannot afford to skip.
-          changed="$RUNNER_TEMP/occupancy-changed-files"
-          if ! git diff --no-renames --name-only -z "$BASE_SHA...HEAD" > "$changed"; then
-            echo "ERROR: git diff $BASE_SHA...HEAD failed" >&2
-            exit 1
-          fi
-          while IFS= read -r -d '' file; do
-            for pattern in "${patterns[@]}"; do
-              case "$file" in
-                $pattern) relevant=true; break 2 ;;
-              esac
-            done
-          done < "$changed"
-          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
+          bash "$GITHUB_WORKSPACE/scripts/ci/classify-change.sh" \
+            'src/core/memory_probe.jl' 'src/core/provenance.jl' 'src/pipeline/tools.jl' \
+            'src/server/routes/pipeline.jl' 'test/occupancy_disagreement_test.jl' \
+            'test/unit/test_occupancy_grade.jl' 'scripts/check-occupancy-grades.jl' \
+            'scripts/lint-occupancy-readings.sh' 'docs/occupancy/*' \
+            'docs/occupancy-2026-10.adoc' 'scripts/check-occupancy.sh' \
+            'scripts/fetch-siblings.sh' 'scripts/install-ci-julia.sh' \
+            'Project.toml' 'Manifest.toml' 'renv.lock' 'config/defaults/tool_versions.yml' \
+            '.github/workflows/*'
 
   test:
     # The name is a fixed string, it carries no version, and the job has NO matrix.
@@ -189,6 +152,12 @@ jobs:
     # the environment, so those commands pass --no-init-file instead.
     env:
       RENV_CONFIG_AUTOLOADER_ENABLED: "FALSE"
+      # The unit files the early step runs. The full suite skips exactly these
+      # (--exclude), so no file runs twice; the early step still fails first.
+      VALIDATED_STATISTICS_TESTS: >-
+        validated_statistics numeric_policy exact_summaries high_precision
+        derived_analyses method_catalogue statistics_boundaries
+        statistics_adversarial statistics_properties statistics_ui
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -203,47 +172,102 @@ jobs:
         run: bash scripts/lint-sonar-reliability.sh
 
       - name: Set up Julia
+        timeout-minutes: 10
         run: bash scripts/install-ci-julia.sh
 
       - name: Parse Julia sources before dependency setup
         run: julia scripts/check-julia-syntax.jl
 
-      - name: Cache Julia packages
+      # The gate once printed "Julia parse failed" and exited 0. This plants an
+      # unparsable file and requires the gate to fail on it.
+      - name: Check the syntax gate can fail
+        run: bash scripts/tests/test-check-julia-syntax.sh
+
+      # Every external version CI installs is read from the committed pin file, so CI
+      # and a developer's machine cannot drift apart. yq is already on the runner, so
+      # no Julia (and no package install) is needed just to read a YAML file. A pin
+      # that is missing or null fails the step here instead of exporting an empty
+      # value that a later step would install around.
+      - name: Read pinned versions
+        run: |
+          set -euo pipefail
+          pins=config/defaults/tool_versions.yml
+          pin() {
+            local value
+            value="$(yq -r "$1" "$pins")"
+            if [[ -z "$value" || "$value" == null ]]; then
+              echo "::error::no value for $1 in $pins" >&2
+              return 1
+            fi
+            printf '%s' "$value"
+          }
+          julia_version="$(pin '.runtimes.julia.version')"
+          r_apt_version="$(pin '.runtimes.r.apt_version')"
+          bun_version="$(pin '.toolchain.bun.version')"
+          cutadapt_version="$(pin '.tools.cutadapt.version')"
+          multiqc_version="$(pin '.tools.multiqc.version')"
+          fastqc_url="$(pin '.tools.fastqc.archives.any.url')"
+          fastqc_sha256="$(pin '.tools.fastqc.archives.any.sha256')"
+          vsearch_version="$(pin '.tools.vsearch.version')"
+          vsearch_url="$(pin '.tools.vsearch.archives."linux-x86_64".url')"
+          vsearch_sha256="$(pin '.tools.vsearch.archives."linux-x86_64".sha256')"
+          swarm_version="$(pin '.tools.swarm.version')"
+          swarm_url="$(pin '.tools.swarm.archives."linux-x86_64".url')"
+          swarm_sha256="$(pin '.tools.swarm.archives."linux-x86_64".sha256')"
+          {
+            echo "JULIA_VERSION=$julia_version"
+            echo "R_APT_VERSION=$r_apt_version"
+            echo "BUN_VERSION=$bun_version"
+            echo "CUTADAPT_SPEC=cutadapt==$cutadapt_version"
+            echo "MULTIQC_SPEC=multiqc==$multiqc_version"
+            echo "FASTQC_URL=$fastqc_url"
+            echo "FASTQC_SHA256=$fastqc_sha256"
+            echo "VSEARCH_VERSION=$vsearch_version"
+            echo "VSEARCH_URL=$vsearch_url"
+            echo "VSEARCH_SHA256=$vsearch_sha256"
+            echo "SWARM_VERSION=$swarm_version"
+            echo "SWARM_URL=$swarm_url"
+            echo "SWARM_SHA256=$swarm_sha256"
+          } >> "$GITHUB_ENV"
+
+      # Bun and the frontend need nothing from R or Julia, so they run first: a
+      # broken frontend fails in about a minute, not after the R and Julia setup.
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Build frontend
+        working-directory: frontend
+        timeout-minutes: 10
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          bun run build
+
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        # Moderate advisories remain visible in `bun audit`; upgrading Router
+        # across a major version needs a separate routing/SSR review.
+        run: bun audit --audit-level high
+
+      - name: Frontend unit tests
+        working-directory: frontend
+        run: bun run test
+
+      # Packages, artifacts and the precompiled caches. The compiled caches are
+      # valid only for the Julia that wrote them, and RCall's image is built
+      # against the installed R, so the key names the Julia pin, the R apt pin
+      # and the Manifest. The job's own name is in the key so the standards job
+      # does not race this one to save the same entry.
+      - name: Cache Julia packages and compiled caches
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.julia/artifacts
             ~/.julia/packages
             ~/.julia/registries
-          key: julia-${{ runner.os }}-${{ hashFiles('Manifest.toml', 'config/defaults/tool_versions.yml') }}
-
-      # Every external version CI installs is read from the committed pin file, so CI
-      # and a developer's machine cannot drift apart. A temporary environment is used
-      # because the project environment cannot be instantiated until R is present:
-      # RCall's build step requires it.
-      - name: Read pinned versions
-        run: |
-          julia -e '
-            using Pkg
-            Pkg.activate(temp = true)
-            Pkg.add("YAML")
-            using YAML
-            pins = YAML.load_file("config/defaults/tool_versions.yml")
-            open(ENV["GITHUB_ENV"], "a") do io
-                println(io, "R_APT_VERSION=", pins["runtimes"]["r"]["apt_version"])
-                println(io, "BUN_VERSION=", pins["toolchain"]["bun"]["version"])
-                println(io, "CUTADAPT_SPEC=cutadapt==", pins["tools"]["cutadapt"]["version"])
-                println(io, "MULTIQC_SPEC=multiqc==", pins["tools"]["multiqc"]["version"])
-                fastqc = pins["tools"]["fastqc"]["archives"]["any"]
-                println(io, "FASTQC_URL=", fastqc["url"])
-                println(io, "FASTQC_SHA256=", fastqc["sha256"])
-                for tool in ("vsearch", "swarm")
-                    archive = pins["tools"][tool]["archives"]["linux-x86_64"]
-                    println(io, uppercase(tool), "_VERSION=", pins["tools"][tool]["version"])
-                    println(io, uppercase(tool), "_URL=", archive["url"])
-                    println(io, uppercase(tool), "_SHA256=", archive["sha256"])
-                end
-            end'
+            ~/.julia/compiled
+          key: julia-test-${{ runner.os }}-J${{ env.JULIA_VERSION }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('Manifest.toml') }}
 
       # R + required packages (needed by RCall)
       # Install R directly via apt to avoid r-lib/actions/setup-r mangling
@@ -252,6 +276,7 @@ jobs:
       # R.Version in renv.lock; CRAN's Ubuntu repository retains older revisions, so
       # this resolves rather than merely requesting the newest.
       - name: Set up R
+        timeout-minutes: 10
         run: bash scripts/ci/install-r-runtime.sh full
 
       # The R packages are restored from renv.lock, the same pin a developer restores
@@ -281,6 +306,7 @@ jobs:
 
       # R_CLI_DYNAMIC and TERM make renv print progress one line at a time in the log.
       - name: Install R packages
+        timeout-minutes: 25
         env:
           RENV_PATHS_CACHE: /opt/renv-cache
         run: |
@@ -297,7 +323,7 @@ jobs:
         run: Rscript --vanilla test/unit/test_null_calibration_csv.R
 
       - name: Check null-calibration failure annotations
-        run: python3 -m unittest discover -s scripts/tests -p 'test_null_calibration_failures.py' -v
+        run: julia --startup-file=no scripts/tests/test_null_calibration_failures.jl
 
       # Saved on failure too, since the packages built before a failure are the ones
       # the next attempt should reuse. Root writes the cache, so it is made readable first.
@@ -313,17 +339,20 @@ jobs:
           key: renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-${{ github.run_id }}
 
       - name: Install cutadapt
+        timeout-minutes: 10
         run: pip install "$CUTADAPT_SPEC"
 
       # The one tool CI does not pin. Ubuntu ships no versioned cd-hit revision worth
       # naming, and 24.04 is frozen, so its cd-hit does not move under us; the version
       # that arrives is recorded at preflight, where a discrepancy is visible.
       - name: Install cd-hit
+        timeout-minutes: 5
         run: sudo apt-get install -y cd-hit
 
       # Downloaded against the pinned URL and refused unless it hashes to the pinned
       # SHA256, so CI runs the same bytes install.jl puts on a developer's machine.
       - name: Install vsearch
+        timeout-minutes: 5
         run: |
           source scripts/ci/fetch_pinned.sh
           fetch_pinned "$VSEARCH_URL" vsearch.tar.gz
@@ -334,6 +363,7 @@ jobs:
           vsearch --version
 
       - name: Install swarm
+        timeout-minutes: 5
         run: |
           source scripts/ci/fetch_pinned.sh
           fetch_pinned "$SWARM_URL" swarm.tar.gz
@@ -344,11 +374,13 @@ jobs:
           swarm --version
 
       - name: Install multiqc
+        timeout-minutes: 10
         run: pip install "$MULTIQC_SPEC"
 
       # FastQC ships as a Java launcher script; `fastqc --version` checks that Java
       # is on PATH as well.
       - name: Install fastqc
+        timeout-minutes: 5
         run: |
           source scripts/ci/fetch_pinned.sh
           fetch_pinned "$FASTQC_URL" fastqc.zip
@@ -359,35 +391,25 @@ jobs:
           sudo ln -sf /opt/FastQC/fastqc /usr/local/bin/fastqc
           fastqc --version
 
+      # No precompile here: RCall is rebuilt below and that invalidates its image
+      # and everything that loads it, so precompiling now would be done twice.
       - name: Instantiate Julia project
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          bun install --frozen-lockfile --ignore-scripts
-          bun run build
-
-      - name: Audit frontend dependencies
-        working-directory: frontend
-        # Moderate advisories remain visible in `bun audit`; upgrading Router
-        # across a major version needs a separate routing/SSR review.
-        run: bun audit --audit-level high
-
-      - name: Frontend unit tests
-        working-directory: frontend
-        run: bun run test
-
       - name: Download PR2 databases
+        timeout-minutes: 10
         run: julia --project=. config/ci/download_databases.jl
 
       - name: Rebuild RCall against installed R
         run: julia --project=. -e 'import Pkg; Pkg.build("RCall")'
+
+      # Explicit, so a precompile failure (an RCall image that does not match the
+      # installed R, for one) fails here with its own error and not later as a
+      # slow load inside the test run.
+      - name: Precompile Julia project
+        run: julia --project=. -e 'import Pkg; Pkg.precompile()'
 
       - name: Verify R packages visible from RCall
         run: |
@@ -399,16 +421,30 @@ jobs:
             end
           '
 
-      - name: Check independent high-precision references
-        run: python3 test/references/check_high_precision_references.py --check test/unit/test_high_precision.jl
+      # The independent oracles are GNU bc (high precision, exact summaries) and awk
+      # (ordination): none shares maths code with Julia. bc is installed explicitly,
+      # and the step fails if a tool is missing, so a test cannot skip itself green.
+      - name: Install the independent oracle tools
+        timeout-minutes: 5
+        run: |
+          sudo apt-get install -y --no-install-recommends bc jq
+          command -v bc jq awk
 
+      - name: Check independent high-precision references
+        run: bash test/references/check_high_precision_references.sh --check test/unit/test_high_precision.jl
+
+      # Same coverage flag as the full suite: the .cov files of both runs sit side by
+      # side and the coverage step below merges them.
       - name: Run validated-statistics tests first
         env:
           R_LIBS_SITE: /usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library
+          TEST_TIMING_TITLE: Validated-statistics tests (early step)
         shell: bash
         run: |
           set +e
-          julia --project=. -t2 --compiled-modules=no test/runtests.jl validated_statistics numeric_policy exact_summaries high_precision derived_analyses method_catalogue statistics_boundaries statistics_adversarial statistics_properties statistics_ui 2>&1 | tee /tmp/validated-statistics-tests.log
+          # The list is word-split on purpose: each name is a separate argument.
+          # shellcheck disable=SC2086
+          julia --project=. -t2 --code-coverage=@ test/runtests.jl $VALIDATED_STATISTICS_TESTS 2>&1 | tee /tmp/validated-statistics-tests.log
           # Preserve both exits immediately: a successful Julia run must not
           # hide a failed log write (e.g. a full runner filesystem).
           statuses=("${PIPESTATUS[@]}")
@@ -454,6 +490,7 @@ jobs:
         env:
           OCCUPANCY_RESULTS: ${{ runner.temp }}/occupancy-results.yml
           CI_SKIP_TAXONOMY: "1"
+          TEST_TIMING_TITLE: Full suite (less the early step's files)
           R_LIBS_SITE: /usr/local/lib/R/site-library:/usr/lib/R/site-library:/usr/lib/R/library
         # A failure also posts annotations, which the checks API serves without the full
         # log. Annotations are capped at 4096 bytes, so each failing assertion gets its own
@@ -462,7 +499,7 @@ jobs:
         run: |
           command -v vsearch # The full suite must run the occupancy experiment, not skip it.
           set +e
-          julia --project=. -t 2 --code-coverage=user --compiled-modules=no test/runtests.jl --integration --server 2>&1 | tee /tmp/julia-tests.log
+          julia --project=. -t 2 --code-coverage=@ test/runtests.jl --exclude="${VALIDATED_STATISTICS_TESTS// /,}" --integration --server 2>&1 | tee /tmp/julia-tests.log
           # Preserve both exits immediately: a successful Julia run must not
           # hide a failed log write (e.g. a full runner filesystem).
           statuses=("${PIPESTATUS[@]}")
@@ -510,8 +547,17 @@ jobs:
           julia --project=. scripts/check-occupancy-grades.jl "$RUNNER_TEMP/occupancy-results.yml"
           bash scripts/lint-occupancy-readings.sh
 
+      # Both test runs write .cov files named for their process id. Fewer than two
+      # processes means one run's coverage never reached this step.
       - name: Process coverage
-        run: julia scripts/process-ci-coverage.jl
+        run: |
+          find src -name '*.cov' | sed -E 's/.*\.([0-9]+)\.cov$/\1/' | sort -u > "$RUNNER_TEMP/coverage-pids"
+          echo "coverage files: $(find src -name '*.cov' | wc -l); processes that wrote them: $(wc -l < "$RUNNER_TEMP/coverage-pids")"
+          if [ "$(wc -l < "$RUNNER_TEMP/coverage-pids")" -lt 2 ]; then
+            echo "::error::coverage from the early step or the full suite is missing"
+            exit 1
+          fi
+          julia scripts/process-ci-coverage.jl
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
@@ -536,17 +582,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up Julia
+        timeout-minutes: 10
         run: bash scripts/install-ci-julia.sh
+
+      - name: Read pinned runtime versions
+        run: |
+          {
+            echo "JULIA_VERSION=$(yq -r '.runtimes.julia.version' config/defaults/tool_versions.yml)"
+            echo "R_APT_VERSION=$(yq -r '.runtimes.r.apt_version' config/defaults/tool_versions.yml)"
+          } >> "$GITHUB_ENV"
+
+      # Same reasoning as the Julia tests job: the compiled caches depend on the
+      # Julia pin and on the R that RCall was built against.
+      - name: Cache Julia packages and compiled caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.julia/artifacts
+            ~/.julia/packages
+            ~/.julia/registries
+            ~/.julia/compiled
+          key: julia-standards-${{ runner.os }}-J${{ env.JULIA_VERSION }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('Manifest.toml') }}
 
       # The versions, the HTTPS restriction and the exact-commit fetches live in
       # the script (one reviewed place), not interpolated into this workflow.
       - name: Install pinned standards tools
+        timeout-minutes: 10
         run: bash scripts/ci/fetch-statistics-tools.sh
 
       # MetaManifold includes RCall at module load, and RCall's build step needs
       # an R installation even though this job runs no R code. The version comes
       # from the committed pin file, not from whatever apt calls current.
       - name: Install the pinned R runtime
+        timeout-minutes: 10
         run: |
           R_APT_VERSION="$(yq -r '.runtimes.r.apt_version' config/defaults/tool_versions.yml)"
           R_APT_VERSION="$R_APT_VERSION" bash scripts/ci/install-r-runtime.sh core
@@ -561,8 +629,14 @@ jobs:
       # statistics modules, so the environment must be instantiated after R.
       - name: Instantiate Julia project
         id: instantiate
+        env:
+          JULIA_PKG_PRECOMPILE_AUTO: "0"
         run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
+      # Explicit, so a precompile failure fails here and names itself.
+      - name: Precompile Julia project
+        id: precompile
+        run: julia --project=. -e 'import Pkg; Pkg.precompile()'
 
 
       # YAML-POLICY Y-3 / D307. --check exits 1 on drift and 2 when yq is
@@ -614,7 +688,7 @@ jobs:
       # study, the gates or an earlier evidence step failed) without inventing a
       # failure that cannot distinguish a broken mutant from an absent project.
       - name: Mutation campaign
-        if: always() && steps.instantiate.outcome == 'success'
+        if: always() && steps.instantiate.outcome == 'success' && steps.precompile.outcome == 'success'
         env:
           RUN_LOG_TITLE: Mutation campaign
         run: |
@@ -654,13 +728,87 @@ jobs:
     timeout-minutes: 30
     env:
       DEBIAN_FRONTEND: noninteractive
+      # The pins of this job, in one place. They are part of the input hash below,
+      # so changing one re-runs the proofs; so does any change under proofs/.
+      AGDA_BIN_VERSION: 2.6.4.3-1+b2
+      AGDA_STDLIB_VERSION: 2.1-4
+      AGDA_FLAGS: --safe --without-K --cubical-compatible
+      AGDA_TARGET: MetaManifold/All.agda
+      # The image of the container: above, the one literal that `container:`
+      # cannot read from env. The hash step refuses to run if the two differ.
+      AGDA_IMAGE: debian:trixie-20250929-slim@sha256:1caf1c703c8f7e15dcf2e7769b35000c764e6f50e4d7401c355fb0248f3ddfdb
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
+      # A pass is memoised on its inputs: the proofs, the checker pins and the
+      # invocation. Pull requests reuse a pass whose inputs are unchanged, which
+      # is the usual case for a PR that does not touch proofs/ (a workflow-only or
+      # script change is "relevant" but cannot change a proof). The step summary
+      # always names the run reused. A push to main never reuses: it re-checks in
+      # full, so the memo can only ever shorten a pull request, never main.
+      - name: Hash the proof inputs
+        id: inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A container job's steps cannot read the container image from the
+          # context, so the image is a literal in env; it must be the one in use.
+          # Only this job's container line counts: the occupancy job has its own.
+          container="$(awk '/^  agda:/ { a = 1; next } a && /^  [a-z_]+:/ { a = 0 } a && /^    container:/ { sub(/^    container: */, ""); print; exit }' .github/workflows/ci.yml)"
+          [ "$container" = "$AGDA_IMAGE" ] \
+            || { echo "ERROR: AGDA_IMAGE differs from the Agda job container" >&2; exit 1; }
+          hash="$( {
+            printf '%s\n' "$AGDA_IMAGE" "$AGDA_BIN_VERSION" "$AGDA_STDLIB_VERSION" "$AGDA_FLAGS" "$AGDA_TARGET"
+            find proofs -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+          } | sha256sum | cut -d' ' -f1 )"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          echo "Input hash: $hash"
+
+      # lookup-only: nothing is downloaded, the matched key carries the run id.
+      - name: Look for a reusable pass
+        id: lookup
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          lookup-only: true
+          path: ${{ runner.temp }}/agda-pass-marker
+          key: agda-pass-${{ steps.inputs.outputs.hash }}-none
+          restore-keys: |
+            agda-pass-${{ steps.inputs.outputs.hash }}-
+
+      - name: Reuse the earlier pass
+        id: reuse
+        shell: bash
+        if: github.event_name == 'pull_request' && steps.lookup.outputs.cache-matched-key != ''
+        env:
+          MATCHED: ${{ steps.lookup.outputs.cache-matched-key }}
+          HASH: ${{ steps.inputs.outputs.hash }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # The key ends in <run id>.<attempt>: a re-run of a run must not try to
+          # save over the key its first attempt wrote.
+          run_id="${MATCHED##*-}"
+          run_id="${run_id%%.*}"
+          [[ "$run_id" =~ ^[0-9]+$ ]] || { echo "ERROR: cannot read a run id from $MATCHED" >&2; exit 1; }
+          msg="Reused pass from run $run_id for input hash $HASH"
+          echo "$msg"
+          {
+            echo "### Agda proofs: reused pass"
+            echo
+            echo "$msg"
+            echo
+            echo "Earlier run: https://github.com/$REPO/actions/runs/$run_id"
+            echo "The proofs, the checker pins and the invocation are unchanged, so the type-check was not repeated. A push to main always re-checks in full."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "reused=true" >> "$GITHUB_OUTPUT"
+
       - name: Install Agda and the standard library
+        if: steps.reuse.outputs.reused != 'true'
+        timeout-minutes: 10
         run: |
           apt-get update -qq
-          apt-get install -y --no-install-recommends agda-bin=2.6.4.3-1+b2 agda-stdlib=2.1-4
+          apt-get install -y --no-install-recommends "agda-bin=$AGDA_BIN_VERSION" "agda-stdlib=$AGDA_STDLIB_VERSION"
           agda --version | grep -qx 'Agda version 2.6.4.3'
           grep -qx 'name: standard-library-2.1' /usr/share/agda-stdlib/standard-library.agda-lib
 
@@ -669,6 +817,7 @@ jobs:
       # module that MetaManifold/All.agda does not import (an unimported module
       # is never type-checked at all).
       - name: Axiom audit
+        if: steps.reuse.outputs.reused != 'true'
         run: bash proofs/tests/axiom-audit.sh
 
       # The invocation is the estate PROOF-POLICY §2.1 one, written out rather
@@ -676,6 +825,7 @@ jobs:
       # Unicode, and under the image's default POSIX locale it then exits 42
       # instead of reporting, so the locale is UTF-8.
       - name: Type-check
+        if: steps.reuse.outputs.reused != 'true'
         env:
           AGDA_DIR: /tmp/agda-dir
           LC_ALL: C.UTF-8
@@ -683,13 +833,32 @@ jobs:
           mkdir -p "$AGDA_DIR"
           echo /usr/share/agda-stdlib/standard-library.agda-lib > "$AGDA_DIR/libraries"
           cd proofs/agda
-          if ! agda --safe --without-K --cubical-compatible MetaManifold/All.agda >/tmp/agda.log 2>&1; then
+          # AGDA_FLAGS is word-split on purpose: each flag is its own argument.
+          # shellcheck disable=SC2086
+          if ! agda $AGDA_FLAGS "$AGDA_TARGET" >/tmp/agda.log 2>&1; then
             cat /tmp/agda.log
             msg="$(awk 'NR > 1 { printf "%%0A" } { gsub(/%/, "%25"); printf "%s", $0 }' /tmp/agda.log | tail -c 3500)"
             echo "::error file=proofs/agda/MetaManifold/All.agda,title=Agda type-check failed::$msg"
             exit 1
           fi
           cat /tmp/agda.log
+
+      # Only a full pass leaves a marker, keyed on the inputs and the run id.
+      # Pull requests and main both leave one; only pull requests read it.
+      - name: Record the pass
+        if: steps.reuse.outputs.reused != 'true'
+        env:
+          HASH: ${{ steps.inputs.outputs.hash }}
+          RUN_ID: ${{ github.run_id }}
+          MARKER: ${{ runner.temp }}/agda-pass-marker
+        run: printf 'run=%s\nhash=%s\n' "$RUN_ID" "$HASH" > "$MARKER"
+
+      - name: Save the pass marker
+        if: steps.reuse.outputs.reused != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/agda-pass-marker
+          key: agda-pass-${{ steps.inputs.outputs.hash }}-${{ github.run_id }}.${{ github.run_attempt }}
 
   occupancy:
     name: Occupancy typed peak
@@ -701,10 +870,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install proof tools
+        timeout-minutes: 10
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends ca-certificates curl git agda-bin=2.6.4.3-1+b2 agda-stdlib=2.1-4
       - name: Set up Julia
+        timeout-minutes: 10
         run: bash scripts/install-ci-julia.sh
       - name: Check Session IR and occupancy proofs
         run: bash scripts/check-occupancy.sh

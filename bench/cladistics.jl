@@ -34,4 +34,4 @@ function main()
     println("Includes one cumulative roll-up, Faith PD, and both UniFrac matrices; no I/O.")
 end
 
-abspath(PROGRAM_FILE) == @__FILE__ && main()
+abspath(PROGRAM_FILE) == (@__FILE__) && main()

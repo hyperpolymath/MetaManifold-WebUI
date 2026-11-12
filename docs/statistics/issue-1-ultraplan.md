@@ -40,7 +40,7 @@ symbolic gate (#2) remains blocked.
 | --- | --- | --- |
 | Approve and publish the bounded method catalogue | Approval recorded in an issue comment; the catalogue document is absent from this checkout | Publish the approved scope and a machine-readable catalogue |
 | Publish numeric conversion/storage contracts | Code implements the rules; the contract document is absent | Restore the boundary-by-boundary contract and test it |
-| Known-answer and independent references | Python `fractions`/`decimal` references exist for two paths | Add cross-language boundary and round-trip evidence |
+| Known-answer and independent references | GNU `bc` references exist for two paths | Add cross-language boundary and round-trip evidence |
 | Adversarial/precision stability | Some cases exist | Add a dedicated adversarial/precision suite |
 | Property/generative tests and fuzzing | Some generative cases exist | Add invariants, metamorphic properties, config fuzzing |
 | Negative controls and mutation evidence | Not retained | Add a mutation driver, CI evidence, and recorded commands |
@@ -75,7 +75,7 @@ symbolic gate (#2) remains blocked.
 ### 1.4 Environment limits recorded honestly
 
 The agent sandbox has no Julia, R, bun, cargo, Go, yq or `ijson-jcs` binary.
-Local work can therefore run Python reference checks, static inspection and
+Local work can therefore run the bc and awk reference checks, static inspection and
 JavaScript-runtime boundary probes only. Julia tests and the standards tools
 must run in GitHub Actions; the branch is pushed and CI is iterated until the
 required checks are green. No local Julia result is claimed.
@@ -242,9 +242,9 @@ julia --project=. -t2 test/runtests.jl numeric_policy exact_summaries \
   statistics_ui
 
 # references
-python3 test/references/check_high_precision_references.py --check \
+bash test/references/check_high_precision_references.sh --check \
   test/unit/test_high_precision.jl
-python3 test/references/exact_summary_reference.py <input.json>
+bash test/references/exact_summary_reference.sh <input.json>
 
 # benchmark (CI retains the JSON)
 julia --project=. -t2 bench/validated_statistics.jl \

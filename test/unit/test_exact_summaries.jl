@@ -139,10 +139,9 @@ end
     end
 end
 
-@testset "Independent Python fractions reference" begin
-    python = Sys.which("python3")
-    if isnothing(python)
-        @info "Skipping Independent Python fractions reference: python3 is unavailable"
+@testset "Independent bc fractions reference" begin
+    if isnothing(Sys.which("bc")) || isnothing(Sys.which("jq")) || isnothing(Sys.which("bash"))
+        @info "Skipping Independent bc fractions reference: bash, bc or jq is unavailable"
     else
         payloads = [
             Dict{String,Any}(
@@ -158,7 +157,7 @@ end
                 "counts" => [[string(big(2)^80 + 17), "1"], ["1", "3"]],
             ),
         ]
-        script = joinpath(@__DIR__, "..", "references", "exact_summary_reference.py")
+        script = joinpath(@__DIR__, "..", "references", "exact_summary_reference.sh")
         strings(values) = [isnothing(value) ? nothing : string(value) for value in values]
         for payload in payloads
             labels = payload["sample_labels"]
@@ -171,7 +170,7 @@ end
             mktempdir() do directory
                 input = joinpath(directory, "input.json")
                 write(input, JSON3.write(payload))
-                reference = JSON3.read(read(`$python $script $input`, String))
+                reference = JSON3.read(read(`bash $script $input`, String))
                 for kind in ("samples", "groups")
                     for (i, actual) in enumerate(stored[kind])
                         expected = reference[kind][i]

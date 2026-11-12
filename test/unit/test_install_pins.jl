@@ -278,7 +278,10 @@ end
                 out = joinpath(dir, "gate-output")
                 write(out, "")
                 cmd = addenv(Cmd(Cmd(["bash", "-e", "-o", "pipefail", "-c", script]); dir=dir),
-                             "BASE_SHA" => comparison, "RUNNER_TEMP" => dir, "GITHUB_OUTPUT" => out)
+                             "BASE_SHA" => comparison, "RUNNER_TEMP" => dir, "GITHUB_OUTPUT" => out,
+                             # The step calls scripts/ci/classify-change.sh from the checkout
+                             # while git runs in the scratch repository, as on a runner.
+                             "GITHUB_WORKSPACE" => REPO_ROOT)
                 ok = success(pipeline(cmd; stdout=devnull, stderr=devnull))
                 (ok, strip(read(out, String)))
             end

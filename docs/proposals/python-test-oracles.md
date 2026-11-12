@@ -3,8 +3,13 @@
 
 # Proposal: where the no-new-Python rule stops
 
-Status: **needs an owner decision.** Nothing here is applied; the rule in
-`.github/workflows/language-policy.yml` is unchanged.
+Status: **decided.** The owner ruled to port all Python in the repository and to
+write the oracles in GNU `bc` and awk, so that they share no maths code with
+Julia (MPFR, GMP, LAPACK). The no-new-Python rule in
+`.github/workflows/language-policy.yml` is unchanged and needs no exception.
+The oracles are `test/references/*.sh`, `*.bc` and `*.awk`; the harness and report
+code is Julia. Third-party pipeline tools installed with pip (cutadapt, multiqc)
+are not estate code and stay.
 
 ## The question
 

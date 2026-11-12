@@ -86,7 +86,7 @@ cross a boundary as decimal strings; floating point never carries a count.**
 | Julia `Int64` → `Float64` | Exact through `2^53`; `2^53 + 1` rounds down silently | `MAX_EXACT_FLOAT`; refusal of `> 2^53 - 1` JSON numbers |
 | JavaScript `JSON.parse` | `{"n":9007199254740993}` becomes `9007199254740992` with no error; the string form is byte-exact | Node check in `test_statistics_boundaries.jl` (skipped and announced when `node` is absent) |
 | R `numeric` | R has no integer type wider than 32 bits; every number is a double, so `9007199254740993` arrives one short | Rscript check in `test_statistics_boundaries.jl` (skipped and announced when `Rscript` is absent) |
-| Python | `int` is arbitrary precision; `decimal`/`fractions` are the independent reference implementations | `test/references/exact_summary_reference.py`, `check_high_precision_references.py` |
+| GNU bc | arbitrary-precision integers and decimals; the independent reference implementation | `test/references/exact_summary_reference.sh`, `test/references/check_high_precision_references.sh` |
 | DuckDB | `TINYINT`/`SMALLINT`/`INTEGER`/`BIGINT`/`HUGEINT` are accepted; `FLOAT`/`DOUBLE`/`DECIMAL` are refused with `422` | `_validated_integer_sample_columns`; boundary test builds one table per type |
 | CSV/text | There is no CSV writer for this layer. Display strings are for humans and are labelled rounded; they are not a data interchange format | `to_display`, `summary_to_display` |
 

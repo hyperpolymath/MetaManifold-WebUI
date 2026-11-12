@@ -25,7 +25,8 @@
                                       "JULIA_METAMANIFOLD_PORT" => string(port))));
                wait=false)
 
-    # CI loads the server with --compiled-modules=no, which takes minutes.
+    # The server subprocess loads from the precompiled caches. A cold cache
+    # makes the first start slow, so the wait below is generous.
     ready = false
     for _ in 1:1200
         process_running(proc) || break

@@ -25,28 +25,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Set up Julia
+        timeout-minutes: 10
+        run: bash scripts/install-ci-julia.sh
       - name: Test harness failure boundaries
-        env:
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 -m unittest discover -s scripts/tests -p 'test_format*.py' -v
+        run: julia --startup-file=no scripts/tests/test_format_readiness.jl
       - name: Inventory candidates without declaring compliance
-        run: python3 scripts/formats/inventory.py > "$RUNNER_TEMP/format-boundaries.tsv"
+        run: julia --startup-file=no scripts/formats/inventory.jl > "$RUNNER_TEMP/format-boundaries.tsv"
       - name: Read immutable JSON reference pins
         id: pins
-        run: |
-          python3 - <<'PY'
-          import os, re, tomllib
-          with open('config/format-tools.toml', 'rb') as stream:
-              pin = tomllib.load(stream)['ijson_jcs']
-          if pin['repository'] != 'https://github.com/hyperpolymath/ijson-jcs':
-              raise SystemExit('unexpected reference repository')
-          if not re.fullmatch(r'[0-9a-f]{40}', pin['revision']):
-              raise SystemExit('reference must be an immutable commit')
-          if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', pin['rust_toolchain']):
-              raise SystemExit('Rust must be an explicit release')
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
-              stream.write(f"revision={pin['revision']}\nrust={pin['rust_toolchain']}\n")
-          PY
+        run: julia --startup-file=no scripts/formats/read_pins.jl
       - name: Checkout pinned reference source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,10 +52,8 @@ jobs:
           rustup toolchain install "$RUST_VERSION" --profile minimal
           cargo "+${RUST_VERSION}" install --path .format-reference --locked --root "$RUNNER_TEMP/format-reference"
       - name: Exercise original bytes against the installed reference
-        env:
-          PYTHONDONTWRITEBYTECODE: '1'
         run: |
-          PATH="$RUNNER_TEMP/format-reference/bin:$PATH" python3 scripts/formats/conformance.py --adapter reference
+          PATH="$RUNNER_TEMP/format-reference/bin:$PATH" julia --startup-file=no scripts/formats/conformance.jl --adapter reference
           {
             echo '## Format migration evidence'
             echo 'Pinned ijson-jcs raw-byte corpus passed. This is not application-wide conformance.'

@@ -285,16 +285,16 @@ Full suite (with the repository's integration and server gates):
 julia --project=. -t2 test/runtests.jl --integration --server
 ```
 
-The suite includes known answers, independent Python `fractions` and
-high-precision `decimal` references, zero/negative/nonfinite/missing controls, values beyond `2^53`, rational budget
+The suite includes known answers, independent GNU `bc` exact-fraction and
+high-precision references, zero/negative/nonfinite/missing controls, values beyond `2^53`, rational budget
 failures, SQL-sum overflow controls, feature-permutation and scale invariance,
 generative count matrices, malformed JSON fuzz cases, serialization round trips,
 concurrent precision scopes, concurrent immutable publication, and tamper
-recovery. Reproduce the Python `decimal` references independently with:
+recovery. Reproduce the `bc` references independently with:
 
 ```bash
-python3 test/references/check_high_precision_references.py
-python3 test/references/check_high_precision_references.py --check \
+bash test/references/check_high_precision_references.sh
+bash test/references/check_high_precision_references.sh --check \
   test/unit/test_high_precision.jl
 ```
 

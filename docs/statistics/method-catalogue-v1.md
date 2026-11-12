@@ -58,7 +58,7 @@ proportions. Integer counts are summed in Julia `BigInt`; proportions are
   `test/unit/test_statistics_boundaries.jl`,
   `test/unit/test_statistics_adversarial.jl`,
   `test/unit/test_statistics_properties.jl`,
-  `test/references/exact_summary_reference.py`,
+  `test/references/exact_summary_reference.sh`,
   `docs/statistics/numeric-contracts.md`.
 
 ### `high-precision-descriptive-diversity` — supported
@@ -70,7 +70,7 @@ an explicit MPFR precision above 53 bits.
 - Not claimed: exactness, uncertainty intervals, group summaries (refused in
   this mode rather than silently ignored).
 - Evidence: `test/unit/test_high_precision.jl`,
-  `test/references/check_high_precision_references.py`,
+  `test/references/check_high_precision_references.sh`,
   `test/unit/test_statistics_boundaries.jl`,
   `test/unit/test_statistics_adversarial.jl`,
   `test/unit/test_statistics_properties.jl`,

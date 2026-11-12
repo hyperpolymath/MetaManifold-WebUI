@@ -48,7 +48,7 @@ replace it with another language or publish another tool under the kyq name.
 Reproduce using a clean clone at the pinned commit:
 
 ```sh
-PATH="/path/to/trusted/just/bin:$PATH" python3 scripts/formats/probe_kyq.py --source /path/to/kyq
+PATH="/path/to/trusted/just/bin:$PATH" julia --startup-file=no scripts/formats/probe_kyq.jl --source /path/to/kyq
 ```
 
 Probe exit codes: 0 means only the three source recipes returned success;
@@ -61,7 +61,7 @@ conformance. The tool prints those missing obligations explicitly.
 Generate locations without printing source lines or study/credential values:
 
 ```sh
-python3 scripts/formats/inventory.py > /tmp/format-boundaries.tsv
+julia --startup-file=no scripts/formats/inventory.jl > /tmp/format-boundaries.tsv
 ```
 
 The inventory includes tracked and non-ignored new files, hidden workflows and
@@ -105,8 +105,8 @@ escaped and raw controls, integer boundaries, beyond-uint64 counts, exponent
 thresholds, negative zero, array order, trailing input and truncation.
 
 ```sh
-PATH="/path/to/trusted/reference/bin:$PATH" python3 scripts/formats/conformance.py --adapter reference
-python3 -m unittest discover -s scripts/tests -p 'test_format*.py' -v
+PATH="/path/to/trusted/reference/bin:$PATH" julia --startup-file=no scripts/formats/conformance.jl --adapter reference
+julia --startup-file=no scripts/tests/test_format_readiness.jl
 ```
 
 The protocol is the existing ijson-jcs `canon`: original bytes on stdin, exact

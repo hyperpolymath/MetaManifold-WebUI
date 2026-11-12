@@ -8,41 +8,49 @@
 # Parse each expression explicitly and reject both error and incomplete results.
 files = sort(filter(f -> endswith(f, ".jl"),
                     split(read(`git ls-files -z`, String), '\0')))
-failed = false
-for file in files
-    issue = nothing
-    try
-        source = read(file, String)
-        position = 1
-        while position <= ncodeunits(source)
-            ex, next_position = Meta.parse(source, position; filename=file)
-            if Meta.isexpr(ex, :error) || Meta.isexpr(ex, :incomplete)
-                issue = ex
-                break
+# The loop is in a function so the failure count is a real local: a bare
+# `failed = true` in a top-level loop of a script assigns a new local, and the
+# gate could never fail.
+function count_failures(files)
+    failures = 0
+    for file in files
+        issue = nothing
+        try
+            source = read(file, String)
+            position = 1
+            while position <= ncodeunits(source)
+                ex, next_position = Meta.parse(source, position; filename=file)
+                if Meta.isexpr(ex, :error) || Meta.isexpr(ex, :incomplete)
+                    issue = ex
+                    break
+                end
+                # A bare `end` at the top level parses without error and then fails
+                # at lowering (`syntax: "end" at top level`), which is how a file
+                # that lost its `module Foo` opener reaches CI looking syntactically
+                # fine. An `end` balances exactly one opener, so top level cannot
+                # hold one: this is a missing or duplicated opener, and the file
+                # would not load.
+                if ex === :end
+                    issue = "stray `end` at top level (a `module`/`function`/... opener " *
+                            "is missing or was duplicated in this file)"
+                    break
+                end
+                next_position > position ||
+                    error("Julia parser made no progress at code unit $position")
+                position = next_position
             end
-            # A bare `end` at the top level parses without error and then fails
-            # at lowering (`syntax: "end" at top level`), which is how a file
-            # that lost its `module Foo` opener reaches CI looking syntactically
-            # fine. An `end` balances exactly one opener, so top level cannot
-            # hold one: this is a missing or duplicated opener, and the file
-            # would not load.
-            if ex === :end
-                issue = "stray `end` at top level (a `module`/`function`/... opener " *
-                        "is missing or was duplicated in this file)"
-                break
-            end
-            next_position > position ||
-                error("Julia parser made no progress at code unit $position")
-            position = next_position
+        catch err
+            issue = err
         end
-    catch err
-        issue = err
+        if !isnothing(issue)
+            failures += 1
+            println(stderr, "Julia parse failed in $file:")
+            println(stderr, issue isa AbstractString ? issue : sprint(showerror, issue))
+        end
     end
-    if !isnothing(issue)
-        failed = true
-        println(stderr, "Julia parse failed in $file:")
-        println(stderr, issue isa AbstractString ? issue : sprint(showerror, issue))
-    end
+    return failures
 end
-failed && exit(1)
+
+failures = count_failures(files)
+failures == 0 || (println(stderr, "$failures Julia source file(s) failed to parse."); exit(1))
 println("Julia parser accepted $(length(files)) tracked source files.")

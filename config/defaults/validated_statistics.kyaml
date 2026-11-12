@@ -61,7 +61,7 @@
         "test/unit/test_statistics_boundaries.jl",
         "test/unit/test_statistics_adversarial.jl",
         "test/unit/test_statistics_properties.jl",
-        "test/references/exact_summary_reference.py",
+        "test/references/exact_summary_reference.sh",
         "docs/statistics/numeric-contracts.md",
       ],
     },
@@ -114,7 +114,7 @@
       ],
       evidence: [
         "test/unit/test_high_precision.jl",
-        "test/references/check_high_precision_references.py",
+        "test/references/check_high_precision_references.sh",
         "test/unit/test_statistics_boundaries.jl",
         "test/unit/test_statistics_adversarial.jl",
         "test/unit/test_statistics_properties.jl",
