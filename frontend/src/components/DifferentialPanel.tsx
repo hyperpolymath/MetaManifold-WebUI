@@ -226,7 +226,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                 `penalty ${m.penalty}, ${m.iterations} ${result.config.mn_backend === 'mglm' ? 'MGLM iterations' : 'Newton steps'} in ${m.runtime_seconds.toPrecision(2)} s.`
             })()}
             {result.diagnostics.mglm?.overdispersion &&
-              ` Overdispersion theta by group (MGLM): ${Object.entries(result.diagnostics.mglm.overdispersion).map(([g, o]) => `${g} ${formatStat(o.theta)}`).join(', ')}.`}
+              ` Overdispersion theta by group (MGLM): ${Object.entries(result.diagnostics.mglm.overdispersion).map(([g, o]) => g + ' ' + formatStat(o.theta)).join(', ')}.`}
             {result.diagnostics.overdispersion && (() => {
               const o = result.diagnostics.overdispersion
               return ` Concentration ${o.concentration.toPrecision(3)} by ${o.method}, ` +
