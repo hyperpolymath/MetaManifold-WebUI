@@ -236,6 +236,13 @@ jobs:
       # A test that produced no usable p-value leaves its reason only in the
       # per-cell CSV, which is an artifact a reader may not be able to open.
       # The distinct reasons are therefore published as annotations too.
+      # The reporter is Julia (standard library only), installed from the same
+      # pin as the CI jobs. Always run, so the notes still appear after a failure.
+      - name: Set up Julia
+        if: always()
+        timeout-minutes: 10
+        run: bash scripts/install-ci-julia.sh
+
       - name: Report any test that could not run
         if: always()
         run: |
@@ -243,7 +250,7 @@ jobs:
           shopt -s nullglob
           for csv in bench/null_calibration/results/raw/pvalues_*.csv; do
             cell="$(basename "$csv" .csv)"
-            python3 bench/null_calibration/report_failures.py "$cell" < "$csv"
+            julia --startup-file=no bench/null_calibration/report_failures.jl "$cell" < "$csv"
           done
 
       - name: Publish the summaries as annotations
