@@ -65,6 +65,7 @@ while IFS= read -r -d '' file; do
     # shellcheck disable=SC2254
     case "$file" in
       $pattern) relevant=true; break 2 ;;
+      *) ;;
     esac
   done
 done < "$changed"

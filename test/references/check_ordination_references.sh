@@ -59,9 +59,9 @@ command -v "$AWK" >/dev/null || { echo "error: awk is required" >&2; exit 2; }
 
 # 1 when the file ends with exactly one LF (the JCS file rule), else 0.
 lf_ok() {
-  local tail2
-  [[ -f "$1" ]] || { echo 0; return; }
-  tail2="$(tail -c 2 -- "$1" | od -An -v -tx1 | tr -d ' \n')"
+  local tail2 path="$1"
+  [[ -f "$path" ]] || { echo 0; return; }
+  tail2="$(tail -c 2 -- "$path" | od -An -v -tx1 | tr -d ' \n')"
   case "$tail2" in
     *0a0a) echo 0 ;;
     *0a) echo 1 ;;

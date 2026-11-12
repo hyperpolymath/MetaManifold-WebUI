@@ -101,6 +101,7 @@ while IFS=$'\t' read -r tag rest; do
       line="$(emit "$label" "${lists[@]}")"
       if (( count < n_samples )); then samples+=("$line"); else groups+=("$line"); fi
       count=$((count + 1)) ;;
+    *) ;;
   esac
 done < <(blocks)
 
