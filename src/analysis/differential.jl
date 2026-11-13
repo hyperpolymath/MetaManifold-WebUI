@@ -4,7 +4,7 @@
 
 ## Differential abundance
 # Per-taxon models comparing two groups of samples, with Benjamini-Hochberg
-# correction across the taxa that produced a p-value. Two methods:
+# correction across the taxa that produced a p-value. Methods:
 #
 # - nb_glm: a negative-binomial GLM per taxon (MASS::glm.nb) on the observed
 #   integer read counts, with a library-size offset. There are no pseudocounts.
@@ -12,6 +12,8 @@
 #   log-ratios, over the taxa that pass `min_prevalence`, after their zeros are
 #   replaced by zCompositions::cmultRepl (Bayesian-multiplicative, for counts).
 #   The estimate is a difference in CLR units, not a fold change.
+# - aldex2: Dirichlet posterior log2 CLR tests from CompositionalDA, retaining
+#   its expected within-instance BH values.
 #
 # Count matrices here are samples x taxa, as everywhere else in `Analysis`.
 # Anything that is not a non-negative integer count is refused rather than
@@ -20,6 +22,8 @@
 module Differential
 
 using DataFrames, RCall
+import CompositionalDA
+
 using ..RRuntime: with_r_lock
 using ..Analysis: _palette_hex, R_WAIT_SECONDS
 export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavailable,
@@ -28,7 +32,7 @@ export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavail
        clr_transform, fit_nb, fit_welch, differential_abundance, volcano_chart
 
 # Methods accepted under `analysis.differential.method`.
-const METHODS = ("nb_glm", "clr_welch")
+const METHODS = ("nb_glm", "clr_welch", "aldex2")
 
 # What `nb_glm` does and how it tests, accepted under
 # `analysis.differential.dispersion`: `"glm_nb"` fits each taxon with
@@ -57,8 +61,9 @@ const DEFAULT_DELTA = 0.65
                        replacement_delta=0.65, dispersion="glm_nb")
 
 Settings for one differential abundance analysis, read from
-`analysis.differential` in the pipeline config. `method` is `"nb_glm"` or
-`"clr_welch"`. `offset` names the size factor method (`"tss"` or `"rle"`) and is
+`analysis.differential` in the pipeline config. `method` is one of `METHODS`.
+`mc_samples` and `seed` control ALDEx2's posterior draws.
+`offset` names the size factor method (`"tss"` or `"rle"`) and is
 used by `nb_glm` only: a library-size offset has no meaning for a test on
 log-ratios, which are already free of library size.
 `min_prevalence` is the fraction of samples, in [0, 1], in which a taxon must
@@ -85,10 +90,13 @@ struct DifferentialConfig
     min_prevalence    :: Float64
     replacement_delta :: Float64
     dispersion        :: String
+    mc_samples        :: Int
+    seed              :: Int
     function DifferentialConfig(offset::AbstractString="tss", min_prevalence::Real=0.0;
                                 method::AbstractString="nb_glm",
                                 replacement_delta::Real=DEFAULT_DELTA,
-                                dispersion::AbstractString="glm_nb")
+                                dispersion::AbstractString="glm_nb",
+                                mc_samples::Integer=128, seed::Integer=1)
         m = lowercase(strip(String(method)))
         m in METHODS || throw(ArgumentError(
             "analysis.differential.method must be one of $(join(METHODS, ", ")), not '$method'"))
@@ -107,7 +115,11 @@ struct DifferentialConfig
             "analysis.differential.min_prevalence must be a fraction in [0, 1], not $min_prevalence"))
         (isfinite(replacement_delta) && 0 < replacement_delta < 1) || throw(ArgumentError(
             "analysis.differential.replacement_delta must be in (0, 1), not $replacement_delta"))
-        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d)
+        (2 <= mc_samples <= 4096 && !(mc_samples isa Bool)) || throw(ArgumentError(
+            "analysis.differential.mc_samples must be an integer from 2 to 4096"))
+        (0 <= seed <= typemax(Int32) && !(seed isa Bool)) || throw(ArgumentError(
+            "analysis.differential.seed must be an integer from 0 to $(typemax(Int32))"))
+        new(m, o, Float64(min_prevalence), Float64(replacement_delta), d, Int(mc_samples), Int(seed))
     end
 end
 
@@ -787,8 +799,15 @@ family is the fitted taxa that produced a p-value; failed and filtered taxa
 carry `padj = nothing`. The result's `effect` names the row key that holds the
 effect size and its label.
 
+`aldex2` is the native method. It runs `CompositionalDA.aldex2` on the raw
+counts with no R session involved, and keeps the package's expected
+within-instance BH values rather than adjusting its p-values a second time. The
+result records the package version under `diagnostics.native_method`.
+
 Throws `ArgumentError` for unusable input (including a zero replacement that
-cannot be made), `ScalingRefusal` when the offset cannot be computed,
+cannot be made, and data the native `aldex2` method refuses with a
+`CompositionalDA.CompositionError`), `ScalingRefusal` when the offset cannot
+be computed,
 `MASSUnavailable`, `GlmGamPoiUnavailable` or `ZCompositionsUnavailable` when a
 required R package is missing, `RBusyError` when the R runtime stays busy, and
 an `ErrorException` when no taxon could be fitted at all, including when the
@@ -814,7 +833,7 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
     # library size and no composition, so neither method can use it. It is left
     # out, and named in `diagnostics.samples_without_reads`, rather than letting
     # one empty sample refuse the whole analysis.
-    has_reads = [sum(view(counts, i, :)) > 0 for i in axes(counts, 1)]
+    has_reads = [any(>(0), view(counts, i, :)) for i in axes(counts, 1)]
     without_reads = String.(samples[.!has_reads])
     if !isempty(without_reads)
         counts, samples, groups = counts[has_reads, :], samples[has_reads], groups[has_reads]
@@ -838,7 +857,55 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
     levels = (String(reference), String(contrast))
     diagnostics = Dict{String,Any}("samples_without_reads" => without_reads)
 
-    if config.method == "nb_glm"
+    native_adjustment = config.method == "aldex2"
+    if native_adjustment
+        # The input checks come first: a malformed matrix is refused for that
+        # reason before the estimator is consulted.
+        tested = findall(j -> present[j] > 0 && prevalence[j] >= config.min_prevalence, axes(counts, 2))
+        length(tested) >= 2 || throw(ArgumentError("aldex2 needs at least two retained taxa"))
+        all(x -> x <= typemax(Int), @view counts[:, tested]) ||
+            throw(ArgumentError("aldex2 counts must fit the platform's Int range"))
+        # Stable labels make the package's sorted contrast agree with the
+        # user's requested direction, irrespective of run-name sorting.
+        native_groups = [g == reference ? "0" : "1" for g in groups]
+        native = try
+            CompositionalDA.aldex2(Int.(counts[:, tested]), taxa[tested], native_groups;
+                mc_samples=config.mc_samples, seed=config.seed)
+        catch e
+            # The package refuses data it cannot test (for example a group with
+            # one sample); that is unusable input, reported with its message.
+            e isa CompositionalDA.CompositionError && throw(ArgumentError(sprint(showerror, e)))
+            rethrow()
+        end
+        by_taxon = Dict(String(r.feature) => r for r in eachrow(native.table))
+        for j in tested
+            f = get(by_taxon, taxa[j], nothing)
+            isnothing(f) && error("aldex2 returned no result for $(taxa[j]); no result produced")
+            isfinite(f.effect) && isfinite(f.pvalue) && isfinite(f.qvalue) ||
+                error("aldex2 returned non-finite statistics for $(taxa[j]); no result produced")
+            merge!(rows[j], Dict{String,Any}(
+                "status" => "ok", "note" => "",
+                "estimate" => f.diff_btw,
+                "pvalue" => f.pvalue, "padj" => f.qvalue,
+                "aldex_effect" => f.effect, "aldex_diff_within" => f.diff_win,
+                "aldex_abundance" => f.rab_all,
+                "wilcoxon_pvalue" => f.wi_pvalue, "wilcoxon_padj" => f.wi_qvalue))
+        end
+        # ALDEx2 averages BH within each posterior instance. Applying BH again
+        # to its expected p-values would silently implement a different method.
+        method_text = "Native ALDEx2 with $(config.mc_samples) Dirichlet instances (prior 0.5); " *
+            "consistent-sign expected Welch p-values and expected within-instance BH; " *
+            "effect shown as a log2 CLR difference, not a fold change"
+        effect = Dict("key" => "estimate", "label" => "CLR difference (log2)")
+        size_factor_rows = Dict{String,Any}[]
+        config_echo = Dict{String,Any}("method" => "aldex2",
+            "min_prevalence" => config.min_prevalence,
+            "mc_samples" => config.mc_samples, "seed" => config.seed)
+        diagnostics["native_method"] = Dict("package" => "CompositionalDA",
+            "version" => string(native.provenance.package_version),
+            "seed" => native.provenance.seed,
+            "parameters" => Dict(string(k) => v for (k, v) in native.provenance.parameters))
+    elseif config.method == "nb_glm"
         factors = size_factors(counts, samples, config.offset)
         tested = findall(>=(config.min_prevalence), prevalence)
         if config.dispersion == "glmGamPoi"
@@ -931,9 +998,11 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
         notes = unique(r["note"] for r in rows)
         error("no taxon could be fitted: " * join(first(notes, 5), " | "))
     end
-    padj = bh_adjust([rows[j]["pvalue"] for j in family])
-    for (k, j) in enumerate(family)
-        rows[j]["padj"] = padj[k]
+    if !native_adjustment
+        padj = bh_adjust([rows[j]["pvalue"] for j in family])
+        for (k, j) in enumerate(family)
+            rows[j]["padj"] = padj[k]
+        end
     end
 
     sort!(rows; by = r -> (isnothing(r["padj"]) ? 2.0 : r["padj"],

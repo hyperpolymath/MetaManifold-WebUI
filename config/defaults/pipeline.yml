@@ -362,8 +362,13 @@ analysis:
     # counts with a library-size offset; the effect is a log2 fold change. clr_welch:
     # Welch's t-test on centred log-ratios over the taxa passing min_prevalence,
     # after zCompositions::cmultRepl replaces their zeros; the effect is a
-    # difference in CLR units, not a fold change.
+    # difference in CLR units, not a fold change. aldex2: native Dirichlet posterior
+    # tests on the raw counts (CompositionalDA); the effect is a log2 CLR difference,
+    # not a fold change, and its p-values are ALDEx2's expected within-instance BH.
     method: nb_glm
+    # aldex2 only: Dirichlet posterior instances and a reproducible RNG seed.
+    mc_samples: 128
+    seed: 1
     # How library size enters each model, as a log offset: tss (total reads per
     # sample) or rle (median-of-ratios over the taxa present in every sample).
     # rle is refused when no taxon is present in every sample.
