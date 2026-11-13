@@ -5,6 +5,9 @@
 reviews:
   # No "review skipped" status comments, such as "Draft PR not reviewed".
   review_status: false
+  # No poem and no in-progress "fortune" lines in the review summary.
+  poem: false
+  in_progress_fortune: false
   auto_review:
     enabled: true
     drafts: false
