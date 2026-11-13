@@ -175,7 +175,11 @@ export function StepsCard({ steps, labels, detail, runLabel, canRun, onRun, load
   useEffect(() => {
     if (!logStep) { setLog(null); return }
     let cancelled = false
-    const get = () => loadLog(logStep).then(t => { if (!cancelled) setLog(t) })
+    const get = () => {
+      loadLog(logStep)
+        .then(t => { if (!cancelled) setLog(t) })
+        .catch(e => { if (!cancelled) setLog(`Could not load the log: ${errorMessage(e)}`) })
+    }
     get()
     const t = running ? window.setInterval(get, 3000) : undefined
     return () => { cancelled = true; if (t) window.clearInterval(t) }

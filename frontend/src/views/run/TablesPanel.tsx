@@ -262,7 +262,7 @@ export function TablesPanel({ study, run, group, tables, onTablesChanged, cacheK
               value=""
               onChange={e => {
                 const p = presets.find(p => p.file === e.target.value)
-                if (p) applyPreset(p)
+                if (p) applyPreset(p).catch(err => toast.error(`Could not apply the preset: ${errorMessage(err)}`))
               }}
               disabled={loadingPreset}
             >

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Plotly, { type Data, type Layout } from 'plotly.js-dist-min'
+import { errorMessage } from '../api/errorMessage'
 
 interface PlotlySpec {
   data:   Data[]
@@ -19,6 +20,7 @@ export function PlotlyChart({ figure, className, heightRatio = 0.6 }: Props) {
   const ready   = useRef(false)
   const hasInitialized = useRef(false)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+  const [drawError, setDrawError] = useState<string | null>(null)
 
   useEffect(() => {
     const wrap = wrapRef.current
@@ -37,6 +39,8 @@ export function PlotlyChart({ figure, className, heightRatio = 0.6 }: Props) {
       font:   { size: 16, ...(spec.layout?.font   as object | undefined) },
       legend: { font: { size: 20 }, ...(spec.layout?.legend as object | undefined) },
     }, { responsive: true, displaylogo: false })
+      .then(() => setDrawError(null))
+      .catch(e => setDrawError(`The chart could not be drawn: ${errorMessage(e)}`))
     ready.current = true
 
     // Capture initial pixel dims once, so the inputs appear with real values.
@@ -60,6 +64,7 @@ export function PlotlyChart({ figure, className, heightRatio = 0.6 }: Props) {
       // A hidden tab reports 0 x 0, which Plotly cannot lay out.
       if (!ready.current || w === 0 || h === 0) return
       Plotly.relayout(plot, { height: h, width: w })
+        .catch(e => setDrawError(`The chart could not be resized: ${errorMessage(e)}`))
       setDims(prev => (prev?.w === w && prev?.h === h) ? prev : { w, h })
     })
     ro.observe(wrap)
@@ -98,6 +103,7 @@ export function PlotlyChart({ figure, className, heightRatio = 0.6 }: Props) {
       >
         <div ref={plotRef} style={{ width: '100%', height: '100%' }} />
       </div>
+      {drawError && <p className="error-msg" role="alert">{drawError}</p>}
       {dims && (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4,
                       fontSize: '.75rem', color: 'var(--color-muted-fg)' }}>

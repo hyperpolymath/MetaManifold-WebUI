@@ -558,6 +558,8 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
     }
     await saveValue(parsed)
   }
+  // Enter in the draft input: save() reports its own failures; this catches the rest.
+  const saveDraft = () => { save().catch(err => toast.error('Failed to save: ' + errorMessage(err))) }
 
   const remove = async () => {
     if (!window.confirm(`Remove the ${sourceLevel} override of ${dottedKey}?`)) return
@@ -595,7 +597,7 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
   const removeBtn = source === sourceLevel && (
     <button className="btn" style={{ padding: '0 4px', fontSize: '.68rem', lineHeight: 1 }} title={`Remove ${sourceLevel} override`}
       aria-label={`Remove ${sourceLevel} override of ${keyLabel}`}
-      onClick={e => { e.stopPropagation(); remove() }}>&times;</button>
+      onClick={e => { e.stopPropagation(); remove().catch(err => toast.error('Failed to remove: ' + errorMessage(err))) }}>&times;</button>
   )
 
   if (typeHint?.kind === 'boolean') {
@@ -694,7 +696,7 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
             min={typeHint.kind === 'float' ? typeHint.min : undefined}
             max={typeHint.kind === 'float' ? typeHint.max : undefined}
             onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+            onKeyDown={e => { if (e.key === 'Enter') saveDraft(); if (e.key === 'Escape') setEditing(false) }}
             autoFocus disabled={saving}
           />
         ) : (
@@ -703,7 +705,7 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
             style={{ flex: 1, fontFamily: 'monospace', fontSize: '.78rem', padding: '2px 6px', border: '1px solid var(--color-border)', borderRadius: 3 }}
             value={draft}
             onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+            onKeyDown={e => { if (e.key === 'Enter') saveDraft(); if (e.key === 'Escape') setEditing(false) }}
             autoFocus disabled={saving}
           />
         )}
@@ -750,6 +752,7 @@ function MultiSelectField({ value, tooltip, optionsFrom, saving, saveValue,
   labelEl: React.ReactNode; sourceEl: React.ReactNode; removeBtn: React.ReactNode
   keyLabel: string
 }) {
+  const toast = useToast()
   const [options, setOptions] = useState<string[] | null>(null)
   const [open, setOpen] = useState(false)
   const selected = Array.isArray(value) ? value.map(String) : []
@@ -763,7 +766,7 @@ function MultiSelectField({ value, tooltip, optionsFrom, saving, saveValue,
     const next = selected.includes(opt)
       ? selected.filter(s => s !== opt)
       : [...selected, opt]
-    saveValue(next)
+    saveValue(next).catch(err => toast.error('Failed to save: ' + errorMessage(err)))
   }
 
   return (

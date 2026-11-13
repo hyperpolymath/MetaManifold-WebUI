@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { errorMessage } from '../api/errorMessage'
 import type { AlignmentQC, PhyloStep } from '../api/types'
+import { useToast } from '../components/Toast'
 import styles from './Phylo.module.css'
 
 const pct = (x: number) => `${(100 * x).toFixed(1)}%`
@@ -143,6 +144,17 @@ export function AlignmentQCView({ qc, threshold, loadAlignment }: {
   const [sort, setSort] = useState<SeqSort>(qc.kept_columns ? 'kept' : 'residues')
   const [all, setAll] = useState(false)
   const [fasta, setFasta] = useState<string | null | undefined>(undefined)
+  const toast = useToast()
+  const showAlignment = () => {
+    setFasta(null)
+    loadAlignment?.()
+      .then(t => setFasta(t ?? ''))
+      .catch(e => {
+        // Back to the button, so the user can retry, instead of "Loading…" forever.
+        setFasta(undefined)
+        toast.error(`Could not load the alignment: ${errorMessage(e)}`)
+      })
+  }
   const removed = useMemo(() => new Set(qc.removed ?? []), [qc.removed])
   const queries = useMemo(() => new Set(qc.per_sequence.filter(p => p.query).map(p => p.name)), [qc.per_sequence])
   const frac = (p: AlignmentQC['per_sequence'][number]) => p.kept_residues == null || !p.residues ? 1 : p.kept_residues / p.residues
@@ -193,7 +205,7 @@ export function AlignmentQCView({ qc, threshold, loadAlignment }: {
         <button className={styles.linkBtn} onClick={() => setAll(!all)}>{all ? 'Show the first 100' : `Show all ${rows.length}`}</button>
       )}
       {loadAlignment && (fasta === undefined
-        ? <div><button className="btn btn-sm" onClick={() => { setFasta(null); loadAlignment().then(t => setFasta(t ?? '')) }}>Show alignment</button></div>
+        ? <div><button className="btn btn-sm" onClick={showAlignment}>Show alignment</button></div>
         : fasta === null ? <p className="loading">Loading the alignment…</p>
         : <AlignmentViewer fasta={fasta} kept={qc.kept_columns} queries={queries} />)}
     </div>
