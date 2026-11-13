@@ -21,7 +21,7 @@ MetaManifold wraps standard amplicon sequencing workflows into a single configur
 
 ## Overview
 
-MetaManifold consists of a Julia backend (pipeline engine + REST API) and a TypeScript/React frontend. The pipeline runs FastQC, MultiQC, cutadapt, DADA2, swarm, vsearch, and cd-hit-est under the hood, and places ASVs on reference trees with MAFFT, trimAl, IQ-TREE, RAxML and gappa; results are stored in per-run DuckDB databases and served to the frontend as interactive Plotly charts and filterable tables. Pipeline configuration is editable in the web UI at every cascade level (see [Configuration](#configuration)). For analysis-method status and planned work, see [ROADMAP.md](ROADMAP.md); the full occupancy follow-up is tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205).
+MetaManifold consists of a Julia backend (pipeline engine + REST API) and a TypeScript/React frontend. The pipeline runs FastQC, MultiQC, cutadapt, DADA2, swarm, vsearch, and cd-hit-est under the hood, and places ASVs on reference trees with MAFFT, trimAl, IQ-TREE, RAxML and gappa; results are stored in per-run DuckDB databases and served to the frontend as interactive Plotly charts and filterable tables. Pipeline configuration is editable in the web UI at every cascade level (see [Configuration](#configuration)). For analysis-method status and planned work, see [ROADMAP.md](ROADMAP.md); the full occupancy follow-up is tracked in [issue #205](https://github.com/hyperpolymath/MetaManifold-WebUI/issues/205). What is open upstream, the statistics catalogue's review status, and the current SonarCloud and Codecov results are recorded, with their date, in [docs/release-notes/2026-11-13-current-state.md](docs/release-notes/2026-11-13-current-state.md).
 
 **Pipeline stages**
 
@@ -931,6 +931,14 @@ address when starting the server:
 JULIA_METAMANIFOLD_ALLOWED_ORIGINS=https://frontend.example bash start.sh
 ```
 
+`apiBase` must be an absolute `http://` or `https://` URL, optionally with a
+path prefix (`https://bioserver:8080` or `https://example.org/metamanifold`).
+A value with another scheme, a user name or password, a query string or a
+fragment is refused: the browser console says why, and the frontend stays on
+its own origin instead. Trailing slashes are dropped. Every API path the
+frontend requests is also checked to stay root-relative, with no `.` or `..`
+segments, before it is joined to `apiBase`.
+
 The server accepts browser requests from its own origin (`http://localhost:<port>`
 and `http://127.0.0.1:<port>`), from the Vite dev server (`localhost:5173`), and
 from the origins listed in `JULIA_METAMANIFOLD_ALLOWED_ORIGINS`, separated by
@@ -1061,7 +1069,19 @@ julia --project=. test/runtests.jl --integration    # adds the MiSeq SOP pipelin
 julia --project=. test/runtests.jl --server         # adds the HTTP server smoke tests
 ```
 
-Set `CI_SKIP_TAXONOMY=1` to skip taxonomy assignment in the integration run. The full suite loads R and every package and needs several GB of memory; on a small machine run a few files at a time. `cd frontend && bun run test` runs the frontend unit tests.
+Set `CI_SKIP_TAXONOMY=1` to skip taxonomy assignment in the integration run. The full suite loads R and every package and needs several GB of memory; on a small machine run a few files at a time.
+
+The frontend is built and tested with the bun pinned in `config/defaults/tool_versions.yml` (1.3.10):
+
+```bash
+cd frontend
+bun install --frozen-lockfile
+bun run test        # unit tests
+bun run typecheck   # tsc --noEmit
+bun run build       # tsc and the production bundle
+```
+
+`bash scripts/lint-sonar-reliability.sh` reproduces locally the SonarCloud rules that have failed the required check; [docs/sonar-quality-gate.md](docs/sonar-quality-gate.md) explains the gate.
 
 Name unit test files to run only those: `julia --project=. test/runtests.jl routes trees`. `dev/dev.sh` runs the development server, rebuilds and tests one job at a time, stopping and restarting the server around builds and tests (`dev/dev.sh` alone lists its commands). Deferred work is listed in `dev/TODO.md`.
 

@@ -125,6 +125,14 @@ machine-readable source of truth is `config/defaults/validated_statistics.kyaml`
 limits differ from the constants the code enforces. See
 [docs/statistics/method-catalogue-v1.md](docs/statistics/method-catalogue-v1.md).
 
+The `approved` status here records the fork owner's approval of the
+catalogue's *scope* (fork issue #1, 2026-09-22); it is not the independent
+statistical review that issue #1 still lists as an open gate. The upstream
+proposals of this work (JoshuaJewell/MetaManifold-WebUI #69, and #72 for the
+high-precision part, both unmerged) carry their catalogue as `pending_review`
+and refuse any other status until upstream records its own review. See
+[docs/release-notes/2026-11-13-current-state.md](docs/release-notes/2026-11-13-current-state.md).
+
 ## Julia-rendered statistics page
 
 `GET /statistics` and `POST /statistics` are a server-rendered, JavaScript-free

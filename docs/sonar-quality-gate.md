@@ -147,6 +147,27 @@ never left in `/usr/share/keyrings`. `wget` has no equivalent spelling of
 into `scripts/ci/install-r-runtime.sh` also removed the duplicate copy that
 made the same finding appear twice.
 
+## The 25 findings open on `main` in November 2026
+
+On 2026-11-13 SonarCloud listed 25 unresolved findings on `main`: 3
+vulnerabilities and 22 bugs. The gate was green throughout, because every one
+was older than the three-day new-code window; they lowered the overall
+reliability and security ratings to C without failing any check. Each was fixed
+in the code, not suppressed, except the R finding, which is not a defect.
+
+| Rule | Kind | Where | Fix |
+| --- | --- | --- | --- |
+| `tssecurity:S5144`, `tssecurity:S8476` | vulnerability | `frontend/src/api/client.ts` (`fetch`) | `config.json`'s `apiBase` flowed unchecked into every request. It is now parsed by `normaliseApiBase` in `frontend/src/api/apiBase.ts` (absolute `http(s)` only; no credentials, query or fragment) and a refused value falls back to same-origin. `apiUrl` also checks each path with `checkApiPath` (root-relative, no `.`/`..` segments, no backslash or control character). Tested in `apiBase.test.ts`. Its error messages are fixed text, so logging a refusal does not echo the refused value (`tssecurity:S5145`, log injection, which an earlier version of the fix introduced). |
+| `tssecurity:S8480` | vulnerability | `frontend/src/api/events.ts` (`EventSource`) | The same `apiBase` flow; fixed by the same validation. |
+| `typescript:S9383` (13) | bug | `main.tsx`, `PlotlyChart.tsx` ×2, `PipelineStages.tsx` ×4, `PlacementPanel.tsx` ×2, `FigureBuilder.tsx` ×2, `TablesPanel.tsx`, `phylogeny/common.tsx`, `phylogeny/qc.tsx` | Each floating promise is awaited or ends in a `.catch` that shows the error (toast, inline message, or the start-up page). Two were real defects: a failed alignment load left "Loading…" on screen for ever, and a failed start-up left a blank page. |
+| `typescript:S1082` (6) | bug | `Layout.tsx`, `NameDialog.tsx`, `FigureEditor.tsx`, `ColumnDropdown.tsx`, `NumericFilter.tsx`, `TablesPanel.tsx` | Copy-on-click values and the figure group selector are now `<button>`s. The filter dropdown has no handlers of its own: the header cell sorts only on clicks aimed at itself, and a document listener closes the dropdown on Escape or an outside press. The name dialog closes the same way; the menu backdrop is decorative (`aria-hidden`), with Escape and the Menu button as its keyboard path. (A first attempt with `role="dialog"`/`role="presentation"` traded these bugs for `S6819`/`S6847` code smells.) |
+| `typescript:S6959` | bug | `frontend/src/tree/model.ts` | `reduce()` given an initial value; result unchanged (the list always has two or more entries), pinned by a test in `model.test.ts`. |
+| `rdre:S1145` | bug | `R/_renv_dependencies.R` | **Not changed.** The `if (FALSE)` block exists so that renv's implicit snapshot finds the `library()` calls and keeps those packages in `renv.lock`; removing it would drop them. The file now says so. In SonarCloud it should be resolved as *Won't fix* with that reason, which is a SonarCloud UI action. |
+
+None of these rules is in `scripts/lint-sonar-reliability.sh`. That is
+deliberate, per the rule below: these findings did not fail the required check,
+and the guard covers the rules that have.
+
 ## Reproducing it locally
 
 ```

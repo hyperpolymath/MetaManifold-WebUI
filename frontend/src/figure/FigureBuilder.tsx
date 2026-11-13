@@ -49,7 +49,7 @@ export function FigureBuilder({ study, runs, source }: {
     } catch (e) { toast.error(`Could not open the figure: ${errorMessage(e)}`) }
   }
   useEffect(() => {
-    if (list && list.length && !doc && openRequest.current === 0) open(list[0].id)
+    if (list && list.length && !doc && openRequest.current === 0) open(list[0].id).catch(e => toast.error(errorMessage(e)))
   }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const change = (next: FigureDoc) => {
@@ -67,7 +67,7 @@ export function FigureBuilder({ study, runs, source }: {
       setDoc(null)
       const next = await api.figures.list(study)
       setList(next)
-      if (next.length) open(next[0].id)
+      if (next.length) await open(next[0].id)
     } catch (e) { toast.error(`Delete failed: ${errorMessage(e)}`) }
   }
 

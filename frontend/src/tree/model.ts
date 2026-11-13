@@ -593,7 +593,7 @@ export function buildDisplay(ix: TreeIndex, st: ViewState, support: Map<string, 
   for (const [split, list] of carriers) {
     if (list.length < 2) continue
     const side = st.nameSides.get(`split:${split}`)
-    const owner = list.find(d => d.clade === side) ?? list.reduce((a, b) => (b.tips < a.tips ? b : a))
+    const owner = list.find(d => d.clade === side) ?? list.reduce((a, b) => (b.tips < a.tips ? b : a), list[0])
     for (const d of list) if (d !== owner) { d.name = ''; d.support = null }
   }
   // Styles resolve top-down: a node's own style overrides what it inherits.

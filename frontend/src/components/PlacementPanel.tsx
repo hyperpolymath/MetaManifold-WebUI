@@ -75,7 +75,7 @@ export function PlacementPanel({ study, runs, onPublished }: {
     open(id)
   }
   useEffect(() => {
-    if (list?.length && !detail && opened.current === 0) choose(list[0].id)
+    if (list?.length && !detail && opened.current === 0) choose(list[0].id).catch(e => toast.error(errorMessage(e)))
   }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const doc = detail?.doc
@@ -103,7 +103,7 @@ export function PlacementPanel({ study, runs, onPublished }: {
 
   const remove = async () => {
     if (!doc || !window.confirm(`Delete the placement "${doc.name}" and its working files? Trees already in the list below are kept.`)) return
-    try { await api.placements.remove(study, doc.id); await refresh(); choose(null) } catch (e) { toast.error(errorMessage(e)) }
+    try { await api.placements.remove(study, doc.id); await refresh(); await choose(null) } catch (e) { toast.error(errorMessage(e)) }
   }
 
   const loadLog = useCallback((step: PhyloStep) => doc ? api.placements.log(study, doc.id, step) : Promise.resolve(null), [study, doc?.id]) // eslint-disable-line react-hooks/exhaustive-deps

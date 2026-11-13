@@ -39,12 +39,20 @@ export function ColumnDropdown({ column, distinctFetcher, activeFilters, keyword
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
+    // Escape closes, as an outside click does.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [onClose])
 
   return (
-    <div ref={ref} className={styles.dropdown} onClick={e => e.stopPropagation()}>
+    // The header cell sorts only on clicks aimed at the cell itself, so clicks
+    // in here need no stopPropagation.
+    <div ref={ref} className={styles.dropdown}>
       <label className={styles.dropdownItem} style={{ borderBottom: '1px solid var(--color-border)', paddingTop: 6, paddingBottom: 6 }}>
         <input type="checkbox" checked={isSticky} onChange={onToggleSticky} />
         <span style={{ fontWeight: 600, fontSize: '.78rem' }}>Sticky column</span>
