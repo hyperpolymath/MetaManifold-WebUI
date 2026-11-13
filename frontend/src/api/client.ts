@@ -29,7 +29,9 @@ import type {
 
 import type { FigureDoc } from '../figure/types'
 import { saveBlob } from '../utils/download'
+import { errorMessage } from './errorMessage'
 import { ijsonJcsStringify } from './ijsonJcs'
+import { joinApiUrl, normaliseApiBase } from './apiBase'
 
 // Base URL for the backend API. Empty string means same-origin.
 // Set "apiBase" in config.json (e.g. "https://bioserver:8080") for split deployments.
@@ -37,20 +39,31 @@ let _apiBase = ''
 
 /** Called once at startup from main.tsx to load runtime config. */
 export async function loadConfig(): Promise<void> {
+  let raw: unknown
   try {
     const res = await fetch('/config.json')
-    if (res.ok) {
-      const cfg = await res.json()
-      _apiBase = (cfg.apiBase as string ?? '').replace(/\/+$/, '')
-    }
+    if (!res.ok) return
+    const cfg = await res.json()
+    raw = cfg?.apiBase
   } catch {
-    // Missing or malformed config.json - default to same-origin
+    return // Missing or malformed config.json - default to same-origin
+  }
+  try {
+    _apiBase = normaliseApiBase(raw)
+  } catch (e) {
+    // A refused apiBase falls back to same-origin rather than to the bad value.
+    _apiBase = ''
+    console.error(`config.json apiBase ignored, using the same origin: ${errorMessage(e)}`)
   }
 }
 
-/** Prepend the API base to a path that starts with "/" */
+/**
+ * Prepend the API base to a root-relative path. The base was validated when
+ * config.json was read; the path is checked here, and a path that would leave
+ * the API's own path space throws instead of being requested.
+ */
 export function apiUrl(path: string): string {
-  return _apiBase ? `${_apiBase}${path}` : path
+  return joinApiUrl(_apiBase, path)
 }
 
 async function rawPost(path: string, body: unknown): Promise<Response> {
