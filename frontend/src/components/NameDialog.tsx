@@ -55,6 +55,9 @@ export function NameDialog({ title, initialValue = '', placeholder = 'Name', onC
         background: 'rgba(0,0,0,.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
+      // Presentational backdrop (not aria-hidden: that would hide the dialog
+      // inside it). Clicking it closes; keyboard users have Escape in the dialog.
+      role="presentation"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={onKeyDown} style={{

@@ -316,11 +316,13 @@ export function FigureEditor({ study, runs, source, doc, onChange }: {
               }}>Add group</button>
             </div>
             {doc.groups.map((g, i) => (
-              <div key={g.id} className={`${styles.groupRow} ${i === sel.group ? styles.selected : ''}`}
-                onClick={() => setSel({ group: i, pane: null })}>
-                <strong style={{ minWidth: 18 }}>{geo.groups[i].letter}</strong>
-                <span>{g.rows} × {g.cols}</span>
-                <span className={styles.spacer} />
+              <div key={g.id} className={`${styles.groupRow} ${i === sel.group ? styles.selected : ''}`}>
+                <button type="button" className={styles.groupSelect} aria-pressed={i === sel.group}
+                  aria-label={`Select group ${geo.groups[i].letter}, ${g.rows} by ${g.cols}`}
+                  onClick={() => setSel({ group: i, pane: null })}>
+                  <strong style={{ minWidth: 18 }}>{geo.groups[i].letter}</strong>
+                  <span>{g.rows} × {g.cols}</span>
+                </button>
                 <button className="btn btn-sm" aria-label="Move group up" disabled={i === 0}
                   onClick={e => { e.stopPropagation(); moveGroup(i, -1) }}>↑</button>
                 <button className="btn btn-sm" aria-label="Move group down" disabled={i === doc.groups.length - 1}

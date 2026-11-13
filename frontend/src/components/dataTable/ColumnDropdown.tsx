@@ -44,7 +44,11 @@ export function ColumnDropdown({ column, distinctFetcher, activeFilters, keyword
   }, [onClose])
 
   return (
-    <div ref={ref} className={styles.dropdown} onClick={e => e.stopPropagation()}>
+    // Clicks inside must not reach the header cell, which sorts on click;
+    // Escape closes, as an outside click does.
+    <div ref={ref} className={styles.dropdown} role="dialog" aria-label={`Filter ${column}`}
+      onClick={e => e.stopPropagation()}
+      onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }}>
       <label className={styles.dropdownItem} style={{ borderBottom: '1px solid var(--color-border)', paddingTop: 6, paddingBottom: 6 }}>
         <input type="checkbox" checked={isSticky} onChange={onToggleSticky} />
         <span style={{ fontWeight: 600, fontSize: '.78rem' }}>Sticky column</span>

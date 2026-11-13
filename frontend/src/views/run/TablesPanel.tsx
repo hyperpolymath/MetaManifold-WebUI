@@ -207,9 +207,10 @@ export function TablesPanel({ study, run, group, tables, onTablesChanged, cacheK
           navigator.clipboard?.writeText(String(v)).then(() => toast.info('Copied')).catch(() => {})
         }
         const N = ({ v, raw }: { v: string | number; raw?: string | number }) => (
-          <strong onClick={copy(raw ?? v)} style={{ color: 'var(--color-fg)', cursor: 'pointer' }} title="Click to copy">
+          <button type="button" onClick={copy(raw ?? v)} title="Click to copy"
+            style={{ font: 'inherit', fontWeight: 700, color: 'var(--color-fg)', cursor: 'pointer', background: 'none', border: 0, padding: 0 }}>
             {typeof v === 'number' ? v.toLocaleString() : v}
-          </strong>
+          </button>
         )
         const fmt = (n: number) => n.toLocaleString()
         const s = liveStats
