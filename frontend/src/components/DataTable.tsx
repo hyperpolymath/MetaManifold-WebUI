@@ -517,7 +517,7 @@ export function DataTable({ fetcher, refreshKey, storageKey, distinctFetcher, ro
                     return (
                       <th key={c} className={styles.sortable}
                         aria-sort={sortBy === c ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
-                        onClick={() => handleSort(c)}
+                        onClick={e => { if (e.target === e.currentTarget) handleSort(c) }}
                         style={stickyStyle}>
                         <button type="button" className={styles.headerLabel}
                           onClick={e => { e.stopPropagation(); handleSort(c) }}>

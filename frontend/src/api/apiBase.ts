@@ -14,7 +14,8 @@
  * fragment; an optional path prefix is kept, with dot segments resolved and
  * trailing slashes removed. Anything else is refused with a `TypeError`, so a
  * malformed or hostile config.json cannot point requests at another scheme or
- * smuggle userinfo into the URL.
+ * smuggle userinfo into the URL. The messages are fixed text and never repeat
+ * the refused value, so logging them cannot inject into the log.
  */
 export function normaliseApiBase(raw: unknown): string {
   if (raw === undefined || raw === null) return ''
@@ -25,14 +26,14 @@ export function normaliseApiBase(raw: unknown): string {
   try {
     url = new URL(text)
   } catch {
-    throw new TypeError(`apiBase is not an absolute URL: ${text}`)
+    throw new TypeError('apiBase is not an absolute URL')
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new TypeError(`apiBase must use http or https, not ${url.protocol}`)
+    throw new TypeError('apiBase must use http or https')
   }
   if (url.username !== '' || url.password !== '') throw new TypeError('apiBase must not carry credentials')
   if (url.search !== '' || url.hash !== '') throw new TypeError('apiBase must not carry a query or fragment')
-  return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`
+  return `${url.protocol}//${url.host}${trimTrailingSlashes(url.pathname)}`
 }
 
 /**
@@ -59,6 +60,12 @@ export function checkApiPath(path: string): string {
 export function joinApiUrl(base: string, path: string): string {
   const checked = checkApiPath(path)
   return base ? `${base}${checked}` : checked
+}
+
+function trimTrailingSlashes(s: string): string {
+  let end = s.length
+  while (end > 0 && s[end - 1] === '/') end--
+  return s.slice(0, end)
 }
 
 function hasDotSegment(pathname: string): boolean {

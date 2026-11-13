@@ -696,7 +696,10 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
             min={typeHint.kind === 'float' ? typeHint.min : undefined}
             max={typeHint.kind === 'float' ? typeHint.max : undefined}
             onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') saveDraft(); if (e.key === 'Escape') setEditing(false) }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') saveDraft()
+              else if (e.key === 'Escape') setEditing(false)
+            }}
             autoFocus disabled={saving}
           />
         ) : (
@@ -705,7 +708,10 @@ function StageConfigField({ dottedKey, leafKey, value, source, study, run, group
             style={{ flex: 1, fontFamily: 'monospace', fontSize: '.78rem', padding: '2px 6px', border: '1px solid var(--color-border)', borderRadius: 3 }}
             value={draft}
             onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') saveDraft(); if (e.key === 'Escape') setEditing(false) }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') saveDraft()
+              else if (e.key === 'Escape') setEditing(false)
+            }}
             autoFocus disabled={saving}
           />
         )}

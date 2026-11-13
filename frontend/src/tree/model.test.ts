@@ -199,7 +199,7 @@ describe('a root placed on a branch', () => {
     const ix = indexTree(parseNewick(newick))
     const d = buildDisplay(ix, foldOps([]), ix.supportBySplit)
     const carriers = d.nodes.filter(n => n.tipKey === null && n.parent === d.nodes.find(r => r.parent === null))
-    expect(carriers.length).toBe(2)
+    expect(carriers).toHaveLength(2)
     expect(new Set(carriers.map(n => n.split)).size).toBe(1)
     const withSupport = carriers.filter(n => n.support !== null)
     expect(withSupport.map(n => n.tips)).toEqual([2])
