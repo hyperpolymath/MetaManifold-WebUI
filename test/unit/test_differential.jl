@@ -10,6 +10,7 @@
 using MetaManifold
 using MetaManifold.Differential
 using RCall
+using Random
 using Test
 using DuckDB, DBInterface, JSON3
 
@@ -179,7 +180,10 @@ end
         @test DifferentialConfig().method == "nb_glm"
         @test DifferentialConfig().replacement_delta == 0.65
         @test DifferentialConfig(; method="clr_welch", replacement_delta=0.3).replacement_delta == 0.3
-        @test_throws ArgumentError DifferentialConfig(; method="ancombc")
+        @test DifferentialConfig(; method="aldex2").method == "aldex2"
+        @test_throws ArgumentError DifferentialConfig(; method="aldex2", dispersion="glmGamPoi")
+        @test_throws ArgumentError DifferentialConfig(; method="aldex2", mc_samples=1)
+        @test_throws ArgumentError DifferentialConfig(; method="aldex2", seed=-1)
         # The pre-review name, never released, is not accepted.
         @test_throws ArgumentError DifferentialConfig(; method="clr_lm")
         # The dispersion option: glm_nb is the default and keeps nb_glm's
@@ -590,7 +594,18 @@ end
         @test !isnothing(SV._config_value_error("analysis.differential.offset", "css"))
         @test isnothing(SV._config_value_error("analysis.differential.min_prevalence", 0.1))
         @test isnothing(SV._config_value_error("analysis.differential.method", "clr_welch"))
+        @test isnothing(SV._config_value_error("analysis.differential.method", "aldex2"))
         @test !isnothing(SV._config_value_error("analysis.differential.method", "ancombc"))
+        @test !isnothing(SV._config_value_error("analysis.differential.method", "unknown"))
+        for (key, valid, invalid) in (("analysis.differential.mc_samples", (2, 128, 4096), (0, 1, 4097, 2.5, true, "128")),
+                                      ("analysis.differential.seed", (0, 17, typemax(Int32)), (-1, 1.5, true, "17", Int64(typemax(Int32))+1)))
+            for v in valid
+                @test isnothing(SV._config_value_error(key, v))
+            end
+            for v in invalid
+                @test !isnothing(SV._config_value_error(key, v))
+            end
+        end
         # Like every other enum key, the config route takes exact spellings.
         for dispersion in ("glm_nb", "glmGamPoi")
             @test isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
@@ -887,6 +902,71 @@ end
 
             r = _da_post("noSuchStudy", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")]))
             @test r.status == 404
+        end
+    end
+
+    @testset "Native configuration boundary fuzz" begin
+        rng = MersenneTwister(23)
+        SV = MetaManifold.Server
+        for _ in 1:256
+            mc = rand(rng, -128:4352)
+            seed = rand(rng, (-1, 0, 1, 17, Int64(typemax(Int32)), Int64(typemax(Int32)) + 1))
+            @test isnothing(SV._config_value_error("analysis.differential.mc_samples", mc)) == (2 <= mc <= 4096)
+            @test isnothing(SV._config_value_error("analysis.differential.seed", seed)) == (0 <= seed <= typemax(Int32))
+            if 2 <= mc <= 4096 && 0 <= seed <= typemax(Int32)
+                config = DifferentialConfig(; method="aldex2", mc_samples=mc, seed)
+                @test config.mc_samples == mc && config.seed == seed
+            else
+                @test_throws ArgumentError DifferentialConfig(; method="aldex2", mc_samples=mc, seed)
+            end
+        end
+        for invalid in (NaN, Inf, -Inf, nothing, missing, [], Dict(), true, false, "128", 2.5)
+            @test !isnothing(SV._config_value_error("analysis.differential.mc_samples", invalid))
+            @test !isnothing(SV._config_value_error("analysis.differential.seed", invalid))
+        end
+    end
+
+    @testset "Route: native method override and input refusal" begin
+        _da_fixture() do
+            request = Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                           "table" => "merged", "rank" => "Genus", "method" => "aldex2")
+            # The override is spelled and case-folded like the config key.
+            for method in ("unknown", "ancombc", 42, true, false, [], Dict())
+                r = _da_post("studyD", merge(request, Dict("method" => method)))
+                @test r.status == 400
+                @test JSON3.read(String(r.body)).error == "invalid_config"
+            end
+            r = _da_post("studyD", request)
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            @test body.config.method == "aldex2"
+            @test body.effect.key == "estimate"
+            @test isempty(body.size_factors)
+            @test body.diagnostics.n_tested == 3
+            @test body.diagnostics.native_method.package == "CompositionalDA"
+            @test all(row -> row.log2_fold_change === nothing, body.rows)
+            for method in ("ALDEX2", " aldex2 ")
+                r = _da_post("studyD", merge(request, Dict("method" => method)))
+                @test r.status == 200
+                @test JSON3.read(String(r.body)).config.method == "aldex2"
+            end
+        end
+    end
+
+    @testset "Route: native method refusal of a one-sample group" begin
+        _da_fixture() do
+            # Read totals per sample are 85, 93, 86, 90 (runA) and 73, 92, 73, 96
+            # (runB); a minimum of 91 keeps one sample of runA and two of runB.
+            # The package refuses a group of one sample; the route reports that
+            # as invalid input, like every other unusable input.
+            request = Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                           "table" => "merged", "rank" => "Genus", "method" => "aldex2",
+                           "sampleReads" => Dict("min" => 91))
+            r = _da_post("studyD", request)
+            body = JSON3.read(String(r.body))
+            @test r.status == 400
+            @test body.error == "invalid_input"
+            @test occursin("each group needs at least two samples", body.message)
         end
     end
 

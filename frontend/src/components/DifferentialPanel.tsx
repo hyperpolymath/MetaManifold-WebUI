@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { errorMessage } from '../api/errorMessage'
 import { useToast } from './Toast'
-import type { ComparisonRunSpec, DifferentialResult } from '../api/types'
+import type { ComparisonRunSpec, DifferentialMethod, DifferentialResult } from '../api/types'
 import { sharedRanks } from './sharedRanks'
 import type { AnalysisOption } from './annotationShared'
 import { AnalysisChart } from './AnalysisChart'
@@ -41,6 +41,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
   const [ranksReady, setRanksReady] = useState(false)
   const [ranksError, setRanksError] = useState<string | null>(null)
   const [result, setResult] = useState<DifferentialResult | null>(null)
+  const [method, setMethod] = useState<DifferentialMethod | ''>('')
   const [loading, setLoading] = useState(false)
   // Only the response to the latest request, for the current inputs, is shown.
   const request = useRef(0)
@@ -75,7 +76,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
     request.current++
     setResult(null)
     setLoading(false)
-  }, [study, runs, option?.table, rank, aggregate])
+  }, [study, runs, option?.table, rank, aggregate, method])
 
   /** Fit the model for the current inputs and show it, unless the inputs changed meanwhile. */
   const run = async () => {
@@ -83,7 +84,9 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
     const req = ++request.current
     setLoading(true)
     try {
-      const res = await api.analysis.differential(study, { runs, table: option.table, rank, aggregate })
+      const res = await api.analysis.differential(study, {
+        runs, table: option.table, rank, aggregate, ...(method ? { method } : {}),
+      })
       if (req === request.current) setResult(res)
     } catch (err) {
       if (req !== request.current) return
@@ -104,6 +107,13 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
         <button className="btn" onClick={run} disabled={loading || !option || !rank || runs.length !== 2}>
           {loading ? 'Fitting…' : 'Differential Abundance'}
         </button>
+        <select aria-label="Differential abundance method" value={method}
+          onChange={e => setMethod(e.target.value as DifferentialMethod | '')}>
+          <option value="">Study configuration</option>
+          <option value="nb_glm">Negative-binomial GLM</option>
+          <option value="clr_welch">CLR Welch test</option>
+          <option value="aldex2">ALDEx2</option>
+        </select>
         {ranks.length > 0 && (
           <select aria-label="Rank" value={rank} onChange={e => setRank(e.target.value)}
             style={{ font: 'inherit', padding: '1px 4px', verticalAlign: 'baseline' }}>
@@ -162,7 +172,7 @@ export function DifferentialPanel({ study, runs, option, aggregate }: {
                   {result.config.method === 'nb_glm' && <th style={head}>Estimate (ln)</th>}
                   <th style={head}>SE</th>
                   <th style={head}>p</th>
-                  <th style={head}>padj (BH)</th>
+                  <th style={head}>{result.config.method === 'aldex2' ? 'Expected BH' : 'padj (BH)'}</th>
                   <th style={{ ...head, textAlign: 'left' }}>Status</th>
                 </tr>
               </thead>

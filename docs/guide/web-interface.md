@@ -72,7 +72,8 @@ read-count bounds to the differential-abundance request, so those bounds do
 not exclude samples from this analysis.
 
 All `analysis.differential` options below (`method`, `offset`, `dispersion`,
-`min_prevalence` and `replacement_delta`) are resolved at study scope.
+`min_prevalence`, `replacement_delta`, `mc_samples` and `seed`) are resolved at
+study scope.
 Set them in the study configuration; group and run overrides are not used
 by this endpoint, including when called from a group Analysis workspace.
 
@@ -94,15 +95,28 @@ by this endpoint, including when called from a group Analysis workspace.
   replacement with `zCompositions::cmultRepl`. The effect is a CLR difference,
   not a fold change. `replacement_delta` controls the replacement fraction
   (default 0.65); `offset` is not used.
+- `aldex2`: the native Julia ALDEx2 estimator from the `CompositionalDA`
+  package, on raw counts with no R session involved. It draws Dirichlet
+  posterior instances (`mc_samples`, default 128, and `seed`, default 1, control
+  the draws), tests each with Welch's t-test and keeps ALDEx2's expected
+  within-instance Benjamini–Hochberg values as `padj`. They are not adjusted a
+  second time. The effect is a log2 CLR difference, not a fold change. The
+  result also carries ALDEx2's standardised `effect`, `diff.win`, `rab.all` and
+  Wilcoxon columns. A given `seed` reproduces a result exactly, but its draws are not
+  those of R's random stream, so a result matches the R package's only up to
+  Monte Carlo variation. The method needs at least two taxa with reads after
+  the `min_prevalence` filter.
 
-For either method, `min_prevalence` (default 0) filters taxa by the fraction of
-samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
-that produced a p-value. Failed or filtered taxa have no substitute p-value;
-inspect their status and note in the results table. Invalid input or an
-unavailable required R package produces an explicit error.
+For every method, `min_prevalence` (default 0) filters taxa by the fraction of
+samples with nonzero counts. For `nb_glm` and `clr_welch`, Benjamini–Hochberg
+adjustment includes only taxa that produced a p-value. Failed or filtered taxa
+have no substitute p-value; inspect their status and note in the results table.
+Invalid input or an unavailable required R package (`MASS`, `zCompositions` or
+`glmGamPoi`) produces an explicit error.
 
 Implementation and reference tests: `src/analysis/differential.jl`,
-`src/server/routes/analysis.jl`, and `test/unit/test_differential.jl`.
+`src/server/routes/analysis.jl`, `test/unit/test_differential.jl` and
+`test/unit/test_differential_native.jl`.
 
 ### Figures and report
 
