@@ -3,7 +3,15 @@
 
 # Upstream PR package: native differential estimators
 
-Status: **written here first, not yet sent.** These are the documents the
+> **Update, 2026-11-13.** Upstream #70 is open as a **draft**. It waits on
+> `CompositionalDA` being registered in the Julia General registry
+> ([JuliaRegistries/General#175952](https://github.com/JuliaRegistries/General/pull/175952),
+> open on that date with its AutoMerge checks passed and the three-day waiting
+> period running). The text below is the package as first prepared and is kept
+> as the record; current state is in
+> [docs/release-notes/2026-11-13-current-state.md](../../release-notes/2026-11-13-current-state.md).
+
+Status when written: **written here first, not yet sent.** These are the documents the
 upstream pull request
 [JoshuaJewell/MetaManifold-WebUI#70](https://github.com/JoshuaJewell/MetaManifold-WebUI/pull/70)
 needs, produced and reviewed in this repository before anything is posted. The
