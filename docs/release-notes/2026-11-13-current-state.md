@@ -130,7 +130,10 @@ tested. None of these is a claim that the code is wrong.
 - `config.json`'s `apiBase` is now validated before use; see README,
   "Split deployment".
 - This page, the README, the Sonar page, the sync note, the #70 package and
-  the wiki's status pages were brought up to date with the above.
+  `VALIDATED_STATISTICS.md` were brought up to date with the above. Matching
+  edits to the wiki's status, testing and operator pages were prepared as a
+  patch on the pull request that adds this page; the wiki itself is unchanged
+  until that patch is applied.
 
 Agents wrote this change and these pages. The person answering for them is
 Jonathan D. A. Jewell (The Open University).
