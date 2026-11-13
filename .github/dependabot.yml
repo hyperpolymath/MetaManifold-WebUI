@@ -21,9 +21,12 @@ updates:
     # first would show red for the wrong reason. Rebasing makes the freshness
     # check mean what it says: red here is a conflict that needs a person.
     rebase-strategy: auto
-  # Dependabot's npm ecosystem supports bun.lock. Julia and R pins remain
-  # maintainer-reviewed in tool_versions.yml, Manifest.toml and renv.lock.
-  - package-ecosystem: npm
+  # The frontend is managed by Bun (frontend/bun.lock, no package-lock.json).
+  # Dependabot's npm_and_yarn ecosystem cannot update bun.lock and aborts the
+  # whole job ("misconfigured_tooling"), so this directory uses the bun
+  # ecosystem. Julia and R pins remain maintainer-reviewed in tool_versions.yml,
+  # Manifest.toml and renv.lock.
+  - package-ecosystem: bun
     directory: /frontend
     schedule:
       interval: weekly
