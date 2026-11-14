@@ -39,7 +39,7 @@ jobs:
         timeout-minutes: 10
         run: |
           rm -f Manifest.toml
-          julia --project=. -e 'import Pkg; Pkg.resolve(); Pkg.instantiate()'
+          julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
       - name: Report what moved
         run: |
