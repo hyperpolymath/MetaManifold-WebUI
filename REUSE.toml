@@ -34,3 +34,24 @@ path = "data/MiSeq_SOP/**/*.fastq.gz"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2019 Patrick D. Schloss"
 SPDX-License-Identifier = "CC-BY-4.0"
+
+# Synthetic count tables, written by test/fixtures/native_da/make_counts.jl
+# (MersenneTwister seeds 2026 and 2027). Generated data with planted differences and no biological
+# meaning; counts_zeros.tsv adds structural and chance zeros.
+[[annotations]]
+path = ["test/fixtures/native_da/counts.tsv", "test/fixtures/native_da/counts_zeros.tsv"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>"
+SPDX-License-Identifier = "CC0-1.0"
+
+# Output of the Bioconductor package ALDEx2 1.42.0 (Greg Gloor, Andrew
+# Fernandes, Jean Macklaim, Arianne Albert, Matt Links and others; licensed
+# GPL-3.0-or-later), run on counts.tsv and counts_zeros.tsv by
+# test/fixtures/native_da/generate_reference.jl. No ALDEx2 code is included.
+# The two reference_meta files record the R, Bioconductor and ALDEx2 versions,
+# the settings and the seeds.
+[[annotations]]
+path = ["test/fixtures/native_da/reference_aldex2.tsv", "test/fixtures/native_da/reference_meta.json", "test/fixtures/native_da/reference_aldex2_zeros.tsv", "test/fixtures/native_da/reference_meta_zeros.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>"
+SPDX-License-Identifier = "CC0-1.0"
