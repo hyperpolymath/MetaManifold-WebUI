@@ -3,7 +3,7 @@
 #
 name: Julia canary
 
-# Weekly check that the dependency set still resolves and precompiles when
+# Weekly check that the dependency set still resolves and installs when
 # Julia's package resolver is free to pick the newest compatible versions. The
 # committed Manifest.toml pins CI; this run deliberately ignores it, so drift
 # shows up here on a schedule instead of surprising the next pull request.
