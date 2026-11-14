@@ -161,6 +161,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false   # nothing here pushes
 
       # The required "SonarCloud Code Analysis" check is the GitHub App's
       # automatic analysis -- nothing in this repository configures or runs it,
@@ -304,6 +306,15 @@ jobs:
             renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-${{ hashFiles('renv.lock') }}-
             renv-${{ runner.os }}-R${{ env.R_APT_VERSION }}-
 
+      # SHA-512 of the cache contents before and after the install, so the save below
+      # is skipped when this run added nothing (the key is unique per run, so an
+      # unchanged cache would otherwise be uploaded again for no benefit).
+      - name: Hash the renv cache before the install
+        id: renv_before
+        run: |
+          sudo mkdir -p /opt/renv-cache
+          echo "hash=$(sudo find /opt/renv-cache -type f -print0 | LC_ALL=C sort -z | sudo xargs -0 -r sha512sum | sha512sum | cut -d" " -f1)" >> "$GITHUB_OUTPUT"
+
       # R_CLI_DYNAMIC and TERM make renv print progress one line at a time in the log.
       - name: Install R packages
         timeout-minutes: 25
@@ -331,8 +342,14 @@ jobs:
         if: always()
         run: sudo chmod -R a+rX /opt/renv-cache || true
 
-      - name: Save the renv cache
+      - name: Hash the renv cache after the install
+        id: renv_after
         if: always()
+        run: |
+          echo "hash=$(sudo find /opt/renv-cache -type f -print0 | LC_ALL=C sort -z | sudo xargs -0 -r sha512sum | sha512sum | cut -d" " -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Save the renv cache
+        if: always() && steps.renv_after.outputs.hash != steps.renv_before.outputs.hash
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: /opt/renv-cache
@@ -580,6 +597,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false   # nothing here pushes
 
       - name: Set up Julia
         timeout-minutes: 10
@@ -739,6 +758,8 @@ jobs:
       AGDA_IMAGE: debian:trixie-20250929-slim@sha256:1caf1c703c8f7e15dcf2e7769b35000c764e6f50e4d7401c355fb0248f3ddfdb
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false   # nothing here pushes
 
       # A pass is memoised on its inputs: the proofs, the checker pins and the
       # invocation. Pull requests reuse a pass whose inputs are unchanged, which
@@ -869,6 +890,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false   # nothing here pushes
       - name: Install proof tools
         timeout-minutes: 10
         run: |

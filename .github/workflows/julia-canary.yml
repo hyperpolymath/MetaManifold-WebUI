@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+name: Julia canary
+
+# Weekly check that the dependency set still resolves and precompiles when
+# Julia's package resolver is free to pick the newest compatible versions. The
+# committed Manifest.toml pins CI; this run deliberately ignores it, so drift
+# shows up here on a schedule instead of surprising the next pull request.
+# It is not a required check and changes no ruleset.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: julia-canary
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    name: Julia dependency canary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false   # nothing here pushes
+
+      - name: Set up Julia
+        timeout-minutes: 10
+        run: bash scripts/install-ci-julia.sh
+
+      - name: Resolve without the Manifest
+        timeout-minutes: 10
+        run: |
+          rm -f Manifest.toml
+          julia --project=. -e 'import Pkg; Pkg.resolve(); Pkg.instantiate()'
+
+      - name: Report what moved
+        run: |
+          {
+            echo '### Julia canary'
+            echo
+            echo 'Newest compatible versions resolved without Manifest.toml. Outdated packages:'
+            echo
+            echo '```'
+            julia --project=. -e 'import Pkg; Pkg.status(outdated=true)' 2>&1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
