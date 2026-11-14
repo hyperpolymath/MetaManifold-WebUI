@@ -1,6 +1,7 @@
 // © 2026 Joshua Benjamin Jewell. All rights reserved.
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import Plotly from 'plotly.js-dist-min'
+import type { Data as PlotlyData, Layout as PlotlyLayout } from 'plotly.js'
 import { PX_PER_MM, PX_PER_PT, MM_PER_IN, figureGeometry, titlePt, type FigureDoc } from './types'
 import { layoutLegend, legendEntries, mergeEntries } from './legend'
 import type { PlotSpec } from './charts'
@@ -11,7 +12,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 /** Plotly's SVG of one pane. */
 async function paneSvg(fig: PlotSpec): Promise<SVGSVGElement> {
   const w = fig.layout.width as number, h = fig.layout.height as number
-  const url = await Plotly.toImage({ data: fig.data as Plotly.Data[], layout: fig.layout as Partial<Plotly.Layout> },
+  const url = await Plotly.toImage({ data: fig.data as PlotlyData[], layout: fig.layout as Partial<PlotlyLayout> },
                                    { format: 'svg', width: w, height: h })
   const text = decodeURIComponent(url.slice(url.indexOf(',') + 1))
   return new DOMParser().parseFromString(text, 'image/svg+xml').documentElement as unknown as SVGSVGElement

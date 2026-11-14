@@ -2,6 +2,7 @@
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Plotly from 'plotly.js-dist-min'
+import type { Data as PlotlyData } from 'plotly.js'
 import { api } from '../api/client'
 import { errorMessage } from '../api/errorMessage'
 import type { AnnotationSource, ComparisonRunSpec } from '../api/types'
@@ -89,7 +90,7 @@ function PanePlot({ study, pane, doc, showLegend, w, h, version, onEntries }: {
         if (cancelled) return
         const fig = paneFigure(raw, pane, doc, { showLegend, widthPx: w, heightPx: h })
         onEntries(legendEntries(fig))
-        return Plotly.react(el, fig.data as Plotly.Data[], fig.layout, { staticPlot: true, displayModeBar: false })
+        return Plotly.react(el, fig.data as PlotlyData[], fig.layout, { staticPlot: true, displayModeBar: false })
       })
       .catch(e => { if (!cancelled) setError(errorMessage(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
