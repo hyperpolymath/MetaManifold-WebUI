@@ -1,0 +1,13 @@
+sample	group	t1	t2	t3	t4	t5	t6	t7	t8	t9	t10
+control_1	control	26	65	239	82	3709	32	64	104	13	80
+control_2	control	19	13	253	75	2506	23	13	27	14	55
+control_3	control	27	37	298	90	3479	51	29	67	30	77
+control_4	control	15	38	362	71	3705	39	73	100	34	62
+control_5	control	19	30	204	110	3061	53	45	71	25	141
+control_6	control	30	21	260	82	2949	39	54	118	21	82
+treated_1	treated	47	56	32	37	1741	29	16	20	5	18
+treated_2	treated	77	109	61	54	3170	23	23	54	12	37
+treated_3	treated	170	137	93	86	2211	20	18	51	9	37
+treated_4	treated	194	128	118	111	4903	68	82	113	25	104
+treated_5	treated	132	182	77	61	1710	15	31	56	23	70
+treated_6	treated	82	106	36	46	1933	16	33	46	9	49

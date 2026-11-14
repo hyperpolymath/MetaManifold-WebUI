@@ -1,0 +1,46 @@
+{
+    "generated_by": "test/fixtures/native_da/generate_reference.jl",
+    "counts_file": "counts_zeros.tsv",
+    "versions": {
+        "r": "R version 4.5.0 (2025-04-11)",
+        "aldex2": "1.42.0",
+        "bioconductor": "3.22"
+    },
+    "julia": "1.12.5",
+    "call": "ALDEx2::aldex(reads, conds, mc.samples = 512, test = \"t\", effect = TRUE, denom = \"all\")",
+    "mc_samples": 512,
+    "primary_seed": 1,
+    "spread_seeds": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+    ],
+    "contrast": "treated vs control",
+    "counts_sha256": "709987e218f7038351e478242c8356a613b7ed8c180d9ba6e8ae2f7628329329",
+    "max_seed_to_seed_difference": {
+        "diff_win": 0.2857393414575915,
+        "wi_pvalue": 0.04785579004329005,
+        "diff_btw": 0.151863881744704,
+        "pvalue": 0.04162337181904768,
+        "rab_all": 0.3612183659517716,
+        "qvalue": 0.0537881088272647,
+        "effect": 0.2500819542182757,
+        "wi_qvalue": 0.05048572459286749
+    }
+}

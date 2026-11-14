@@ -55,6 +55,7 @@ const UNIT_FILES = [
     "test_determinism.jl",
     "test_differential.jl",
     "test_differential_native.jl",
+    "test_differential_native_reference.jl",
     "test_permanova.jl",
     "test_write_gates.jl",
     "test_server_security.jl",
