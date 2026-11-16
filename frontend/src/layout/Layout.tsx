@@ -16,6 +16,13 @@ export function Layout() {
   const { data: studies, refetch: refetchStudies } = useApi(api.studies.list)
   const [navOpen, setNavOpen] = useState(false)
   useEffect(() => { setNavOpen(false) }, [pathname])
+  // Escape closes the open menu: the keyboard counterpart of clicking the backdrop.
+  useEffect(() => {
+    if (!navOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNavOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [navOpen])
   const [runningJobIds, setRunningJobIds] = useState<Set<string>>(new Set())
 
   const jobBus = useMemo(() => createJobEventBus(), [])
@@ -136,7 +143,9 @@ export function Layout() {
         </div>
       </nav>
 
-      {navOpen && <div className="sidebar-backdrop" onClick={() => setNavOpen(false)} />}
+      {/* Decorative: pointer users click it to close the menu; keyboard and
+          assistive-technology users have the Menu button and Escape. */}
+      {navOpen && <div className="sidebar-backdrop" aria-hidden="true" onClick={() => setNavOpen(false)} />}
 
       <main className="main-content">
         <button className="btn btn-sm nav-toggle" aria-controls="sidebar" aria-expanded={navOpen}
