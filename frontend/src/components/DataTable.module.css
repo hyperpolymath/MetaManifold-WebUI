@@ -165,6 +165,11 @@
   color:      var(--color-muted-fg);
 }
 .statValue {
+  /* A <button>, so it is reachable by keyboard; drawn as inline text. */
+  appearance:    none;
+  border:        0;
+  background:    none;
+  font:          inherit;
   cursor:        pointer;
   border-radius: 3px;
   padding:       0 2px;

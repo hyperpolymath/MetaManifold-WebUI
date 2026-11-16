@@ -187,3 +187,21 @@ describe('single-child splicing', () => {
     expect(on('u2', 1).node).toBe(on('ab', 0.25).node)
   })
 })
+
+describe('a root placed on a branch', () => {
+  // Rooting on a branch gives the root two children that carry the same split.
+  // Its support must appear once, on the smaller side, whichever order the
+  // children come in. Covers the reduce() that picks that side.
+  test.each([
+    ['((A,B,C)90:1,(D,E)90:1);'],
+    ['((D,E)90:1,(A,B,C)90:1);'],
+  ])('support stays on the smaller side only: %s', newick => {
+    const ix = indexTree(parseNewick(newick))
+    const d = buildDisplay(ix, foldOps([]), ix.supportBySplit)
+    const carriers = d.nodes.filter(n => n.tipKey === null && n.parent === d.nodes.find(r => r.parent === null))
+    expect(carriers).toHaveLength(2)
+    expect(new Set(carriers.map(n => n.split)).size).toBe(1)
+    const withSupport = carriers.filter(n => n.support !== null)
+    expect(withSupport.map(n => n.tips)).toEqual([2])
+  })
+})
