@@ -7,9 +7,9 @@ import { flashCopy } from './copy'
 // A single numeric statistic; clicking it copies the raw (unformatted) value.
 function Stat({ value, fmt }: { value: number; fmt: (v: number) => string }) {
   return (
-    <span className={styles.statValue} onClick={flashCopy(String(value))} title="Click to copy">
+    <button type="button" className={styles.statValue} onClick={flashCopy(String(value))} title="Click to copy">
       {fmt(value)}
-    </span>
+    </button>
   )
 }
 

@@ -24,6 +24,15 @@ export function NameDialog({ title, initialValue = '', placeholder = 'Name', onC
     return () => { opener?.focus?.() }
   }, [])
 
+  // A press outside the dialog, on the backdrop, closes it.
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [onClose])
+
   // Escape closes; Tab stays inside the dialog.
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
@@ -55,7 +64,6 @@ export function NameDialog({ title, initialValue = '', placeholder = 'Name', onC
         background: 'rgba(0,0,0,.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={onKeyDown} style={{
         background: 'var(--color-bg)',

@@ -9,8 +9,9 @@ export default defineConfig({
     sourcemap:   false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          plotly: ['plotly.js-dist-min'],
+        // A function, because Rolldown (Vite 8) rejects the object form that Rollup accepts.
+        manualChunks(id: string) {
+          if (id.includes('/node_modules/plotly.js-dist-min/')) return 'plotly'
         },
       },
     },

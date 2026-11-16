@@ -2,6 +2,7 @@
 // Licensed under the GNU Affero General Public License version 3 (AGPLv3).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Plotly from 'plotly.js-dist-min'
+import type { Data as PlotlyData } from 'plotly.js'
 import { api } from '../api/client'
 import { errorMessage } from '../api/errorMessage'
 import type { AnnotationSource, ComparisonRunSpec } from '../api/types'
@@ -89,7 +90,7 @@ function PanePlot({ study, pane, doc, showLegend, w, h, version, onEntries }: {
         if (cancelled) return
         const fig = paneFigure(raw, pane, doc, { showLegend, widthPx: w, heightPx: h })
         onEntries(legendEntries(fig))
-        return Plotly.react(el, fig.data as Plotly.Data[], fig.layout, { staticPlot: true, displayModeBar: false })
+        return Plotly.react(el, fig.data as PlotlyData[], fig.layout, { staticPlot: true, displayModeBar: false })
       })
       .catch(e => { if (!cancelled) setError(errorMessage(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -316,11 +317,13 @@ export function FigureEditor({ study, runs, source, doc, onChange }: {
               }}>Add group</button>
             </div>
             {doc.groups.map((g, i) => (
-              <div key={g.id} className={`${styles.groupRow} ${i === sel.group ? styles.selected : ''}`}
-                onClick={() => setSel({ group: i, pane: null })}>
-                <strong style={{ minWidth: 18 }}>{geo.groups[i].letter}</strong>
-                <span>{g.rows} × {g.cols}</span>
-                <span className={styles.spacer} />
+              <div key={g.id} className={`${styles.groupRow} ${i === sel.group ? styles.selected : ''}`}>
+                <button type="button" className={styles.groupSelect} aria-pressed={i === sel.group}
+                  aria-label={`Select group ${geo.groups[i].letter}, ${g.rows} by ${g.cols}`}
+                  onClick={() => setSel({ group: i, pane: null })}>
+                  <strong style={{ minWidth: 18 }}>{geo.groups[i].letter}</strong>
+                  <span>{g.rows} × {g.cols}</span>
+                </button>
                 <button className="btn btn-sm" aria-label="Move group up" disabled={i === 0}
                   onClick={e => { e.stopPropagation(); moveGroup(i, -1) }}>↑</button>
                 <button className="btn btn-sm" aria-label="Move group down" disabled={i === doc.groups.length - 1}
