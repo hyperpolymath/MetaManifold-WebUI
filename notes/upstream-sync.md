@@ -75,3 +75,12 @@ than falling back.
 - #70's fork-only CI — which existed only to develop an unregistered package
   into the environment — was removed, because it made the branch unproposable
   upstream and cost it its coverage report.
+
+## Update, 2026-11-13
+
+The divergence above has not been resolved; no sync has been done. There are
+now five open upstream pull requests rather than three: #68, #69, #70 (draft,
+waiting on `CompositionalDA` in the General registry), #71 and #72 (draft, the
+high-precision extension split out of #69). None is merged. Their state, the
+two catalogues' review status, and the SonarCloud and Codecov numbers are in
+[docs/release-notes/2026-11-13-current-state.md](../docs/release-notes/2026-11-13-current-state.md).

@@ -29,5 +29,7 @@
     (history-scan ".github/workflows/secret-scanner.yml")
     (security-practices ".github/workflows/scorecard.yml")
     (fleet-enrolment ".gitbot-fleet/enrolment.json")
+    (current-state "docs/release-notes/2026-11-13-current-state.md: upstream PR states, catalogue review status, SonarCloud and Codecov results; dated, re-check before relying on it")
+    (sonar-gate "docs/sonar-quality-gate.md and scripts/lint-sonar-reliability.sh; fix findings in code, do not suppress them")
     (contractiles ".machine_readable/contractiles/")
     (scope "DEED syntax and K9 semantic conformance are validated separately: Yard-tier K9 contracts (must, trust, intend) are checked across L0-L2; L3 signatures remain outside CI.")))
