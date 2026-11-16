@@ -948,8 +948,8 @@ jobs:
         run: |
           set -euo pipefail
           summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
-          result() { jq -r --arg j "$1" '.[$j].result // "missing"' <<< "$NEEDS_JSON"; }
-          relevant() { jq -r --arg j "$1" '.[$j].outputs.relevant // "missing"' <<< "$NEEDS_JSON"; }
+          result() { local job="$1"; jq -r --arg j "$job" '.[$j].result // "missing"' <<< "$NEEDS_JSON"; }
+          relevant() { local job="$1"; jq -r --arg j "$job" '.[$j].outputs.relevant // "missing"' <<< "$NEEDS_JSON"; }
           failures=0
           total=0
           {
