@@ -922,3 +922,75 @@ jobs:
             exit 1
           fi
           echo 'The full Julia suite passed, including the two-thread vsearch experiment and fresh empirical grade validation.' >> "$GITHUB_STEP_SUMMARY"
+
+  # The account ruleset "Branch-Floor" requires a status check named exactly
+  # `CI/gate`. The check context is this job's `name:`, so it must stay a fixed
+  # string (no interpolation, no matrix). It waits for every other job in this
+  # workflow and runs even when one fails, is skipped or is cancelled.
+  #
+  # A job may be `skipped` only where this workflow skips it by design: the
+  # detector that governs it succeeded and reported `relevant == 'false'`.
+  # test, standards and agda are governed by `gate`; occupancy and disagreement
+  # by `occupancy_gate`. A job skipped while its detector failed, was cancelled
+  # or was itself skipped fails this gate, as does any failure, cancellation or
+  # missing/unknown result. Only `run:` shell is used: nothing here needs pinning.
+  ci-status:
+    name: CI/gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    needs: [gate, occupancy_gate, test, standards, agda, occupancy, disagreement]
+    if: always()
+    steps:
+      - name: Require every job to succeed, or to be skipped by design
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+          result() { local job="$1"; jq -r --arg j "$job" '.[$j].result // "missing"' <<< "$NEEDS_JSON"; }
+          relevant() { local job="$1"; jq -r --arg j "$job" '.[$j].outputs.relevant // "missing"' <<< "$NEEDS_JSON"; }
+          failures=0
+          total=0
+          {
+            echo '### CI/gate'
+            echo
+            echo 'Each result below is the aggregate result of that job. This workflow has no matrix jobs.'
+            echo
+            echo '| job | result | expected | verdict |'
+            echo '| --- | --- | --- | --- |'
+          } >> "$summary"
+          check() {
+            local job="$1" expected="$2" actual verdict=ok
+            actual="$(result "$job")"
+            total=$((total + 1))
+            if [[ "$actual" != "$expected" ]]; then
+              verdict=FAIL
+              failures=$((failures + 1))
+              echo "::error::$job result is '$actual', expected '$expected'"
+            fi
+            printf '%-16s %-10s expected %-8s %s\n' "$job" "$actual" "$expected" "$verdict"
+            echo "| $job | $actual | $expected | $verdict |" >> "$summary"
+          }
+          # What a detector-governed job must be: success when the detector
+          # (itself successful) says the change is relevant, skipped when it
+          # says it is not. Anything else, including a detector that did not
+          # succeed or reported no usable output, expects success and so fails.
+          expect_for() {
+            local detector="$1"
+            if [[ "$(result "$detector")" != success ]]; then echo success; return; fi
+            case "$(relevant "$detector")" in
+              true) echo success ;;
+              false) echo skipped ;;
+              *) echo success ;;
+            esac
+          }
+          check gate success
+          check occupancy_gate success
+          for job in test standards agda; do check "$job" "$(expect_for gate)"; done
+          for job in occupancy disagreement; do check "$job" "$(expect_for occupancy_gate)"; done
+          if [[ "$failures" -ne 0 ]]; then
+            echo "CI/gate FAILED: $failures of $total jobs not as expected." | tee -a "$summary"
+            exit 1
+          fi
+          echo "CI/gate passed: $total jobs checked; skipped only where the successful detector reported nothing relevant." | tee -a "$summary"
