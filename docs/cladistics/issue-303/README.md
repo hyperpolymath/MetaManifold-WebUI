@@ -465,6 +465,12 @@ julia WORK/scripts/06_tables.jl WORK amp pos neg
 julia WORK/scripts/08_by_depth.jl WORK
 ```
 
+The check that selection stops when a row loses a V4 base to column filtering:
+
+```bash
+julia docs/cladistics/issue-303/epa/test_select.jl
+```
+
 The drivers take optional trailing size arguments for a quick trial; without them they run the
 published sizes. `01_run.sh` takes the number of references (default 200), `02_tree.sh` the
 thread count (default 4), and `03_prep.jl` the number of queries. For experiment 9,
