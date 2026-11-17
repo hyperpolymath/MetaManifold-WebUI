@@ -35,7 +35,9 @@ application's own placement step (RAxML EPA) the picture is sharper and less saf
 2,388 entailed verdicts were right, with no error among 1,515 verdicts on clades of 50 or more
 references and 7 errors among 62 on clades of two or three. On a larger sample the smallest
 confident clade was wrong for 32 of 448 queries (7.1%), falling to 4 of 448 (0.9%) when the
-clade had to hold at least 64 of 399 references.
+clade had to hold at least 64 of 399 references. About two thirds of those errors were
+judged against a branch the reference tree does not itself support; where it is firm, 6 of
+155 queries were wrong.
 
 ## Data
 
@@ -338,6 +340,37 @@ sequence, placed the same way, was never wrong in 60 queries. The truth was itse
 from the whole sequence, so that control shows the machinery is sound; it does not show the
 reference tree is right at the finest depth.
 
+### 10. Placement error, or an uncertain reference tree? (`epa-depth/10_support.jl`)
+
+Experiment 9 judges each verdict against the reference tree built with the query's whole
+sequence. That tree is itself an estimate. The tree of the first draw carries
+ultrafast-bootstrap support on its branches: a median of 100, with 112 of its 397 internal
+branches below 95. For each reported clade, one branch of that tree backs the truth. If the
+truth says the query is inside the clade, it is the branch that holds the clade with the
+query. If the truth says it is outside, it is the branch that holds the clade without it. The
+support of that branch is the reference tree's own confidence in the truth for that verdict.
+The thresholds 95 and 70 were fixed before the tables were computed.
+
+First draw, 230 queries given a clade, wrong verdicts by the support of the truth branch:
+
+| Smallest entailed clade of at least | Support 95 or more (exact 95% interval) | Support below 95 |
+| --- | --- | --- |
+| 2 references | 6 of 155 (3.9%, 1.4 to 8.2) | 13 of 75 (17.3%, 9.6 to 27.8) |
+| 8 | 2 of 107 (1.9%, 0.2 to 6.6) | 8 of 123 (6.5%, 2.8 to 12.4) |
+| 32 | 1 of 69 (1.4%, 0.0 to 7.8) | 3 of 161 (1.9%, 0.4 to 5.3) |
+
+With no minimum size, 13 of the 19 wrong verdicts were judged against a branch the reference
+tree does not itself support at 95. The two errors on very large clades from this draw (357
+and 367 references) were against branches with support 62 and 65. The other 6 were against
+well-supported branches, 5 of them with support 100. Those are placement errors by the
+reference tree's own standard.
+
+What this shows: at the finest depth about two thirds of the measured error sits where the
+reference tree is itself unsure, and about one third is error against a well-supported
+branch. It splits experiment 9's error; it does not reduce it. In the first case the truth
+may be what is wrong, and in the second the placement is. Where the reference tree is firm,
+the smallest confident clade was wrong for 6 of 155 queries.
+
 ## Reading of the results
 
 - **Evidence on placements.** Experiments 7 and 8 are the positive real-data results. Verdicts
@@ -349,7 +382,10 @@ reference tree is right at the finest depth.
   smallest clades. Experiment 9 puts numbers on it: a minimum clade size trades error for
   resolution (7.1% of queries wrong with no minimum, 0.9% with a minimum of 64 references).
   A rule for the application needs that minimum or a better-calibrated mass. Neither has
-  been chosen, and no rule has been tested inside the application.
+  been chosen, and no rule has been tested inside the application. Experiment 10 adds that
+  the reference tree matters as much as the placement: most fine-depth errors fall on
+  branches the reference tree does not support, so showing a verdict only on supported
+  branches of the reference is a third option, also untested.
 - **Counting reads does not average this error away.** Each query in experiments 7 and 8 is
   one sequence. Reads from the same organism share that sequence, so if it is misplaced they
   are all misplaced together. The bound on wrongly counted reads that the counting rule
@@ -394,7 +430,10 @@ reference tree is right at the finest depth.
   200 references and 200 queries, one draw. Experiment 9 shares every limit of experiment 8
   except size: 400 references, two draws, 600 queries. The second draw's tree was built
   without bootstrap after the bootstrapped run exceeded 25 minutes; the bootstrap supports of
-  the first tree were saved and not analysed. Experiments 7 and 8 differ in the number of
+  the first tree are analysed in experiment 10. Experiment 10 uses that one tree and 230
+  queries. The support of one branch is a lower bound on the tree's confidence that a query
+  lies outside a clade, because the branch can fail in a bootstrap replicate for reasons
+  that do not involve the query. Experiments 7 and 8 differ in the number of
   references, the tree method, the source of the mass and the thresholds, so the difference
   between them is not the effect of the placement method alone. A cheaper agent ran the
   experiment; the tables were recomputed separately from its per-clade output.
@@ -502,6 +541,12 @@ julia "$WORK/scripts/06_tables.jl" new "$WORK/raw"
 
 ```bash
 julia "$WORK/scripts/08_crosscheck.jl" "$WORK/raw"
+```
+
+Experiment 10, on the first draw:
+
+```bash
+julia "$WORK/scripts/10_support.jl" "$WORK/A"
 ```
 
 The scripts use only Julia's standard library and fixed random seeds. `zoom_real.jl` carries its
