@@ -436,33 +436,37 @@ julia -O2 -t 4 docs/cladistics/issue-303/ceiling_real.jl /path/to/MiSeq_SOP
 julia -O2 -t 4 docs/cladistics/issue-303/placement_evidence.jl /path/to/silva.bacteria.fasta
 ```
 
-Experiment 8 needs `raxmlHPC-PTHREADS-SSE3` and `iqtree2` on the path. `WORK` is a directory
+Experiment 8 needs `raxmlHPC-PTHREADS-SSE3` and `iqtree2` on the path. `$WORK` is a directory
 of your choice, absolute or relative, and may contain spaces; the drivers resolve it to an
-absolute path and stop with a non-zero status if a stage fails. Copy `epa/` to `WORK/scripts`,
-then run its steps in order:
+absolute path and stop with a non-zero status if a stage fails. Set it once in the shell, copy
+`epa/` to `$WORK/scripts`, then run the steps in order:
 
 ```bash
-sh WORK/scripts/01_run.sh WORK /path/to/silva.bacteria.fasta
+WORK=/path/to/work
 ```
 
 ```bash
-sh WORK/scripts/02_tree.sh WORK
+sh "$WORK/scripts/01_run.sh" "$WORK" /path/to/silva.bacteria.fasta
 ```
 
 ```bash
-julia WORK/scripts/03_prep.jl WORK 200 7
+sh "$WORK/scripts/02_tree.sh" "$WORK"
 ```
 
 ```bash
-(set -e; for k in amp pos neg; do sh WORK/scripts/05_run_epa.sh WORK $k; julia WORK/scripts/04_score.jl WORK $k; done)
+julia "$WORK/scripts/03_prep.jl" "$WORK" 200 7
 ```
 
 ```bash
-julia WORK/scripts/06_tables.jl WORK amp pos neg
+(set -e; for k in amp pos neg; do sh "$WORK/scripts/05_run_epa.sh" "$WORK" $k; julia "$WORK/scripts/04_score.jl" "$WORK" $k; done)
 ```
 
 ```bash
-julia WORK/scripts/08_by_depth.jl WORK
+julia "$WORK/scripts/06_tables.jl" "$WORK" amp pos neg
+```
+
+```bash
+julia "$WORK/scripts/08_by_depth.jl" "$WORK"
 ```
 
 The check that selection stops when a row loses a V4 base to column filtering:
@@ -478,26 +482,26 @@ thread count (default 4), and `03_prep.jl` the number of queries. For experiment
 (default 1500) and the threads (default 4), and `run_rest.sh` takes the queries per draw
 (default 300) and the whole-sequence controls (default 60).
 
-Experiment 9: copy `epa/` and then `epa-depth/` over it to `WORK/scripts`, then:
+Experiment 9: copy `epa/` and then `epa-depth/` over it to `$WORK/scripts`, then:
 
 ```bash
-sh WORK/scripts/run_trees.sh WORK /path/to/silva.bacteria.fasta
+sh "$WORK/scripts/run_trees.sh" "$WORK" /path/to/silva.bacteria.fasta
 ```
 
 ```bash
-sh WORK/scripts/run_rest.sh WORK
+sh "$WORK/scripts/run_rest.sh" "$WORK"
 ```
 
 ```bash
-mkdir -p WORK/raw && (set -e; for t in "A amp" "A pos" "B amp"; do set -- $t; julia WORK/scripts/04_score.jl WORK/$1 $1 $2; done)
+mkdir -p "$WORK/raw" && (set -e; for t in "A amp" "A pos" "B amp"; do set -- $t; julia "$WORK/scripts/04_score.jl" "$WORK/$1" $1 $2; done)
 ```
 
 ```bash
-julia WORK/scripts/06_tables.jl new WORK/raw
+julia "$WORK/scripts/06_tables.jl" new "$WORK/raw"
 ```
 
 ```bash
-julia WORK/scripts/08_crosscheck.jl WORK/raw
+julia "$WORK/scripts/08_crosscheck.jl" "$WORK/raw"
 ```
 
 The scripts use only Julia's standard library and fixed random seeds. `zoom_real.jl` carries its
