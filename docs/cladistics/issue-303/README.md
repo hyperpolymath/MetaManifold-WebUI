@@ -30,7 +30,10 @@ tested reached 60%. An earlier reading of experiment 4, that zoomed-in views kee
 of well-supported branches, did not survive at 1,024 sequences (66%). Placing an amplicon-length
 fragment on a reference tree built from full-length sequences does work: clade verdicts from
 bootstrapped placements were right for 1,105 of 1,106 entailed and 57,116 of 57,128 refuted
-verdicts, and pin a read to a clade of median size 18 among 399 references.
+verdicts, and pin a read to a clade of median size 18 among 399 references. With the
+application's own placement step (RAxML EPA) the picture is sharper and less safe: 2,375 of
+2,388 entailed verdicts were right, with no error among 1,515 verdicts on clades of 50 or more
+references and 7 errors among 62 on clades of two or three.
 
 ## Data
 
@@ -203,15 +206,90 @@ control shows the score can fail. What it does not show is in the limits below.
 The counting rule that turns per-read verdicts into a per-sample verdict for a clade, with
 separate bounds for wrongly counted and missed reads, is proved in
 `metadatastician/MetaManifold-Evidence` (`agda/src/MetaManifold/Evidence/TwoSided.agda`,
-not yet merged there). It also proves that an entailed verdict survives zooming out to any
-enclosing clade and a refuted verdict survives zooming in.
+not yet merged there). It also proves two zoom laws, each under a premise on the bounds. An
+entailed verdict survives zooming out to an enclosing clade if the same bound on wrongly
+counted reads holds for the larger clade. A refuted verdict survives zooming in to a
+contained clade if that clade's bound on missed reads is no larger. An earlier version of
+this page stated both without their premises; containment alone is not enough for either.
+
+### 8. The application's own placement step (`epa/`)
+
+Experiment 7 placed by least squares. This repeats it with the command the application runs
+in its `place` step: `raxmlHPC-PTHREADS-SSE3 -f v -m GTRCATI -G 0.2` (RAxML 8.2.12). 200
+full-length sequences from the same SILVA alignment give a maximum-likelihood reference tree
+(IQ-TREE 2.0.7, GTR+G4). Each of the 200 in turn is pruned from the tree and its 240-base V4
+fragment is placed back. For every clade of the pruned tree, the mass is the sum of the
+likelihood weight ratios of the placements inside it, as RAxML reports them. The verdict is
+entailed at mass 0.99 or more, refuted at 0.01 or less, unresolved between.
+
+| | Amplicon fragment | Whole sequence (positive control) | A different sequence placed (negative control) |
+| --- | --- | --- | --- |
+| Placed on exactly the true edge | 91 of 200 (45.5%) | 188 of 200 (94.0%) | 0 of 200 |
+| Within two edges of it | 76.5% | 99.5% | 1.0% |
+| Entailed verdicts that are right | 2,375 of 2,388 (99.46%) | 3,065 of 3,065 | 1,507 of 3,176 (47.45%) |
+| Refuted verdicts that are right | 35,988 of 36,016 (99.92%) | 36,208 of 36,211 (99.99%) | 34,392 of 35,952 (95.66%) |
+| Clades that truly hold the sequence: entailed / unresolved / wrongly refuted | 75.2% / 23.9% / 0.9% | 97.0% / 2.9% / 0.1% | 47.7% / 2.9% / 49.4% |
+| Smallest entailed clade, median size of 199 | 4 | 4 | 3 |
+| Smallest entailed clade holds the truth | 139 of 146 queries (95.2%) | 193 of 193 | 9 of 189 (4.8%) |
+| Queries with no entailed clade | 54 | 7 | 11 |
+
+In this negative control the other sequence stays in the tree, so its fragment is placed
+beside it; experiment 7 left it out. The two negative columns are not comparable.
+
+The errors of the amplicon fragment depend on how small the clade is:
+
+| Clade size (of 199 references) | Entailed verdicts | Wrong |
+| --- | --- | --- |
+| 2 to 3 | 62 | 7 |
+| 4 to 7 | 132 | 1 |
+| 8 to 15 | 228 | 1 |
+| 16 to 49 | 451 | 4 |
+| 50 to 199 | 1,515 | 0 |
+
+Verdicts on nested clades of one query are not independent, so the per-query count is the
+honest one. Reporting the smallest entailed clade, 7 of 146 queries get a wrong clade.
+Reporting the smallest entailed clade of at least 4, 8 or 16 references, 4, 3 or 2 of the
+146 do, at median sizes 6.5, 13 and 23.
+
+RAxML reports few placements per query: a median of 3, at most 7, and a single one for 60 of
+the 200. Four of the seven wrong queries had a single placement with weight 0.99 or more. The
+mass is therefore lumpy. Clades given mass in (0, 0.05] hold the truth for 9 of 52,
+(0.05, 0.25] 22 of 96, (0.25, 0.5] 24 of 46, (0.5, 0.75] 53 of 98, (0.75, 0.95] 280 of 324
+and (0.95, 1] 2,745 of 2,773.
+
+With the looser rule (entailed at 0.95 or more, refuted at 0.05 or less) 2,745 of 2,773
+entailed verdicts are right (98.99%), and the smallest entailed clade is wrong for 17 of 172
+queries.
+
+Three self-checks passed. An independent calculation of the truth from path distances on the
+unpruned tree matched in all 10 tests (9 distinct queries). In all 600 runs the 395 edge
+numbers of the placement file map to 395 distinct branches of the pruned tree. Clade mass
+never decreased
+from a clade to the clade containing it (39,200 pairs per column). `08_by_depth.jl`
+recomputes the tables from the per-clade output separately from `06_tables.jl`; the two
+agree.
+
+What this shows: with the application's placement step, "present in this clade" was right
+in every case seen for clades of a quarter of the tree or more, and wrong about one time in
+nine for clades of two or three references. At that depth the verdict is confidently wrong,
+not unresolved. What it does not show is in the limits below.
 
 ## Reading of the results
 
-- **Evidence on placements.** Experiment 7 is the one positive real-data result. Verdicts by
-  clade are sound at the rates above, and they give the "thumbnail then zoom" idea a form
-  that holds: the verdict is decided at a coarse clade and becomes undecided, not wrong, as
-  the clade shrinks.
+- **Evidence on placements.** Experiments 7 and 8 are the positive real-data results. Verdicts
+  by clade are sound at the rates above for coarse clades, and they give the "thumbnail then
+  zoom" idea a form that holds at the coarse end: the verdict is decided at a coarse clade.
+  How it fails as the clade shrinks depends on where the mass comes from. With bootstrapped
+  least squares (experiment 7) it became undecided. With the likelihood weights of the
+  application's placement step (experiment 8) it became wrong for 7 of 62 verdicts on the
+  smallest clades. A rule for the application therefore needs a minimum clade size or a
+  better-calibrated mass, and neither has been chosen or tested here.
+- **Counting reads does not average this error away.** Each query in experiments 7 and 8 is
+  one sequence. Reads from the same organism share that sequence, so if it is misplaced they
+  are all misplaced together. The bound on wrongly counted reads that the counting rule
+  takes as input cannot be read off the number of reads; it has to come from the number of
+  distinct sequences and a per-depth error rate. That rate has not been measured beyond the
+  table above.
 - **Exactness.** The rationals do not need replacing by the reals for Phred: one algebraic
   number is enough. On this dataset exact arithmetic gives the same decisions as double
   precision. What it adds is order-independence and a provable comparison, not a different
@@ -241,8 +319,19 @@ enclosing clade and a refuted verdict survives zooming in.
   verdict in 1,106 means "entailed" is a measured rate, not a proof. Verdicts for nested clades of
   one query are not independent: counted per query, the smallest entailed clade was wrong for
   1 of 130 queries, and 20 further queries had no entailed clade at all.
-- Not done: any comparison with RapidNJ, SwiftNJ or FastTree, any test with the application's
-  own placement step or with real reads, and any change to the application.
+- Experiment 8: the truth is where the full-length sequence sits in a maximum-likelihood tree
+  that was not bootstrapped, so some errors on the smallest clades may be the reference tree's
+  own uncertainty; the two were not separated. The reference tree used a fixed model (GTR+G4)
+  with IQ-TREE 2.0.7, where the application selects a model, bootstraps and pins IQ-TREE 3.1.4.
+  The application's alignment and trimming steps (MAFFT, trimAl) were skipped: queries sit in
+  the columns of the SILVA alignment. Queries are error-free fragments of reference sequences.
+  200 references and 200 queries, one draw. Experiments 7 and 8 differ in the number of
+  references, the tree method, the source of the mass and the thresholds, so the difference
+  between them is not the effect of the placement method alone. A cheaper agent ran the
+  experiment; the tables were recomputed separately from its per-clade output.
+- Not done: any comparison with RapidNJ, SwiftNJ or FastTree, any test with real reads, the
+  application's placement step with its speed heuristic turned off, and any change to the
+  application.
 
 ## Running
 
@@ -276,6 +365,33 @@ julia -O2 -t 4 docs/cladistics/issue-303/ceiling_real.jl /path/to/MiSeq_SOP
 
 ```bash
 julia -O2 -t 4 docs/cladistics/issue-303/placement_evidence.jl /path/to/silva.bacteria.fasta
+```
+
+Experiment 8 needs `raxmlHPC-PTHREADS-SSE3` and `iqtree2` on the path. Copy `epa/` to
+`WORK/scripts`, then run its steps in order:
+
+```bash
+sh WORK/scripts/01_run.sh WORK /path/to/silva.bacteria.fasta
+```
+
+```bash
+sh WORK/scripts/02_tree.sh WORK
+```
+
+```bash
+julia WORK/scripts/03_prep.jl WORK 200 7
+```
+
+```bash
+for k in amp pos neg; do sh WORK/scripts/05_run_epa.sh WORK $k && julia WORK/scripts/04_score.jl WORK $k; done
+```
+
+```bash
+julia WORK/scripts/06_tables.jl WORK amp pos neg
+```
+
+```bash
+julia WORK/scripts/08_by_depth.jl WORK
 ```
 
 The scripts use only Julia's standard library and fixed random seeds. `zoom_real.jl` carries its
