@@ -24,56 +24,169 @@
 module Differential
 
 using DataFrames, RCall
+
 # The native compositional estimators live in a package that is not in the
 # General registry yet, so it is deliberately not declared in `Project.toml`: a
 # declaration `Pkg.instantiate()` cannot resolve fails for every checkout, CI
 # included (the reason, and the steps to re-enable it, are recorded there).
 # Only the two methods below need the package, so a checkout without it must
-# still load this module, and those methods must say so by name instead of
-# failing at load time with a bare `UndefVarError`.
-const _COMPOSITIONAL_DA_AVAILABLE = try
-    @eval import CompositionalDA
-    true
-catch err
-    err isa ArgumentError || err isa LoadError || rethrow()
-    false
-end
+# still load this module, and those methods must say so by name.
+#
+# Nothing about the package is decided when this module is loaded or compiled.
+# Whether it is installed is asked of Julia's loader each time it matters, so
+# the answer cannot be frozen into a precompile cache or a system image built
+# before the package was added. The question has two answers, installed or not.
+# A package that is installed and fails to load is not "not installed": it is a
+# fault and is raised as one.
+const NATIVE_PACKAGE = "CompositionalDA"
+
+# What the adapter calls in the package: its two estimators and the error type
+# that marks a refusal of the data.
+const NATIVE_ENTRY_POINTS = (:aldex2, :ancombc, :CompositionError)
+
+"""
+    _native_package() -> Union{Base.PkgId,Nothing}
+
+The package behind the native methods as `import CompositionalDA` would resolve
+it from this module, or `nothing` when it is not installed in this environment.
+
+This reads the environment and loads nothing, so `nothing` means only that the
+package is not installed. One that is installed and broken is still found here,
+and fails where it is loaded.
+"""
+_native_package() = _installed(Base.identify_package(@__MODULE__, NATIVE_PACKAGE))
+
+# A package the environment names has a source to load only once it is
+# installed; one that is named and not installed is not installed.
+_installed(::Nothing) = nothing
+_installed(pkg::Base.PkgId) = Base.locate_package(pkg) === nothing ? nothing : pkg
 
 """
     compositional_da_available() -> Bool
 
 Whether `CompositionalDA`, the package behind the native `aldex2` and `ancombc`
-differential methods, is loadable in this environment.
+differential methods, is installed in this environment.
 
 The package is not in the General registry, so a plain `Pkg.instantiate()` of
 this project leaves it out and this returns `false`; `aldex2` and `ancombc` then
 refuse with an `ArgumentError` that names the package. To activate them, develop
-it into the environment by path or URL (`Pkg.develop(path="…/CompositionalDA.jl")`)
-and start a fresh session.
-"""
-compositional_da_available() = _COMPOSITIONAL_DA_AVAILABLE
+it into the environment by path or URL (`Pkg.develop(path="…/CompositionalDA.jl")`).
+The environment is read on every call, so the answer follows the environment
+without a restart and without rebuilding a system image.
 
-# The module the native methods call when the caller names none: the package
-# where the import above succeeded, `nothing` where it did not.
-const _DEFAULT_NATIVE_BACKEND = _COMPOSITIONAL_DA_AVAILABLE ? CompositionalDA : nothing
+`true` says the package is installed, not that it loads: an installed package
+that cannot be loaded raises `NativeBackendLoadError` when a method is run.
+"""
+compositional_da_available() = _native_package() !== nothing
+
+"""
+    NativeBackendLoadError(package, cause)
+
+The package behind the native methods is installed but could not be loaded:
+an incompatible or broken checkout, a dependency that is missing, a failed
+precompilation. `cause` is what the loader raised.
+
+This is a fault in the installation, not a property of the data and not the
+same as the package being absent, so it is never turned into a refusal.
+"""
+struct NativeBackendLoadError <: Exception
+    package::String
+    cause::Any
+end
+
+function Base.showerror(io::IO, e::NativeBackendLoadError)
+    print(io, "the ", e.package, " package is installed in this environment but could ",
+          "not be loaded, so the methods that need it cannot run. The installation ",
+          "needs repair; the loader reported: ")
+    showerror(io, e.cause)
+end
+
+"The names in `NATIVE_ENTRY_POINTS` that `backend` does not define."
+_missing_entry_points(backend::Module) =
+    [String(name) for name in NATIVE_ENTRY_POINTS if !isdefined(backend, name)]
+
+"""
+    _load_native_backend(pkg) -> Union{Module,Nothing}
+
+The module for `pkg`, loading it if this session has not yet; `nothing` when
+`pkg` is `nothing`, the environment not having the package.
+
+Loading a package that is already loaded only looks it up, so this is asked on
+every call rather than remembered. Any failure to load is raised as
+`NativeBackendLoadError`, and so is a module that loads without what the
+adapter calls. The second check is not only for an old or foreign checkout: a
+source file that raises part-way through can leave its half-built module
+registered, and the loader then hands that module back on the next request as
+though it had loaded.
+"""
+_load_native_backend(::Nothing) = nothing
+function _load_native_backend(pkg::Base.PkgId)
+    backend = try
+        Base.require(pkg)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(NativeBackendLoadError(pkg.name, err))
+    end
+    # The module may have been defined a moment ago, so its names are newer
+    # than the code that is running.
+    absent = Base.invokelatest(_missing_entry_points, backend)
+    isempty(absent) || throw(NativeBackendLoadError(pkg.name, ErrorException(
+        "the module that loaded does not define " * join(absent, ", ") *
+        ", so it is incomplete or is not a version this adapter can call")))
+    backend
+end
 
 """
     _native_backend(override)
 
-The module the native methods call: `override` when one is given, otherwise the
-`CompositionalDA` this session loaded, or `nothing` when it loaded none.
+The module the native methods call: `override` when it is a module, the package
+`override` identifies when it is a `Base.PkgId`, and otherwise the
+`CompositionalDA` of this environment, or `nothing` when it has none.
 
 This is the seam that keeps the adapter testable. `CompositionalDA` is not in
 the General registry, so CI never has it, and without a seam the adapter is
 unreachable there. The tests pass a stand-in module with the same two entry
 points and the same error type, so the adapter code they run is the code that
-runs in production; only the estimator behind the boundary differs.
+runs in production; only the estimator behind the boundary differs. They pass a
+`Base.PkgId` to load a package for the first time inside the call, which is
+what a server does on its first native request.
 """
-_native_backend(override) = override === nothing ? _DEFAULT_NATIVE_BACKEND : override
+_native_backend(::Nothing) = _load_native_backend(_native_package())
+_native_backend(backend::Module) = backend
+_native_backend(pkg::Base.PkgId) = _load_native_backend(pkg)
 
 "Whether `backend` defines the package's `CompositionError` and `err` is one."
 _is_composition_error(backend::Module, err) =
     isdefined(backend, :CompositionError) && err isa backend.CompositionError
+
+"""
+    _native_fit(backend, config, counts, taxa, groups)
+
+Run the native method `config` names on the retained `counts`, and return the
+package's result or `NoTaxonFitted` carrying the package's own refusal.
+
+Only the package's `CompositionError` is a refusal. Anything else it raises is
+its own failure and is rethrown untouched, so a broken backend is never
+presented as a property of the data.
+
+`differential_abundance` calls this through `Base.invokelatest`: the package may
+have been loaded a moment earlier inside the same call, and its functions and
+its error type are then newer than the code that is running.
+"""
+function _native_fit(backend::Module, config, counts::Matrix{Int},
+                     taxa::AbstractVector{<:AbstractString}, groups::Vector{String})
+    try
+        if config.method == "aldex2"
+            backend.aldex2(counts, taxa, groups; mc_samples=config.mc_samples, seed=config.seed)
+        else
+            backend.ancombc(counts, taxa, groups;
+                prevalence=0.0, structural_zeros=true, conserve=true)
+        end
+    catch e
+        _is_composition_error(backend, e) || rethrow()
+        NoTaxonFitted(sprint(showerror, e))
+    end
+end
 
 function _native_methods_available(method::AbstractString, backend)
     backend === nothing || return nothing
@@ -90,7 +203,25 @@ export DifferentialConfig, ScalingRefusal, MASSUnavailable, ZCompositionsUnavail
        GlmGamPoiUnavailable, OFFSET_METHODS, METHODS, DISPERSIONS, tss_factors,
        rle_factors, size_factors, bh_adjust, validate_counts, replace_zeros,
        clr_transform, fit_nb, fit_welch, differential_abundance, volcano_chart,
-       compositional_da_available
+       compositional_da_available, NoTaxonFitted, NativeBackendLoadError
+
+"""
+    NoTaxonFitted(reason)
+
+What `differential_abundance` returns, in place of a result, when the comparison
+was well formed and still gave nothing to report: no taxon produced a p-value,
+the native package refused the composition, or a native statistic was not
+finite. `reason` says which, in the words shown to the user.
+
+It is a value and not an exception because it is an expected answer about the
+data. An exception from `differential_abundance` therefore always means
+something else: unusable input (`ArgumentError`), a missing package, or a fault.
+A caller that reports this outcome cannot mistake a fault for it, and a fault
+cannot be reported as it.
+"""
+struct NoTaxonFitted
+    reason::String
+end
 
 # Methods accepted under `analysis.differential.method`.
 const METHODS = ("nb_glm", "clr_welch", "aldex2", "ancombc")
@@ -866,19 +997,28 @@ package, which is not in the General registry yet, so `Pkg.instantiate()` does
 not install it and they refuse by name on such a checkout;
 `compositional_da_available()` answers the same question without raising.
 `native_backend` is the module those two methods call, and defaults to the
-`CompositionalDA` this session loaded. Passing a module with the same entry
-points (`aldex2`, `ancombc`, `CompositionError`) is how the adapter is tested
-where the package cannot be installed; nothing else about the call changes, and
-the result records the module that produced it under
-`diagnostics.native_method.package`.
+`CompositionalDA` of this environment, looked up and loaded when the call is
+made. Passing a module with the same entry points (`aldex2`, `ancombc`,
+`CompositionError`) is how the adapter is tested where the package cannot be
+installed; nothing else about the call changes, and the result records the
+module that produced it under `diagnostics.native_method.package`. `ancombc`
+rows that are structural-zero decisions have status `structural_zero` and no
+statistics; a comparison that yields only such decisions is returned with them
+and `diagnostics.n_tested == 0`.
 
-Throws `ArgumentError` for unusable input (including a zero replacement that
-cannot be made), `ScalingRefusal` when the offset cannot be computed,
+Returns `NoTaxonFitted`, not a result, when the comparison was well formed and
+gave nothing to report: no taxon produced a p-value (including when the
+`glm_gp` fit fails), the native package refused the composition, or a native
+statistic was not finite. That is an answer about the data, so it is a value.
+
+Throws only for what is not such an answer: `ArgumentError` for unusable input
+(including a zero replacement that cannot be made, and a native method whose
+package is not installed), `ScalingRefusal` when the offset cannot be computed,
 `MASSUnavailable`, `GlmGamPoiUnavailable` or `ZCompositionsUnavailable` when a
 required R package is missing, `RBusyError` when the R runtime stays busy, and
-an `ErrorException` when no taxon could be fitted at all, including when the
-`glm_gp` fit fails. Uncaught R errors from the fitting and zero-replacement
-helpers propagate.
+`NativeBackendLoadError` when the native package is installed but cannot be
+loaded. Uncaught R errors from the fitting and zero-replacement helpers, and
+whatever a native package raises other than its `CompositionError`, propagate.
 """
 function differential_abundance(counts::AbstractMatrix{<:Real},
                                 samples::AbstractVector{<:AbstractString},
@@ -938,18 +1078,9 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
         # Stable labels make the package's sorted contrast agree with the
         # user's requested direction, irrespective of run-name sorting.
         native_groups = [g == reference ? "0" : "1" for g in groups]
-        native = try
-            if config.method == "aldex2"
-                backend.aldex2(Int.(counts[:, tested]), taxa[tested], native_groups;
-                    mc_samples=config.mc_samples, seed=config.seed)
-            else
-                backend.ancombc(Int.(counts[:, tested]), taxa[tested], native_groups;
-                    prevalence=0.0, structural_zeros=true, conserve=true)
-            end
-        catch e
-            _is_composition_error(backend, e) && error(sprint(showerror, e))
-            rethrow()
-        end
+        native = Base.invokelatest(_native_fit, backend, config,
+            Matrix{Int}(counts[:, tested]), taxa[tested], native_groups)
+        native isa NoTaxonFitted && return native
         by_taxon = Dict(String(r.feature) => r for r in eachrow(native.table))
         for j in tested
             haskey(by_taxon, taxa[j]) || continue
@@ -962,7 +1093,8 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
                 continue
             end
             isfinite(f.effect) && isfinite(f.pvalue) && isfinite(f.qvalue) ||
-                error("$(config.method) returned non-finite statistics for $(taxa[j]); no result produced")
+                return NoTaxonFitted("$(config.method) returned non-finite statistics for " *
+                                     "$(taxa[j]); no result produced")
             aldex = config.method == "aldex2"
             merge!(rows[j], Dict{String,Any}(
                 "status" => "ok", "note" => "",
@@ -1090,9 +1222,14 @@ function differential_abundance(counts::AbstractMatrix{<:Real},
     end
 
     family = findall(r -> r["status"] in ("ok", "boundary") && !isnothing(r["pvalue"]), rows)
-    if isempty(family)
+    # A structural-zero decision is a result in its own right: a taxon present in
+    # one condition and absent from the other has been decided, without a
+    # p-value. A comparison that gives only such decisions (every retained taxon
+    # belongs to one condition alone, say) is reported with them and an empty
+    # family, not refused for having nothing to test.
+    if isempty(family) && !any(r -> r["status"] == "structural_zero", rows)
         notes = unique(r["note"] for r in rows)
-        error("no taxon could be fitted: " * join(first(notes, 5), " | "))
+        return NoTaxonFitted("no taxon could be fitted: " * join(first(notes, 5), " | "))
     end
     if !native_adjustment
         padj = bh_adjust([rows[j]["pvalue"] for j in family])

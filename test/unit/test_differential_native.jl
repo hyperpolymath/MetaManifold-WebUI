@@ -13,18 +13,16 @@
 # them.
 
 using MetaManifold, Test
-using Random
+using JSON3, Random
 using MetaManifold.Differential
 
-# "Not installed" is an ArgumentError. Any other failure while loading the
-# package (a broken install, say) is a real problem and must not read as a skip.
-const HAVE_COMPOSITIONAL_DA = try
-    @eval import CompositionalDA
-    true
-catch err
-    err isa ArgumentError || err isa LoadError || rethrow()
-    false
-end
+# Whether the environment has the package is asked of the loader, not inferred
+# from an import that failed: a failed import cannot tell a package that is not
+# there from one that is there and broken. Where the environment has it, the
+# import below must succeed, so a broken install fails this file instead of
+# reading as a skip.
+const HAVE_COMPOSITIONAL_DA = Base.identify_package("CompositionalDA") !== nothing
+HAVE_COMPOSITIONAL_DA && @eval import CompositionalDA
 HAVE_COMPOSITIONAL_DA || @info "CompositionalDA unavailable - the native adapter tests are SKIPPED"
 
 # The module's own probe must agree with the one above, or the refusal path and
@@ -172,7 +170,7 @@ end
 #
 # `differential_abundance(...; native_backend=…)` makes the adapter reachable
 # without changing what production does (the default is still the CompositionalDA
-# this session loaded, or the refusal when it did not). The stand-in in
+# of this environment, or the refusal when it has none). The stand-in in
 # `test/support/native_da_stub.jl` offers the real package's entry points,
 # columns and verdict strings, so what runs below is the code that runs in
 # production; only the estimator behind the boundary is a stand-in, and the
@@ -342,47 +340,285 @@ end
 
     config = DifferentialConfig(; method="aldex2")
 
-    # The package's own refusal is translated into an ErrorException carrying
-    # its message, which the route reports as 422 no_taxon_fitted.
+    run_stub() = differential_abundance(NATIVE_COUNTS, NATIVE_SAMPLES, NATIVE_TAXA, NATIVE_GROUPS;
+        reference="z", contrast="a", config, native_backend=NativeDAStub)
+    SV = MetaManifold.Server
+    body(response) = JSON3.read(String(response.body))
+
+    # The package's own refusal is an answer about the data. It is returned as
+    # a value carrying the package's message, and the route reports that value
+    # as 422 no_taxon_fitted.
     NativeDAStub.reset!()
     NativeDAStub.FAILURE[] = :composition
-    err = try
-        differential_abundance(NATIVE_COUNTS, NATIVE_SAMPLES, NATIVE_TAXA, NATIVE_GROUPS;
-            reference="z", contrast="a", config, native_backend=NativeDAStub)
-        nothing
-    catch e
-        e
-    end
-    @test err isa ErrorException
-    @test occursin("CompositionError", err.msg)
+    refused = run_stub()
+    @test refused isa NoTaxonFitted
+    @test refused.reason == "CompositionError: stub refused the composition"
+    response = SV._differential_outcome(run_stub)
+    @test response.status == 422
+    @test body(response).error == "no_taxon_fitted"
+    @test body(response).message == refused.reason
 
     # Any other failure is the backend's own and is rethrown untouched: a broken
-    # install must not be dressed up as a refusal of the data.
+    # backend must not be dressed up as a refusal of the data. The stand-in
+    # raises a plain ErrorException, the type the route used to report as 422
+    # whoever raised it. It now leaves the route as the exception it is, for
+    # the server to report as a fault.
     NativeDAStub.reset!()
     NativeDAStub.FAILURE[] = :other
-    err = try
-        differential_abundance(NATIVE_COUNTS, NATIVE_SAMPLES, NATIVE_TAXA, NATIVE_GROUPS;
-            reference="z", contrast="a", config, native_backend=NativeDAStub)
-        nothing
-    catch e
-        e
+    for call in (run_stub, () -> SV._differential_outcome(run_stub))
+        err = try
+            call()
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test err.msg == "stub backend failed for a reason of its own"
     end
-    @test err isa ErrorException
-    @test occursin("a reason of its own", err.msg)
-    @test !occursin("CompositionError", err.msg)
 
     # A statistic that is not finite is refused by name rather than published.
     NativeDAStub.reset!()
     NativeDAStub.FAILURE[] = :nonfinite
-    err = try
-        differential_abundance(NATIVE_COUNTS, NATIVE_SAMPLES, NATIVE_TAXA, NATIVE_GROUPS;
-            reference="z", contrast="a", config, native_backend=NativeDAStub)
-        nothing
-    catch e
-        e
-    end
-    @test err isa ErrorException
-    @test occursin("non-finite statistics", err.msg)
-    @test occursin("aldex2", err.msg)
+    refused = run_stub()
+    @test refused isa NoTaxonFitted
+    @test occursin("non-finite statistics", refused.reason)
+    @test occursin("aldex2", refused.reason)
+    @test SV._differential_outcome(run_stub).status == 422
     NativeDAStub.reset!()
+end
+
+@testset "The route declines by type and lets every other failure through" begin
+    SV = MetaManifold.Server
+    D = MetaManifold.Differential
+    outcome(f) = SV._differential_outcome(f)
+    body(response) = JSON3.read(String(response.body))
+
+    # A result passes through unchanged; it is the same object, not a copy.
+    result = Dict{String,Any}("status" => "ok", "rows" => Any[])
+    @test outcome(() -> result) === result
+
+    # The comparison's own answer that there is nothing to report.
+    response = outcome(() -> NoTaxonFitted("no taxon could be fitted: constant"))
+    @test response.status == 422
+    @test body(response).error == "no_taxon_fitted"
+    @test body(response).message == "no taxon could be fitted: constant"
+
+    # The refusals that have a type of their own keep their status and code.
+    for (raised, status, code) in (
+            (ArgumentError("bad input"), 400, "invalid_input"),
+            (ScalingRefusal("tss", "a sample has no reads"), 422, "scaling_refused"),
+            (MASSUnavailable(), 503, "r_unavailable"),
+            (ZCompositionsUnavailable(), 503, "r_unavailable"),
+            (GlmGamPoiUnavailable(), 503, "r_unavailable"))
+        response = outcome(() -> throw(raised))
+        @test response.status == status
+        @test body(response).error == code
+        @test body(response).message == sprint(showerror, raised)
+    end
+
+    # Nothing else is a refusal. An ErrorException, whatever its message, is not
+    # reported as "no taxon fitted", and neither is a package that failed to
+    # load or any other exception: each leaves the route as itself.
+    for raised in (ErrorException("no taxon could be fitted: looks like a refusal"),
+                   ErrorException("backend failed"),
+                   D.NativeBackendLoadError("CompositionalDA", ErrorException("broken checkout")),
+                   BoundsError([1], 2), KeyError(:missing), InterruptException())
+        err = try
+            outcome(() -> throw(raised))
+        catch e
+            e
+        end
+        @test err === raised
+    end
+end
+
+@testset "ANCOM-BC decisions without a numerical test are still a result" begin
+    # Every retained taxon belongs to one condition only, so each is a
+    # structural-zero decision and none has a p-value. Those decisions are what
+    # the comparison found; they are returned, not discarded for want of a test.
+    NativeDAStub.reset!()
+    counts = [10 12 0 0; 9 14 0 0; 11 13 0 0; 0 0 20 25; 0 0 22 24; 0 0 21 26]
+    taxa = ["only_z1", "only_z2", "only_a1", "only_a2"]
+    compare() = differential_abundance(counts, NATIVE_SAMPLES, taxa, NATIVE_GROUPS;
+        reference="z", contrast="a", config=DifferentialConfig(; method="ancombc"),
+        native_backend=NativeDAStub)
+    actual = compare()
+    @test actual isa Dict
+    @test actual["status"] == "ok"
+    @test length(actual["rows"]) == 4
+    for row in actual["rows"]
+        @test row["status"] == "structural_zero"
+        @test occursin("one condition", row["note"])
+        for key in ("estimate", "log2_fold_change", "standard_error", "statistic", "pvalue", "padj")
+            @test row[key] === nothing
+        end
+    end
+    # With nothing to rank by, the rows are in taxon order.
+    @test [row["taxon"] for row in actual["rows"]] == sort(taxa)
+    @test actual["diagnostics"]["n_structural_zero"] == 4
+    @test actual["diagnostics"]["n_tested"] == 0
+    @test actual["diagnostics"]["n_failed"] == 0
+    @test actual["diagnostics"]["n_taxa"] == 4
+    # No taxon has a point to plot; the figure is empty, not an error.
+    @test isempty(volcano_chart(actual)["data"])
+    # The route returns the same result.
+    @test MetaManifold.Server._differential_outcome(compare) isa Dict
+
+    # One taxon in both conditions has a test, and joins the decisions.
+    mixed = hcat(counts, [5, 6, 7, 8, 9, 10])
+    actual = differential_abundance(mixed, NATIVE_SAMPLES, vcat(taxa, "shared"), NATIVE_GROUPS;
+        reference="z", contrast="a", config=DifferentialConfig(; method="ancombc"),
+        native_backend=NativeDAStub)
+    @test actual["diagnostics"]["n_structural_zero"] == 4
+    @test actual["diagnostics"]["n_tested"] == 1
+    @test first(actual["rows"])["taxon"] == "shared"   # the one row with a padj sorts first
+
+    # ALDEx2 has no structural decisions, so a comparison with no finite
+    # statistic is still declined: the exemption is for decisions, not for any
+    # empty family.
+    NativeDAStub.reset!()
+    NativeDAStub.FAILURE[] = :nonfinite
+    declined = differential_abundance(counts, NATIVE_SAMPLES, taxa, NATIVE_GROUPS;
+        reference="z", contrast="a", config=DifferentialConfig(; method="aldex2"),
+        native_backend=NativeDAStub)
+    @test declined isa NoTaxonFitted
+    NativeDAStub.reset!()
+end
+
+@testset "The native package is looked up when it is needed, never remembered" begin
+    D = MetaManifold.Differential
+    # Nothing about the package is fixed when the module is loaded: there is no
+    # constant holding the answer for a precompile cache or a system image to
+    # freeze. This is what makes a package added after a system image was built
+    # visible to it.
+    @test !isdefined(D, :_COMPOSITIONAL_DA_AVAILABLE)
+    @test !isdefined(D, :_DEFAULT_NATIVE_BACKEND)
+    @test D.NATIVE_PACKAGE == "CompositionalDA"
+
+    # The environment either has the package or it does not, and both the
+    # module and this file ask the loader the same question.
+    @test (D._native_package() !== nothing) == HAVE_COMPOSITIONAL_DA
+    @test compositional_da_available() == HAVE_COMPOSITIONAL_DA
+    @test isnothing(D._load_native_backend(nothing))
+    # Installed means there is a source to load. A package the environment
+    # names but has not installed counts as not installed; one it has is found.
+    @test isnothing(D._installed(nothing))
+    @test isnothing(D._installed(
+        Base.PkgId(Base.UUID("00000000-0000-4000-8000-000000000070"), "MMNamedButNotInstalled")))
+    dataframes = Base.PkgId(MetaManifold.Differential.DataFrames)
+    @test D._installed(dataframes) === dataframes
+
+    @test D.NATIVE_ENTRY_POINTS == (:aldex2, :ancombc, :CompositionError)
+    @test isempty(D._missing_entry_points(NativeDAStub))
+    @test D._missing_entry_points(Base) == ["aldex2", "ancombc", "CompositionError"]
+
+    mktempdir() do root
+        # Packages the loader can find by name: one that loads and can be
+        # called, one whose source raises while loading, one whose source does
+        # not parse, and one that loads but is not something the adapter can
+        # call.
+        write_package(name, source) = (mkpath(joinpath(root, name, "src"));
+            write(joinpath(root, name, "src", "$name.jl"), source))
+        write_package("MMFreshNativeDA", """
+            module MMFreshNativeDA
+            using DataFrames
+            struct CompositionError <: Exception
+                msg::String
+            end
+            Base.showerror(io::IO, e::CompositionError) = print(io, "CompositionError: ", e.msg)
+            function aldex2(counts, features, groups; mc_samples=128, seed=1)
+                seed == 99 && throw(CompositionError("fresh package refused the composition"))
+                n = length(features)
+                p = [0.01 * j for j in 1:n]
+                (table = DataFrame(feature=String.(features), effect=fill(0.5, n), pvalue=p,
+                     qvalue=p, wi_pvalue=p, wi_qvalue=p, diff_btw=fill(1.0, n),
+                     diff_win=fill(0.25, n), rab_all=fill(2.0, n)),
+                 provenance = (package_version = v"0.0.0-fresh",
+                               parameters = Dict{Symbol,Any}(:seed => seed)))
+            end
+            ancombc(args...; kwargs...) = throw(CompositionError("not used by this test"))
+            end
+            """)
+        write_package("MMBrokenNativeDA", """
+            module MMBrokenNativeDA
+            aldex2() = nothing
+            error("this checkout is incompatible")
+            end
+            """)
+        write_package("MMUnparsableNativeDA", "module MMUnparsableNativeDA\nfunction (\nend\n")
+        write_package("MMIncompleteNativeDA", """
+            module MMIncompleteNativeDA
+            struct CompositionError <: Exception end
+            aldex2(args...; kwargs...) = nothing
+            end
+            """)
+        push!(LOAD_PATH, root)
+        try
+            fresh = Base.identify_package("MMFreshNativeDA")
+            broken = Base.identify_package("MMBrokenNativeDA")
+            unparsable = Base.identify_package("MMUnparsableNativeDA")
+            incomplete = Base.identify_package("MMIncompleteNativeDA")
+            @test all(!isnothing, (fresh, broken, unparsable, incomplete))
+            @test Base.identify_package("MMAbsentNativeDA") === nothing
+
+            # A package that is there and cannot be used is a fault with a type
+            # of its own. It is not `nothing`, so it can never be reported as
+            # "not installed", whatever the loader raised underneath. It is
+            # asked for three times: a source that raises part-way can leave a
+            # half-built module behind, which a later request must not accept.
+            for pkg in (broken, unparsable, incomplete), attempt in 1:3
+                err = try
+                    D._load_native_backend(pkg)
+                catch e
+                    e
+                end
+                @test err isa D.NativeBackendLoadError
+                @test err.package == pkg.name
+                @test err.cause isa Exception
+                message = sprint(showerror, err)
+                @test occursin("is installed in this environment but could not be loaded", message)
+                @test occursin(pkg.name, message)
+                @test !occursin("not installed", message)
+            end
+            # The module that loaded without one of the adapter's entry points
+            # says which is missing.
+            @test occursin("does not define ancombc",
+                sprint(showerror, try D._load_native_backend(incomplete) catch e; e end))
+            # The same fault reaches the caller of the comparison, and leaves
+            # the route as itself: not a refusal, and not a missing package.
+            for pkg in (broken, unparsable, incomplete)
+                compare() = differential_abundance(NATIVE_COUNTS, NATIVE_SAMPLES, NATIVE_TAXA,
+                    NATIVE_GROUPS; reference="z", contrast="a",
+                    config=DifferentialConfig(; method="aldex2"), native_backend=pkg)
+                @test_throws D.NativeBackendLoadError compare()
+                @test_throws D.NativeBackendLoadError MetaManifold.Server._differential_outcome(compare)
+            end
+
+            # A package this session has never loaded is loaded inside the call
+            # that needs it, and its functions are called in that same call.
+            # This is a server's first native request.
+            @test !haskey(Base.loaded_modules, fresh)
+            actual = differential_abundance(NATIVE_COUNTS, NATIVE_SAMPLES, NATIVE_TAXA, NATIVE_GROUPS;
+                reference="z", contrast="a",
+                config=DifferentialConfig(; method="aldex2", mc_samples=16, seed=7),
+                native_backend=fresh)
+            @test haskey(Base.loaded_modules, fresh)
+            @test actual["diagnostics"]["native_method"]["package"] == "MMFreshNativeDA"
+            @test actual["diagnostics"]["native_method"]["version"] == "0.0.0-fresh"
+            @test actual["diagnostics"]["n_tested"] == 4
+            @test all(row -> row["estimate"] == 1.0, actual["rows"])
+            # Its own refusal type, defined by the load a moment ago, is
+            # recognised too.
+            refused = differential_abundance(NATIVE_COUNTS, NATIVE_SAMPLES, NATIVE_TAXA, NATIVE_GROUPS;
+                reference="z", contrast="a",
+                config=DifferentialConfig(; method="aldex2", mc_samples=16, seed=99),
+                native_backend=fresh)
+            @test refused isa NoTaxonFitted
+            @test refused.reason == "CompositionError: fresh package refused the composition"
+            # Asking again finds the module already loaded: the same one.
+            @test D._load_native_backend(fresh) === D._native_backend(fresh)
+            @test D._native_backend(fresh) === Base.loaded_modules[fresh]
+        finally
+            filter!(!=(root), LOAD_PATH)
+        end
+    end
 end

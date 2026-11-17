@@ -561,19 +561,14 @@ end
         end
     end
 
-    @testset "No fittable taxon is an explicit error" begin
+    @testset "No fittable taxon is an explicit answer, not an exception" begin
         if !HAVE_MASS
             @test_skip false
         else
-            e = try
-                differential_abundance(fill(5, 4, 2), ["a", "b", "c", "d"], ["x", "y"],
-                                       ["A", "A", "B", "B"]; reference="A", contrast="B")
-                nothing
-            catch err
-                err
-            end
-            @test e isa ErrorException
-            @test occursin("no taxon could be fitted", e.msg)
+            outcome = differential_abundance(fill(5, 4, 2), ["a", "b", "c", "d"], ["x", "y"],
+                                             ["A", "A", "B", "B"]; reference="A", contrast="B")
+            @test outcome isa NoTaxonFitted
+            @test occursin("no taxon could be fitted", outcome.reason)
         end
     end
 
@@ -857,16 +852,11 @@ end
         else
             # p and q in the same 1:1 ratio everywhere: both CLRs are constant
             # (zero), so neither can be fitted and the whole test is refused.
-            e = try
-                differential_abundance([5 5; 7 7; 9 9; 4 4], ["a", "b", "c", "d"], ["p", "q"],
-                                       ["A", "A", "B", "B"]; reference="A", contrast="B", config=clr_config)
-                nothing
-            catch err
-                err
-            end
-            @test e isa ErrorException
-            @test occursin("no taxon could be fitted", e.msg)
-            @test occursin("constant", e.msg)
+            outcome = differential_abundance([5 5; 7 7; 9 9; 4 4], ["a", "b", "c", "d"], ["p", "q"],
+                                             ["A", "A", "B", "B"]; reference="A", contrast="B", config=clr_config)
+            @test outcome isa NoTaxonFitted
+            @test occursin("no taxon could be fitted", outcome.reason)
+            @test occursin("constant", outcome.reason)
         end
     end
 

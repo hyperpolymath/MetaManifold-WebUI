@@ -107,7 +107,13 @@ by this endpoint, including when called from a group Analysis workspace.
   dependency: `Pkg.instantiate()` does not install it, and until it is developed
   into the environment (`Pkg.develop(path="…/CompositionalDA.jl")`) both methods
   refuse with an error naming the package. `compositional_da_available()` says
-  which state the running server is in.
+  which state the environment is in. The environment is read each time a native
+  method is requested, so a package added later is found without rebuilding a
+  system image made before it was there. A package that is installed but cannot
+  be loaded is reported as a server fault, not as a missing package.
+
+  When ANCOM-BC decides every retained taxon structurally (each is present in
+  one condition only), the table holds those decisions and no taxon is tested.
 
 For every method, `min_prevalence` (default 0) filters taxa by the fraction of
 samples with nonzero counts. Benjamini–Hochberg adjustment includes only taxa
