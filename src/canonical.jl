@@ -209,16 +209,19 @@ function _write_float!(io, x::Float64)
 end
 
 # The shortest round-trip decimal form of x as (digits, n) with
-# x = 0.digits * 10^n: repr yields either "123", "4.5" or "1.5e-10".
+# x = 0.digits * 10^n: repr yields "123.0", "4.5" or "1.5e-10".
+#
+# The mantissa always has a decimal point. Base.show asks Ryu for one
+# unconditionally (its `hash` argument), in positional and exponent form alike,
+# so a finite Float64 never prints as "123" or "1e30". The two-name
+# destructuring below therefore always finds two parts; were a future Julia to
+# drop the point, it would throw here rather than emit a wrong number.
+# test_canonical.jl pins that behaviour.
 function _shortest_digits(x::Float64)
     s = repr(x)
     mantissa, exponent = occursin('e', s) ? (split(s, 'e') .|> String) : (s, "")
     e = isempty(exponent) ? 0 : parse(Int, exponent)
-    if occursin('.', mantissa)
-        intpart, fracpart = split(mantissa, '.') .|> String
-    else
-        intpart, fracpart = mantissa, ""
-    end
+    intpart, fracpart = split(mantissa, '.') .|> String
     digits = string(intpart, fracpart)
     n = length(intpart) + e
     # Trailing zeros are notation, not value: 1.0e30 is digits "1", n 31.

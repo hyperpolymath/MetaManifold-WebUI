@@ -107,6 +107,24 @@ end
         @test !haskey(payload, :time_limit_seconds)
         @test !ispath(joinpath(root, "projects", "_derived", "direct"))
     end
+
+    # The run route accepts decimal JSON, since its numeric filters need it, so
+    # a fractional limit reaches the deadline check there. The same bounds hold
+    # for it as for a whole number of seconds.
+    limit(value) = _ADV_SV._statistics_cancellation(Dict(:time_limit_seconds => value))
+    @test isnothing(limit(nothing))
+    for accepted in (1, 3600, 0.5, 1.5, 3600.0, Float32(2.5), 1e-9)
+        budget = UInt64(round(Int64, Float64(accepted) * 1e9))
+        before = time_ns()
+        token = limit(accepted)
+        after = time_ns()
+        @test token isa CancellationToken
+        # Armed for exactly the requested budget from the moment it was read.
+        @test before + budget <= token.deadline_ns <= after + budget
+    end
+    for refused in (0.0, -0.5, 3600.5, nextfloat(3600.0), NaN, Inf, -Inf, "5", true, [1])
+        @test_throws ArgumentError limit(refused)
+    end
 end
 
 @testset "Cancellation is observable and specific" begin

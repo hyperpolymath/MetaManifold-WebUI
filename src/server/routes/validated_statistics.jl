@@ -223,12 +223,13 @@ function _validated_filter_params(body)
             normalized_filters[string(column)] = normalized
         end
     end
-    try
-        _body_filter_params(Dict(:filter => filter_text, :colFilters => normalized_filters))
-    catch err
-        err isa InterruptException && rethrow()
-        throw(ArgumentError("invalid filter parameters: $(sprint(showerror, err))"))
-    end
+    # Everything the shared helper reads has been checked above: the filter is
+    # a string or absent, and every column filter is an object holding only
+    # arrays of strings, a string, or finite numbers. The helper only converts
+    # those to strings and joins them, so it has no refusal of its own to
+    # translate here. If it ever fails on such input, that is a fault in the
+    # server and is reported as one, not as an invalid request.
+    _body_filter_params(Dict(:filter => filter_text, :colFilters => normalized_filters))
 end
 
 function _direct_count_input(body; cancellation=nothing)

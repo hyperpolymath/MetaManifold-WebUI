@@ -60,6 +60,30 @@ end
               "[4.5,24500000000000000,1e+30,0.000001,1e-7,1e+21,100000000000000000000,0,5e-324]"
     end
 
+    @testset "a finite float always prints with a decimal point" begin
+        # The digit extraction splits Julia's own repr at its decimal point and
+        # has no branch for a mantissa without one, because Julia never prints
+        # one: "123.0", "1.0e30", never "123" or "1e30". These are the forms
+        # that would lose the point first if that changed: whole numbers in
+        # positional and exponent notation, the two ends of the range, and the
+        # values either side of each switch between notations.
+        whole = [1.0, 123.0, 123456.0, 1234567.0, 1e15, 1e16, 1e17, 1e21, 1e22,
+                 2.0^53, 1e300, floatmax(Float64)]
+        small = [0.1, 1e-4, 1e-5, 1e-6, 1e-7, floatmin(Float64), nextfloat(0.0)]
+        powers = [exp10(p) for p in -323:308]
+        for x in vcat(whole, small, powers, 2.0 .^ (-1022:1023))
+            @test occursin('.', repr(x))
+        end
+        digits = MetaManifold.Canonical._shortest_digits
+        @test digits(1.0) == ("1", 1)
+        @test digits(123.0) == ("123", 3)
+        @test digits(4.5) == ("45", 1)
+        @test digits(1e30) == ("1", 31)
+        @test digits(1.5e-10) == ("15", -9)
+        @test digits(5e-324) == ("5", -323)
+        @test digits(floatmax(Float64)) == ("17976931348623157", 309)
+    end
+
     @testset "refusals" begin
         @test_throws ArgumentError jcs_bytes(2^53)
         @test_throws ArgumentError jcs_bytes(-(2^53))
