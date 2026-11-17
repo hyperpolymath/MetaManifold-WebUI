@@ -27,7 +27,10 @@ neighbour-joining tree is not a stable object: a tree built on 768 of 1,024 sequ
 with the 1,024-sequence tree on only 78% of that tree's well-supported branches. Lazy views
 cannot be validated against a target that disagrees with itself, and no thumbnail summary
 tested reached 60%. An earlier reading of experiment 4, that zoomed-in views keep over 90%
-of well-supported branches, did not survive at 1,024 sequences (66%).
+of well-supported branches, did not survive at 1,024 sequences (66%). Placing an amplicon-length
+fragment on a reference tree built from full-length sequences does work: clade verdicts from
+bootstrapped placements were right for 1,105 of 1,106 entailed and 57,116 of 57,128 refuted
+verdicts, and pin a read to a clade of median size 18 among 399 references.
 
 ## Data
 
@@ -45,7 +48,16 @@ sha256sum miseqsopdata.zip
 Expected digest: `728f7544824f8ca0223618b18bb60fce6a5dc20ae3d476267dbd5cf5594a35d4`
 (downloaded 2026-11-17). Unzip it and pass the `MiSeq_SOP` directory to the scripts.
 
-Reads are truncated to 240 bases, dropped if their expected errors exceed 2 or they contain
+Experiment 7 uses the mothur SILVA bacterial reference alignment, also not committed.
+
+```bash
+curl -L -o silva.bacteria.zip https://mothur.s3.us-east-2.amazonaws.com/wiki/silva.bacteria.zip
+```
+
+Expected digest: `cd614303eaade6212a86bbb667be6be4c05f8c1c4f323c6d47035c4c8370039d`
+(downloaded 2026-11-17). Unzip it and pass `silva.bacteria/silva.bacteria.fasta` to the script.
+
+For experiments 4 to 6, reads are truncated to 240 bases, dropped if their expected errors exceed 2 or they contain
 `N`, then dereplicated. They are **not** DADA2 output. Where a script says "crude denoise" it
 drops every sequence within one edit of a more abundant one, and every sequence seen once.
 
@@ -154,8 +166,52 @@ down to the same 64 leaves, 30 draws per row.
 | 512 | 51.7% | 70.4% (55.1 to 89.2) |
 | 768 | 62.1% | 78.4% (59.3 to 90.4) |
 
+### 7. Evidence verdicts on placements (`placement_evidence.jl`)
+
+Experiment 6 says a stable overview has to come from outside the amplicon data. This tests
+that route with a ground truth. 400 real full-length 16S sequences from the mothur SILVA
+bacterial reference alignment give a reference tree. Each of 150 sequences in turn is pruned
+from the tree; where it hung is the truth. Its amplicon-length fragment (the first 240 bases
+of the V4 window) is placed back by weighted least squares against the tree's path distances,
+and the fragment's columns are bootstrapped 100 times. For every clade, the share of
+replicates placing the sequence inside it is the placement mass, and the verdict for "this
+sequence belongs to this clade" is entailed at mass 1, refuted at mass 0, unresolved between.
+
+| | Amplicon fragment | Whole sequence (positive control) | A different sequence placed (negative control) |
+| --- | --- | --- | --- |
+| Placed on exactly the true edge | 48.0% | 77.3% | 0.0% |
+| Within two edges of it | 80.7% | 94.0% | 0.0% |
+| Entailed verdicts that are right | 1,105 of 1,106 (99.91%) | 1,411 of 1,412 (99.93%) | 219 of 1,155 (18.96%) |
+| Refuted verdicts that are right | 57,116 of 57,128 (99.98%) | 57,731 of 57,735 (99.99%) | 55,604 of 56,974 (97.60%) |
+| Clades that truly hold the sequence: entailed / unresolved / wrongly refuted | 66.5% / 32.8% / 0.7% | 84.9% / 14.8% / 0.2% | 13.2% / 4.3% / 82.5% |
+| Smallest entailed clade, median size of 399 | 18 | 7 | 26 |
+| Smallest entailed clade holds the truth | 99.2% of queries | 99.3% | 6.6% |
+
+Placement mass is close to calibrated for the amplicon fragment: clades given mass in
+(0, 0.05] hold the truth 3.3% of the time, (0.05, 0.25] 12.7%, (0.25, 0.5] 38.5%,
+(0.5, 0.75] 77.5%, (0.75, 0.95] 88.8% and (0.95, 1] 99.8%.
+
+With the looser rule (entailed at mass 0.95 or more, refuted at 0.05 or less) the amplicon
+fragment gives 1,295 of 1,297 entailed verdicts right (99.85%), a median smallest clade of 10,
+and 1.6% of true clades wrongly refuted.
+
+What this shows: an amplicon read rarely lands on exactly the right edge, but the clade it is
+confidently placed in is right about 999 times in 1,000, and that clade is small (a median of
+18 of 399 references). Below that depth the verdict is honestly unresolved. The negative
+control shows the score can fail. What it does not show is in the limits below.
+
+The counting rule that turns per-read verdicts into a per-sample verdict for a clade, with
+separate bounds for wrongly counted and missed reads, is proved in
+`metadatastician/MetaManifold-Evidence` (`agda/src/MetaManifold/Evidence/TwoSided.agda`,
+not yet merged there). It also proves that an entailed verdict survives zooming out to any
+enclosing clade and a refuted verdict survives zooming in.
+
 ## Reading of the results
 
+- **Evidence on placements.** Experiment 7 is the one positive real-data result. Verdicts by
+  clade are sound at the rates above, and they give the "thumbnail then zoom" idea a form
+  that holds: the verdict is decided at a coarse clade and becomes undecided, not wrong, as
+  the clade shrinks.
 - **Exactness.** The rationals do not need replacing by the reals for Phred: one algebraic
   number is enough. On this dataset exact arithmetic gives the same decisions as double
   precision. What it adds is order-independence and a provable comparison, not a different
@@ -177,8 +233,16 @@ down to the same 64 leaves, 30 draws per row.
 - "Supported" is a branch-length threshold, not a bootstrap or posterior support.
 - Samples are small (30 to 40 views per row) and the ranges are wide.
 - Experiments 2 and 3 use simulated input. Experiment 2 measures distance counts, not time.
-- Not done: any proof, any comparison with RapidNJ, SwiftNJ or FastTree, any test of placement
-  on a reference tree, and any change to the application.
+- Experiment 7: the truth is where the sequence sat in a neighbour-joining tree built from
+  full-length distances, so it is defined by the same family of method that places it. The
+  queries are fragments of reference-quality sequences with no sequencing error. Placement is
+  distance-based least squares, not the likelihood placement (EPA) the application runs. One
+  marker, 400 references, 150 queries, 100 bootstrap replicates. The one wrong entailed
+  verdict in 1,106 means "entailed" is a measured rate, not a proof. Verdicts for nested clades of
+  one query are not independent: counted per query, the smallest entailed clade was wrong for
+  1 of 130 queries, and 20 further queries had no entailed clade at all.
+- Not done: any comparison with RapidNJ, SwiftNJ or FastTree, any test with the application's
+  own placement step or with real reads, and any change to the application.
 
 ## Running
 
@@ -208,6 +272,10 @@ julia -O2 -t 4 docs/cladistics/issue-303/thumb_real.jl /path/to/MiSeq_SOP
 
 ```bash
 julia -O2 -t 4 docs/cladistics/issue-303/ceiling_real.jl /path/to/MiSeq_SOP
+```
+
+```bash
+julia -O2 -t 4 docs/cladistics/issue-303/placement_evidence.jl /path/to/silva.bacteria.fasta
 ```
 
 The scripts use only Julia's standard library and fixed random seeds. `zoom_real.jl` carries its
