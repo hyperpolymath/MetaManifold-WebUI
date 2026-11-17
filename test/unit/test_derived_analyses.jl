@@ -102,6 +102,67 @@ end
     end
 end
 
+@testset "Losing the publication race is decided by the record already there" begin
+    # Two publishers race only between the check that the record is absent and
+    # the link that puts it in place. The sixteen-task test below reaches that
+    # window by scheduling luck, so the losing side is exercised here directly:
+    # the link runs with a record already at the destination.
+    DA = MetaManifold.DerivedAnalyses
+    mktempdir() do root
+        source, config = Dict("run" => "r"), Dict("mode" => "exact_counts")
+        result = Dict("status" => "success", "values" => ["1/3", nothing])
+        id = derived_analysis_id(source, config, result)
+        record = jcs_bytes(DA._record(id, source, config, result))
+        final = joinpath(root, "$id.json")
+        temp = joinpath(root, "pending")
+        write(temp, record)
+
+        # No record yet: this publisher wins, and the destination is its bytes.
+        @test DA._publish(temp, final, id) === true
+        @test read(final) == record
+
+        # The same record is already there, as a file of its own: the other
+        # publisher won. Its record verifies to the same ID, so this is a reuse
+        # and nothing is rewritten.
+        rm(final)
+        write(final, record)
+        winner = stat(final)
+        @test winner.inode != stat(temp).inode
+        @test DA._publish(temp, final, id) === false
+        @test read(final) == record
+        @test stat(final).mtime == winner.mtime
+        @test stat(final).inode == winner.inode
+        @test isfile(temp) # the caller, not the link step, removes the temp file
+
+        # A different record under the same ID is a conflict. It is refused and
+        # left exactly as found, never overwritten by the loser.
+        other = jcs_bytes(DA._record(id, source, config,
+            Dict("status" => "success", "values" => ["2/3", nothing])))
+        write(final, other)
+        @test read(temp) == record
+        error = try
+            DA._publish(temp, final, id)
+            nothing
+        catch err
+            err
+        end
+        @test error isa DerivedAnalysisError && error.code == "conflict"
+        @test read(final) == other
+
+        # A failed link with nothing at the destination is not a lost race, so
+        # the filesystem's own error is what the caller sees.
+        @test_throws Base.IOError DA._publish(
+            joinpath(root, "absent"), joinpath(root, "nowhere.json"), id)
+        @test !ispath(joinpath(root, "nowhere.json"))
+
+        # The public entry point reports the same reuse for a repeated record.
+        rm(final)
+        @test persist_derived_analysis(root; source, config, result).created
+        @test !persist_derived_analysis(root; source, config, result).created
+        @test sort(readdir(root)) == sort(["$id.json", "pending"])
+    end
+end
+
 @testset "Concurrent publication and tamper recovery" begin
     mktempdir() do root
         directory = joinpath(root, "derived")

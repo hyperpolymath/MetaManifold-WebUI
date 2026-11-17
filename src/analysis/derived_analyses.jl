@@ -116,24 +116,34 @@ function persist_derived_analysis(directory::AbstractString; source, config, res
         write(io, bytes)
         flush(io)
         close(io)
-        try
-            Base.hardlink(temp, final)
-            created = true
-        catch err
-            err isa InterruptException && rethrow()
-            # A concurrent publisher may have won the race. It is acceptable only
-            # if its complete record verifies to the same ID; otherwise fail closed.
-            if isfile(final)
-                _existing(final, id)
-            else
-                rethrow()
-            end
-        end
+        created = _publish(temp, final, id)
     finally
         isopen(io) && close(io)
         isfile(temp) && rm(temp; force=true)
     end
     (id=id, path=final, created=created)
+end
+
+"""Link the complete `temp` record into place as `final`.
+
+Returns `true` when this call published the record and `false` when a complete
+record with the same ID was already there. The link is the only step that
+decides the winner between concurrent publishers, and its outcome depends on
+nothing but what is at `final` when it runs, so the losing side is this
+function called with `final` present.
+"""
+function _publish(temp::String, final::String, id::String)
+    try
+        Base.hardlink(temp, final)
+        true
+    catch err
+        err isa InterruptException && rethrow()
+        # A concurrent publisher may have won the race. It is acceptable only
+        # if its complete record verifies to the same ID; otherwise fail closed.
+        isfile(final) || rethrow()
+        _existing(final, id)
+        false
+    end
 end
 
 function load_derived_analysis(directory::AbstractString, id::AbstractString)

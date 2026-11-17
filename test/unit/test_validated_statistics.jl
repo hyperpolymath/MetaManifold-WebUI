@@ -253,6 +253,17 @@ end
         sequence_result = JSON3.read(String(sequence_response.body))
         @test Set(sequence_result.samples[1].features) == Set(["seq1", "seq2", "seq3"])
         @test only(filter(x -> x.label == "s1", sequence_result.samples)).total == 7
+        # This route reads decimal JSON, so a fractional limit is a valid one
+        # and gives the same result; out of range it is refused like any other.
+        fractional = _vs_post(path, merge(sequence_request, Dict("time_limit_seconds" => 30.5)))
+        @test fractional.status == 200
+        fractional_result = JSON3.read(String(fractional.body))
+        @test fractional_result.analysis_id == sequence_result.analysis_id
+        @test !haskey(fractional_result, :time_limit_seconds)
+        for refused in (3600.5, -1.5, 0.0)
+            @test _vs_post(path, merge(sequence_request,
+                Dict("time_limit_seconds" => refused))).status == 400
+        end
 
         repeated = JSON3.read(String(_vs_post(path, request).body))
         @test repeated.analysis_id == id
