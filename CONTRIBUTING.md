@@ -118,7 +118,7 @@ A pull request does not reopen these. An issue can discuss them.
 - **HTTP layer: Oxygen.jl,** pinned in `Manifest.toml`, with the server in
   `src/server/`. Genie, Stipple and other Julia web frameworks are out of scope,
   as is any second Julia web environment.
-- **Frontend: React 18 and TypeScript,** built by Vite and managed with bun, in
+- **Frontend: React 19 and TypeScript,** built by Vite and managed with bun, in
   `frontend/`. There is one UI stack.
 - **Statistics: R through RCall.** Every R package used is pinned in `renv.lock`.
   When a method needs a package missing from the lockfile, the code raises a clear
