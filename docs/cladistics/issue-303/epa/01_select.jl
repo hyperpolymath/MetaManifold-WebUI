@@ -34,6 +34,12 @@ names = ["s" * lpad(i, 3, '0') for i in 1:N]
 L = length(rows[1]); keep = [k for k in 1:L if count(r -> r[k] != 0x00, rows) >= 2]
 v4cols = [j for (j, k) in enumerate(keep) if V4S <= k <= V4E]
 A = zeros(UInt8, N, length(keep)); for i in 1:N, (j, k) in enumerate(keep); A[i, j] = rows[i][k]; end
+# Fail loudly: eligibility was tested on whole rows, but dropping columns that are filled in fewer
+# than two chosen rows can take a V4 base away.  03_prep.jl needs FRAG V4 bases in every row.
+for i in 1:N
+    nv4 = count(j -> A[i, j] != 0x00, v4cols)
+    nv4 >= FRAG || error("selected row $(names[i]) ($(orig[i])) has only $nv4 V4 bases after column filtering, need $FRAG; no output written")
+end
 ch = ['-', 'A', 'C', 'G', 'T']
 mkpath(out)
 open(joinpath(out, "ref_full.fasta"), "w") do io

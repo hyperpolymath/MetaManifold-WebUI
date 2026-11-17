@@ -9,6 +9,9 @@ using Random, Printf
 include(joinpath(@__DIR__, "lib_nwk.jl"))
 E, Q, seed, NPOS = ARGS[1], parse(Int, ARGS[2]), parse(Int, ARGS[3]), parse(Int, ARGS[4])
 W = joinpath(E, "work")
+# start from a clean query directory: stale q*/ variants (e.g. pos from an earlier run with more
+# controls) must not survive into the scorer
+rm(joinpath(W, "q"); recursive = true, force = true)
 names = [String(split(l, "\t")[1]) for l in eachline(joinpath(W, "names.tsv"))]; N = length(names)
 leafidx = Dict(n => i for (i, n) in enumerate(names))
 seqs = Dict{String,String}(); cur = ""

@@ -6,6 +6,8 @@
 # breakdown of wrong entailed verdicts by clade size.  Written separately from 06_tables.jl as a
 # cross-check.  usage: julia 08_by_depth.jl epa_dir
 using Printf, Statistics
+# median as text; an empty collection (no clade reaches the threshold) reports n/a instead of throwing
+medstr(x) = isempty(x) ? "n/a" : @sprintf("%.1f", median(x))
 function load(kind)
     pc = [split(l, '\t') for l in readlines(joinpath(ARGS[1], "raw", "perclade_$kind.tsv"))[2:end]]
     C = [(parse(Int, r[1]), parse(Int, r[2]), parse(Float64, r[3]), r[4] == "1") for r in pc]
@@ -17,14 +19,14 @@ for kind in ("amp", "pos", "neg")
     C, Q = load(kind)
     println("== $kind: $(length(C)) clade rows, $(length(Q)) queries")
     for a in (0.01, 0.05)
-        ent = [c for c in C if c[3] >= 1 - a]; ref = [c for c in C if c[3] <= a]
+        ent = [c for c in C if c[3] >= 1 - a - 1e-12]; ref = [c for c in C if c[3] <= a + 1e-12]
         ew = count(c -> !c[4], ent); rw = count(c -> c[4], ref)
         # smallest entailed clade per query
         sm = Dict{Int,Tuple{Int,Bool}}()
         for c in ent; (!haskey(sm, c[1]) || c[2] < sm[c[1]][1]) && (sm[c[1]] = (c[2], c[4])); end
         wrongq = sort([q for (q, v) in sm if !v[2]])
-        @printf(" alpha %.2f: entailed %d wrong %d | refuted %d wrong %d | smallest entailed: %d queries, median size %.1f, wrong %d\n",
-                a, length(ent), ew, length(ref), rw, length(sm), median([v[1] for v in values(sm)]), length(wrongq))
+        @printf(" alpha %.2f: entailed %d wrong %d | refuted %d wrong %d | smallest entailed: %d queries, median size %s, wrong %d\n",
+                a, length(ent), ew, length(ref), rw, length(sm), medstr([v[1] for v in values(sm)]), length(wrongq))
         if kind == "amp"
             println("   wrong-smallest queries (qi: clade size, edges apart, placements, best LWR): ",
                     join(["$q: $(sm[q][1]), $(Q[q].apart), $(Q[q].n), $(round(Q[q].best, digits=3))" for q in wrongq], " | "))
@@ -37,7 +39,7 @@ for kind in ("amp", "pos", "neg")
             for k in (2, 4, 8, 16)
                 s2 = Dict{Int,Tuple{Int,Bool}}()
                 for c in ent; c[2] >= k || continue; (!haskey(s2, c[1]) || c[2] < s2[c[1]][1]) && (s2[c[1]] = (c[2], c[4])); end
-                @printf("   smallest entailed clade of size >= %2d: %3d queries, median size %.1f, wrong %d\n", k, length(s2), median([v[1] for v in values(s2)]), count(v -> !v[2], values(s2)))
+                @printf("   smallest entailed clade of size >= %2d: %3d queries, median size %s, wrong %d\n", k, length(s2), medstr([v[1] for v in values(s2)]), count(v -> !v[2], values(s2)))
             end
             # by number of placements reported
             for (lab, f) in (("1 placement", n -> n == 1), ("2+ placements", n -> n >= 2))

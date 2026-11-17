@@ -436,8 +436,10 @@ julia -O2 -t 4 docs/cladistics/issue-303/ceiling_real.jl /path/to/MiSeq_SOP
 julia -O2 -t 4 docs/cladistics/issue-303/placement_evidence.jl /path/to/silva.bacteria.fasta
 ```
 
-Experiment 8 needs `raxmlHPC-PTHREADS-SSE3` and `iqtree2` on the path. Copy `epa/` to
-`WORK/scripts`, then run its steps in order:
+Experiment 8 needs `raxmlHPC-PTHREADS-SSE3` and `iqtree2` on the path. `WORK` is a directory
+of your choice, absolute or relative, and may contain spaces; the drivers resolve it to an
+absolute path and stop with a non-zero status if a stage fails. Copy `epa/` to `WORK/scripts`,
+then run its steps in order:
 
 ```bash
 sh WORK/scripts/01_run.sh WORK /path/to/silva.bacteria.fasta
@@ -452,7 +454,7 @@ julia WORK/scripts/03_prep.jl WORK 200 7
 ```
 
 ```bash
-for k in amp pos neg; do sh WORK/scripts/05_run_epa.sh WORK $k && julia WORK/scripts/04_score.jl WORK $k; done
+(set -e; for k in amp pos neg; do sh WORK/scripts/05_run_epa.sh WORK $k; julia WORK/scripts/04_score.jl WORK $k; done)
 ```
 
 ```bash
@@ -462,6 +464,13 @@ julia WORK/scripts/06_tables.jl WORK amp pos neg
 ```bash
 julia WORK/scripts/08_by_depth.jl WORK
 ```
+
+The drivers take optional trailing size arguments for a quick trial; without them they run the
+published sizes. `01_run.sh` takes the number of references (default 200), `02_tree.sh` the
+thread count (default 4), and `03_prep.jl` the number of queries. For experiment 9,
+`run_trees.sh` takes the references per draw (default 400), the bootstrap timeout in seconds
+(default 1500) and the threads (default 4), and `run_rest.sh` takes the queries per draw
+(default 300) and the whole-sequence controls (default 60).
 
 Experiment 9: copy `epa/` and then `epa-depth/` over it to `WORK/scripts`, then:
 
@@ -474,7 +483,7 @@ sh WORK/scripts/run_rest.sh WORK
 ```
 
 ```bash
-mkdir -p WORK/raw && for t in "A amp" "A pos" "B amp"; do set -- $t; julia WORK/scripts/04_score.jl WORK/$1 $1 $2; done
+mkdir -p WORK/raw && (set -e; for t in "A amp" "A pos" "B amp"; do set -- $t; julia WORK/scripts/04_score.jl WORK/$1 $1 $2; done)
 ```
 
 ```bash
