@@ -1149,6 +1149,75 @@ end
         end
     end
 
+    @testset "A non-finite MGLM estimate fails its taxon alone" begin
+        if _mglm_ready()
+            # A fit can be usable as a whole and still hold one coefficient
+            # that is not a number. MGLM does not produce one on demand, so the
+            # fitted object is altered on its way back, as the glmGamPoi test
+            # above alters an overdispersion. The Hessian is untouched, so every
+            # other taxon keeps its closed-form multinomial answer.
+            y = [230 265 144 100 61; 238 239 166 77 80; 240 242 155 80 83; 221 263 165 71 80;
+                 328 162 161 45 104; 347 152 152 46 103; 347 154 153 45 101; 303 148 163 37 149]
+            g = [i <= 4 ? "A" : "B" for i in 1:8]
+            taxa = ["t1", "t2", "t3", "t4", "t5"]
+            fit_it() = differential_abundance(y, ["s$i" for i in 1:8], taxa, g;
+                reference="A", contrast="B", config=DifferentialConfig(; method="multinomial"))
+            SA = vec(sum(y[1:4, :]; dims=1)); SB = vec(sum(y[5:8, :]; dims=1))
+            expected(j) = log(SB[j] / SB[1]) - log(SA[j] / SA[1])   # t1 is the reference
+            MetaManifold.RRuntime.with_r_lock() do
+                reval(raw"""
+                    test_original_mglm <- get("MGLMreg.fit", asNamespace("MGLM"))
+                    test_estimate <- NaN
+                    assignInNamespace("MGLMreg.fit", function(...) {
+                        fit <- test_original_mglm(...)
+                        # Column 1 is t2: the reference, t1, is fitted last.
+                        fit@coefficients[2, 1] <- test_estimate
+                        fit
+                    }, ns="MGLM")
+                """)
+                try
+                    # An infinite estimate has a Wald p-value of exactly 0, which
+                    # would otherwise be reported as the strongest result of all.
+                    for bad in (NaN, Inf, -Inf)
+                        RCall.globalEnv[:test_estimate] = bad
+                        res = fit_it()
+                        byt = Dict(x["taxon"] => x for x in res["rows"])
+                        @test byt["t2"]["status"] == "failed"
+                        @test byt["t2"]["note"] ==
+                              "MGLM returned a non-finite estimate, standard error or p-value"
+                        for key in ("estimate", "log2_fold_change", "standard_error",
+                                    "statistic", "pvalue", "padj")
+                            @test isnothing(byt["t2"][key])
+                        end
+                        @test byt["t1"]["status"] == "reference"
+                        for j in 3:5
+                            @test byt[taxa[j]]["status"] == "ok"
+                            @test isapprox(byt[taxa[j]]["estimate"], expected(j); atol=1e-8)
+                        end
+                        # The adjustment is over the three taxa that were tested.
+                        tested = [byt[taxa[j]] for j in 3:5]
+                        @test [r["padj"] for r in tested] ≈ bh_adjust([r["pvalue"] for r in tested])
+                        @test res["diagnostics"]["n_tested"] == 3
+                        @test res["diagnostics"]["n_failed"] == 1
+                        @test res["status"] == "partial"
+                        # The failed taxon has no point on the volcano plot.
+                        @test sum(length(t["x"]) for t in volcano_chart(res)["data"]) == 3
+                    end
+                finally
+                    reval(raw"""
+                        assignInNamespace("MGLMreg.fit", test_original_mglm, ns="MGLM")
+                        rm(test_original_mglm, test_estimate)
+                    """)
+                end
+            end
+            # With MGLM's own function back, the same counts fit completely.
+            res = fit_it()
+            @test res["status"] == "ok" && res["diagnostics"]["n_failed"] == 0
+            @test isapprox(only(filter(x -> x["taxon"] == "t2", res["rows"]))["estimate"],
+                           expected(2); atol=1e-8)
+        end
+    end
+
     @testset "dirichlet_multinomial matches an independent optimiser" begin
         if _mglm_ready()
             warn0 = rcopy(R"getOption('warn')")
