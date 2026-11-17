@@ -33,7 +33,9 @@ bootstrapped placements were right for 1,105 of 1,106 entailed and 57,116 of 57,
 verdicts, and pin a read to a clade of median size 18 among 399 references. With the
 application's own placement step (RAxML EPA) the picture is sharper and less safe: 2,375 of
 2,388 entailed verdicts were right, with no error among 1,515 verdicts on clades of 50 or more
-references and 7 errors among 62 on clades of two or three.
+references and 7 errors among 62 on clades of two or three. On a larger sample the smallest
+confident clade was wrong for 32 of 448 queries (7.1%), falling to 4 of 448 (0.9%) when the
+clade had to hold at least 64 of 399 references.
 
 ## Data
 
@@ -272,7 +274,69 @@ agree.
 What this shows: with the application's placement step, "present in this clade" was right
 in every case seen for clades of a quarter of the tree or more, and wrong about one time in
 nine for clades of two or three references. At that depth the verdict is confidently wrong,
-not unresolved. What it does not show is in the limits below.
+not unresolved. Experiment 9 repeats this on a larger sample and finds errors on large clades
+too. What it does not show is in the limits below.
+
+### 9. Error by clade depth (`epa-depth/`)
+
+The same test as experiment 8 on a larger sample, to put a number on how the error depends
+on clade size. Two independent draws of 400 references (13 sequences are in both), a
+maximum-likelihood tree for each, and 300 amplicon queries per draw: 600 queries. As a
+control, the whole sequence of 60 queries was placed: 60 of 60 landed on the exact edge and
+none of their 1,134 entailed verdicts was wrong.
+
+For the amplicon fragment, 9,555 of 9,613 entailed verdicts were right. The 58 wrong ones by
+clade size:
+
+| Clade size (of 399 references) | Entailed verdicts | Wrong | Queries with a wrong verdict |
+| --- | --- | --- | --- |
+| 2 to 3 | 215 | 15 | 13 |
+| 4 to 7 | 417 | 12 | 11 |
+| 8 to 15 | 507 | 11 | 9 |
+| 16 to 31 | 748 | 7 | 6 |
+| 32 to 63 | 999 | 6 | 2 |
+| 64 to 127 | 431 | 2 | 1 |
+| 128 to 399 | 6,296 | 5 | 3 |
+
+The five errors in the last row are on clades holding 357 to 372 of the 399 references. The
+branch there cuts off a small group, and the sequence truly sits in that small group. Binned
+by the smaller side of the branch instead, the wrong count falls from 15 of 444 at two or
+three references to 2 of 1,271 at 64 to 127, and 0 of 1,119 at 128 or more.
+
+One result per query is the honest unit. The rule "report the smallest entailed clade with
+at least k references" gave:
+
+| k | Queries given a clade (of 600) | Median clade size | Wrong | Rate (exact 95% interval) |
+| --- | --- | --- | --- | --- |
+| 2 | 448 | 4 | 32 | 7.1% (4.9 to 9.9) |
+| 4 | 448 | 7 | 25 | 5.6% (3.6 to 8.1) |
+| 8 | 448 | 14 | 17 | 3.8% (2.2 to 6.0) |
+| 16 | 448 | 26 | 11 | 2.5% (1.2 to 4.4) |
+| 32 | 448 | 46.5 | 6 | 1.3% (0.5 to 2.9) |
+| 64 | 448 | 173 | 4 | 0.9% (0.2 to 2.3) |
+
+The other 152 queries had no entailed clade. The two draws agree within their intervals:
+19 of 230 and 13 of 218 at k = 2. Of the 32 queries wrong at k = 2, 18 had a single reported
+placement and 18 had a best weight of 0.99 or more. With the looser rule (0.95) the rates
+are higher: 61 of 540 at k = 2 and 10 of 540 at k = 64.
+
+The intervals are Clopper-Pearson and treat queries as independent. The queries of one draw
+share one reference tree, so the intervals cover the sampling of queries on these two trees,
+not the variation between trees.
+
+Self-checks passed: the control above; an independent truth calculation matched for 10
+queries in each draw; all 793 edge numbers of every placement file map to distinct branches
+of the pruned tree; clade mass never decreased from a clade to the clade containing it; and
+the new table code reproduces experiment 8's counts from experiment 8's output.
+`epa-depth/08_crosscheck.jl` recomputes the tables separately from `06_tables.jl`; the two
+agree.
+
+What this shows: the error of a "present in this clade" verdict from an amplicon fragment
+falls as the clade grows and does not reach zero. Requiring 64 references in the clade
+brought it under 1% of queries, at the price of a median clade of 173 of 399. The whole
+sequence, placed the same way, was never wrong in 60 queries. The truth was itself built
+from the whole sequence, so that control shows the machinery is sound; it does not show the
+reference tree is right at the finest depth.
 
 ## Reading of the results
 
@@ -282,14 +346,16 @@ not unresolved. What it does not show is in the limits below.
   How it fails as the clade shrinks depends on where the mass comes from. With bootstrapped
   least squares (experiment 7) it became undecided. With the likelihood weights of the
   application's placement step (experiment 8) it became wrong for 7 of 62 verdicts on the
-  smallest clades. A rule for the application therefore needs a minimum clade size or a
-  better-calibrated mass, and neither has been chosen or tested here.
+  smallest clades. Experiment 9 puts numbers on it: a minimum clade size trades error for
+  resolution (7.1% of queries wrong with no minimum, 0.9% with a minimum of 64 references).
+  A rule for the application needs that minimum or a better-calibrated mass. Neither has
+  been chosen, and no rule has been tested inside the application.
 - **Counting reads does not average this error away.** Each query in experiments 7 and 8 is
   one sequence. Reads from the same organism share that sequence, so if it is misplaced they
   are all misplaced together. The bound on wrongly counted reads that the counting rule
   takes as input cannot be read off the number of reads; it has to come from the number of
-  distinct sequences and a per-depth error rate. That rate has not been measured beyond the
-  table above.
+  distinct sequences and a per-depth error rate. Experiment 9 gives that rate for error-free
+  fragments on two trees; it has not been measured on real reads.
 - **Exactness.** The rationals do not need replacing by the reals for Phred: one algebraic
   number is enough. On this dataset exact arithmetic gives the same decisions as double
   precision. What it adds is order-independence and a provable comparison, not a different
@@ -325,7 +391,10 @@ not unresolved. What it does not show is in the limits below.
   with IQ-TREE 2.0.7, where the application selects a model, bootstraps and pins IQ-TREE 3.1.4.
   The application's alignment and trimming steps (MAFFT, trimAl) were skipped: queries sit in
   the columns of the SILVA alignment. Queries are error-free fragments of reference sequences.
-  200 references and 200 queries, one draw. Experiments 7 and 8 differ in the number of
+  200 references and 200 queries, one draw. Experiment 9 shares every limit of experiment 8
+  except size: 400 references, two draws, 600 queries. The second draw's tree was built
+  without bootstrap after the bootstrapped run exceeded 25 minutes; the bootstrap supports of
+  the first tree were saved and not analysed. Experiments 7 and 8 differ in the number of
   references, the tree method, the source of the mass and the thresholds, so the difference
   between them is not the effect of the placement method alone. A cheaper agent ran the
   experiment; the tables were recomputed separately from its per-clade output.
@@ -392,6 +461,28 @@ julia WORK/scripts/06_tables.jl WORK amp pos neg
 
 ```bash
 julia WORK/scripts/08_by_depth.jl WORK
+```
+
+Experiment 9: copy `epa/` and then `epa-depth/` over it to `WORK/scripts`, then:
+
+```bash
+sh WORK/scripts/run_trees.sh WORK /path/to/silva.bacteria.fasta
+```
+
+```bash
+sh WORK/scripts/run_rest.sh WORK
+```
+
+```bash
+mkdir -p WORK/raw && for t in "A amp" "A pos" "B amp"; do set -- $t; julia WORK/scripts/04_score.jl WORK/$1 $1 $2; done
+```
+
+```bash
+julia WORK/scripts/06_tables.jl new WORK/raw
+```
+
+```bash
+julia WORK/scripts/08_crosscheck.jl WORK/raw
 ```
 
 The scripts use only Julia's standard library and fixed random seeds. `zoom_real.jl` carries its
