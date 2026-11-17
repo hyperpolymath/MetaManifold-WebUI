@@ -14,18 +14,18 @@
     "@upsetjs/react": "^1.11.0",
     "jspdf": "^4.2.1",
     "plotly.js-dist-min": "^2.35.2",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
     "svg2pdf.js": "^2.8.1"
   },
   "devDependencies": {
     "@types/plotly.js": "^2.33.4",
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.7.2",
-    "vite": "^6.4.5"
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7"
   },
   "overrides": {
     "@types/react": "$@types/react",
