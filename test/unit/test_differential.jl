@@ -179,7 +179,8 @@ end
         @test DifferentialConfig().method == "nb_glm"
         @test DifferentialConfig().replacement_delta == 0.65
         @test DifferentialConfig(; method="clr_welch", replacement_delta=0.3).replacement_delta == 0.3
-        @test_throws ArgumentError DifferentialConfig(; method="ancombc")
+        @test DifferentialConfig(; method="ancombc").method == "ancombc"
+        @test DifferentialConfig(; method="aldex2").method == "aldex2"
         # The pre-review name, never released, is not accepted.
         @test_throws ArgumentError DifferentialConfig(; method="clr_lm")
         # The dispersion option: glm_nb is the default and keeps nb_glm's
@@ -553,19 +554,14 @@ end
         end
     end
 
-    @testset "No fittable taxon is an explicit error" begin
+    @testset "No fittable taxon is an explicit answer, not an exception" begin
         if !HAVE_MASS
             @test_skip false
         else
-            e = try
-                differential_abundance(fill(5, 4, 2), ["a", "b", "c", "d"], ["x", "y"],
-                                       ["A", "A", "B", "B"]; reference="A", contrast="B")
-                nothing
-            catch err
-                err
-            end
-            @test e isa ErrorException
-            @test occursin("no taxon could be fitted", e.msg)
+            outcome = differential_abundance(fill(5, 4, 2), ["a", "b", "c", "d"], ["x", "y"],
+                                             ["A", "A", "B", "B"]; reference="A", contrast="B")
+            @test outcome isa NoTaxonFitted
+            @test occursin("no taxon could be fitted", outcome.reason)
         end
     end
 
@@ -590,7 +586,19 @@ end
         @test !isnothing(SV._config_value_error("analysis.differential.offset", "css"))
         @test isnothing(SV._config_value_error("analysis.differential.min_prevalence", 0.1))
         @test isnothing(SV._config_value_error("analysis.differential.method", "clr_welch"))
-        @test !isnothing(SV._config_value_error("analysis.differential.method", "ancombc"))
+        for method in ("aldex2", "ancombc")
+            @test isnothing(SV._config_value_error("analysis.differential.method", method))
+        end
+        @test !isnothing(SV._config_value_error("analysis.differential.method", "unknown"))
+        for (key, valid, invalid) in (("analysis.differential.mc_samples", (2, 128, 4096), (0, 1, 4097, 2.5, true, "128")),
+                                      ("analysis.differential.seed", (0, 17, typemax(Int32)), (-1, 1.5, true, "17", Int64(typemax(Int32))+1)))
+            for v in valid
+                @test isnothing(SV._config_value_error(key, v))
+            end
+            for v in invalid
+                @test !isnothing(SV._config_value_error(key, v))
+            end
+        end
         # Like every other enum key, the config route takes exact spellings.
         for dispersion in ("glm_nb", "glmGamPoi")
             @test isnothing(SV._config_value_error("analysis.differential.dispersion", dispersion))
@@ -837,16 +845,11 @@ end
         else
             # p and q in the same 1:1 ratio everywhere: both CLRs are constant
             # (zero), so neither can be fitted and the whole test is refused.
-            e = try
-                differential_abundance([5 5; 7 7; 9 9; 4 4], ["a", "b", "c", "d"], ["p", "q"],
-                                       ["A", "A", "B", "B"]; reference="A", contrast="B", config=clr_config)
-                nothing
-            catch err
-                err
-            end
-            @test e isa ErrorException
-            @test occursin("no taxon could be fitted", e.msg)
-            @test occursin("constant", e.msg)
+            outcome = differential_abundance([5 5; 7 7; 9 9; 4 4], ["a", "b", "c", "d"], ["p", "q"],
+                                             ["A", "A", "B", "B"]; reference="A", contrast="B", config=clr_config)
+            @test outcome isa NoTaxonFitted
+            @test occursin("no taxon could be fitted", outcome.reason)
+            @test occursin("constant", outcome.reason)
         end
     end
 
@@ -887,6 +890,39 @@ end
 
             r = _da_post("noSuchStudy", Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")]))
             @test r.status == 404
+        end
+    end
+
+    @testset "Route: native method override and input refusal" begin
+        _da_fixture() do
+            request = Dict("runs" => [Dict("run" => "runA"), Dict("run" => "runB")],
+                           "table" => "merged", "rank" => "Genus", "method" => "aldex2")
+            # Naming a method is accepted: the mode is
+            # spelled and case-folded the same way. Only running it needs the
+            # package.
+            for method in ("unknown", 42, true, false, [], Dict())
+                r = _da_post("studyD", merge(request, Dict("method" => method)))
+                @test r.status == 400
+                @test JSON3.read(String(r.body)).error == "invalid_config"
+            end
+            r = _da_post("studyD", request)
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            @test body.config.method == "aldex2"
+            @test body.effect.key == "estimate"
+            @test isempty(body.size_factors)
+            @test body.diagnostics.n_tested == 3
+            @test all(row -> row.log2_fold_change === nothing, body.rows)
+            for method in ("ALDEX2", " aldex2 ")
+                r = _da_post("studyD", merge(request, Dict("method" => method)))
+                @test r.status == 200
+                @test JSON3.read(String(r.body)).config.method == "aldex2"
+            end
+            # This fixture has only three taxa; ANCOM-BC must refuse its
+            # bias fit rather than return plausible-looking test statistics.
+            r = _da_post("studyD", merge(request, Dict("method" => "ancombc")))
+            @test r.status == 422
+            @test JSON3.read(String(r.body)).error == "no_taxon_fitted"
         end
     end
 

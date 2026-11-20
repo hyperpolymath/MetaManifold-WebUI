@@ -34,3 +34,11 @@ path = "data/MiSeq_SOP/**/*.fastq.gz"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2019 Patrick D. Schloss"
 SPDX-License-Identifier = "CC-BY-4.0"
+
+# Reference values for the native differential methods, produced by
+# test/fixtures/native_da/generate_reference.R from ALDEx2 and ANCOMBC.
+[[annotations]]
+path = ["test/fixtures/native_da/*.csv", "test/fixtures/native_da/versions.txt"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>"
+SPDX-License-Identifier = "CC0-1.0"

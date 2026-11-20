@@ -1,0 +1,5 @@
+R version 4.5.0 (2025-04-11)
+Bioconductor 3.22
+ALDEx2 1.42.0
+ANCOMBC 2.12.0
+aldex2 mc.samples 128 reps 25

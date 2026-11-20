@@ -1206,14 +1206,55 @@ including `dispersion="glm_nb"`. Invalid settings propagate the constructor's
 `ArgumentError`; values that cannot be converted to strings or numbers also
 raise their conversion errors.
 """
-function _differential_config(study::String)
+function _differential_config(study::String; method_override=nothing)
     resolved = _resolved_run_config(study, nothing, nothing, nothing)
     val(k, d) = something(get(get(resolved, k, (; value=d)), :value, d), d)
+    (isnothing(method_override) || method_override isa AbstractString) ||
+        throw(ArgumentError("differential method must be a string"))
+    method = lowercase(strip(isnothing(method_override) ?
+        String(val("analysis.differential.method", "nb_glm")) : String(method_override)))
+    mc_samples = val("analysis.differential.mc_samples", 128)
+    seed = val("analysis.differential.seed", 1)
+    for (key, value) in (("analysis.differential.mc_samples", mc_samples),
+                         ("analysis.differential.seed", seed))
+        problem = _config_value_error(key, value)
+        isnothing(problem) || throw(ArgumentError(problem))
+    end
     DifferentialConfig(String(val("analysis.differential.offset", "tss")),
                        Float64(val("analysis.differential.min_prevalence", 0.0));
-                       method=String(val("analysis.differential.method", "nb_glm")),
+                       method,
                        replacement_delta=Float64(val("analysis.differential.replacement_delta", 0.65)),
-                       dispersion=String(val("analysis.differential.dispersion", "glm_nb")))
+                       dispersion=!isnothing(method_override) && method != "nb_glm" ?
+                           "glm_nb" : String(val("analysis.differential.dispersion", "glm_nb")),
+                       mc_samples=Int(mc_samples), seed=Int(seed))
+end
+
+"""
+    _differential_outcome(compute) -> Union{Dict,HTTP.Response}
+
+Run `compute`, which is one `differential_abundance` call, and return its result,
+or the response for each way the comparison can be declined.
+
+`NoTaxonFitted` is the comparison's own answer that there is nothing to report
+and becomes 422 `no_taxon_fitted`. The exceptions named here are the refusals
+that have a type of their own. Every other exception is rethrown: an
+`ErrorException`, or anything else nobody chose to raise as a refusal, is a
+fault in the server or in a package it calls, and is reported as one instead of
+as a property of the data.
+"""
+function _differential_outcome(compute::Function)
+    result = try
+        compute()
+    catch e
+        e isa ArgumentError    && return json_error(400, "invalid_input", sprint(showerror, e))
+        e isa ScalingRefusal   && return json_error(422, "scaling_refused", sprint(showerror, e))
+        e isa MASSUnavailable  && return json_error(503, "r_unavailable", sprint(showerror, e))
+        e isa ZCompositionsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
+        e isa GlmGamPoiUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
+        rethrow()
+    end
+    result isa NoTaxonFitted && return json_error(422, "no_taxon_fitted", result.reason)
+    result
 end
 
 """
@@ -1238,7 +1279,7 @@ function _differential(study::String, body)
         "Differential abundance compares exactly 2 conditions; the selection gives $(length(specs))")
 
     config = try
-        _differential_config(study)
+        _differential_config(study; method_override=get(body, :method, nothing))
     catch e
         e isa ArgumentError || rethrow()
         return json_error(400, "invalid_config", sprint(showerror, e))
@@ -1284,18 +1325,11 @@ function _differential(study::String, body)
         (labels[i], conditions[i].scols, conditions[i].df) for i in 1:2]
     mat, samples, taxa, groups = combined_counts_across_runs(run_data)
 
-    result = try
+    result = _differential_outcome() do
         differential_abundance(mat, samples, taxa, groups;
                                reference=labels[1], contrast=labels[2], config)
-    catch e
-        e isa ArgumentError    && return json_error(400, "invalid_input", sprint(showerror, e))
-        e isa ScalingRefusal   && return json_error(422, "scaling_refused", sprint(showerror, e))
-        e isa MASSUnavailable  && return json_error(503, "r_unavailable", sprint(showerror, e))
-        e isa ZCompositionsUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
-        e isa GlmGamPoiUnavailable && return json_error(503, "r_unavailable", sprint(showerror, e))
-        e isa ErrorException   && return json_error(422, "no_taxon_fitted", e.msg)
-        rethrow()
     end
+    result isa HTTP.Response && return result
     result["rank"] = first(effective_ranks)
     result["table"] = table
     result["figure"] = volcano_chart(result)
