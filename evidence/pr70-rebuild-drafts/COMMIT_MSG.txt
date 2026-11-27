@@ -1,0 +1,34 @@
+unposted draft
+SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+Add native ALDEx2 and ANCOM-BC differential abundance
+
+Two new values of analysis.differential.method, fitted in Julia by
+CompositionalDA on the raw count matrix, alongside the existing R-backed
+methods:
+
+- aldex2: Dirichlet posterior Monte Carlo instances with CLR differences and
+  Welch tests, keeping the package's expected within-instance BH values. The
+  effect is a log2 CLR difference, not a fold change.
+- ancombc: the two-group sampling-bias model with a bias-corrected log2 fold
+  change and conservative Wald standard errors. Structural zeros are reported
+  as such, with a note saying whether the absence is in one group or both, and
+  never receive a p-value.
+
+DifferentialConfig gains mc_samples (2 to 4096, default 128) and seed (0 to
+typemax(Int32), default 1), validated in the constructor and at the config
+route. Counts that do not fit Int are refused, a sample with no reads is left
+out and named, and fewer than two retained taxa are refused. A refusal by the
+package is returned as an answer about the data and reported as 422; any other
+error from it propagates. The route accepts a per-request method override,
+spelled and case-folded like the config key. The panel, the CSV settings line,
+the config editor and the guide describe both methods.
+
+CompositionalDA is a declared dependency with a compat bound and a Manifest
+entry from the General registry. There is no optional loading and no stand-in.
+
+The tests compare both methods with the output of the R packages ALDEx2 1.42.0
+and ANCOMBC 2.12.0 on a fixed count table. The reference values are CSV files
+in test/fixtures/native_da, with the R script that made them and the reason for
+each tolerance in the test file.
